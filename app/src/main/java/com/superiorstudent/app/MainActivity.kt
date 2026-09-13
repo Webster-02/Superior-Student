@@ -42,13 +42,13 @@ class MainActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (binding.webView.canGoBack()) binding.webView.goBack() else super.onBackPressed()
     }
 
     companion object {
         private const val ERP_URL = "https://erp.superior.edu.pk/"
-        // Replace this URL with the official Superior LMS URL if it differs.
-        private const val LMS_URL = "https://lms.superior.edu.pk/"
+        private const val LMS_URL = "https://lms.superior.edu.pk/local/mycustomlogin/index.php"
     }
 }
