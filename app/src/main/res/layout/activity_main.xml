@@ -1,72 +1,223 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#F5F7FB">
 
-    <WebView
-        android:id="@+id/webView"
+    <ScrollView
+        android:id="@+id/dashboardScroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="gone" />
-
-    <FrameLayout
-        android:id="@+id/introScreen"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
-
-        <ImageView
-            android:id="@+id/campusBackground"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:contentDescription="Superior University campus"
-            android:scaleType="centerCrop"
-            android:src="@drawable/campus" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="#88000000" />
+        android:fillViewport="true">
 
         <LinearLayout
+            android:id="@+id/dashboardScreen"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="28dp">
+            android:padding="20dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
                 android:text="Superior Student"
-                android:textColor="@android:color/white"
-                android:textSize="30sp"
+                android:textColor="#14213D"
+                android:textSize="28sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="28dp"
-                android:text="Access your student portals easily"
-                android:textColor="#E6FFFFFF"
-                android:textSize="16sp" />
+                android:layout_marginTop="4dp"
+                android:text="Your academic life, in one place"
+                android:textColor="#667085"
+                android:textSize="15sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:background="#1E5EFF"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Welcome back"
+                    android:textColor="#DCE7FF"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="5dp"
+                    android:text="Student Dashboard"
+                    android:textColor="#FFFFFF"
+                    android:textSize="23sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Your live academic information will appear from ERP and LMS."
+                    android:textColor="#E8EEFF"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Academic overview"
+                android:textColor="#14213D"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="#FFFFFF"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:padding="15dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Attendance"
+                        android:textColor="#667085"
+                        android:textSize="13sp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        android:text="View in ERP"
+                        android:textColor="#1E5EFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="100dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="#FFFFFF"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical"
+                    android:padding="15dp">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Grades & GPA"
+                        android:textColor="#667085"
+                        android:textSize="13sp" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        android:text="View in ERP"
+                        android:textColor="#1E5EFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Student services"
+                android:textColor="#14213D"
+                android:textSize="19sp"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/erpButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="Open ERP"
+                android:layout_marginTop="10dp"
+                android:text="Open ERP Portal"
                 android:textAllCaps="false" />
 
             <Button
                 android:id="@+id/lmsButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Open LMS"
+                android:layout_marginTop="8dp"
+                android:text="Open LMS Portal"
                 android:textAllCaps="false" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+                <Button
+                    android:id="@+id/timetableButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:text="Timetable"
+                    android:textAllCaps="false" />
+                <Button
+                    android:id="@+id/assignmentsButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="5dp"
+                    android:layout_weight="1"
+                    android:text="Assignments"
+                    android:textAllCaps="false" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button
+                    android:id="@+id/feeButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:text="Fee Details"
+                    android:textAllCaps="false" />
+                <Button
+                    android:id="@+id/profileButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="5dp"
+                    android:layout_weight="1"
+                    android:text="Profile"
+                    android:textAllCaps="false" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:gravity="center"
+                android:text="Data is provided by the official ERP/LMS portals."
+                android:textColor="#98A2B3"
+                android:textSize="12sp" />
         </LinearLayout>
-    </FrameLayout>
+    </ScrollView>
+
+    <WebView
+        android:id="@+id/webView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
 
     <Button
         android:id="@+id/refreshButton"
@@ -75,6 +226,16 @@
         android:layout_gravity="top|end"
         android:layout_margin="12dp"
         android:text="↻"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/homeButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:text="Home"
+        android:textAllCaps="false"
         android:visibility="gone" />
 
 </FrameLayout>
