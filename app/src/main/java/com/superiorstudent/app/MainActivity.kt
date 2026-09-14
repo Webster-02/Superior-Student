@@ -2,6 +2,7 @@ package com.superiorstudent.app
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -26,15 +27,20 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = WebViewClient()
         webView.webChromeClient = WebChromeClient()
 
-        binding.erpButton.setOnClickListener { webView.loadUrl(ERP_URL) }
-        binding.lmsButton.setOnClickListener { webView.loadUrl(LMS_URL) }
+        binding.erpButton.setOnClickListener { openPortal(ERP_URL) }
+        binding.lmsButton.setOnClickListener { openPortal(LMS_URL) }
         binding.refreshButton.setOnClickListener { webView.reload() }
 
-        if (savedInstanceState == null) {
-            webView.loadUrl(ERP_URL)
-        } else {
+        if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
         }
+    }
+
+    private fun openPortal(url: String) {
+        binding.introScreen.visibility = View.GONE
+        binding.webView.visibility = View.VISIBLE
+        binding.refreshButton.visibility = View.VISIBLE
+        binding.webView.loadUrl(url)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -44,7 +50,15 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (binding.webView.canGoBack()) binding.webView.goBack() else super.onBackPressed()
+        if (binding.webView.visibility == View.VISIBLE && binding.webView.canGoBack()) {
+            binding.webView.goBack()
+        } else if (binding.webView.visibility == View.VISIBLE) {
+            binding.webView.visibility = View.GONE
+            binding.refreshButton.visibility = View.GONE
+            binding.introScreen.visibility = View.VISIBLE
+        } else {
+            super.onBackPressed()
+        }
     }
 
     companion object {
