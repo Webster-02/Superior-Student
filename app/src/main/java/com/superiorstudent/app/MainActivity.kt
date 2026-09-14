@@ -34,10 +34,7 @@ class MainActivity : AppCompatActivity() {
         webView.settings.displayZoomControls = false
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(
-                view: WebView,
-                request: WebResourceRequest
-            ): Boolean = false
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
@@ -51,21 +48,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.attendanceButton.setOnClickListener {
-            openPortal(ERP_URL + "student/attendance")
-        }
-        binding.timetableButton.setOnClickListener {
-            openPortal(ERP_URL + "student/class/schedule")
-        }
-        binding.feeButton.setOnClickListener {
-            openPortal(ERP_URL + "student/invoices")
-        }
+        binding.attendanceButton.setOnClickListener { openPortal(ERP_URL + "student/attendance") }
+        binding.timetableButton.setOnClickListener { openPortal(ERP_URL + "student/class/schedule") }
+        binding.feeButton.setOnClickListener { openPortal(ERP_URL + "student/invoices") }
         binding.refreshButton.setOnClickListener { webView.reload() }
         binding.homeButton.setOnClickListener { showDashboard() }
 
-        if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState)
-        }
+        if (savedInstanceState != null) webView.restoreState(savedInstanceState)
     }
 
     private fun openPortal(url: String) {
@@ -104,7 +93,7 @@ class MainActivity : AppCompatActivity() {
 
         private const val COMMON_STYLE = """
             (function(){
-              if(document.getElementById('miniAppRoot')) return;
+              if(document.getElementById('miniAppRoot')) return null;
               const s=document.createElement('style');
               s.textContent=`body{background:#f5f7fb!important;font-family:Arial,sans-serif!important}.mini-app{padding:20px;color:#172033}.mini-head{background:#1e5eff;color:#fff;border-radius:18px;padding:22px;margin-bottom:18px}.mini-head h1{margin:0;font-size:25px}.mini-head p{margin:7px 0 0;color:#dce7ff}.mini-card{background:#fff;border:1px solid #e5eaf2;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 3px 12px #17203312}.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px}.mini-label{font-size:12px;color:#667085;font-weight:bold;text-transform:uppercase}.mini-value{font-size:24px;font-weight:bold;margin-top:6px}.mini-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}.mini-table th,.mini-table td{padding:12px;border-bottom:1px solid #e8edf3;text-align:left;font-size:13px}.mini-table th{background:#435b68;color:#fff}.mini-badge{display:inline-block;padding:4px 8px;border-radius:6px;background:#e8f5e9;color:#2e7d32;font-size:12px;font-weight:bold}.mini-muted{color:#667085;font-size:13px}`;
               document.head.appendChild(s);
@@ -116,7 +105,7 @@ class MainActivity : AppCompatActivity() {
 
         private val ATTENDANCE_SCRIPT = """
             (function(){
-              const root=(function(){${COMMON_STYLE.removeSuffix("\n        ")}})();
+              const root=${COMMON_STYLE};
               if(!root) return;
               const source=document.body.innerText;
               const percentages=[...source.matchAll(/(\\d+(?:\\.\\d+)?)\\s*%/g)].map(x=>Number(x[1])).filter(x=>x>=0&&x<=100);
@@ -129,7 +118,7 @@ class MainActivity : AppCompatActivity() {
 
         private val TIMETABLE_SCRIPT = """
             (function(){
-              const root=(function(){${COMMON_STYLE.removeSuffix("\n        ")}})();
+              const root=${COMMON_STYLE};
               if(!root) return;
               const table=document.querySelector('table');
               const html=table?table.outerHTML:'<p class="mini-muted">Timetable loaded, but no table was detected. Please use the ERP schedule controls.</p>';
@@ -139,7 +128,7 @@ class MainActivity : AppCompatActivity() {
 
         private val FEE_SCRIPT = """
             (function(){
-              const root=(function(){${COMMON_STYLE.removeSuffix("\n        ")}})();
+              const root=${COMMON_STYLE};
               if(!root) return;
               const table=document.querySelector('table');
               let total=0, unpaid=0;
