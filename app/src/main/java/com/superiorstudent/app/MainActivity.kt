@@ -1,6 +1,7 @@
 package com.superiorstudent.app
 
 import android.annotation.SuppressLint
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.webkit.CookieManager
@@ -15,107 +16,123 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var loginInProgress = false
+    private var loginSubmitted = false
     private var loggedIn = false
-    private var loginUsername = ""
-    private var loginPassword = ""
+    private var activeModule: Module? = null
+    private var username = ""
+    private var password = ""
 
-    @SuppressLint("SetJavaScriptEnabled")
+    private enum class Module(val title: String, val path: String) {
+        ATTENDANCE("Attendance", "student/attendance"),
+        TIMETABLE("Timetable", "student/class/schedule"),
+        FEE("Fee Details", "student/invoices")
+    }
+
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         val webView = binding.webView
-        val cookieManager = CookieManager.getInstance()
-        cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(webView, true)
+        val cookies = CookieManager.getInstance()
+        cookies.setAcceptCookie(true)
+        cookies.setAcceptThirdPartyCookies(webView, true)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
         webView.settings.loadsImagesAutomatically = true
         webView.settings.setSupportZoom(false)
-        webView.settings.builtInZoomControls = false
-        webView.settings.displayZoomControls = false
         webView.webChromeClient = WebChromeClient()
+        webView.addJavascriptInterface(AppBridge(), "SuperiorApp")
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
 
-                if (loginInProgress && isAuthenticatedUrl(url)) {
-                    loginInProgress = false
-                    loggedIn = true
-                    binding.loginStatus.text = ""
-                    binding.loginButton.isEnabled = true
-                    showDashboard()
+                if (loginInProgress) {
+                    if (isAuthenticatedUrl(url)) {
+                        loginInProgress = false
+                        loggedIn = true
+                        binding.loginStatus.text = ""
+                        binding.loginButton.isEnabled = true
+                        showDashboard()
+                    } else if (!loginSubmitted) {
+                        loginSubmitted = true
+                        view.postDelayed({ injectLogin(view) }, 350)
+                    } else if (url.contains("/web/login")) {
+                        loginInProgress = false
+                        binding.loginButton.isEnabled = true
+                        binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
+                        binding.loginStatus.text = "Login failed. Please check your ERP username or password."
+                    }
                     return
                 }
 
-                if (loginInProgress && !loggedIn) {
+                activeModule?.let { module ->
                     view.postDelayed({
-                        val script = LOGIN_SCRIPT
-                            .replace("%USERNAME%", JSONObject.quote(loginUsername))
-                            .replace("%PASSWORD%", JSONObject.quote(loginPassword))
-                        view.evaluateJavascript(script, null)
-                    }, 500)
-                    return
-                }
-
-                if (loggedIn) {
-                    view.postDelayed({
-                        when {
-                            url.contains("/student/attendance") -> view.evaluateJavascript(ATTENDANCE_SCRIPT, null)
-                            url.contains("/student/class/schedule") -> view.evaluateJavascript(TIMETABLE_SCRIPT, null)
-                            url.contains("/student/invoices") -> view.evaluateJavascript(FEE_SCRIPT, null)
-                        }
-                    }, 650)
+                        view.evaluateJavascript(moduleScript(module), null)
+                    }, 450)
                 }
             }
         }
 
         binding.loginButton.setOnClickListener {
-            loginUsername = binding.usernameInput.text.toString().trim()
-            loginPassword = binding.passwordInput.text.toString()
-
-            if (loginUsername.isEmpty() || loginPassword.isEmpty()) {
-                binding.loginStatus.setTextColor(0xFFC62828.toInt())
+            username = binding.usernameInput.text.toString().trim()
+            password = binding.passwordInput.text.toString()
+            if (username.isBlank() || password.isBlank()) {
+                binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
                 binding.loginStatus.text = "Please enter your ERP username and password."
                 return@setOnClickListener
             }
 
-            binding.loginStatus.setTextColor(0xFF667085.toInt())
-            binding.loginStatus.text = "Signing in securely..."
-            binding.loginButton.isEnabled = false
             loginInProgress = true
-            webView.loadUrl(ERP_URL)
+            loginSubmitted = false
+            loggedIn = false
+            binding.loginButton.isEnabled = false
+            binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
+            binding.loginStatus.text = "Signing in securely…"
+            webView.visibility = View.GONE
+            webView.loadUrl(ERP_LOGIN_URL)
         }
 
-        binding.attendanceButton.setOnClickListener { openPortal(ERP_URL + "student/attendance") }
-        binding.timetableButton.setOnClickListener { openPortal(ERP_URL + "student/class/schedule") }
-        binding.feeButton.setOnClickListener { openPortal(ERP_URL + "student/invoices") }
-        binding.refreshButton.setOnClickListener { webView.reload() }
+        binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
+        binding.timetableButton.setOnClickListener { loadModule(Module.TIMETABLE) }
+        binding.feeButton.setOnClickListener { loadModule(Module.FEE) }
+        binding.refreshButton.setOnClickListener { activeModule?.let { loadModule(it) } }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.logoutButton.setOnClickListener { logout() }
 
         if (savedInstanceState != null) webView.restoreState(savedInstanceState)
     }
 
-    private fun isAuthenticatedUrl(url: String): Boolean {
-        return url.contains("/student/") && !url.contains("login", ignoreCase = true)
+    private fun injectLogin(view: WebView) {
+        val script = LOGIN_SCRIPT
+            .replace("%USERNAME%", JSONObject.quote(username))
+            .replace("%PASSWORD%", JSONObject.quote(password))
+        view.evaluateJavascript(script, null)
     }
 
-    private fun openPortal(url: String) {
+    private fun isAuthenticatedUrl(url: String): Boolean {
+        return url.contains("/student/") && !url.contains("/web/login", ignoreCase = true)
+    }
+
+    private fun loadModule(module: Module) {
         if (!loggedIn) return
+        activeModule = module
         binding.dashboardScroll.visibility = View.GONE
-        binding.webView.visibility = View.VISIBLE
-        binding.refreshButton.visibility = View.VISIBLE
-        binding.homeButton.visibility = View.VISIBLE
-        binding.webView.loadUrl(url)
+        binding.refreshButton.visibility = View.GONE
+        binding.homeButton.visibility = View.GONE
+        binding.webView.visibility = View.GONE
+        binding.loginStatus.text = ""
+        binding.webView.loadUrl(ERP_BASE_URL + module.path)
     }
 
     private fun showDashboard() {
+        activeModule = null
+        binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.refreshButton.visibility = View.GONE
         binding.homeButton.visibility = View.GONE
@@ -124,8 +141,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLogin() {
+        activeModule = null
         loggedIn = false
         loginInProgress = false
+        loginSubmitted = false
+        binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.refreshButton.visibility = View.GONE
         binding.homeButton.visibility = View.GONE
@@ -133,6 +153,7 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.VISIBLE
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
+        binding.loginStatus.text = ""
     }
 
     private fun logout() {
@@ -141,6 +162,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.webView.clearHistory()
         binding.webView.clearCache(true)
+        binding.webView.clearFormData()
         showLogin()
     }
 
@@ -151,80 +173,88 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (binding.webView.visibility == View.VISIBLE && binding.webView.canGoBack()) {
-            binding.webView.goBack()
-        } else if (binding.webView.visibility == View.VISIBLE) {
+        if (binding.webView.visibility == View.VISIBLE) {
             showDashboard()
         } else {
             super.onBackPressed()
         }
     }
 
+    private inner class AppBridge {
+        @android.webkit.JavascriptInterface
+        fun moduleReady() {
+            runOnUiThread {
+                binding.refreshButton.visibility = View.VISIBLE
+                binding.homeButton.visibility = View.VISIBLE
+                binding.webView.visibility = View.VISIBLE
+            }
+        }
+    }
+
     companion object {
-        private const val ERP_URL = "https://erp.superior.edu.pk/"
+        private const val ERP_BASE_URL = "https://erp.superior.edu.pk/"
+        private const val ERP_LOGIN_URL = "https://erp.superior.edu.pk/web/login"
 
         private const val LOGIN_SCRIPT = """
             (function(){
-              const username = %USERNAME%;
-              const password = %PASSWORD%;
-              const userInput = document.querySelector('input[type=email], input[name*=user i], input[name*=email i], input[id*=user i], input[id*=email i], input[type=text]');
-              const passInput = document.querySelector('input[type=password]');
-              if(!userInput || !passInput) return;
-              userInput.value = username;
-              passInput.value = password;
-              userInput.dispatchEvent(new Event('input', {bubbles:true}));
-              passInput.dispatchEvent(new Event('input', {bubbles:true}));
-              const form = passInput.form || userInput.form;
-              const submit = document.querySelector('button[type=submit], input[type=submit], button.btn-primary, button');
-              if(form) form.submit(); else if(submit) submit.click();
+              const user = document.querySelector('input[name="login"], input[type="email"], input[name*="user" i], input[name*="email" i], input[type="text"]');
+              const pass = document.querySelector('input[name="password"], input[type="password"]');
+              if (!user || !pass) return;
+              user.value = %USERNAME%;
+              pass.value = %PASSWORD%;
+              user.dispatchEvent(new Event('input', {bubbles:true}));
+              user.dispatchEvent(new Event('change', {bubbles:true}));
+              pass.dispatchEvent(new Event('input', {bubbles:true}));
+              pass.dispatchEvent(new Event('change', {bubbles:true}));
+              const form = pass.form || user.form;
+              if (form) {
+                if (form.requestSubmit) form.requestSubmit(); else form.submit();
+              }
             })();
         """
 
-        private const val COMMON_STYLE = """
-            (function(){
-              if(document.getElementById('miniAppRoot')) return null;
-              const s=document.createElement('style');
-              s.textContent=`body{background:#f5f7fb!important;font-family:Arial,sans-serif!important}.mini-app{padding:20px;color:#172033}.mini-head{background:#1e5eff;color:#fff;border-radius:18px;padding:22px;margin-bottom:18px}.mini-head h1{margin:0;font-size:25px}.mini-head p{margin:7px 0 0;color:#dce7ff}.mini-card{background:#fff;border:1px solid #e5eaf2;border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 3px 12px #17203312}.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px}.mini-label{font-size:12px;color:#667085;font-weight:bold;text-transform:uppercase}.mini-value{font-size:24px;font-weight:bold;margin-top:6px}.mini-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}.mini-table th,.mini-table td{padding:12px;border-bottom:1px solid #e8edf3;text-align:left;font-size:13px}.mini-table th{background:#435b68;color:#fff}.mini-badge{display:inline-block;padding:4px 8px;border-radius:6px;background:#e8f5e9;color:#2e7d32;font-size:12px;font-weight:bold}.mini-muted{color:#667085;font-size:13px}`;
-              document.head.appendChild(s);
-              const old=document.querySelector('#page_content')||document.querySelector('main')||document.body;
-              old.innerHTML='<div id="miniAppRoot"></div>';
-              return document.getElementById('miniAppRoot');
-            })()
-        """
-
-        private val ATTENDANCE_SCRIPT = """
-            (function(){
-              const root=${COMMON_STYLE};
-              if(!root) return;
-              const source=document.body.innerText;
-              const percentages=[...source.matchAll(/(\\d+(?:\\.\\d+)?)\\s*%/g)].map(x=>Number(x[1])).filter(x=>x>=0&&x<=100);
-              const cards=[...document.querySelectorAll('.md-card,.card,.panel')];
-              const rows=cards.map(c=>c.innerText.replace(/\\s+/g,' ').trim()).filter(x=>x&&/attendance|course|class/i.test(x));
-              const overall=percentages.length?Math.round(percentages.reduce((a,b)=>a+b,0)/percentages.length):0;
-              root.innerHTML='<div class="mini-app"><div class="mini-head"><h1>Attendance</h1><p>Your attendance data from the official ERP</p></div><div class="mini-grid"><div class="mini-card"><div class="mini-label">Subjects detected</div><div class="mini-value">'+(rows.length||percentages.length)+'</div></div><div class="mini-card"><div class="mini-label">Average attendance</div><div class="mini-value">'+overall+'%</div></div></div><div class="mini-card"><div class="mini-label">Subject records</div><p class="mini-muted">Attendance records loaded from ERP.</p>'+rows.map(x=>'<div style="padding:12px 0;border-bottom:1px solid #e8edf3">'+x+'</div>').join('')+'</div></div>';
-            })();
-        """
-
-        private val TIMETABLE_SCRIPT = """
-            (function(){
-              const root=${COMMON_STYLE};
-              if(!root) return;
-              const table=document.querySelector('table');
-              const html=table?table.outerHTML:'<p class="mini-muted">Timetable loaded, but no table was detected.</p>';
-              root.innerHTML='<div class="mini-app"><div class="mini-head"><h1>Timetable</h1><p>Your class schedule from the official ERP</p></div><div class="mini-card" style="overflow:auto">'+html.replace(/<table/,'<table class="mini-table"')+'</div></div>';
-            })();
-        """
-
-        private val FEE_SCRIPT = """
-            (function(){
-              const root=${COMMON_STYLE};
-              if(!root) return;
-              const table=document.querySelector('table');
-              let total=0, unpaid=0;
-              if(table){[...table.querySelectorAll('tr')].forEach(r=>{const t=r.innerText;const nums=[...t.matchAll(/(?:^|\\s)(\\d+(?:\\.\\d+)?)(?=\\s|$)/g)].map(x=>Number(x[1]));if(nums.length) total+=nums[nums.length-1];if(/unpaid/i.test(t)) unpaid+=nums.length?nums[nums.length-1]:0;});}
-              const html=table?table.outerHTML:'<p class="mini-muted">Fee records loaded, but no table was detected.</p>';
-              root.innerHTML='<div class="mini-app"><div class="mini-head"><h1>Fee Details</h1><p>Your invoices and payment status from the official ERP</p></div><div class="mini-grid"><div class="mini-card"><div class="mini-label">Listed amount</div><div class="mini-value">Rs. '+total.toLocaleString()+'</div></div><div class="mini-card"><div class="mini-label">Unpaid amount</div><div class="mini-value">Rs. '+unpaid.toLocaleString()+'</div></div></div><div class="mini-card" style="overflow:auto">'+html.replace(/<table/,'<table class="mini-table"')+'</div></div>';
-            })();
-        """
+        private fun moduleScript(module: Module): String {
+            val title = JSONObject.quote(module.title)
+            return when (module) {
+                Module.ATTENDANCE -> """
+                    (function(){
+                      const title=$title;
+                      const text=document.body.innerText||'';
+                      const cards=[...document.querySelectorAll('.md-card,.card,.panel,.o_student_attendance')]
+                        .map(x=>x.innerText.replace(/\\s+/g,' ').trim()).filter(Boolean);
+                      const percentages=[...text.matchAll(/(\\d+(?:\\.\\d+)?)\\s*%/g)].map(x=>Number(x[1])).filter(x=>x>=0&&x<=100);
+                      const average=percentages.length?(percentages.reduce((a,b)=>a+b,0)/percentages.length).toFixed(1):'—';
+                      const rows=cards.length?cards: text.split('\\n').map(x=>x.trim()).filter(x=>x&&/attendance|course|class|subject/i.test(x)).slice(0,30);
+                      render(title,'Live attendance from your university ERP',
+                        '<div class="stat-grid"><div class="stat"><small>Average attendance</small><strong>'+average+(average==='—'?'':'%')+'</strong></div><div class="stat"><small>Records found</small><strong>'+rows.length+'</strong></div></div>'+list(rows,'Attendance records'));
+                    })();
+                """.trimIndent()
+                Module.TIMETABLE -> """
+                    (function(){
+                      const title=$title;
+                      const table=document.querySelector('table');
+                      let content=table?table.outerHTML:'<p class="muted">The timetable page loaded, but no schedule table was detected.</p>';
+                      render(title,'Your live class schedule', '<div class="table-wrap">'+content.replace('<table','<table class="data-table"')+'</div>');
+                    })();
+                """.trimIndent()
+                Module.FEE -> """
+                    (function(){
+                      const title=$title;
+                      const table=document.querySelector('table');
+                      let total=0, unpaid=0;
+                      if(table){ [...table.querySelectorAll('tr')].forEach(row=>{
+                        const value=[...row.innerText.matchAll(/(?:^|\\s)(\\d+(?:\\.\\d+)?)(?=\\s|$)/g)].map(x=>Number(x[1])).pop()||0;
+                        total+=value; if(/unpaid/i.test(row.innerText)) unpaid+=value;
+                      }); }
+                      const content=table?'<div class="table-wrap">'+table.outerHTML.replace('<table','<table class="data-table"')+'</div>':'<p class="muted">The fee page loaded, but no invoice table was detected.</p>';
+                      render(title,'Invoices and payment status from your university ERP','<div class="stat-grid"><div class="stat"><small>Listed amount</small><strong>Rs. '+total.toLocaleString()+'</strong></div><div class="stat"><small>Unpaid amount</small><strong>Rs. '+unpaid.toLocaleString()+'</strong></div></div>'+content);
+                    })();
+                """.trimIndent()
+            }
+        }
     }
 }
+
+private fun list(items: List<String>, heading: String): String = """
+    <section class="panel"><h2>$heading</h2>${items.joinToString("") { "<div class=\"record\">${it.replace("<", "&lt;").replace(">", "&gt;")}</div>" }}</section>
+""".trimIndent()
