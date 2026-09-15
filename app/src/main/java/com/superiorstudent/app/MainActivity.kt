@@ -10,11 +10,14 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 import com.superiorstudent.app.databinding.ActivityMainBinding
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var loginInProgress = false
     private var loggedIn = false
+    private var loginUsername = ""
+    private var loginPassword = ""
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,13 +48,17 @@ class MainActivity : AppCompatActivity() {
                     loginInProgress = false
                     loggedIn = true
                     binding.loginStatus.text = ""
+                    binding.loginButton.isEnabled = true
                     showDashboard()
                     return
                 }
 
                 if (loginInProgress && !loggedIn) {
                     view.postDelayed({
-                        view.evaluateJavascript(LOGIN_SCRIPT, null)
+                        val script = LOGIN_SCRIPT
+                            .replace("%USERNAME%", JSONObject.quote(loginUsername))
+                            .replace("%PASSWORD%", JSONObject.quote(loginPassword))
+                        view.evaluateJavascript(script, null)
                     }, 500)
                     return
                 }
@@ -69,10 +76,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.loginButton.setOnClickListener {
-            val username = binding.usernameInput.text.toString().trim()
-            val password = binding.passwordInput.text.toString()
+            loginUsername = binding.usernameInput.text.toString().trim()
+            loginPassword = binding.passwordInput.text.toString()
 
-            if (username.isEmpty() || password.isEmpty()) {
+            if (loginUsername.isEmpty() || loginPassword.isEmpty()) {
+                binding.loginStatus.setTextColor(0xFFC62828.toInt())
                 binding.loginStatus.text = "Please enter your ERP username and password."
                 return@setOnClickListener
             }
@@ -91,9 +99,7 @@ class MainActivity : AppCompatActivity() {
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.logoutButton.setOnClickListener { logout() }
 
-        if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState)
-        }
+        if (savedInstanceState != null) webView.restoreState(savedInstanceState)
     }
 
     private fun isAuthenticatedUrl(url: String): Boolean {
