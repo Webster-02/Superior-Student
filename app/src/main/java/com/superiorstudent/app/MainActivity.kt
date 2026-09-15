@@ -13,6 +13,8 @@ import com.superiorstudent.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private var loginInProgress = false
+    private var loggedIn = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,14 +40,48 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-                view.postDelayed({
-                    when {
-                        url.contains("/student/attendance") -> view.evaluateJavascript(ATTENDANCE_SCRIPT, null)
-                        url.contains("/student/class/schedule") -> view.evaluateJavascript(TIMETABLE_SCRIPT, null)
-                        url.contains("/student/invoices") -> view.evaluateJavascript(FEE_SCRIPT, null)
-                    }
-                }, 650)
+
+                if (loginInProgress && isAuthenticatedUrl(url)) {
+                    loginInProgress = false
+                    loggedIn = true
+                    binding.loginStatus.text = ""
+                    showDashboard()
+                    return
+                }
+
+                if (loginInProgress && !loggedIn) {
+                    view.postDelayed({
+                        view.evaluateJavascript(LOGIN_SCRIPT, null)
+                    }, 500)
+                    return
+                }
+
+                if (loggedIn) {
+                    view.postDelayed({
+                        when {
+                            url.contains("/student/attendance") -> view.evaluateJavascript(ATTENDANCE_SCRIPT, null)
+                            url.contains("/student/class/schedule") -> view.evaluateJavascript(TIMETABLE_SCRIPT, null)
+                            url.contains("/student/invoices") -> view.evaluateJavascript(FEE_SCRIPT, null)
+                        }
+                    }, 650)
+                }
             }
+        }
+
+        binding.loginButton.setOnClickListener {
+            val username = binding.usernameInput.text.toString().trim()
+            val password = binding.passwordInput.text.toString()
+
+            if (username.isEmpty() || password.isEmpty()) {
+                binding.loginStatus.text = "Please enter your ERP username and password."
+                return@setOnClickListener
+            }
+
+            binding.loginStatus.setTextColor(0xFF667085.toInt())
+            binding.loginStatus.text = "Signing in securely..."
+            binding.loginButton.isEnabled = false
+            loginInProgress = true
+            webView.loadUrl(ERP_URL)
         }
 
         binding.attendanceButton.setOnClickListener { openPortal(ERP_URL + "student/attendance") }
@@ -53,11 +89,19 @@ class MainActivity : AppCompatActivity() {
         binding.feeButton.setOnClickListener { openPortal(ERP_URL + "student/invoices") }
         binding.refreshButton.setOnClickListener { webView.reload() }
         binding.homeButton.setOnClickListener { showDashboard() }
+        binding.logoutButton.setOnClickListener { logout() }
 
-        if (savedInstanceState != null) webView.restoreState(savedInstanceState)
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState)
+        }
+    }
+
+    private fun isAuthenticatedUrl(url: String): Boolean {
+        return url.contains("/student/") && !url.contains("login", ignoreCase = true)
     }
 
     private fun openPortal(url: String) {
+        if (!loggedIn) return
         binding.dashboardScroll.visibility = View.GONE
         binding.webView.visibility = View.VISIBLE
         binding.refreshButton.visibility = View.VISIBLE
@@ -70,6 +114,28 @@ class MainActivity : AppCompatActivity() {
         binding.refreshButton.visibility = View.GONE
         binding.homeButton.visibility = View.GONE
         binding.dashboardScroll.visibility = View.VISIBLE
+        binding.loginScroll.visibility = View.GONE
+    }
+
+    private fun showLogin() {
+        loggedIn = false
+        loginInProgress = false
+        binding.webView.visibility = View.GONE
+        binding.refreshButton.visibility = View.GONE
+        binding.homeButton.visibility = View.GONE
+        binding.dashboardScroll.visibility = View.GONE
+        binding.loginScroll.visibility = View.VISIBLE
+        binding.loginButton.isEnabled = true
+        binding.passwordInput.text?.clear()
+    }
+
+    private fun logout() {
+        CookieManager.getInstance().removeAllCookies {
+            CookieManager.getInstance().flush()
+        }
+        binding.webView.clearHistory()
+        binding.webView.clearCache(true)
+        showLogin()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -90,6 +156,23 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val ERP_URL = "https://erp.superior.edu.pk/"
+
+        private const val LOGIN_SCRIPT = """
+            (function(){
+              const username = %USERNAME%;
+              const password = %PASSWORD%;
+              const userInput = document.querySelector('input[type=email], input[name*=user i], input[name*=email i], input[id*=user i], input[id*=email i], input[type=text]');
+              const passInput = document.querySelector('input[type=password]');
+              if(!userInput || !passInput) return;
+              userInput.value = username;
+              passInput.value = password;
+              userInput.dispatchEvent(new Event('input', {bubbles:true}));
+              passInput.dispatchEvent(new Event('input', {bubbles:true}));
+              const form = passInput.form || userInput.form;
+              const submit = document.querySelector('button[type=submit], input[type=submit], button.btn-primary, button');
+              if(form) form.submit(); else if(submit) submit.click();
+            })();
+        """
 
         private const val COMMON_STYLE = """
             (function(){
@@ -112,7 +195,7 @@ class MainActivity : AppCompatActivity() {
               const cards=[...document.querySelectorAll('.md-card,.card,.panel')];
               const rows=cards.map(c=>c.innerText.replace(/\\s+/g,' ').trim()).filter(x=>x&&/attendance|course|class/i.test(x));
               const overall=percentages.length?Math.round(percentages.reduce((a,b)=>a+b,0)/percentages.length):0;
-              root.innerHTML='<div class="mini-app"><div class="mini-head"><h1>Attendance</h1><p>Your attendance data from the official ERP</p></div><div class="mini-grid"><div class="mini-card"><div class="mini-label">Subjects detected</div><div class="mini-value">'+(rows.length||percentages.length)+'</div></div><div class="mini-card"><div class="mini-label">Average attendance</div><div class="mini-value">'+overall+'%</div></div></div><div class="mini-card"><div class="mini-label">Subject records</div><p class="mini-muted">Tap a subject record in the ERP view to see detailed attendance.</p>'+rows.map(x=>'<div style="padding:12px 0;border-bottom:1px solid #e8edf3">'+x+'</div>').join('')+'</div></div>';
+              root.innerHTML='<div class="mini-app"><div class="mini-head"><h1>Attendance</h1><p>Your attendance data from the official ERP</p></div><div class="mini-grid"><div class="mini-card"><div class="mini-label">Subjects detected</div><div class="mini-value">'+(rows.length||percentages.length)+'</div></div><div class="mini-card"><div class="mini-label">Average attendance</div><div class="mini-value">'+overall+'%</div></div></div><div class="mini-card"><div class="mini-label">Subject records</div><p class="mini-muted">Attendance records loaded from ERP.</p>'+rows.map(x=>'<div style="padding:12px 0;border-bottom:1px solid #e8edf3">'+x+'</div>').join('')+'</div></div>';
             })();
         """
 
@@ -121,7 +204,7 @@ class MainActivity : AppCompatActivity() {
               const root=${COMMON_STYLE};
               if(!root) return;
               const table=document.querySelector('table');
-              const html=table?table.outerHTML:'<p class="mini-muted">Timetable loaded, but no table was detected. Please use the ERP schedule controls.</p>';
+              const html=table?table.outerHTML:'<p class="mini-muted">Timetable loaded, but no table was detected.</p>';
               root.innerHTML='<div class="mini-app"><div class="mini-head"><h1>Timetable</h1><p>Your class schedule from the official ERP</p></div><div class="mini-card" style="overflow:auto">'+html.replace(/<table/,'<table class="mini-table"')+'</div></div>';
             })();
         """
