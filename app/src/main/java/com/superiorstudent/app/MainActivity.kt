@@ -27,6 +27,10 @@ class MainActivity : AppCompatActivity() {
     private var username = ""
     private var password = ""
     private var loginAttempt = 0
+    private var preloadingModule: Module? = null
+    private var showingCachedModule = false
+    private val preloadQueue = ArrayDeque<Module>()
+    private val cachedModuleHtml = mutableMapOf<Module, String>()
 
     private enum class Module(val title: String, val path: String) {
         ATTENDANCE("Attendance", "student/attendance"),
@@ -55,11 +59,7 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
 
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError
-            ) {
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 super.onReceivedError(view, request, error)
                 if (request.isForMainFrame && activeModule != null) {
                     binding.refreshButton.visibility = View.VISIBLE
@@ -90,6 +90,28 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
+                if (preloadingModule != null) {
+                    val module = preloadingModule ?: return
+                    mainHandler.postDelayed({
+                        view.evaluateJavascript(moduleScript(module)) {
+                            mainHandler.postDelayed({
+                                view.evaluateJavascript("document.documentElement.outerHTML") { htmlResult ->
+                                    val html = decodeJavascriptString(htmlResult)
+                                    if (html.isNotBlank()) cachedModuleHtml[module] = html
+                                    preloadingModule = null
+                                    preloadNextModule()
+                                }
+                            }, 350L)
+                        }
+                    }, 650L)
+                    return
+                }
+
+                if (showingCachedModule) {
+                    showingCachedModule = false
+                    return
+                }
+
                 activeModule?.let { module ->
                     mainHandler.postDelayed({
                         if (activeModule == module && binding.webView.visibility == View.VISIBLE) {
@@ -113,6 +135,7 @@ class MainActivity : AppCompatActivity() {
             loginSubmitted = false
             loggedIn = false
             loginAttempt = 0
+            cachedModuleHtml.clear()
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
             binding.loginStatus.text = "Signing in securely…"
@@ -123,7 +146,7 @@ class MainActivity : AppCompatActivity() {
         binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
         binding.timetableButton.setOnClickListener { loadModule(Module.TIMETABLE) }
         binding.feeButton.setOnClickListener { loadModule(Module.FEE) }
-        binding.refreshButton.setOnClickListener { activeModule?.let { loadModule(it) } }
+        binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.logoutButton.setOnClickListener { logout() }
 
@@ -141,20 +164,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun injectLogin(view: WebView) {
         if (!loginInProgress || loginSubmitted) return
-
-        val script = LOGIN_SCRIPT
-            .replace("%USERNAME%", JSONObject.quote(username))
-            .replace("%PASSWORD%", JSONObject.quote(password))
-
+        val script = LOGIN_SCRIPT.replace("%USERNAME%", JSONObject.quote(username)).replace("%PASSWORD%", JSONObject.quote(password))
         loginAttempt++
         view.evaluateJavascript(script) { result ->
             if (!loginInProgress || loginSubmitted) return@evaluateJavascript
             if (result == "\"SUBMITTED\"") {
                 loginSubmitted = true
                 binding.loginStatus.text = "Verifying ERP credentials…"
-            } else {
-                scheduleLoginInjection(view)
-            }
+            } else scheduleLoginInjection(view)
         }
     }
 
@@ -165,36 +182,59 @@ class MainActivity : AppCompatActivity() {
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
         showDashboard()
+        preloadAllModules()
     }
 
-    private fun failLogin(message: String) {
-        loginInProgress = false
-        loginSubmitted = false
-        binding.loginButton.isEnabled = true
-        binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
-        binding.loginStatus.text = message
+    private fun preloadAllModules() {
+        if (!loggedIn || preloadingModule != null) return
+        preloadQueue.clear()
+        Module.values().forEach { preloadQueue.addLast(it) }
+        preloadNextModule()
     }
 
-    private fun isAuthenticatedUrl(url: String): Boolean =
-        url.contains("/student/", ignoreCase = true) &&
-            !url.contains("/web/login", ignoreCase = true)
+    private fun preloadNextModule() {
+        if (!loggedIn) return
+        val next = if (preloadQueue.isEmpty()) null else preloadQueue.removeFirst()
+        if (next == null) {
+            preloadingModule = null
+            binding.webView.visibility = View.GONE
+            return
+        }
+        preloadingModule = next
+        binding.webView.visibility = View.GONE
+        binding.webView.loadUrl(ERP_BASE_URL + next.path)
+    }
 
     private fun loadModule(module: Module) {
         if (!loggedIn) return
         activeModule = module
-
-        // The previous version hid the WebView here and never made it visible again.
-        // That caused a completely blank screen after tapping a module button.
         binding.dashboardScroll.visibility = View.GONE
         binding.loginScroll.visibility = View.GONE
-        binding.webView.visibility = View.VISIBLE
         binding.refreshButton.visibility = View.VISIBLE
         binding.homeButton.visibility = View.VISIBLE
+        binding.webView.visibility = View.VISIBLE
+
+        val cached = cachedModuleHtml[module]
+        if (!cached.isNullOrBlank()) {
+            showingCachedModule = true
+            binding.webView.loadDataWithBaseURL(ERP_BASE_URL, cached, "text/html", "UTF-8", ERP_BASE_URL + module.path)
+        } else {
+            showingCachedModule = false
+            binding.webView.loadUrl(ERP_BASE_URL + module.path)
+        }
+    }
+
+    private fun refreshActiveModule() {
+        val module = activeModule ?: return
+        cachedModuleHtml.remove(module)
+        showingCachedModule = false
+        binding.webView.visibility = View.VISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + module.path)
     }
 
     private fun showDashboard() {
         activeModule = null
+        showingCachedModule = false
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.refreshButton.visibility = View.GONE
@@ -209,6 +249,9 @@ class MainActivity : AppCompatActivity() {
         loginInProgress = false
         loginSubmitted = false
         loginAttempt = 0
+        preloadingModule = null
+        preloadQueue.clear()
+        cachedModuleHtml.clear()
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.refreshButton.visibility = View.GONE
@@ -226,6 +269,11 @@ class MainActivity : AppCompatActivity() {
         binding.webView.clearCache(true)
         binding.webView.clearFormData()
         showLogin()
+    }
+
+    private fun decodeJavascriptString(value: String?): String {
+        if (value.isNullOrBlank() || value == "null") return ""
+        return try { JSONObject("{\"value\":$value}").optString("value", "") } catch (_: Exception) { "" }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
