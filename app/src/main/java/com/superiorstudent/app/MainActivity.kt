@@ -3,6 +3,8 @@ package com.superiorstudent.app
 import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -15,12 +17,14 @@ import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var loginInProgress = false
     private var loginSubmitted = false
     private var loggedIn = false
     private var activeModule: Module? = null
     private var username = ""
     private var password = ""
+    private var loginAttempt = 0
 
     private enum class Module(val title: String, val path: String) {
         ATTENDANCE("Attendance", "student/attendance"),
@@ -49,21 +53,23 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+
                 if (loginInProgress) {
                     if (isAuthenticatedUrl(url)) {
-                        loginInProgress = false
-                        loggedIn = true
-                        binding.loginStatus.text = ""
-                        binding.loginButton.isEnabled = true
-                        showDashboard()
-                    } else if (!loginSubmitted) {
-                        loginSubmitted = true
-                        view.postDelayed({ injectLogin(view) }, 350)
-                    } else if (url.contains("/web/login")) {
-                        loginInProgress = false
-                        binding.loginButton.isEnabled = true
-                        binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
-                        binding.loginStatus.text = "Login failed. Check your ERP username or password."
+                        completeLogin()
+                    } else if (url.contains("/web/login", ignoreCase = true)) {
+                        if (!loginSubmitted) {
+                            loginAttempt = 0
+                            scheduleLoginInjection(view)
+                        } else {
+                            view.evaluateJavascript(LOGIN_ERROR_CHECK_SCRIPT) { result ->
+                                if (result == "true") {
+                                    failLogin("Login failed. Check your ERP username or password.")
+                                } else {
+                                    scheduleLoginInjection(view)
+                                }
+                            }
+                        }
                     }
                     return
                 }
@@ -82,14 +88,16 @@ class MainActivity : AppCompatActivity() {
                 binding.loginStatus.text = "Please enter your ERP username and password."
                 return@setOnClickListener
             }
+
             loginInProgress = true
             loginSubmitted = false
             loggedIn = false
+            loginAttempt = 0
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
             binding.loginStatus.text = "Signing in securely…"
-            webView.visibility = View.GONE
-            webView.loadUrl(ERP_LOGIN_URL)
+            binding.webView.visibility = View.GONE
+            binding.webView.loadUrl(ERP_LOGIN_URL)
         }
 
         binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
@@ -102,15 +110,54 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) webView.restoreState(savedInstanceState)
     }
 
+    private fun scheduleLoginInjection(view: WebView) {
+        if (!loginInProgress || loginSubmitted) return
+        if (loginAttempt >= MAX_LOGIN_INJECTION_ATTEMPTS) {
+            failLogin("Unable to connect to the ERP login form. Please try again.")
+            return
+        }
+        mainHandler.postDelayed({ injectLogin(view) }, LOGIN_INJECTION_DELAY_MS)
+    }
+
     private fun injectLogin(view: WebView) {
+        if (!loginInProgress || loginSubmitted) return
+
         val script = LOGIN_SCRIPT
             .replace("%USERNAME%", JSONObject.quote(username))
             .replace("%PASSWORD%", JSONObject.quote(password))
-        view.evaluateJavascript(script, null)
+
+        loginAttempt++
+        view.evaluateJavascript(script) { result ->
+            if (!loginInProgress || loginSubmitted) return@evaluateJavascript
+            if (result == "\"SUBMITTED\"") {
+                loginSubmitted = true
+                binding.loginStatus.text = "Verifying ERP credentials…"
+            } else {
+                scheduleLoginInjection(view)
+            }
+        }
+    }
+
+    private fun completeLogin() {
+        loginInProgress = false
+        loggedIn = true
+        binding.loginStatus.text = ""
+        binding.loginButton.isEnabled = true
+        binding.passwordInput.text?.clear()
+        showDashboard()
+    }
+
+    private fun failLogin(message: String) {
+        loginInProgress = false
+        loginSubmitted = false
+        binding.loginButton.isEnabled = true
+        binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
+        binding.loginStatus.text = message
     }
 
     private fun isAuthenticatedUrl(url: String): Boolean =
-        url.contains("/student/") && !url.contains("/web/login", ignoreCase = true)
+        url.contains("/student/", ignoreCase = true) &&
+            !url.contains("/web/login", ignoreCase = true)
 
     private fun loadModule(module: Module) {
         if (!loggedIn) return
@@ -137,6 +184,7 @@ class MainActivity : AppCompatActivity() {
         loggedIn = false
         loginInProgress = false
         loginSubmitted = false
+        loginAttempt = 0
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.refreshButton.visibility = View.GONE
@@ -169,17 +217,33 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val ERP_BASE_URL = "https://erp.superior.edu.pk/"
         private const val ERP_LOGIN_URL = "https://erp.superior.edu.pk/web/login"
+        private const val LOGIN_INJECTION_DELAY_MS = 500L
+        private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
 
         private const val LOGIN_SCRIPT = """
             (function(){
-              const user=document.querySelector('input[name="login"],input[type="email"],input[name*="user" i],input[name*="email" i],input[type="text"]');
+              const user=document.querySelector('input[name="login"]');
               const pass=document.querySelector('input[name="password"],input[type="password"]');
-              if(!user||!pass)return;
-              user.value=%USERNAME%; pass.value=%PASSWORD%;
+              if(!user||!pass)return 'NO_FORM';
+              user.value=%USERNAME%;
+              pass.value=%PASSWORD%;
               user.dispatchEvent(new Event('input',{bubbles:true}));
+              user.dispatchEvent(new Event('change',{bubbles:true}));
               pass.dispatchEvent(new Event('input',{bubbles:true}));
+              pass.dispatchEvent(new Event('change',{bubbles:true}));
               const form=pass.form||user.form;
-              if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}
+              if(!form)return 'NO_FORM';
+              const redirect=form.querySelector('input[name="redirect"]');
+              if(redirect)redirect.value='/student/dashboard';
+              HTMLFormElement.prototype.submit.call(form);
+              return 'SUBMITTED';
+            })();
+        """
+
+        private const val LOGIN_ERROR_CHECK_SCRIPT = """
+            (function(){
+              const text=(document.body&&document.body.innerText||'').toLowerCase();
+              return text.includes('wrong login') || text.includes('invalid login') || text.includes('incorrect') || text.includes('authentication failed');
             })();
         """
 
