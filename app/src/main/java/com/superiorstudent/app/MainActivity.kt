@@ -19,7 +19,7 @@ import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val handler = Handler(Looper.getMainLooper())
     private var loginInProgress = false
     private var loginSubmitted = false
     private var loggedIn = false
@@ -29,8 +29,8 @@ class MainActivity : AppCompatActivity() {
     private var loginAttempt = 0
     private var preloadingModule: Module? = null
     private var showingCachedModule = false
-    private val preloadQueue = ArrayDeque<Module>()
-    private val cachedModuleHtml = mutableMapOf<Module, String>()
+    private val preloadQueue = mutableListOf<Module>()
+    private val cachedHtml = mutableMapOf<Module, String>()
 
     private enum class Module(val title: String, val path: String) {
         ATTENDANCE("Attendance", "student/attendance"),
@@ -62,62 +62,38 @@ class MainActivity : AppCompatActivity() {
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 super.onReceivedError(view, request, error)
                 if (request.isForMainFrame && activeModule != null) {
-                    binding.refreshButton.visibility = View.VISIBLE
                     Toast.makeText(this@MainActivity, "Unable to load ERP page. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
                 }
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-
                 if (loginInProgress) {
                     if (isAuthenticatedUrl(url)) {
                         completeLogin()
-                    } else if (url.contains("/web/login", ignoreCase = true)) {
+                    } else if (url.contains("/web/login", true)) {
                         if (!loginSubmitted) {
                             loginAttempt = 0
                             scheduleLoginInjection(view)
                         } else {
                             view.evaluateJavascript(LOGIN_ERROR_CHECK_SCRIPT) { result ->
-                                if (result == "true") {
-                                    failLogin("Login failed. Check your ERP username or password.")
-                                } else {
-                                    scheduleLoginInjection(view)
-                                }
+                                if (result == "true") failLogin("Login failed. Check your ERP username or password.")
                             }
                         }
                     }
                     return
                 }
 
-                if (preloadingModule != null) {
-                    val module = preloadingModule ?: return
-                    mainHandler.postDelayed({
-                        view.evaluateJavascript(moduleScript(module)) {
-                            mainHandler.postDelayed({
-                                view.evaluateJavascript("document.documentElement.outerHTML") { htmlResult ->
-                                    val html = decodeJavascriptString(htmlResult)
-                                    if (html.isNotBlank()) cachedModuleHtml[module] = html
-                                    preloadingModule = null
-                                    preloadNextModule()
-                                }
-                            }, 350L)
+                val module = preloadingModule
+                if (module != null) {
+                    handler.postDelayed({
+                        view.evaluateJavascript("document.documentElement.outerHTML") { result ->
+                            val html = decodeJavascriptString(result)
+                            if (html.isNotBlank()) cachedHtml[module] = html
+                            preloadingModule = null
+                            preloadNextModule()
                         }
-                    }, 650L)
-                    return
-                }
-
-                if (showingCachedModule) {
-                    showingCachedModule = false
-                    return
-                }
-
-                activeModule?.let { module ->
-                    mainHandler.postDelayed({
-                        if (activeModule == module && binding.webView.visibility == View.VISIBLE) {
-                            view.evaluateJavascript(moduleScript(module), null)
-                        }
-                    }, 450)
+                    }, 500L)
                 }
             }
         }
@@ -130,12 +106,11 @@ class MainActivity : AppCompatActivity() {
                 binding.loginStatus.text = "Please enter your ERP username and password."
                 return@setOnClickListener
             }
-
             loginInProgress = true
             loginSubmitted = false
             loggedIn = false
             loginAttempt = 0
-            cachedModuleHtml.clear()
+            cachedHtml.clear()
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
             binding.loginStatus.text = "Signing in securely…"
@@ -159,19 +134,23 @@ class MainActivity : AppCompatActivity() {
             failLogin("Unable to connect to the ERP login form. Please try again.")
             return
         }
-        mainHandler.postDelayed({ injectLogin(view) }, LOGIN_INJECTION_DELAY_MS)
+        handler.postDelayed({ injectLogin(view) }, LOGIN_INJECTION_DELAY_MS)
     }
 
     private fun injectLogin(view: WebView) {
         if (!loginInProgress || loginSubmitted) return
-        val script = LOGIN_SCRIPT.replace("%USERNAME%", JSONObject.quote(username)).replace("%PASSWORD%", JSONObject.quote(password))
+        val script = LOGIN_SCRIPT
+            .replace("%USERNAME%", JSONObject.quote(username))
+            .replace("%PASSWORD%", JSONObject.quote(password))
         loginAttempt++
         view.evaluateJavascript(script) { result ->
             if (!loginInProgress || loginSubmitted) return@evaluateJavascript
             if (result == "\"SUBMITTED\"") {
                 loginSubmitted = true
                 binding.loginStatus.text = "Verifying ERP credentials…"
-            } else scheduleLoginInjection(view)
+            } else {
+                scheduleLoginInjection(view)
+            }
         }
     }
 
@@ -188,21 +167,20 @@ class MainActivity : AppCompatActivity() {
     private fun preloadAllModules() {
         if (!loggedIn || preloadingModule != null) return
         preloadQueue.clear()
-        Module.values().forEach { preloadQueue.addLast(it) }
+        preloadQueue.addAll(Module.values())
         preloadNextModule()
     }
 
     private fun preloadNextModule() {
         if (!loggedIn) return
-        val next = if (preloadQueue.isEmpty()) null else preloadQueue.removeFirst()
-        if (next == null) {
+        if (preloadQueue.isEmpty()) {
             preloadingModule = null
             binding.webView.visibility = View.GONE
             return
         }
-        preloadingModule = next
+        preloadingModule = preloadQueue.removeAt(0)
         binding.webView.visibility = View.GONE
-        binding.webView.loadUrl(ERP_BASE_URL + next.path)
+        binding.webView.loadUrl(ERP_BASE_URL + preloadingModule!!.path)
     }
 
     private fun loadModule(module: Module) {
@@ -214,10 +192,16 @@ class MainActivity : AppCompatActivity() {
         binding.homeButton.visibility = View.VISIBLE
         binding.webView.visibility = View.VISIBLE
 
-        val cached = cachedModuleHtml[module]
-        if (!cached.isNullOrBlank()) {
+        val html = cachedHtml[module]
+        if (!html.isNullOrBlank()) {
             showingCachedModule = true
-            binding.webView.loadDataWithBaseURL(ERP_BASE_URL, cached, "text/html", "UTF-8", ERP_BASE_URL + module.path)
+            binding.webView.loadDataWithBaseURL(
+                ERP_BASE_URL,
+                html,
+                "text/html",
+                "UTF-8",
+                ERP_BASE_URL + module.path
+            )
         } else {
             showingCachedModule = false
             binding.webView.loadUrl(ERP_BASE_URL + module.path)
@@ -226,7 +210,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshActiveModule() {
         val module = activeModule ?: return
-        cachedModuleHtml.remove(module)
+        cachedHtml.remove(module)
         showingCachedModule = false
         binding.webView.visibility = View.VISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + module.path)
@@ -251,7 +235,7 @@ class MainActivity : AppCompatActivity() {
         loginAttempt = 0
         preloadingModule = null
         preloadQueue.clear()
-        cachedModuleHtml.clear()
+        cachedHtml.clear()
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.refreshButton.visibility = View.GONE
@@ -271,9 +255,25 @@ class MainActivity : AppCompatActivity() {
         showLogin()
     }
 
+    private fun isAuthenticatedUrl(url: String): Boolean =
+        url.contains("/student/", ignoreCase = true) &&
+            !url.contains("/web/login", ignoreCase = true)
+
+    private fun failLogin(message: String) {
+        loginInProgress = false
+        loginSubmitted = false
+        binding.loginButton.isEnabled = true
+        binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
+        binding.loginStatus.text = message
+    }
+
     private fun decodeJavascriptString(value: String?): String {
         if (value.isNullOrBlank() || value == "null") return ""
-        return try { JSONObject("{\"value\":$value}").optString("value", "") } catch (_: Exception) { "" }
+        return try {
+            JSONObject("{\"value\":$value}").optString("value", "")
+        } catch (_: Exception) {
+            ""
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -318,47 +318,5 @@ class MainActivity : AppCompatActivity() {
               return text.includes('wrong login') || text.includes('invalid login') || text.includes('incorrect') || text.includes('authentication failed');
             })();
         """
-
-        private fun moduleScript(module: Module): String {
-            val title = JSONObject.quote(module.title)
-            val helpers = """
-                const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-                const render=(title,subtitle,body)=>{
-                  document.head.insertAdjacentHTML('beforeend',`<style id="superiorMiniStyle">body{margin:0!important;background:#f5f7fb!important;font-family:Arial,sans-serif!important;color:#172033!important}.mini{padding:22px;max-width:1100px;margin:auto}.hero{background:linear-gradient(135deg,#5d3b70,#8b5c86);color:white;border-radius:18px;padding:24px;margin-bottom:18px}.hero h1{margin:0;font-size:27px}.hero p{margin:7px 0 0;color:#f0e7f3}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:18px}.stat,.panel{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:17px;box-shadow:0 3px 12px #17203312}.stat small{display:block;color:#667085;font-size:12px;text-transform:uppercase;font-weight:bold}.stat strong{display:block;font-size:25px;margin-top:7px}.panel h2{margin:0 0 12px;font-size:18px}.record{padding:12px 0;border-bottom:1px solid #edf0f4;font-size:13px}.record:last-child{border-bottom:0}.table-wrap{overflow:auto}.data-table{width:100%;border-collapse:collapse;background:white;font-size:13px}.data-table th{background:#435b68;color:white;padding:12px;text-align:left;white-space:nowrap}.data-table td{padding:11px;border-bottom:1px solid #e8edf3;white-space:nowrap}.muted{color:#667085;font-size:13px}`);document.body.innerHTML='<main class="mini"><section class="hero"><h1>'+esc(title)+'</h1><p>'+esc(subtitle)+'</p></section>'+body+'</main>';
-                };
-            """
-
-            return when (module) {
-                Module.ATTENDANCE -> """
-                    (function(){
-                      $helpers
-                      const source=document.body.innerText||'';
-                      const cards=[...document.querySelectorAll('.md-card,.card,.panel')].map(x=>x.innerText.replace(/\\s+/g,' ').trim()).filter(Boolean);
-                      const percentages=[...source.matchAll(/(\\d+(?:\\.\\d+)?)\\s*%/g)].map(x=>Number(x[1])).filter(x=>x>=0&&x<=100);
-                      const average=percentages.length?(percentages.reduce((a,b)=>a+b,0)/percentages.length).toFixed(1):'—';
-                      const rows=cards.length?cards:source.split('\\n').map(x=>x.trim()).filter(x=>x&&/attendance|course|class|subject/i.test(x)).slice(0,30);
-                      const records=rows.map(x=>'<div class="record">'+esc(x)+'</div>').join('')||'<p class="muted">No attendance records detected.</p>';
-                      render($title,'Live attendance from your university ERP','<div class="grid"><div class="stat"><small>Average attendance</small><strong>'+average+(average==='—'?'':'%')+'</strong></div><div class="stat"><small>Records found</small><strong>'+rows.length+'</strong></div></div><section class="panel"><h2>Attendance records</h2>'+records+'</section>');
-                    })();
-                """.trimIndent()
-                Module.TIMETABLE -> """
-                    (function(){
-                      $helpers
-                      const table=document.querySelector('table');
-                      const content=table?'<div class="table-wrap">'+table.outerHTML.replace('<table','<table class="data-table"')+'</div>':'<p class="muted">The timetable page loaded, but no schedule table was detected.</p>';
-                      render($title,'Your live class schedule',content);
-                    })();
-                """.trimIndent()
-                Module.FEE -> """
-                    (function(){
-                      $helpers
-                      const table=document.querySelector('table'); let total=0,unpaid=0;
-                      if(table){[...table.querySelectorAll('tr')].forEach(row=>{const nums=[...row.innerText.matchAll(/(?:^|\\s)(\\d+(?:\\.\\d+)?)(?=\\s|$)/g)].map(x=>Number(x[1]));const value=nums.pop()||0;total+=value;if(/unpaid/i.test(row.innerText))unpaid+=value;});}
-                      const content=table?'<div class="table-wrap">'+table.outerHTML.replace('<table','<table class="data-table"')+'</div>':'<p class="muted">The fee page loaded, but no invoice table was detected.</p>';
-                      render($title,'Invoices and payment status from your university ERP','<div class="grid"><div class="stat"><small>Listed amount</small><strong>Rs. '+total.toLocaleString()+'</strong></div><div class="stat"><small>Unpaid amount</small><strong>Rs. '+unpaid.toLocaleString()+'</strong></div></div>'+content);
-                    })();
-                """.trimIndent()
-            }
-        }
     }
 }
