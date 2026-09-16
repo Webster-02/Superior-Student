@@ -8,9 +8,11 @@ import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.superiorstudent.app.databinding.ActivityMainBinding
 import org.json.JSONObject
@@ -46,10 +48,24 @@ class MainActivity : AppCompatActivity() {
         webView.settings.databaseEnabled = true
         webView.settings.loadsImagesAutomatically = true
         webView.settings.setSupportZoom(false)
+        webView.settings.allowFileAccess = false
+        webView.settings.allowContentAccess = false
         webView.webChromeClient = WebChromeClient()
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
+
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
+            ) {
+                super.onReceivedError(view, request, error)
+                if (request.isForMainFrame && activeModule != null) {
+                    binding.refreshButton.visibility = View.VISIBLE
+                    Toast.makeText(this@MainActivity, "Unable to load ERP page. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
+                }
+            }
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
@@ -75,7 +91,11 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 activeModule?.let { module ->
-                    view.postDelayed({ view.evaluateJavascript(moduleScript(module), null) }, 450)
+                    mainHandler.postDelayed({
+                        if (activeModule == module && binding.webView.visibility == View.VISIBLE) {
+                            view.evaluateJavascript(moduleScript(module), null)
+                        }
+                    }, 450)
                 }
             }
         }
@@ -162,10 +182,14 @@ class MainActivity : AppCompatActivity() {
     private fun loadModule(module: Module) {
         if (!loggedIn) return
         activeModule = module
+
+        // The previous version hid the WebView here and never made it visible again.
+        // That caused a completely blank screen after tapping a module button.
         binding.dashboardScroll.visibility = View.GONE
-        binding.webView.visibility = View.GONE
-        binding.refreshButton.visibility = View.GONE
-        binding.homeButton.visibility = View.GONE
+        binding.loginScroll.visibility = View.GONE
+        binding.webView.visibility = View.VISIBLE
+        binding.refreshButton.visibility = View.VISIBLE
+        binding.homeButton.visibility = View.VISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + module.path)
     }
 
@@ -252,7 +276,7 @@ class MainActivity : AppCompatActivity() {
             val helpers = """
                 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                 const render=(title,subtitle,body)=>{
-                  document.head.insertAdjacentHTML('beforeend',`<style id="superiorMiniStyle">body{margin:0!important;background:#f5f7fb!important;font-family:Arial,sans-serif!important;color:#172033!important}.mini{padding:22px;max-width:1100px;margin:auto}.hero{background:linear-gradient(135deg,#5d3b70,#8b5c86);color:white;border-radius:18px;padding:24px;margin-bottom:18px}.hero h1{margin:0;font-size:27px}.hero p{margin:7px 0 0;color:#f0e7f3}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:18px}.stat,.panel{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:17px;box-shadow:0 3px 12px #17203312}.stat small{display:block;color:#667085;font-size:12px;text-transform:uppercase;font-weight:bold}.stat strong{display:block;font-size:25px;margin-top:7px}.panel h2{margin:0 0 12px;font-size:18px}.record{padding:12px 0;border-bottom:1px solid #edf0f4;font-size:13px}.record:last-child{border-bottom:0}.table-wrap{overflow:auto}.data-table{width:100%;border-collapse:collapse;background:white;font-size:13px}.data-table th{background:#435b68;color:white;padding:12px;text-align:left;white-space:nowrap}.data-table td{padding:11px;border-bottom:1px solid #e8edf3;white-space:nowrap}.muted{color:#667085;font-size:13px}`);document.body.innerHTML='<main class="mini"><section class="hero"><h1>'+esc(title)+'</h1><p>'+esc(subtitle)+'</p></section>'+body+'</main>';SuperiorApp.moduleReady();
+                  document.head.insertAdjacentHTML('beforeend',`<style id="superiorMiniStyle">body{margin:0!important;background:#f5f7fb!important;font-family:Arial,sans-serif!important;color:#172033!important}.mini{padding:22px;max-width:1100px;margin:auto}.hero{background:linear-gradient(135deg,#5d3b70,#8b5c86);color:white;border-radius:18px;padding:24px;margin-bottom:18px}.hero h1{margin:0;font-size:27px}.hero p{margin:7px 0 0;color:#f0e7f3}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:18px}.stat,.panel{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:17px;box-shadow:0 3px 12px #17203312}.stat small{display:block;color:#667085;font-size:12px;text-transform:uppercase;font-weight:bold}.stat strong{display:block;font-size:25px;margin-top:7px}.panel h2{margin:0 0 12px;font-size:18px}.record{padding:12px 0;border-bottom:1px solid #edf0f4;font-size:13px}.record:last-child{border-bottom:0}.table-wrap{overflow:auto}.data-table{width:100%;border-collapse:collapse;background:white;font-size:13px}.data-table th{background:#435b68;color:white;padding:12px;text-align:left;white-space:nowrap}.data-table td{padding:11px;border-bottom:1px solid #e8edf3;white-space:nowrap}.muted{color:#667085;font-size:13px}`);document.body.innerHTML='<main class="mini"><section class="hero"><h1>'+esc(title)+'</h1><p>'+esc(subtitle)+'</p></section>'+body+'</main>';
                 };
             """
 
