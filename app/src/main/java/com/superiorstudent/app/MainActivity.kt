@@ -21,10 +21,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val handler = Handler(Looper.getMainLooper())
     private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
+
     private var loginInProgress = false
     private var loginSubmitted = false
     private var restoringSession = false
     private var loggedIn = false
+    private var profileFetchInProgress = false
     private var activeModule: Module? = null
     private var username = ""
     private var password = ""
@@ -33,10 +35,10 @@ class MainActivity : AppCompatActivity() {
     private val preloadQueue = mutableListOf<Module>()
     private val cachedHtml = mutableMapOf<Module, String>()
 
-    private enum class Module(val path: String) {
-        ATTENDANCE("student/attendance"),
-        TIMETABLE("student/class/schedule"),
-        FEE("student/invoices")
+    private enum class Module(val path: String, val title: String) {
+        ATTENDANCE("student/attendance", "Attendance"),
+        TIMETABLE("student/class/schedule", "Timetable"),
+        FEE("student/invoices", "Fee Details")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -98,6 +100,11 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
+                if (profileFetchInProgress && isAuthenticatedUrl(url)) {
+                    handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_READ_DELAY_MS)
+                    return
+                }
+
                 val module = preloadingModule ?: return
                 handler.postDelayed({
                     view.evaluateJavascript("document.documentElement.outerHTML") { result ->
@@ -106,7 +113,7 @@ class MainActivity : AppCompatActivity() {
                         preloadingModule = null
                         preloadNextModule()
                     }
-                }, 700L)
+                }, MODULE_READ_DELAY_MS)
             }
         }
 
@@ -127,6 +134,7 @@ class MainActivity : AppCompatActivity() {
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
             binding.loginStatus.text = "Signing in securely…"
+            webView.visibility = View.GONE
             webView.loadUrl(ERP_LOGIN_URL)
         }
 
@@ -143,8 +151,9 @@ class MainActivity : AppCompatActivity() {
             username = preferences.getString(KEY_USERNAME, "") ?: ""
             restoringSession = true
             binding.loginScroll.visibility = View.GONE
-            binding.dashboardScroll.visibility = View.GONE
-            binding.webView.visibility = View.VISIBLE
+            binding.dashboardScroll.visibility = View.VISIBLE
+            webView.visibility = View.GONE
+            showDashboard()
             webView.loadUrl(ERP_DASHBOARD_URL)
         }
     }
@@ -192,42 +201,48 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fetchStudentProfile() {
-        binding.webView.visibility = View.VISIBLE
+        if (!loggedIn) return
+        profileFetchInProgress = true
+        binding.webView.visibility = View.GONE
         binding.webView.loadUrl(ERP_DASHBOARD_URL)
-        handler.postDelayed({
-            if (!loggedIn) return@postDelayed
-            binding.webView.evaluateJavascript(STUDENT_PROFILE_SCRIPT) { result ->
-                val profile = decodeJavascriptString(result)
-                try {
-                    val json = JSONObject(profile)
-                    val name = json.optString("name").trim()
-                    val cgpa = json.optString("cgpa").trim()
-                    val sgpa = json.optString("sgpa").trim()
-                    if (isValidStudentName(name)) {
-                        preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
-                        binding.studentName.text = name
-                    }
-                    if (cgpa.isNotBlank() || sgpa.isNotBlank()) {
-                        val display = buildString {
-                            if (cgpa.isNotBlank()) append("CGPA: ").append(cgpa)
-                            if (sgpa.isNotBlank()) {
-                                if (isNotEmpty()) append("  |  ")
-                                append("SGPA: ").append(sgpa)
-                            }
-                        }
-                        preferences.edit().putString(KEY_GPA, display).apply()
-                        binding.studentGpa.text = display
-                    }
-                } catch (_: Exception) {
-                    // Keep previously saved values when the ERP response is temporarily unavailable.
+    }
+
+    private fun extractAndApplyProfile(view: WebView) {
+        if (!loggedIn || !profileFetchInProgress) return
+        view.evaluateJavascript(STUDENT_PROFILE_SCRIPT) { result ->
+            profileFetchInProgress = false
+            val profile = decodeJavascriptString(result)
+            try {
+                val json = JSONObject(profile)
+                val name = json.optString("name").trim()
+                val cgpa = json.optString("cgpa").trim()
+                val sgpa = json.optString("sgpa").trim()
+
+                if (isValidStudentName(name)) {
+                    preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
+                    binding.studentName.text = name
                 }
-                preloadAllModules()
+
+                if (cgpa.isNotBlank() || sgpa.isNotBlank()) {
+                    val display = buildString {
+                        if (cgpa.isNotBlank()) append("CGPA: ").append(cgpa)
+                        if (sgpa.isNotBlank()) {
+                            if (isNotEmpty()) append("  |  ")
+                            append("SGPA: ").append(sgpa)
+                        }
+                    }
+                    preferences.edit().putString(KEY_GPA, display).apply()
+                    binding.studentGpa.text = display
+                }
+            } catch (_: Exception) {
+                // Keep cached profile values if ERP is temporarily unavailable.
             }
-        }, 1500L)
+            preloadAllModules()
+        }
     }
 
     private fun preloadAllModules() {
-        if (!loggedIn || preloadingModule != null) return
+        if (!loggedIn || profileFetchInProgress || preloadingModule != null) return
         preloadQueue.clear()
         preloadQueue.addAll(Module.values())
         preloadNextModule()
@@ -241,7 +256,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
-        binding.webView.visibility = View.VISIBLE
+        // Keep the WebView hidden while modules are fetched in the background.
+        binding.webView.visibility = View.GONE
         binding.webView.loadUrl(ERP_BASE_URL + preloadingModule!!.path)
     }
 
@@ -288,6 +304,7 @@ class MainActivity : AppCompatActivity() {
         loginInProgress = false
         restoringSession = false
         loginSubmitted = false
+        profileFetchInProgress = false
         loginAttempt = 0
         preloadingModule = null
         preloadQueue.clear()
@@ -365,6 +382,8 @@ class MainActivity : AppCompatActivity() {
         private const val ERP_DASHBOARD_URL = "https://erp.superior.edu.pk/student/dashboard"
         private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
+        private const val PROFILE_READ_DELAY_MS = 1200L
+        private const val MODULE_READ_DELAY_MS = 700L
 
         private const val LOGIN_SCRIPT = """
             (function(){
@@ -401,19 +420,23 @@ class MainActivity : AppCompatActivity() {
                 const v=clean(value);
                 return v && v.length>1 && !/session|expire|dashboard|welcome|student information/i.test(v);
               }
+              function numeric(value){
+                const v=clean(value);
+                return /^\\d+(?:\\.\\d+)?$/.test(v) ? v : '';
+              }
               function findMetric(label){
-                const all=Array.from(document.querySelectorAll('*'));
-                for(const el of all){
+                const elements=Array.from(document.querySelectorAll('*'));
+                for(const el of elements){
                   if(clean(el.textContent).toUpperCase()!==label) continue;
                   let parent=el;
-                  for(let i=0;i<5 && parent;i++,parent=parent.parentElement){
-                    const value=parent.querySelector('.stat-value,.value,[class*="stat-value"],[class*="value"]');
-                    if(value){
-                      const result=textOf(value);
-                      if(/^\\d+(?:\\.\\d+)?$/.test(result)) return result;
+                  for(let level=0; level<6 && parent; level++, parent=parent.parentElement){
+                    const candidates=Array.from(parent.querySelectorAll('.stat-value,.value,[class*="stat-value"],[class*="value"]'));
+                    for(const candidate of candidates){
+                      const value=numeric(textOf(candidate));
+                      if(value)return value;
                     }
                     const match=textOf(parent).match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
-                    if(match) return match[1];
+                    if(match)return match[1];
                   }
                 }
                 const body=clean(document.body?document.body.innerText:'');
@@ -422,8 +445,8 @@ class MainActivity : AppCompatActivity() {
               }
 
               let name='';
-              const nameSelectors=['.student-details h1','.student-details h2','.student-name','.student_name'];
-              for(const selector of nameSelectors){
+              const selectors=['.student-details h1','.student-details h2','.student-name','.student_name'];
+              for(const selector of selectors){
                 const candidate=textOf(document.querySelector(selector));
                 if(validName(candidate)){name=candidate;break;}
               }
@@ -432,13 +455,18 @@ class MainActivity : AppCompatActivity() {
                 if(box){
                   const lines=(box.innerText||'').split(/\\n+/).map(clean).filter(Boolean);
                   for(const line of lines){
-                    if(validName(line) && !/^SU\\d+/i.test(line) && !/faculty|program|semester|under graduate/i.test(line)){name=line;break;}
+                    if(validName(line) && !/^SU\\d+/i.test(line) && !/^BS\\s/i.test(line)){name=line;break;}
                   }
                 }
               }
-              const cgpa=findMetric('CGPA');
-              const sgpa=findMetric('SGPA');
-              return JSON.stringify({name:name,cgpa:cgpa,sgpa:sgpa});
+              if(!name){
+                const headings=Array.from(document.querySelectorAll('h1,h2,h3'));
+                for(const heading of headings){
+                  const candidate=textOf(heading);
+                  if(validName(candidate) && !/^Results$/i.test(candidate)){name=candidate;break;}
+                }
+              }
+              return JSON.stringify({name:name,cgpa:findMetric('CGPA'),sgpa:findMetric('SGPA')});
             })();
         """
     }
