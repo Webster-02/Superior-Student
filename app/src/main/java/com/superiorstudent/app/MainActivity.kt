@@ -235,8 +235,14 @@ class MainActivity : AppCompatActivity() {
             val payload = decodeJavascriptString(result)
             try {
                 val json = JSONObject(payload)
+                val name = json.optString("name", "").trim()
                 val bodyText = json.optString("body", "")
                 val cards = json.optJSONArray("cards")
+
+                if (isValidStudentName(name)) {
+                    preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
+                    binding.studentName.text = name
+                }
 
                 val cgpa = findGpaInText(cards, bodyText, "CGPA")
                 val sgpa = findGpaInText(cards, bodyText, "SGPA")
@@ -279,13 +285,13 @@ class MainActivity : AppCompatActivity() {
 
         val escapedLabel = Regex.escape(label)
         val after = Regex(
-            """\\b$escapedLabel\\b\\s*[:\\-]?\\s*([0-4](?:\\.\\d{1,2})?)\\b""",
+            """\b$escapedLabel\b\s*[:\-]?\s*([0-4](?:\.\d{1,2})?)\b""",
             RegexOption.IGNORE_CASE
         ).find(normalized)
         if (after != null) return validGpa(after.groupValues[1])
 
         val before = Regex(
-            """([0-4](?:\\.\\d{1,2})?)\\s*\\b$escapedLabel\\b""",
+            """([0-4](?:\.\d{1,2})?)\s*\b$escapedLabel\b""",
             RegexOption.IGNORE_CASE
         ).find(normalized)
         if (before != null) return validGpa(before.groupValues[1])
@@ -475,11 +481,56 @@ class MainActivity : AppCompatActivity() {
         private const val STUDENT_PROFILE_TEXT_SCRIPT = """
             (function(){
               function clean(value){return (value||'').replace(/\\s+/g,' ').trim();}
+              function textOf(el){return el ? clean(el.textContent || el.innerText || '') : '';}
+              function validName(value){
+                const v=clean(value);
+                return v && v.length>1 &&
+                  !/session|expire|dashboard|welcome|student information/i.test(v) &&
+                  !/^SU\\d+[-A-Z0-9]*$/i.test(v) &&
+                  !/^BS\\s/i.test(v);
+              }
+
+              let name='';
+              const selectors=[
+                '.student-details h1',
+                '.student-details h2',
+                '.student-name',
+                '.student_name'
+              ];
+              for(const selector of selectors){
+                const candidate=textOf(document.querySelector(selector));
+                if(validName(candidate)){name=candidate;break;}
+              }
+
+              if(!name){
+                const box=document.querySelector('.student-details');
+                if(box){
+                  const lines=(box.innerText || box.textContent || '')
+                    .split(/\\n+/)
+                    .map(clean)
+                    .filter(Boolean);
+                  for(const line of lines){
+                    if(validName(line)){name=line;break;}
+                  }
+                }
+              }
+
+              if(!name){
+                const headings=Array.from(document.querySelectorAll('h1,h2,h3'));
+                for(const heading of headings){
+                  const candidate=textOf(heading);
+                  if(validName(candidate) && !/^Results$/i.test(candidate)){
+                    name=candidate;
+                    break;
+                  }
+                }
+              }
+
               const cards=Array.from(document.querySelectorAll('.stat-card')).map(function(card){
                 return clean(card.textContent || card.innerText || '');
               });
               const body=clean(document.body ? (document.body.innerText || document.body.textContent || '') : '');
-              return JSON.stringify({cards:cards,body:body});
+              return JSON.stringify({name:name,cards:cards,body:body});
             })();
         """
     }
