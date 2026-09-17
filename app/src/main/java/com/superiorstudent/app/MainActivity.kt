@@ -207,14 +207,22 @@ class MainActivity : AppCompatActivity() {
                     try {
                         val json = JSONObject(profile)
                         val name = json.optString("name").trim()
-                        val gpa = json.optString("gpa").trim()
+                        val cgpa = json.optString("cgpa").trim()
+                        val sgpa = json.optString("sgpa").trim()
                         if (name.isNotBlank()) {
                             preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
                             binding.studentName.text = name
                         }
-                        if (gpa.isNotBlank()) {
-                            preferences.edit().putString(KEY_GPA, gpa).apply()
-                            binding.studentGpa.text = "GPA: $gpa"
+                        if (cgpa.isNotBlank() || sgpa.isNotBlank()) {
+                            val displayGpa = buildString {
+                                if (cgpa.isNotBlank()) append("CGPA: ").append(cgpa)
+                                if (sgpa.isNotBlank()) {
+                                    if (isNotEmpty()) append("  |  ")
+                                    append("SGPA: ").append(sgpa)
+                                }
+                            }
+                            preferences.edit().putString(KEY_GPA, displayGpa).apply()
+                            binding.studentGpa.text = displayGpa
                         }
                     } catch (_: Exception) {
                         // Keep the previously saved profile if the ERP response is not JSON.
@@ -289,7 +297,7 @@ class MainActivity : AppCompatActivity() {
         val savedName = preferences.getString(KEY_STUDENT_NAME, "") ?: ""
         val savedGpa = preferences.getString(KEY_GPA, "") ?: ""
         binding.studentName.text = if (savedName.isBlank()) "Student" else savedName
-        binding.studentGpa.text = if (savedGpa.isBlank()) "GPA: Not available yet" else "GPA: $savedGpa"
+        binding.studentGpa.text = if (savedGpa.isBlank()) "GPA: Not available yet" else savedGpa
     }
 
     private fun showLogin() {
@@ -394,21 +402,46 @@ class MainActivity : AppCompatActivity() {
 
         private const val STUDENT_PROFILE_SCRIPT = """
             (function(){
-              const text=(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').trim();
-              const nameSelectors=['.o_user_menu .oe_topbar_name','.student-name','.student_name','[data-student-name]'];
-              let name='';
-              for(const selector of nameSelectors){
-                const element=document.querySelector(selector);
-                if(element && element.innerText.trim()){ name=element.innerText.trim(); break; }
+              function clean(value){
+                return (value || '').replace(/\\s+/g,' ').trim();
+              }
+              function textOf(element){
+                return element ? clean(element.innerText || element.textContent) : '';
+              }
+              function valueNearLabel(label){
+                const elements=Array.from(document.querySelectorAll('.stat-card'));
+                for(const card of elements){
+                  const cardText=textOf(card);
+                  if(new RegExp('\\\\b'+label+'\\\\b','i').test(cardText)){
+                    const value=card.querySelector('.stat-value');
+                    if(value) return textOf(value);
+                  }
+                }
+                return '';
+              }
+
+              let name=textOf(document.querySelector('.student-details h1'));
+              if(!name){
+                const heading=document.querySelector('.student-details');
+                if(heading){
+                  const firstLine=textOf(heading).split('SU91-')[0];
+                  name=clean(firstLine);
+                }
               }
               if(!name){
-                const match=text.match(/(?:student name|name|welcome back)\\s*[:\\-]?\\s*([A-Za-z][A-Za-z .'-]{2,80})/i);
-                if(match) name=match[1].trim();
+                const candidates=Array.from(document.querySelectorAll('h1,h2,h3,.student-name,.student_name'));
+                for(const element of candidates){
+                  const candidate=textOf(element);
+                  if(candidate && !/dashboard|welcome|result|attendance|timetable/i.test(candidate)){
+                    name=candidate;
+                    break;
+                  }
+                }
               }
-              let gpa='';
-              const gpaMatch=text.match(/(?:cumulative\\s+)?gpa\\s*[:\\-]?\\s*([0-4](?:\\.\\d{1,2})?)/i);
-              if(gpaMatch) gpa=gpaMatch[1];
-              return JSON.stringify({name:name,gpa:gpa});
+
+              const cgpa=valueNearLabel('CGPA');
+              const sgpa=valueNearLabel('SGPA');
+              return JSON.stringify({name:name,cgpa:cgpa,sgpa:sgpa});
             })();
         """
     }
