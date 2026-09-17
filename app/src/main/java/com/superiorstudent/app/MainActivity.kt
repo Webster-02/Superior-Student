@@ -413,10 +413,83 @@ class MainActivity : AppCompatActivity() {
         val lines: List<String>
     )
 
+
     private fun renderModuleData(module: Module, data: ModuleData) {
         binding.moduleContent.removeAllViews()
         addModuleIntro(module)
 
+        when (module) {
+            Module.ATTENDANCE -> renderAttendance(data)
+            Module.TIMETABLE -> renderTimetable(data)
+            Module.FEE -> renderFee(data)
+        }
+
+        binding.moduleProgress.visibility = View.GONE
+        binding.moduleInfo.text = "Student data synced successfully"
+    }
+
+    private fun renderAttendance(data: ModuleData) {
+        data.cards.take(3).forEach { (label, value) ->
+            binding.moduleContent.addView(createMetricCard(label, value))
+        }
+
+        data.lines
+            .map(::cleanDisplayText)
+            .filter(::isAttendanceCourseLine)
+            .distinct()
+            .take(12)
+            .forEachIndexed { index, item ->
+                binding.moduleContent.addView(createCourseCard(item, index + 1))
+            }
+
+        data.tables.forEachIndexed { index, table ->
+            binding.moduleContent.addView(
+                createTableSection(
+                    table.title.ifBlank { if (index == 0) "Attendance records" else "Attendance details" },
+                    table
+                )
+            )
+        }
+
+        if (data.cards.isEmpty() && data.tables.isEmpty() &&
+            data.lines.none { isAttendanceCourseLine(cleanDisplayText(it)) }) {
+            binding.moduleContent.addView(createEmptyState())
+        }
+    }
+
+    private fun renderTimetable(data: ModuleData) {
+        val times = data.lines
+            .map(::cleanDisplayText)
+            .filter { it.matches(Regex("""^(?:[01]?\d|2[0-3]):[0-5]\d$""")) }
+            .distinct()
+
+        if (times.isNotEmpty()) binding.moduleContent.addView(createScheduleSummary(times))
+
+        data.lines
+            .map(::cleanDisplayText)
+            .filter(::isTimetableCourseLine)
+            .distinct()
+            .take(20)
+            .forEachIndexed { index, item ->
+                binding.moduleContent.addView(createScheduleCard(item, index + 1))
+            }
+
+        data.tables.forEachIndexed { index, table ->
+            binding.moduleContent.addView(
+                createTableSection(
+                    table.title.ifBlank { if (index == 0) "Class schedule" else "Schedule details" },
+                    table
+                )
+            )
+        }
+
+        if (times.isEmpty() && data.tables.isEmpty() &&
+            data.lines.none { isTimetableCourseLine(cleanDisplayText(it)) }) {
+            binding.moduleContent.addView(createEmptyState())
+        }
+    }
+
+    private fun renderFee(data: ModuleData) {
         data.cards.take(4).forEach { (label, value) ->
             binding.moduleContent.addView(createMetricCard(label, value))
         }
@@ -424,28 +497,21 @@ class MainActivity : AppCompatActivity() {
         data.tables.forEachIndexed { index, table ->
             binding.moduleContent.addView(
                 createTableSection(
-                    table.title.ifBlank { moduleDefaultTableTitle(module, index) },
+                    table.title.ifBlank { if (index == 0) "Fee records" else "Fee details" },
                     table
                 )
             )
         }
 
-        val remainingLines = data.lines
-            .map(::cleanDisplayText)
-            .filter(::isUsefulDisplayText)
-            .distinct()
-            .take(20)
-
-        if (remainingLines.isNotEmpty()) {
-            binding.moduleContent.addView(createInformationSection(remainingLines))
+        if (data.cards.isEmpty() && data.tables.isEmpty()) {
+            val useful = data.lines
+                .map(::cleanDisplayText)
+                .filter(::isUsefulDisplayText)
+                .distinct()
+                .take(12)
+            if (useful.isNotEmpty()) binding.moduleContent.addView(createInformationSection(useful))
+            else binding.moduleContent.addView(createEmptyState())
         }
-
-        if (data.cards.isEmpty() && data.tables.isEmpty() && remainingLines.isEmpty()) {
-            binding.moduleContent.addView(createEmptyState())
-        }
-
-        binding.moduleProgress.visibility = View.GONE
-        binding.moduleInfo.text = "Student data synced successfully"
     }
 
     private fun addModuleIntro(module: Module) {
@@ -485,6 +551,163 @@ class MainActivity : AppCompatActivity() {
         })
 
         binding.moduleContent.addView(card)
+    }
+
+
+    private fun isAttendanceCourseLine(value: String): Boolean {
+        val text = value.trim()
+        if (text.length < 8 || text.length > 180) return false
+        if (text.contains("session", true) || text.contains("inactive", true) ||
+            text.contains("stay online", true)) return false
+        if (text.equals("attendance", true) || text.equals("attendance classes", true) ||
+            text.equals("active classes", true)) return false
+        return Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}""", RegexOption.IGNORE_CASE).containsMatchIn(text) ||
+            listOf(
+                "Functional English",
+                "Quantitative Reasoning",
+                "Civics and Community Engagement",
+                "Management of refractive errors",
+                "Visual Optics and Image Processing",
+                "Redefining Success"
+            ).any { text.contains(it, true) }
+    }
+
+    private fun isTimetableCourseLine(value: String): Boolean {
+        val text = value.trim()
+        if (text.length < 8 || text.length > 180) return false
+        if (text.contains("session", true) || text.contains("inactive", true) ||
+            text.contains("stay online", true)) return false
+        if (text.matches(Regex("""^(?:Class Schedule|Term\s*:?.*|Month\s*:?.*)$""", RegexOption.IGNORE_CASE))) return false
+        if (text.matches(Regex("""^(?:[01]?\d|2[0-3]):[0-5]\d$"""))) return false
+        return Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}""", RegexOption.IGNORE_CASE).containsMatchIn(text) ||
+            listOf(
+                "Functional English",
+                "Quantitative Reasoning",
+                "Civics and Community Engagement",
+                "Management of refractive errors",
+                "Visual Optics and Image Processing",
+                "Redefining Success"
+            ).any { text.contains(it, true) }
+    }
+
+    private fun createCourseCard(course: String, position: Int): View {
+        val codeMatch = Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(course)
+        val code = codeMatch?.value ?: ""
+        val title = if (code.isNotBlank()) course.substringBefore(code).trim() else course
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(15), dp(13), dp(15), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = position.toString()
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = roundedBackground(Color.rgb(30, 91, 155), 12f)
+                minWidth = dp(34)
+                minHeight = dp(34)
+            })
+
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding(dp(12), 0, 0, 0)
+
+                addView(TextView(this@MainActivity).apply {
+                    text = title.ifBlank { course }
+                    setTextColor(Color.rgb(23, 42, 70))
+                    textSize = 14f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+
+                if (code.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                    text = code
+                    setTextColor(Color.rgb(126, 139, 158))
+                    textSize = 10f
+                    setPadding(0, dp(4), 0, 0)
+                })
+            })
+        }
+    }
+
+    private fun createScheduleSummary(times: List<String>): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(8)) }
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+
+            addView(TextView(this@MainActivity).apply {
+                text = "Available time slots"
+                setTextColor(Color.rgb(23, 42, 70))
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(10), 0, 0)
+                times.take(8).forEach { time ->
+                    addView(TextView(this@MainActivity).apply {
+                        text = time
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.rgb(30, 91, 155))
+                        textSize = 11f
+                        background = roundedBackground(Color.rgb(239, 245, 255), 10f)
+                        setPadding(dp(10), dp(7), dp(10), dp(7))
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { setMargins(0, 0, dp(6), 0) }
+                    })
+                }
+            })
+        }
+    }
+
+    private fun createScheduleCard(item: String, position: Int): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(15), dp(13), dp(15), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = position.toString()
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(30, 91, 155))
+                textSize = 12f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = roundedBackground(Color.rgb(239, 245, 255), 12f)
+                minWidth = dp(34)
+                minHeight = dp(34)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = item
+                setTextColor(Color.rgb(52, 64, 84))
+                textSize = 13f
+                setPadding(dp(12), 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+        }
     }
 
     private fun createMetricCard(label: String, value: String): View {
@@ -648,6 +871,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
+
     private fun cleanDisplayText(value: String): String {
         return value
             .replace(Regex("(?i)\\bERP\\b"), "")
@@ -661,6 +885,10 @@ class MainActivity : AppCompatActivity() {
         if (text.length < 2) return false
         if (text.equals("home", true) || text.equals("logout", true)) return false
         if (text.equals("dashboard", true) || text.equals("menu", true)) return false
+        if (text.contains("your session", true) || text.contains("you've been inactive", true)) return false
+        if (text.contains("stay online", true) || text.contains("session will expire", true)) return false
+        if (text.equals("attendance", true) || text.equals("attendance classes", true) ||
+            text.equals("active classes", true)) return false
         return true
     }
 
