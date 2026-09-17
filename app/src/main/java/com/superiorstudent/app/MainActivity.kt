@@ -30,14 +30,13 @@ class MainActivity : AppCompatActivity() {
     private var password = ""
     private var loginAttempt = 0
     private var preloadingModule: Module? = null
-    private var showingCachedModule = false
     private val preloadQueue = mutableListOf<Module>()
     private val cachedHtml = mutableMapOf<Module, String>()
 
-    private enum class Module(val title: String, val path: String) {
-        ATTENDANCE("Attendance", "student/attendance"),
-        TIMETABLE("Timetable", "student/class/schedule"),
-        FEE("Fee Details", "student/invoices")
+    private enum class Module(val path: String) {
+        ATTENDANCE("student/attendance"),
+        TIMETABLE("student/class/schedule"),
+        FEE("student/invoices")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -74,7 +73,7 @@ class MainActivity : AppCompatActivity() {
                 if (restoringSession) {
                     if (isAuthenticatedUrl(url)) {
                         restoringSession = false
-                        completeLogin(isRestoredSession = true)
+                        completeLogin(true)
                     } else if (url.contains("/web/login", true)) {
                         restoringSession = false
                         preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
@@ -85,7 +84,7 @@ class MainActivity : AppCompatActivity() {
 
                 if (loginInProgress) {
                     if (isAuthenticatedUrl(url)) {
-                        completeLogin()
+                        completeLogin(false)
                     } else if (url.contains("/web/login", true)) {
                         if (!loginSubmitted) {
                             loginAttempt = 0
@@ -99,17 +98,15 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
-                val module = preloadingModule
-                if (module != null) {
-                    handler.postDelayed({
-                        view.evaluateJavascript("document.documentElement.outerHTML") { result ->
-                            val html = decodeJavascriptString(result)
-                            if (html.isNotBlank()) cachedHtml[module] = html
-                            preloadingModule = null
-                            preloadNextModule()
-                        }
-                    }, 500L)
-                }
+                val module = preloadingModule ?: return
+                handler.postDelayed({
+                    view.evaluateJavascript("document.documentElement.outerHTML") { result ->
+                        val html = decodeJavascriptString(result)
+                        if (html.isNotBlank()) cachedHtml[module] = html
+                        preloadingModule = null
+                        preloadNextModule()
+                    }
+                }, 700L)
             }
         }
 
@@ -122,16 +119,15 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             loginInProgress = true
-            restoringSession = false
             loginSubmitted = false
+            restoringSession = false
             loggedIn = false
             loginAttempt = 0
             cachedHtml.clear()
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
             binding.loginStatus.text = "Signing in securely…"
-            binding.webView.visibility = View.GONE
-            binding.webView.loadUrl(ERP_LOGIN_URL)
+            webView.loadUrl(ERP_LOGIN_URL)
         }
 
         binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
@@ -149,7 +145,6 @@ class MainActivity : AppCompatActivity() {
             binding.loginScroll.visibility = View.GONE
             binding.dashboardScroll.visibility = View.GONE
             binding.webView.visibility = View.VISIBLE
-            binding.loginStatus.text = "Restoring your session…"
             webView.loadUrl(ERP_DASHBOARD_URL)
         }
     }
@@ -180,8 +175,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun completeLogin(isRestoredSession: Boolean = false) {
+    private fun completeLogin(isRestoredSession: Boolean) {
         loginInProgress = false
+        loginSubmitted = false
         restoringSession = false
         loggedIn = true
         preferences.edit()
@@ -193,7 +189,6 @@ class MainActivity : AppCompatActivity() {
         binding.passwordInput.text?.clear()
         showDashboard()
         fetchStudentProfile()
-        preloadAllModules()
     }
 
     private fun fetchStudentProfile() {
@@ -203,34 +198,32 @@ class MainActivity : AppCompatActivity() {
             if (!loggedIn) return@postDelayed
             binding.webView.evaluateJavascript(STUDENT_PROFILE_SCRIPT) { result ->
                 val profile = decodeJavascriptString(result)
-                if (profile.isNotBlank()) {
-                    try {
-                        val json = JSONObject(profile)
-                        val name = json.optString("name").trim()
-                        val cgpa = json.optString("cgpa").trim()
-                        val sgpa = json.optString("sgpa").trim()
-                        if (name.isNotBlank()) {
-                            preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
-                            binding.studentName.text = name
-                        }
-                        if (cgpa.isNotBlank() || sgpa.isNotBlank()) {
-                            val displayGpa = buildString {
-                                if (cgpa.isNotBlank()) append("CGPA: ").append(cgpa)
-                                if (sgpa.isNotBlank()) {
-                                    if (isNotEmpty()) append("  |  ")
-                                    append("SGPA: ").append(sgpa)
-                                }
-                            }
-                            preferences.edit().putString(KEY_GPA, displayGpa).apply()
-                            binding.studentGpa.text = displayGpa
-                        }
-                    } catch (_: Exception) {
-                        // Keep the previously saved profile if the ERP response is not JSON.
+                try {
+                    val json = JSONObject(profile)
+                    val name = json.optString("name").trim()
+                    val cgpa = json.optString("cgpa").trim()
+                    val sgpa = json.optString("sgpa").trim()
+                    if (isValidStudentName(name)) {
+                        preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
+                        binding.studentName.text = name
                     }
+                    if (cgpa.isNotBlank() || sgpa.isNotBlank()) {
+                        val display = buildString {
+                            if (cgpa.isNotBlank()) append("CGPA: ").append(cgpa)
+                            if (sgpa.isNotBlank()) {
+                                if (isNotEmpty()) append("  |  ")
+                                append("SGPA: ").append(sgpa)
+                            }
+                        }
+                        preferences.edit().putString(KEY_GPA, display).apply()
+                        binding.studentGpa.text = display
+                    }
+                } catch (_: Exception) {
+                    // Keep previously saved values when the ERP response is temporarily unavailable.
                 }
                 preloadAllModules()
             }
-        }, 1200L)
+        }, 1500L)
     }
 
     private fun preloadAllModules() {
@@ -248,7 +241,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
-        binding.webView.visibility = View.GONE
+        binding.webView.visibility = View.VISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + preloadingModule!!.path)
     }
 
@@ -260,19 +253,10 @@ class MainActivity : AppCompatActivity() {
         binding.refreshButton.visibility = View.VISIBLE
         binding.homeButton.visibility = View.VISIBLE
         binding.webView.visibility = View.VISIBLE
-
         val html = cachedHtml[module]
         if (!html.isNullOrBlank()) {
-            showingCachedModule = true
-            binding.webView.loadDataWithBaseURL(
-                ERP_BASE_URL,
-                html,
-                "text/html",
-                "UTF-8",
-                ERP_BASE_URL + module.path
-            )
+            binding.webView.loadDataWithBaseURL(ERP_BASE_URL, html, "text/html", "UTF-8", ERP_BASE_URL + module.path)
         } else {
-            showingCachedModule = false
             binding.webView.loadUrl(ERP_BASE_URL + module.path)
         }
     }
@@ -280,14 +264,12 @@ class MainActivity : AppCompatActivity() {
     private fun refreshActiveModule() {
         val module = activeModule ?: return
         cachedHtml.remove(module)
-        showingCachedModule = false
         binding.webView.visibility = View.VISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + module.path)
     }
 
     private fun showDashboard() {
         activeModule = null
-        showingCachedModule = false
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.refreshButton.visibility = View.GONE
@@ -296,7 +278,7 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         val savedName = preferences.getString(KEY_STUDENT_NAME, "") ?: ""
         val savedGpa = preferences.getString(KEY_GPA, "") ?: ""
-        binding.studentName.text = if (savedName.isBlank()) "Student" else savedName
+        binding.studentName.text = if (isValidStudentName(savedName)) savedName else "Student"
         binding.studentGpa.text = if (savedGpa.isBlank()) "GPA: Not available yet" else savedGpa
     }
 
@@ -331,8 +313,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isAuthenticatedUrl(url: String): Boolean =
-        url.contains("/student/", ignoreCase = true) &&
-            !url.contains("/web/login", ignoreCase = true)
+        url.contains("/student/", true) && !url.contains("/web/login", true)
 
     private fun failLogin(message: String) {
         loginInProgress = false
@@ -340,6 +321,18 @@ class MainActivity : AppCompatActivity() {
         binding.loginButton.isEnabled = true
         binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
         binding.loginStatus.text = message
+    }
+
+    private fun isValidStudentName(value: String): Boolean {
+        val text = value.trim()
+        return text.isNotBlank() &&
+            text.length >= 2 &&
+            !text.contains("session", true) &&
+            !text.contains("expire", true) &&
+            !text.contains("dashboard", true) &&
+            !text.contains("welcome", true) &&
+            !text.contains("student information", true) &&
+            !text.matches(Regex("SU\\d+[-A-Z0-9]*", RegexOption.IGNORE_CASE))
     }
 
     private fun decodeJavascriptString(value: String?): String {
@@ -402,45 +395,49 @@ class MainActivity : AppCompatActivity() {
 
         private const val STUDENT_PROFILE_SCRIPT = """
             (function(){
-              function clean(value){
-                return (value || '').replace(/\\s+/g,' ').trim();
+              function clean(value){return (value||'').replace(/\\s+/g,' ').trim();}
+              function textOf(el){return el?clean(el.innerText||el.textContent):'';}
+              function validName(value){
+                const v=clean(value);
+                return v && v.length>1 && !/session|expire|dashboard|welcome|student information/i.test(v);
               }
-              function textOf(element){
-                return element ? clean(element.innerText || element.textContent) : '';
-              }
-              function valueNearLabel(label){
-                const elements=Array.from(document.querySelectorAll('.stat-card'));
-                for(const card of elements){
-                  const cardText=textOf(card);
-                  if(new RegExp('\\\\b'+label+'\\\\b','i').test(cardText)){
-                    const value=card.querySelector('.stat-value');
-                    if(value) return textOf(value);
+              function findMetric(label){
+                const all=Array.from(document.querySelectorAll('*'));
+                for(const el of all){
+                  if(clean(el.textContent).toUpperCase()!==label) continue;
+                  let parent=el;
+                  for(let i=0;i<5 && parent;i++,parent=parent.parentElement){
+                    const value=parent.querySelector('.stat-value,.value,[class*="stat-value"],[class*="value"]');
+                    if(value){
+                      const result=textOf(value);
+                      if(/^\\d+(?:\\.\\d+)?$/.test(result)) return result;
+                    }
+                    const match=textOf(parent).match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
+                    if(match) return match[1];
                   }
                 }
-                return '';
+                const body=clean(document.body?document.body.innerText:'');
+                const match=body.match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
+                return match?match[1]:'';
               }
 
-              let name=textOf(document.querySelector('.student-details h1'));
-              if(!name){
-                const heading=document.querySelector('.student-details');
-                if(heading){
-                  const firstLine=textOf(heading).split('SU91-')[0];
-                  name=clean(firstLine);
-                }
+              let name='';
+              const nameSelectors=['.student-details h1','.student-details h2','.student-name','.student_name'];
+              for(const selector of nameSelectors){
+                const candidate=textOf(document.querySelector(selector));
+                if(validName(candidate)){name=candidate;break;}
               }
               if(!name){
-                const candidates=Array.from(document.querySelectorAll('h1,h2,h3,.student-name,.student_name'));
-                for(const element of candidates){
-                  const candidate=textOf(element);
-                  if(candidate && !/dashboard|welcome|result|attendance|timetable/i.test(candidate)){
-                    name=candidate;
-                    break;
+                const box=document.querySelector('.student-details');
+                if(box){
+                  const lines=(box.innerText||'').split(/\\n+/).map(clean).filter(Boolean);
+                  for(const line of lines){
+                    if(validName(line) && !/^SU\\d+/i.test(line) && !/faculty|program|semester|under graduate/i.test(line)){name=line;break;}
                   }
                 }
               }
-
-              const cgpa=valueNearLabel('CGPA');
-              const sgpa=valueNearLabel('SGPA');
+              const cgpa=findMetric('CGPA');
+              const sgpa=findMetric('SGPA');
               return JSON.stringify({name:name,cgpa:cgpa,sgpa:sgpa});
             })();
         """
