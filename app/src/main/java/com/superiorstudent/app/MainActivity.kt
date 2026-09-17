@@ -442,11 +442,19 @@ class MainActivity : AppCompatActivity() {
                 const v=clean(value);
                 return /^\\d+(?:\\.\\d+)?$/.test(v) ? v : '';
               }
-              function gpaFromText(value){
-                const v=clean(value);
-                if(!v)return '';
-                let match=v.match(/(?:^|\\s)([0-4](?:\\.\\d{1,2})?)(?=\\s|$)/);
-                if(match)return match[1];
+              function metricFromText(value,label){
+                const text=clean(value);
+                if(!text)return '';
+                const upper=text.toUpperCase();
+                const index=upper.indexOf(label);
+                if(index<0)return '';
+
+                const before=text.slice(Math.max(0,index-32),index);
+                const after=text.slice(index+label.length,Math.min(text.length,index+label.length+32));
+                const beforeMatch=before.match(/([0-4](?:\\.\\d{1,2})?)\\s*$/);
+                if(beforeMatch)return beforeMatch[1];
+                const afterMatch=after.match(/^\\s*[:\\-]?\\s*([0-4](?:\\.\\d{1,2})?)/);
+                if(afterMatch)return afterMatch[1];
                 return '';
               }
               function metricFromCard(card,label){
@@ -456,14 +464,7 @@ class MainActivity : AppCompatActivity() {
                 const cardLabel=clean(textOf(labelEl)).toUpperCase();
                 const value=numeric(textOf(valueEl));
                 if(cardLabel===label && value)return value;
-
-                const cardText=clean(card.textContent || card.innerText || '');
-                const escapedLabel=label.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');
-                const before=new RegExp('([0-4](?:\\\\.\\\\d{1,2})?)\\\\s*'+escapedLabel+'\\\\b','i').exec(cardText);
-                if(before)return before[1];
-                const after=new RegExp('\\\\b'+escapedLabel+'\\\\s*[:\\\\-]?\\\\s*([0-4](?:\\\\.\\\\d{1,2})?)','i').exec(cardText);
-                if(after)return after[1];
-                return '';
+                return metricFromText(card.textContent || card.innerText || '',label);
               }
               function findMetric(label){
                 const cards=Array.from(document.querySelectorAll('.stat-card'));
@@ -492,14 +493,8 @@ class MainActivity : AppCompatActivity() {
                   }
                 }
 
-                const bodyText=clean(document.body ? (document.body.innerText || document.body.textContent || '') : '');
-                const escapedLabel=label.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');
-                const after=new RegExp('\\\\b'+escapedLabel+'\\\\b\\\\s*[:\\\\-]?\\\\s*([0-4](?:\\\\.\\\\d{1,2})?)','i').exec(bodyText);
-                if(after)return after[1];
-                const before=new RegExp('([0-4](?:\\\\.\\\\d{1,2})?)\\\\s*'+escapedLabel+'\\\\b','i').exec(bodyText);
-                if(before)return before[1];
-
-                return '';
+                const bodyText=document.body ? (document.body.innerText || document.body.textContent || '') : '';
+                return metricFromText(bodyText,label);
               }
 
               let name='';
