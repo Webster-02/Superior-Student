@@ -102,7 +102,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (profileFetchInProgress && isAuthenticatedUrl(url)) {
-                    handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_READ_DELAY_MS)
+                    waitForProfileDom(view)
                     return
                 }
 
@@ -211,22 +211,33 @@ class MainActivity : AppCompatActivity() {
         binding.webView.loadUrl(ERP_DASHBOARD_URL)
     }
 
+    private fun waitForProfileDom(view: WebView) {
+        if (!loggedIn || !profileFetchInProgress) return
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            view.postVisualStateCallback(profileReadAttempts.toLong(), object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_VISUAL_DELAY_MS)
+                }
+            })
+        } else {
+            handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_READ_DELAY_MS)
+        }
+    }
+
     private fun extractAndApplyProfile(view: WebView) {
         if (!loggedIn || !profileFetchInProgress) return
 
         profileReadAttempts++
-        view.evaluateJavascript(STUDENT_PROFILE_SCRIPT) { result ->
-            val profile = decodeJavascriptString(result)
+        view.evaluateJavascript(STUDENT_PROFILE_TEXT_SCRIPT) { result ->
+            val payload = decodeJavascriptString(result)
             try {
-                val json = JSONObject(profile)
-                val name = json.optString("name").trim()
-                val cgpa = validGpa(json.optString("cgpa"))
-                val sgpa = validGpa(json.optString("sgpa"))
+                val json = JSONObject(payload)
+                val bodyText = json.optString("body", "")
+                val cards = json.optJSONArray("cards")
 
-                if (isValidStudentName(name)) {
-                    preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
-                    binding.studentName.text = name
-                }
+                val cgpa = findGpaInText(cards, bodyText, "CGPA")
+                val sgpa = findGpaInText(cards, bodyText, "SGPA")
 
                 if (cgpa.isNotBlank() && sgpa.isNotBlank()) {
                     val display = "CGPA: $cgpa  |  SGPA: $sgpa"
@@ -237,7 +248,7 @@ class MainActivity : AppCompatActivity() {
                     return@evaluateJavascript
                 }
             } catch (_: Exception) {
-                // Retry below when the ERP DOM is not ready or extraction is incomplete.
+                // Retry when the WebView has not exposed the final ERP text yet.
             }
 
             if (profileReadAttempts < MAX_PROFILE_READ_ATTEMPTS) {
@@ -247,6 +258,37 @@ class MainActivity : AppCompatActivity() {
                 preloadAllModules()
             }
         }
+    }
+
+    private fun findGpaInText(cards: org.json.JSONArray?, bodyText: String, label: String): String {
+        if (cards != null) {
+            for (index in 0 until cards.length()) {
+                val cardText = cards.optString(index, "")
+                val value = findGpaValue(cardText, label)
+                if (value.isNotBlank()) return value
+            }
+        }
+        return findGpaValue(bodyText, label)
+    }
+
+    private fun findGpaValue(text: String, label: String): String {
+        val normalized = text.replace(Regex("\\s+"), " ").trim()
+        if (normalized.isBlank()) return ""
+
+        val escapedLabel = Regex.escape(label)
+        val after = Regex(
+            """\\b$escapedLabel\\b\\s*[:\\-]?\\s*([0-4](?:\\.\\d{1,2})?)\\b""",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)
+        if (after != null) return validGpa(after.groupValues[1])
+
+        val before = Regex(
+            """([0-4](?:\\.\\d{1,2})?)\\s*\\b$escapedLabel\\b""",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)
+        if (before != null) return validGpa(before.groupValues[1])
+
+        return ""
     }
 
     private fun validGpa(value: String): String {
@@ -396,6 +438,7 @@ class MainActivity : AppCompatActivity() {
         private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
         private const val PROFILE_READ_DELAY_MS = 1200L
+        private const val PROFILE_VISUAL_DELAY_MS = 500L
         private const val PROFILE_RETRY_DELAY_MS = 1000L
         private const val MAX_PROFILE_READ_ATTEMPTS = 8
         private const val MODULE_READ_DELAY_MS = 700L
@@ -427,104 +470,14 @@ class MainActivity : AppCompatActivity() {
             })();
         """
 
-        private const val STUDENT_PROFILE_SCRIPT = """
+        private const val STUDENT_PROFILE_TEXT_SCRIPT = """
             (function(){
               function clean(value){return (value||'').replace(/\\s+/g,' ').trim();}
-              function textOf(el){
-                if(!el)return '';
-                return clean(el.textContent || el.innerText || '');
-              }
-              function validName(value){
-                const v=clean(value);
-                return v && v.length>1 && !/session|expire|dashboard|welcome|student information/i.test(v);
-              }
-              function numeric(value){
-                const v=clean(value);
-                return /^\\d+(?:\\.\\d+)?$/.test(v) ? v : '';
-              }
-              function metricFromText(value,label){
-                const text=clean(value);
-                if(!text)return '';
-                const upper=text.toUpperCase();
-                const index=upper.indexOf(label);
-                if(index<0)return '';
-
-                const before=text.slice(Math.max(0,index-32),index);
-                const after=text.slice(index+label.length,Math.min(text.length,index+label.length+32));
-                const beforeMatch=before.match(/([0-4](?:\\.\\d{1,2})?)\\s*$/);
-                if(beforeMatch)return beforeMatch[1];
-                const afterMatch=after.match(/^\\s*[:\\-]?\\s*([0-4](?:\\.\\d{1,2})?)/);
-                if(afterMatch)return afterMatch[1];
-                return '';
-              }
-              function metricFromCard(card,label){
-                if(!card)return '';
-                const labelEl=card.querySelector('.stat-label');
-                const valueEl=card.querySelector('.stat-value');
-                const cardLabel=clean(textOf(labelEl)).toUpperCase();
-                const value=numeric(textOf(valueEl));
-                if(cardLabel===label && value)return value;
-                return metricFromText(card.textContent || card.innerText || '',label);
-              }
-              function findMetric(label){
-                const cards=Array.from(document.querySelectorAll('.stat-card'));
-                for(const card of cards){
-                  const value=metricFromCard(card,label);
-                  if(value)return value;
-                }
-
-                const labels=Array.from(document.querySelectorAll('.stat-label'));
-                for(const labelEl of labels){
-                  if(clean(textOf(labelEl)).toUpperCase()!==label)continue;
-                  let parent=labelEl;
-                  for(let level=0; level<6 && parent; level++, parent=parent.parentElement){
-                    const value=metricFromCard(parent,label);
-                    if(value)return value;
-                  }
-                }
-
-                const possibleLabels=Array.from(document.querySelectorAll('div,span,p,td,th,strong,b'));
-                for(const labelEl of possibleLabels){
-                  if(clean(textOf(labelEl)).toUpperCase()!==label)continue;
-                  let parent=labelEl;
-                  for(let level=0; level<6 && parent; level++, parent=parent.parentElement){
-                    const value=metricFromCard(parent,label);
-                    if(value)return value;
-                  }
-                }
-
-                const bodyText=document.body ? (document.body.innerText || document.body.textContent || '') : '';
-                return metricFromText(bodyText,label);
-              }
-
-              let name='';
-              const selectors=['.student-details h1','.student-details h2','.student-name','.student_name'];
-              for(const selector of selectors){
-                const candidate=textOf(document.querySelector(selector));
-                if(validName(candidate)){name=candidate;break;}
-              }
-              if(!name){
-                const box=document.querySelector('.student-details');
-                if(box){
-                  const lines=(box.innerText||box.textContent||'').split(/\\n+/).map(clean).filter(Boolean);
-                  for(const line of lines){
-                    if(validName(line) && !/^SU\\d+/i.test(line) && !/^BS\\s/i.test(line)){name=line;break;}
-                  }
-                }
-              }
-              if(!name){
-                const headings=Array.from(document.querySelectorAll('h1,h2,h3'));
-                for(const heading of headings){
-                  const candidate=textOf(heading);
-                  if(validName(candidate) && !/^Results$/i.test(candidate)){name=candidate;break;}
-                }
-              }
-
-              return JSON.stringify({
-                name:name,
-                cgpa:findMetric('CGPA'),
-                sgpa:findMetric('SGPA')
+              const cards=Array.from(document.querySelectorAll('.stat-card')).map(function(card){
+                return clean(card.textContent || card.innerText || '');
               });
+              const body=clean(document.body ? (document.body.innerText || document.body.textContent || '') : '');
+              return JSON.stringify({cards:cards,body:body});
             })();
         """
     }
