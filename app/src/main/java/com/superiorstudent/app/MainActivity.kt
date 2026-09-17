@@ -430,7 +430,10 @@ class MainActivity : AppCompatActivity() {
         private const val STUDENT_PROFILE_SCRIPT = """
             (function(){
               function clean(value){return (value||'').replace(/\\s+/g,' ').trim();}
-              function textOf(el){return el?clean(el.innerText||el.textContent):'';}
+              function textOf(el){
+                if(!el)return '';
+                return clean(el.textContent || el.innerText || '');
+              }
               function validName(value){
                 const v=clean(value);
                 return v && v.length>1 && !/session|expire|dashboard|welcome|student information/i.test(v);
@@ -439,25 +442,62 @@ class MainActivity : AppCompatActivity() {
                 const v=clean(value);
                 return /^\\d+(?:\\.\\d+)?$/.test(v) ? v : '';
               }
+              function gpaFromText(value){
+                const v=clean(value);
+                if(!v)return '';
+                let match=v.match(/(?:^|\\s)([0-4](?:\\.\\d{1,2})?)(?=\\s|$)/);
+                if(match)return match[1];
+                return '';
+              }
+              function metricFromCard(card,label){
+                if(!card)return '';
+                const labelEl=card.querySelector('.stat-label');
+                const valueEl=card.querySelector('.stat-value');
+                const cardLabel=clean(textOf(labelEl)).toUpperCase();
+                const value=numeric(textOf(valueEl));
+                if(cardLabel===label && value)return value;
+
+                const cardText=clean(card.textContent || card.innerText || '');
+                const escapedLabel=label.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');
+                const before=new RegExp('([0-4](?:\\\\.\\\\d{1,2})?)\\\\s*'+escapedLabel+'\\\\b','i').exec(cardText);
+                if(before)return before[1];
+                const after=new RegExp('\\\\b'+escapedLabel+'\\\\s*[:\\\\-]?\\\\s*([0-4](?:\\\\.\\\\d{1,2})?)','i').exec(cardText);
+                if(after)return after[1];
+                return '';
+              }
               function findMetric(label){
                 const cards=Array.from(document.querySelectorAll('.stat-card'));
                 for(const card of cards){
-                  const labelEl=card.querySelector('.stat-label');
-                  const valueEl=card.querySelector('.stat-value');
-                  const cardLabel=clean(textOf(labelEl)).toUpperCase();
-                  const value=numeric(textOf(valueEl));
-                  if(cardLabel===label && value)return value;
+                  const value=metricFromCard(card,label);
+                  if(value)return value;
                 }
 
                 const labels=Array.from(document.querySelectorAll('.stat-label'));
                 for(const labelEl of labels){
                   if(clean(textOf(labelEl)).toUpperCase()!==label)continue;
-                  const card=labelEl.closest('.stat-card');
-                  if(!card)continue;
-                  const valueEl=card.querySelector('.stat-value');
-                  const value=numeric(textOf(valueEl));
-                  if(value)return value;
+                  let parent=labelEl;
+                  for(let level=0; level<6 && parent; level++, parent=parent.parentElement){
+                    const value=metricFromCard(parent,label);
+                    if(value)return value;
+                  }
                 }
+
+                const possibleLabels=Array.from(document.querySelectorAll('div,span,p,td,th,strong,b'));
+                for(const labelEl of possibleLabels){
+                  if(clean(textOf(labelEl)).toUpperCase()!==label)continue;
+                  let parent=labelEl;
+                  for(let level=0; level<6 && parent; level++, parent=parent.parentElement){
+                    const value=metricFromCard(parent,label);
+                    if(value)return value;
+                  }
+                }
+
+                const bodyText=clean(document.body ? (document.body.innerText || document.body.textContent || '') : '');
+                const escapedLabel=label.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');
+                const after=new RegExp('\\\\b'+escapedLabel+'\\\\b\\\\s*[:\\\\-]?\\\\s*([0-4](?:\\\\.\\\\d{1,2})?)','i').exec(bodyText);
+                if(after)return after[1];
+                const before=new RegExp('([0-4](?:\\\\.\\\\d{1,2})?)\\\\s*'+escapedLabel+'\\\\b','i').exec(bodyText);
+                if(before)return before[1];
 
                 return '';
               }
@@ -471,7 +511,7 @@ class MainActivity : AppCompatActivity() {
               if(!name){
                 const box=document.querySelector('.student-details');
                 if(box){
-                  const lines=(box.innerText||'').split(/\\n+/).map(clean).filter(Boolean);
+                  const lines=(box.innerText||box.textContent||'').split(/\\n+/).map(clean).filter(Boolean);
                   for(const line of lines){
                     if(validName(line) && !/^SU\\d+/i.test(line) && !/^BS\\s/i.test(line)){name=line;break;}
                   }
