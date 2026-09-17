@@ -1198,6 +1198,12 @@ class MainActivity : AppCompatActivity() {
                 if(value && value.length<=180) lines.push(value);
               });
 
+              clone.querySelectorAll('[class*="calendar"],[class*="schedule"],[class*="event"],[class*="course"],[class*="attendance"],[id*="calendar"],[id*="schedule"],[id*="event"],[id*="course"],[id*="attendance"]').forEach(function(el){
+                if(el.closest('table')) return;
+                const value=safe(textOf(el));
+                if(value && value.length<=250) lines.push(value);
+              });
+
               return JSON.stringify({
                 cards:unique(cards).slice(0,8),
                 tables:unique(tables).slice(0,12),
