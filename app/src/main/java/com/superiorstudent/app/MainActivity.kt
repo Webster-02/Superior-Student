@@ -256,7 +256,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
-        // Keep the WebView hidden while modules are fetched in the background.
         binding.webView.visibility = View.GONE
         binding.webView.loadUrl(ERP_BASE_URL + preloadingModule!!.path)
     }
@@ -425,6 +424,16 @@ class MainActivity : AppCompatActivity() {
                 return /^\\d+(?:\\.\\d+)?$/.test(v) ? v : '';
               }
               function findMetric(label){
+                const cards=Array.from(document.querySelectorAll('.stat-card'));
+                for(const card of cards){
+                  const labelEl=card.querySelector('.stat-label');
+                  const valueEl=card.querySelector('.stat-value');
+                  if(labelEl && valueEl && clean(textOf(labelEl)).toUpperCase()===label){
+                    const value=numeric(textOf(valueEl));
+                    if(value)return value;
+                  }
+                }
+
                 const elements=Array.from(document.querySelectorAll('*'));
                 for(const el of elements){
                   if(clean(el.textContent).toUpperCase()!==label) continue;
@@ -435,10 +444,12 @@ class MainActivity : AppCompatActivity() {
                       const value=numeric(textOf(candidate));
                       if(value)return value;
                     }
-                    const match=textOf(parent).match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
+                    const parentText=textOf(parent);
+                    const match=parentText.match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
                     if(match)return match[1];
                   }
                 }
+
                 const body=clean(document.body?document.body.innerText:'');
                 const match=body.match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
                 return match?match[1]:'';
@@ -466,6 +477,7 @@ class MainActivity : AppCompatActivity() {
                   if(validName(candidate) && !/^Results$/i.test(candidate)){name=candidate;break;}
                 }
               }
+
               return JSON.stringify({name:name,cgpa:findMetric('CGPA'),sgpa:findMetric('SGPA')});
             })();
         """
