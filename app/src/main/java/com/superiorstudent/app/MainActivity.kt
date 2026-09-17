@@ -66,12 +66,17 @@ class MainActivity : AppCompatActivity() {
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 super.onReceivedError(view, request, error)
                 if (request.isForMainFrame && activeModule != null) {
+                    binding.moduleProgress.visibility = View.GONE
                     Toast.makeText(this@MainActivity, "Unable to load ERP page. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
                 }
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+
+                if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
+                    binding.moduleProgress.visibility = View.GONE
+                }
 
                 if (restoringSession) {
                     if (isAuthenticatedUrl(url)) {
@@ -249,8 +254,13 @@ class MainActivity : AppCompatActivity() {
 
                 if (cgpa.isNotBlank() && sgpa.isNotBlank()) {
                     val display = "CGPA: $cgpa  |  SGPA: $sgpa"
-                    preferences.edit().putString(KEY_GPA, display).apply()
-                    binding.studentGpa.text = display
+                    preferences.edit()
+                        .putString(KEY_CGPA, cgpa)
+                        .putString(KEY_SGPA, sgpa)
+                        .putString(KEY_GPA, display)
+                        .apply()
+                    binding.studentCgpa.text = cgpa
+                    binding.studentSgpa.text = sgpa
                     profileFetchInProgress = false
                     preloadAllModules()
                     return@evaluateJavascript
@@ -325,15 +335,37 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadModule(module: Module) {
         if (!loggedIn) return
+
         activeModule = module
-        binding.dashboardScroll.visibility = View.GONE
         binding.loginScroll.visibility = View.GONE
-        binding.refreshButton.visibility = View.VISIBLE
-        binding.homeButton.visibility = View.VISIBLE
-        binding.webView.visibility = View.VISIBLE
+        binding.dashboardScroll.visibility = View.GONE
+        binding.moduleScreen.visibility = View.VISIBLE
+        binding.moduleProgress.visibility = View.VISIBLE
+
+        when (module) {
+            Module.ATTENDANCE -> {
+                binding.moduleTitle.text = "Attendance"
+                binding.moduleSubtitle.text = "Your official university attendance record"
+            }
+            Module.TIMETABLE -> {
+                binding.moduleTitle.text = "Timetable"
+                binding.moduleSubtitle.text = "Your official class schedule"
+            }
+            Module.FEE -> {
+                binding.moduleTitle.text = "Fee Details"
+                binding.moduleSubtitle.text = "Your official fee information"
+            }
+        }
+
         val html = cachedHtml[module]
         if (!html.isNullOrBlank()) {
-            binding.webView.loadDataWithBaseURL(ERP_BASE_URL, html, "text/html", "UTF-8", ERP_BASE_URL + module.path)
+            binding.webView.loadDataWithBaseURL(
+                ERP_BASE_URL,
+                html,
+                "text/html",
+                "UTF-8",
+                ERP_BASE_URL + module.path
+            )
         } else {
             binding.webView.loadUrl(ERP_BASE_URL + module.path)
         }
@@ -342,6 +374,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshActiveModule() {
         val module = activeModule ?: return
         cachedHtml.remove(module)
+        binding.moduleProgress.visibility = View.VISIBLE
         binding.webView.visibility = View.VISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + module.path)
     }
@@ -350,14 +383,19 @@ class MainActivity : AppCompatActivity() {
         activeModule = null
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
-        binding.refreshButton.visibility = View.GONE
-        binding.homeButton.visibility = View.GONE
+        binding.moduleProgress.visibility = View.GONE
+        binding.moduleScreen.visibility = View.GONE
         binding.dashboardScroll.visibility = View.VISIBLE
         binding.loginScroll.visibility = View.GONE
+
         val savedName = preferences.getString(KEY_STUDENT_NAME, "") ?: ""
-        val savedGpa = preferences.getString(KEY_GPA, "") ?: ""
+        val savedCgpa = preferences.getString(KEY_CGPA, "") ?: ""
+        val savedSgpa = preferences.getString(KEY_SGPA, "") ?: ""
+        val legacyGpa = preferences.getString(KEY_GPA, "") ?: ""
+
         binding.studentName.text = if (isValidStudentName(savedName)) savedName else "Student"
-        binding.studentGpa.text = if (savedGpa.isBlank()) "GPA: Loading from ERP…" else savedGpa
+        binding.studentCgpa.text = if (savedCgpa.isNotBlank()) savedCgpa else findGpaValue(legacyGpa, "CGPA").ifBlank { "—" }
+        binding.studentSgpa.text = if (savedSgpa.isNotBlank()) savedSgpa else findGpaValue(legacyGpa, "SGPA").ifBlank { "—" }
     }
 
     private fun showLogin() {
@@ -374,8 +412,8 @@ class MainActivity : AppCompatActivity() {
         cachedHtml.clear()
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
-        binding.refreshButton.visibility = View.GONE
-        binding.homeButton.visibility = View.GONE
+        binding.moduleProgress.visibility = View.GONE
+        binding.moduleScreen.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.loginScroll.visibility = View.VISIBLE
         binding.loginButton.isEnabled = true
@@ -439,6 +477,8 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_SESSION_ACTIVE = "session_active"
         private const val KEY_USERNAME = "username"
         private const val KEY_STUDENT_NAME = "student_name"
+        private const val KEY_CGPA = "student_cgpa"
+        private const val KEY_SGPA = "student_sgpa"
         private const val KEY_GPA = "student_gpa"
         private const val ERP_BASE_URL = "https://erp.superior.edu.pk/"
         private const val ERP_LOGIN_URL = "https://erp.superior.edu.pk/web/login"
