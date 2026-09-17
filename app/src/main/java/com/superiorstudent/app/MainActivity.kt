@@ -207,7 +207,9 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn) return
         profileFetchInProgress = true
         profileReadAttempts = 0
-        binding.webView.visibility = View.GONE
+        // Keep the WebView attached while waiting for the visual DOM state.
+        // This makes postVisualStateCallback reliable even though the ERP page is not shown to the user.
+        binding.webView.visibility = View.INVISIBLE
         binding.webView.loadUrl(ERP_DASHBOARD_URL)
     }
 
