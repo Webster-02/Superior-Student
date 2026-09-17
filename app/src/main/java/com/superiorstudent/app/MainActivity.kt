@@ -5,7 +5,13 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.HorizontalScrollView
+import android.widget.LinearLayout
+import android.widget.TextView
+import kotlin.math.roundToInt
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -34,7 +40,9 @@ class MainActivity : AppCompatActivity() {
     private var loginAttempt = 0
     private var preloadingModule: Module? = null
     private val preloadQueue = mutableListOf<Module>()
-    private val cachedHtml = mutableMapOf<Module, String>()
+    private val cachedModuleData = mutableMapOf<Module, String>()
+    private var moduleFetchInProgress = false
+    private var moduleReadRequestId = 0
 
     private enum class Module(val path: String) {
         ATTENDANCE("student/attendance"),
@@ -67,7 +75,7 @@ class MainActivity : AppCompatActivity() {
                 super.onReceivedError(view, request, error)
                 if (request.isForMainFrame && activeModule != null) {
                     binding.moduleProgress.visibility = View.GONE
-                    Toast.makeText(this@MainActivity, "Unable to load ERP page. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Unable to load your information. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
                 }
             }
 
@@ -111,15 +119,17 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
 
-                val module = preloadingModule ?: return
-                handler.postDelayed({
-                    view.evaluateJavascript("document.documentElement.outerHTML") { result ->
-                        val html = decodeJavascriptString(result)
-                        if (html.isNotBlank()) cachedHtml[module] = html
-                        preloadingModule = null
-                        preloadNextModule()
-                    }
-                }, MODULE_READ_DELAY_MS)
+                val preload = preloadingModule
+                if (preload != null && url.contains(preload.path, true)) {
+                    readModuleData(view, preload, false)
+                    return
+                }
+
+                val active = activeModule
+                if (moduleFetchInProgress && active != null && url.contains(active.path, true)) {
+                    moduleFetchInProgress = false
+                    readModuleData(view, active, true)
+                }
             }
         }
 
@@ -128,7 +138,7 @@ class MainActivity : AppCompatActivity() {
             password = binding.passwordInput.text.toString()
             if (username.isBlank() || password.isBlank()) {
                 binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
-                binding.loginStatus.text = "Please enter your ERP username and password."
+                binding.loginStatus.text = "Please enter your university username and password."
                 return@setOnClickListener
             }
             loginInProgress = true
@@ -137,7 +147,7 @@ class MainActivity : AppCompatActivity() {
             loggedIn = false
             loginAttempt = 0
             profileReadAttempts = 0
-            cachedHtml.clear()
+            cachedModuleData.clear()
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
             binding.loginStatus.text = "Signing in securely…"
@@ -168,7 +178,7 @@ class MainActivity : AppCompatActivity() {
     private fun scheduleLoginInjection(view: WebView) {
         if (!loginInProgress || loginSubmitted) return
         if (loginAttempt >= MAX_LOGIN_INJECTION_ATTEMPTS) {
-            failLogin("Unable to connect to the ERP login form. Please try again.")
+            failLogin("Unable to connect to your university account. Please try again.")
             return
         }
         handler.postDelayed({ injectLogin(view) }, LOGIN_INJECTION_DELAY_MS)
@@ -184,7 +194,7 @@ class MainActivity : AppCompatActivity() {
             if (!loginInProgress || loginSubmitted) return@evaluateJavascript
             if (result == "\"SUBMITTED\"") {
                 loginSubmitted = true
-                binding.loginStatus.text = "Verifying ERP credentials…"
+                binding.loginStatus.text = "Verifying your account…"
             } else {
                 scheduleLoginInjection(view)
             }
@@ -314,6 +324,7 @@ class MainActivity : AppCompatActivity() {
         return if (number in 0.0..4.0) String.format(java.util.Locale.US, "%.2f", number).trimEnd('0').trimEnd('.') else ""
     }
 
+
     private fun preloadAllModules() {
         if (!loggedIn || profileFetchInProgress || preloadingModule != null) return
         preloadQueue.clear()
@@ -329,55 +340,424 @@ class MainActivity : AppCompatActivity() {
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
-        binding.webView.visibility = View.GONE
+        binding.webView.visibility = View.INVISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + preloadingModule!!.path)
     }
 
     private fun loadModule(module: Module) {
         if (!loggedIn) return
 
+        preloadingModule = null
+        preloadQueue.clear()
+        moduleFetchInProgress = false
+        moduleReadRequestId++
+
         activeModule = module
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
-        binding.webView.visibility = View.VISIBLE
+        binding.webView.visibility = View.INVISIBLE
         binding.moduleProgress.visibility = View.VISIBLE
+        binding.moduleContent.removeAllViews()
+        binding.moduleInfo.text = "Syncing your latest information…"
 
         when (module) {
             Module.ATTENDANCE -> {
                 binding.moduleTitle.text = "Attendance"
-                binding.moduleSubtitle.text = "Your official university attendance record"
+                binding.moduleSubtitle.text = "Your attendance"
             }
             Module.TIMETABLE -> {
                 binding.moduleTitle.text = "Timetable"
-                binding.moduleSubtitle.text = "Your official class schedule"
+                binding.moduleSubtitle.text = "Your class schedule"
             }
             Module.FEE -> {
                 binding.moduleTitle.text = "Fee Details"
-                binding.moduleSubtitle.text = "Your official fee information"
+                binding.moduleSubtitle.text = "Your fee information"
             }
         }
 
-        val html = cachedHtml[module]
-        if (!html.isNullOrBlank()) {
-            binding.webView.loadDataWithBaseURL(
-                ERP_BASE_URL,
-                html,
-                "text/html",
-                "UTF-8",
-                ERP_BASE_URL + module.path
-            )
-        } else {
-            binding.webView.loadUrl(ERP_BASE_URL + module.path)
+        val payload = cachedModuleData[module]
+        val data = payload?.let { parseModuleData(it) }
+        if (data != null) {
+            renderModuleData(module, data)
+            return
         }
+
+        moduleFetchInProgress = true
+        binding.webView.loadUrl(ERP_BASE_URL + module.path)
     }
 
     private fun refreshActiveModule() {
         val module = activeModule ?: return
-        cachedHtml.remove(module)
+        cachedModuleData.remove(module)
+        moduleFetchInProgress = false
+        moduleReadRequestId++
         binding.moduleProgress.visibility = View.VISIBLE
-        binding.webView.visibility = View.VISIBLE
+        binding.moduleContent.removeAllViews()
+        binding.moduleInfo.text = "Syncing the latest information…"
+        binding.webView.visibility = View.INVISIBLE
         binding.webView.loadUrl(ERP_BASE_URL + module.path)
+        moduleFetchInProgress = true
+    }
+
+
+    private data class TableData(
+        val title: String,
+        val headers: List<String>,
+        val rows: List<List<String>>
+    )
+
+    private data class ModuleData(
+        val cards: List<Pair<String, String>>,
+        val tables: List<TableData>,
+        val lines: List<String>
+    )
+
+    private fun renderModuleData(module: Module, data: ModuleData) {
+        binding.moduleContent.removeAllViews()
+        addModuleIntro(module)
+
+        data.cards.take(4).forEach { (label, value) ->
+            binding.moduleContent.addView(createMetricCard(label, value))
+        }
+
+        data.tables.forEachIndexed { index, table ->
+            binding.moduleContent.addView(
+                createTableSection(
+                    table.title.ifBlank { moduleDefaultTableTitle(module, index) },
+                    table
+                )
+            )
+        }
+
+        val remainingLines = data.lines
+            .map(::cleanDisplayText)
+            .filter(::isUsefulDisplayText)
+            .distinct()
+            .take(20)
+
+        if (remainingLines.isNotEmpty()) {
+            binding.moduleContent.addView(createInformationSection(remainingLines))
+        }
+
+        if (data.cards.isEmpty() && data.tables.isEmpty() && remainingLines.isEmpty()) {
+            binding.moduleContent.addView(createEmptyState())
+        }
+
+        binding.moduleProgress.visibility = View.GONE
+        binding.moduleInfo.text = "Student data synced successfully"
+    }
+
+    private fun addModuleIntro(module: Module) {
+        val title = when (module) {
+            Module.ATTENDANCE -> "Attendance overview"
+            Module.TIMETABLE -> "Class schedule"
+            Module.FEE -> "Fee overview"
+        }
+        val subtitle = when (module) {
+            Module.ATTENDANCE -> "Your attendance information in a clean Superior Student view"
+            Module.TIMETABLE -> "Your classes and schedule in a clean Superior Student view"
+            Module.FEE -> "Your fee information in a clean Superior Student view"
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 18f)
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            elevation = dp(2).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(12), dp(12), dp(8)) }
+        }
+
+        card.addView(TextView(this).apply {
+            text = title
+            setTextColor(Color.rgb(18, 58, 112))
+            textSize = 18f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+        card.addView(TextView(this).apply {
+            text = subtitle
+            setTextColor(Color.rgb(102, 112, 133))
+            textSize = 12f
+            setPadding(0, dp(5), 0, 0)
+        })
+
+        binding.moduleContent.addView(card)
+    }
+
+    private fun createMetricCard(label: String, value: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            elevation = dp(1).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = cleanDisplayText(label)
+                setTextColor(Color.rgb(102, 112, 133))
+                textSize = 11f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = cleanDisplayText(value)
+                setTextColor(Color.rgb(18, 58, 112))
+                textSize = 20f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, dp(4), 0, 0)
+            })
+        }
+    }
+
+    private fun createTableSection(title: String, table: TableData): View {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
+        }
+
+        outer.addView(TextView(this).apply {
+            text = cleanDisplayText(title)
+            setTextColor(Color.rgb(23, 32, 51))
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(16), dp(15), dp(16), dp(11))
+        })
+
+        val horizontal = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val tableLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, dp(10), dp(10))
+        }
+
+        if (table.headers.isNotEmpty()) {
+            tableLayout.addView(createTableRow(table.headers, true))
+        }
+        table.rows.forEach { row ->
+            if (row.any { it.isNotBlank() }) tableLayout.addView(createTableRow(row, false))
+        }
+
+        horizontal.addView(tableLayout)
+        outer.addView(horizontal)
+        return outer
+    }
+
+    private fun createTableRow(values: List<String>, header: Boolean): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = if (header) roundedBackground(Color.rgb(239, 245, 255), 10f) else roundedBackground(Color.WHITE, 0f)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, if (header) dp(2) else dp(1), 0, 0) }
+        }
+
+        values.forEach { value ->
+            row.addView(TextView(this).apply {
+                text = cleanDisplayText(value).ifBlank { "—" }
+                setTextColor(if (header) Color.rgb(18, 58, 112) else Color.rgb(52, 64, 84))
+                textSize = if (header) 11f else 12f
+                if (header) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(11), dp(12), dp(11))
+                minWidth = dp(112)
+                maxWidth = dp(240)
+            })
+        }
+        return row
+    }
+
+    private fun createInformationSection(lines: List<String>): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = "Additional information"
+                setTextColor(Color.rgb(23, 32, 51))
+                textSize = 15f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(16), dp(15), dp(16), dp(8))
+            })
+            lines.forEach { line ->
+                addView(TextView(this@MainActivity).apply {
+                    text = "• $line"
+                    setTextColor(Color.rgb(82, 93, 112))
+                    textSize = 12f
+                    setPadding(dp(16), dp(5), dp(16), dp(5))
+                })
+            }
+        }
+    }
+
+    private fun createEmptyState(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = roundedBackground(Color.WHITE, 16f)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) }
+            setPadding(dp(24), dp(32), dp(24), dp(32))
+
+            addView(TextView(this@MainActivity).apply {
+                text = "No data available"
+                setTextColor(Color.rgb(18, 58, 112))
+                textSize = 17f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Tap Refresh to request the latest information."
+                setTextColor(Color.rgb(102, 112, 133))
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setPadding(0, dp(6), 0, 0)
+            })
+        }
+    }
+
+    private fun roundedBackground(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radiusDp.toInt()).toFloat()
+        }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
+
+    private fun cleanDisplayText(value: String): String {
+        return value
+            .replace(Regex("(?i)\\bERP\\b"), "")
+            .replace(Regex("(?i)\\bOdoo\\b"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun isUsefulDisplayText(value: String): Boolean {
+        val text = value.trim()
+        if (text.length < 2) return false
+        if (text.equals("home", true) || text.equals("logout", true)) return false
+        if (text.equals("dashboard", true) || text.equals("menu", true)) return false
+        return true
+    }
+
+    private fun moduleDefaultTableTitle(module: Module, index: Int): String {
+        return when (module) {
+            Module.ATTENDANCE -> if (index == 0) "Attendance records" else "Attendance details"
+            Module.TIMETABLE -> if (index == 0) "Class schedule" else "Schedule details"
+            Module.FEE -> if (index == 0) "Fee records" else "Fee details"
+        }
+    }
+
+    private fun parseModuleData(payload: String): ModuleData? {
+        return try {
+            val json = JSONObject(payload)
+            val cards = mutableListOf<Pair<String, String>>()
+            json.optJSONArray("cards")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val card = array.optJSONObject(i) ?: continue
+                    val label = cleanDisplayText(card.optString("label", ""))
+                    val value = cleanDisplayText(card.optString("value", ""))
+                    if (label.isNotBlank() && value.isNotBlank()) cards.add(label to value)
+                }
+            }
+
+            val tables = mutableListOf<TableData>()
+            json.optJSONArray("tables")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val tableJson = array.optJSONObject(i) ?: continue
+                    val headers = mutableListOf<String>()
+                    tableJson.optJSONArray("headers")?.let { headerArray ->
+                        for (h in 0 until headerArray.length()) headers.add(headerArray.optString(h, ""))
+                    }
+                    val rows = mutableListOf<List<String>>()
+                    tableJson.optJSONArray("rows")?.let { rowArray ->
+                        for (r in 0 until rowArray.length()) {
+                            val rowJson = rowArray.optJSONArray(r) ?: continue
+                            val row = mutableListOf<String>()
+                            for (c in 0 until rowJson.length()) row.add(rowJson.optString(c, ""))
+                            rows.add(row)
+                        }
+                    }
+                    val title = cleanDisplayText(tableJson.optString("title", ""))
+                    if (headers.isNotEmpty() || rows.isNotEmpty()) tables.add(TableData(title, headers, rows))
+                }
+            }
+
+            val lines = mutableListOf<String>()
+            json.optJSONArray("lines")?.let { array ->
+                for (i in 0 until array.length()) {
+                    val line = cleanDisplayText(array.optString(i, ""))
+                    if (isUsefulDisplayText(line)) lines.add(line)
+                }
+            }
+
+            ModuleData(cards.distinct(), tables, lines.distinct())
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun readModuleData(view: WebView, module: Module, displayWhenReady: Boolean) {
+        if (!loggedIn) return
+        val requestId = moduleReadRequestId
+
+        fun readNow() {
+            if (!loggedIn || requestId != moduleReadRequestId) return
+            view.evaluateJavascript(MODULE_DATA_SCRIPT) { result ->
+                if (!loggedIn || requestId != moduleReadRequestId) return@evaluateJavascript
+                val payload = decodeJavascriptString(result)
+                val data = parseModuleData(payload)
+
+                if (data != null) {
+                    cachedModuleData[module] = payload
+                    if (displayWhenReady && activeModule == module) renderModuleData(module, data)
+                } else if (displayWhenReady && activeModule == module) {
+                    binding.moduleProgress.visibility = View.GONE
+                    binding.moduleInfo.text = "Could not read the latest data"
+                    binding.moduleContent.removeAllViews()
+                    binding.moduleContent.addView(createEmptyState())
+                }
+
+                if (!displayWhenReady && preloadingModule == module) {
+                    preloadingModule = null
+                    preloadNextModule()
+                }
+            }
+        }
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            view.postVisualStateCallback(requestId.toLong(), object : WebView.VisualStateCallback() {
+                override fun onComplete(requestIdFromWebView: Long) {
+                    handler.postDelayed({ readNow() }, MODULE_VISUAL_DELAY_MS)
+                }
+            })
+        } else {
+            handler.postDelayed({ readNow() }, MODULE_READ_DELAY_MS)
+        }
     }
 
     private fun showDashboard() {
@@ -386,6 +766,9 @@ class MainActivity : AppCompatActivity() {
         binding.webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
+        binding.moduleContent.removeAllViews()
+        moduleFetchInProgress = false
+        moduleReadRequestId++
         binding.dashboardScroll.visibility = View.VISIBLE
         binding.loginScroll.visibility = View.GONE
 
@@ -410,7 +793,7 @@ class MainActivity : AppCompatActivity() {
         loginAttempt = 0
         preloadingModule = null
         preloadQueue.clear()
-        cachedHtml.clear()
+        cachedModuleData.clear()
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
@@ -428,6 +811,7 @@ class MainActivity : AppCompatActivity() {
         binding.webView.clearHistory()
         binding.webView.clearCache(true)
         binding.webView.clearFormData()
+        cachedModuleData.clear()
         showLogin()
     }
 
@@ -490,7 +874,8 @@ class MainActivity : AppCompatActivity() {
         private const val PROFILE_VISUAL_DELAY_MS = 500L
         private const val PROFILE_RETRY_DELAY_MS = 1000L
         private const val MAX_PROFILE_READ_ATTEMPTS = 8
-        private const val MODULE_READ_DELAY_MS = 700L
+        private const val MODULE_READ_DELAY_MS = 900L
+        private const val MODULE_VISUAL_DELAY_MS = 300L
 
         private const val LOGIN_SCRIPT = """
             (function(){
@@ -519,6 +904,79 @@ class MainActivity : AppCompatActivity() {
             })();
         """
 
+
+        private const val MODULE_DATA_SCRIPT = """
+            (function(){
+              function clean(value){return (value||'').replace(/\s+/g,' ').trim();}
+              function textOf(el){return el ? clean(el.innerText || el.textContent || '') : '';}
+              function safe(value){return clean(value).replace(/\bERP\b/gi,'').replace(/\bOdoo\b/gi,'').replace(/\s+/g,' ').trim();}
+              function unique(list){
+                const seen=new Set();
+                return list.filter(function(item){
+                  const key=JSON.stringify(item);
+                  if(seen.has(key)) return false;
+                  seen.add(key);
+                  return true;
+                });
+              }
+
+              let root=document.querySelector('main,[role="main"],.oe_structure,.container-fluid,.container');
+              const candidates=Array.from(document.querySelectorAll('main,[role="main"],.oe_structure,.container-fluid,.container'));
+              for(const candidate of candidates){
+                if(candidate.querySelector('table')){root=candidate;break;}
+              }
+              if(!root) root=document.body;
+
+              const clone=root.cloneNode(true);
+              clone.querySelectorAll('header,nav,footer,aside,script,style,noscript,form').forEach(function(el){el.remove();});
+
+              const tables=[];
+              clone.querySelectorAll('table').forEach(function(table){
+                const rows=Array.from(table.querySelectorAll('tr')).map(function(tr){
+                  return Array.from(tr.querySelectorAll('th,td')).map(function(cell){return safe(textOf(cell));}).filter(function(v){return v!=='';});
+                }).filter(function(row){return row.length>0;});
+                if(!rows.length) return;
+
+                let headers=[];
+                const headerCells=table.querySelectorAll('thead th');
+                if(headerCells.length){
+                  headers=Array.from(headerCells).map(function(cell){return safe(textOf(cell));});
+                }else if(table.querySelector('tr th')){
+                  headers=Array.from(table.querySelectorAll('tr:first-child th')).map(function(cell){return safe(textOf(cell));});
+                }
+
+                let dataRows=rows;
+                if(headers.length && dataRows.length && dataRows[0].join('|')===headers.join('|')) dataRows=dataRows.slice(1);
+
+                const caption=table.querySelector('caption');
+                tables.push({
+                  title:safe(caption ? textOf(caption) : ''),
+                  headers:headers,
+                  rows:dataRows.slice(0,100)
+                });
+              });
+
+              const cards=[];
+              clone.querySelectorAll('.stat-card,.summary-card,.info-box').forEach(function(card){
+                if(card.querySelector('table')) return;
+                const cardLines=(card.innerText||card.textContent||'').split(/\n+/).map(clean).filter(Boolean);
+                if(cardLines.length>=2) cards.push({label:safe(cardLines[0]),value:safe(cardLines.slice(1).join(' '))});
+              });
+
+              const lines=[];
+              clone.querySelectorAll('h1,h2,h3,h4,p,li,.alert').forEach(function(el){
+                if(el.closest('table')) return;
+                const value=safe(textOf(el));
+                if(value && value.length<=180) lines.push(value);
+              });
+
+              return JSON.stringify({
+                cards:unique(cards).slice(0,8),
+                tables:unique(tables).slice(0,12),
+                lines:unique(lines).slice(0,30)
+              });
+            })();
+        """;
         private const val STUDENT_PROFILE_TEXT_SCRIPT = """
             (function(){
               function clean(value){return (value||'').replace(/\\s+/g,' ').trim();}
