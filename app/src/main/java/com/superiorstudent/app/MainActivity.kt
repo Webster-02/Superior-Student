@@ -36,10 +36,10 @@ class MainActivity : AppCompatActivity() {
     private val preloadQueue = mutableListOf<Module>()
     private val cachedHtml = mutableMapOf<Module, String>()
 
-    private enum class Module(val path: String, val title: String) {
-        ATTENDANCE("student/attendance", "Attendance"),
-        TIMETABLE("student/class/schedule", "Timetable"),
-        FEE("student/invoices", "Fee Details")
+    private enum class Module(val path: String) {
+        ATTENDANCE("student/attendance"),
+        TIMETABLE("student/class/schedule"),
+        FEE("student/invoices")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
                 if (restoringSession) {
                     if (isAuthenticatedUrl(url)) {
                         restoringSession = false
-                        completeLogin(true)
+                        completeLogin()
                     } else if (url.contains("/web/login", true)) {
                         restoringSession = false
                         preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
@@ -87,7 +87,7 @@ class MainActivity : AppCompatActivity() {
 
                 if (loginInProgress) {
                     if (isAuthenticatedUrl(url)) {
-                        completeLogin(false)
+                        completeLogin()
                     } else if (url.contains("/web/login", true)) {
                         if (!loginSubmitted) {
                             loginAttempt = 0
@@ -186,7 +186,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun completeLogin(isRestoredSession: Boolean) {
+    private fun completeLogin() {
         loginInProgress = false
         loginSubmitted = false
         restoringSession = false
@@ -217,45 +217,41 @@ class MainActivity : AppCompatActivity() {
         profileReadAttempts++
         view.evaluateJavascript(STUDENT_PROFILE_SCRIPT) { result ->
             val profile = decodeJavascriptString(result)
-            var extracted = false
-
             try {
                 val json = JSONObject(profile)
                 val name = json.optString("name").trim()
-                val cgpa = json.optString("cgpa").trim()
-                val sgpa = json.optString("sgpa").trim()
+                val cgpa = validGpa(json.optString("cgpa"))
+                val sgpa = validGpa(json.optString("sgpa"))
 
                 if (isValidStudentName(name)) {
                     preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
                     binding.studentName.text = name
                 }
 
-                if (cgpa.isNotBlank() || sgpa.isNotBlank()) {
-                    val display = buildString {
-                        if (cgpa.isNotBlank()) append("CGPA: ").append(cgpa)
-                        if (sgpa.isNotBlank()) {
-                            if (isNotEmpty()) append("  |  ")
-                            append("SGPA: ").append(sgpa)
-                        }
-                    }
+                if (cgpa.isNotBlank() && sgpa.isNotBlank()) {
+                    val display = "CGPA: $cgpa  |  SGPA: $sgpa"
                     preferences.edit().putString(KEY_GPA, display).apply()
                     binding.studentGpa.text = display
-                    extracted = true
+                    profileFetchInProgress = false
+                    preloadAllModules()
+                    return@evaluateJavascript
                 }
             } catch (_: Exception) {
-                // Retry below. Cached values are preserved until a fresh value is available.
+                // Retry below when the ERP DOM is not ready or extraction is incomplete.
             }
 
-            if (extracted) {
-                profileFetchInProgress = false
-                preloadAllModules()
-            } else if (profileReadAttempts < MAX_PROFILE_READ_ATTEMPTS) {
+            if (profileReadAttempts < MAX_PROFILE_READ_ATTEMPTS) {
                 handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_RETRY_DELAY_MS)
             } else {
                 profileFetchInProgress = false
                 preloadAllModules()
             }
         }
+    }
+
+    private fun validGpa(value: String): String {
+        val number = value.trim().toDoubleOrNull() ?: return ""
+        return if (number in 0.0..4.0) String.format(java.util.Locale.US, "%.2f", number).trimEnd('0').trimEnd('.') else ""
     }
 
     private fun preloadAllModules() {
@@ -456,29 +452,14 @@ class MainActivity : AppCompatActivity() {
                 const labels=Array.from(document.querySelectorAll('.stat-label'));
                 for(const labelEl of labels){
                   if(clean(textOf(labelEl)).toUpperCase()!==label)continue;
-                  const parent=labelEl.closest('.stat-card') || labelEl.parentElement;
-                  if(parent){
-                    const valueEl=parent.querySelector('.stat-value');
-                    const value=numeric(textOf(valueEl));
-                    if(value)return value;
-                  }
+                  const card=labelEl.closest('.stat-card');
+                  if(!card)continue;
+                  const valueEl=card.querySelector('.stat-value');
+                  const value=numeric(textOf(valueEl));
+                  if(value)return value;
                 }
 
-                const bodyLines=(document.body&&document.body.innerText||'')
-                  .split(/\\n+/).map(clean).filter(Boolean);
-                for(let i=0;i<bodyLines.length;i++){
-                  if(bodyLines[i].toUpperCase()!==label)continue;
-                  const previous=i>0?numeric(bodyLines[i-1]):'';
-                  const next=i+1<bodyLines.length?numeric(bodyLines[i+1]):'';
-                  if(previous)return previous;
-                  if(next)return next;
-                }
-
-                const body=clean(document.body?document.body.innerText:'');
-                const afterLabel=body.match(new RegExp(label+'\\s*[:\\-]?\\s*(\\d+(?:\\.\\d+)?)','i'));
-                if(afterLabel)return afterLabel[1];
-                const beforeLabel=body.match(new RegExp('(\\d+(?:\\.\\d+)?)\\s*'+label,'i'));
-                return beforeLabel?beforeLabel[1]:'';
+                return '';
               }
 
               let name='';
