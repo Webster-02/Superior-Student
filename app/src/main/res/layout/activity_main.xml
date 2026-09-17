@@ -143,13 +143,23 @@
                     android:textSize="14sp" />
 
                 <TextView
+                    android:id="@+id/studentName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="5dp"
-                    android:text="Your Mini Student Dashboard"
+                    android:text="Student"
                     android:textColor="#FFFFFF"
                     android:textSize="23sp"
                     android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/studentGpa"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="GPA: Not available yet"
+                    android:textColor="#E8EEFF"
+                    android:textSize="15sp" />
 
                 <TextView
                     android:layout_width="wrap_content"
