@@ -340,6 +340,7 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
+        binding.webView.visibility = View.VISIBLE
         binding.moduleProgress.visibility = View.VISIBLE
 
         when (module) {
