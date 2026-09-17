@@ -20,8 +20,10 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val handler = Handler(Looper.getMainLooper())
+    private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
     private var loginInProgress = false
     private var loginSubmitted = false
+    private var restoringSession = false
     private var loggedIn = false
     private var activeModule: Module? = null
     private var username = ""
@@ -68,6 +70,19 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+
+                if (restoringSession) {
+                    if (isAuthenticatedUrl(url)) {
+                        restoringSession = false
+                        completeLogin(isRestoredSession = true)
+                    } else if (url.contains("/web/login", true)) {
+                        restoringSession = false
+                        preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
+                        showLogin()
+                    }
+                    return
+                }
+
                 if (loginInProgress) {
                     if (isAuthenticatedUrl(url)) {
                         completeLogin()
@@ -107,6 +122,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             loginInProgress = true
+            restoringSession = false
             loginSubmitted = false
             loggedIn = false
             loginAttempt = 0
@@ -125,7 +141,17 @@ class MainActivity : AppCompatActivity() {
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.logoutButton.setOnClickListener { logout() }
 
-        if (savedInstanceState != null) webView.restoreState(savedInstanceState)
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState)
+        } else if (preferences.getBoolean(KEY_SESSION_ACTIVE, false)) {
+            username = preferences.getString(KEY_USERNAME, "") ?: ""
+            restoringSession = true
+            binding.loginScroll.visibility = View.GONE
+            binding.dashboardScroll.visibility = View.GONE
+            binding.webView.visibility = View.VISIBLE
+            binding.loginStatus.text = "Restoring your session…"
+            webView.loadUrl(ERP_DASHBOARD_URL)
+        }
     }
 
     private fun scheduleLoginInjection(view: WebView) {
@@ -154,14 +180,49 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun completeLogin() {
+    private fun completeLogin(isRestoredSession: Boolean = false) {
         loginInProgress = false
+        restoringSession = false
         loggedIn = true
+        preferences.edit()
+            .putBoolean(KEY_SESSION_ACTIVE, true)
+            .putString(KEY_USERNAME, username)
+            .apply()
         binding.loginStatus.text = ""
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
         showDashboard()
+        fetchStudentProfile()
         preloadAllModules()
+    }
+
+    private fun fetchStudentProfile() {
+        binding.webView.visibility = View.VISIBLE
+        binding.webView.loadUrl(ERP_DASHBOARD_URL)
+        handler.postDelayed({
+            if (!loggedIn) return@postDelayed
+            binding.webView.evaluateJavascript(STUDENT_PROFILE_SCRIPT) { result ->
+                val profile = decodeJavascriptString(result)
+                if (profile.isNotBlank()) {
+                    try {
+                        val json = JSONObject(profile)
+                        val name = json.optString("name").trim()
+                        val gpa = json.optString("gpa").trim()
+                        if (name.isNotBlank()) {
+                            preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
+                            binding.studentName.text = name
+                        }
+                        if (gpa.isNotBlank()) {
+                            preferences.edit().putString(KEY_GPA, gpa).apply()
+                            binding.studentGpa.text = "GPA: $gpa"
+                        }
+                    } catch (_: Exception) {
+                        // Keep the previously saved profile if the ERP response is not JSON.
+                    }
+                }
+                preloadAllModules()
+            }
+        }, 1200L)
     }
 
     private fun preloadAllModules() {
@@ -225,12 +286,17 @@ class MainActivity : AppCompatActivity() {
         binding.homeButton.visibility = View.GONE
         binding.dashboardScroll.visibility = View.VISIBLE
         binding.loginScroll.visibility = View.GONE
+        val savedName = preferences.getString(KEY_STUDENT_NAME, "") ?: ""
+        val savedGpa = preferences.getString(KEY_GPA, "") ?: ""
+        binding.studentName.text = if (savedName.isBlank()) "Student" else savedName
+        binding.studentGpa.text = if (savedGpa.isBlank()) "GPA: Not available yet" else "GPA: $savedGpa"
     }
 
     private fun showLogin() {
         activeModule = null
         loggedIn = false
         loginInProgress = false
+        restoringSession = false
         loginSubmitted = false
         loginAttempt = 0
         preloadingModule = null
@@ -248,6 +314,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun logout() {
+        preferences.edit().clear().apply()
         CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
         binding.webView.clearHistory()
         binding.webView.clearCache(true)
@@ -287,8 +354,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val PREFERENCES_NAME = "superior_student_preferences"
+        private const val KEY_SESSION_ACTIVE = "session_active"
+        private const val KEY_USERNAME = "username"
+        private const val KEY_STUDENT_NAME = "student_name"
+        private const val KEY_GPA = "student_gpa"
         private const val ERP_BASE_URL = "https://erp.superior.edu.pk/"
         private const val ERP_LOGIN_URL = "https://erp.superior.edu.pk/web/login"
+        private const val ERP_DASHBOARD_URL = "https://erp.superior.edu.pk/student/dashboard"
         private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
 
@@ -316,6 +389,26 @@ class MainActivity : AppCompatActivity() {
             (function(){
               const text=(document.body&&document.body.innerText||'').toLowerCase();
               return text.includes('wrong login') || text.includes('invalid login') || text.includes('incorrect') || text.includes('authentication failed');
+            })();
+        """
+
+        private const val STUDENT_PROFILE_SCRIPT = """
+            (function(){
+              const text=(document.body&&document.body.innerText||'').replace(/\\s+/g,' ').trim();
+              const nameSelectors=['.o_user_menu .oe_topbar_name','.student-name','.student_name','[data-student-name]'];
+              let name='';
+              for(const selector of nameSelectors){
+                const element=document.querySelector(selector);
+                if(element && element.innerText.trim()){ name=element.innerText.trim(); break; }
+              }
+              if(!name){
+                const match=text.match(/(?:student name|name|welcome back)\\s*[:\\-]?\\s*([A-Za-z][A-Za-z .'-]{2,80})/i);
+                if(match) name=match[1].trim();
+              }
+              let gpa='';
+              const gpaMatch=text.match(/(?:cumulative\\s+)?gpa\\s*[:\\-]?\\s*([0-4](?:\\.\\d{1,2})?)/i);
+              if(gpaMatch) gpa=gpaMatch[1];
+              return JSON.stringify({name:name,gpa:gpa});
             })();
         """
     }
