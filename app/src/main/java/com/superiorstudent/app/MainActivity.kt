@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     private var restoringSession = false
     private var loggedIn = false
     private var profileFetchInProgress = false
+    private var profileReadAttempts = 0
     private var activeModule: Module? = null
     private var username = ""
     private var password = ""
@@ -130,6 +131,7 @@ class MainActivity : AppCompatActivity() {
             restoringSession = false
             loggedIn = false
             loginAttempt = 0
+            profileReadAttempts = 0
             cachedHtml.clear()
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
@@ -189,6 +191,7 @@ class MainActivity : AppCompatActivity() {
         loginSubmitted = false
         restoringSession = false
         loggedIn = true
+        profileReadAttempts = 0
         preferences.edit()
             .putBoolean(KEY_SESSION_ACTIVE, true)
             .putString(KEY_USERNAME, username)
@@ -203,15 +206,19 @@ class MainActivity : AppCompatActivity() {
     private fun fetchStudentProfile() {
         if (!loggedIn) return
         profileFetchInProgress = true
+        profileReadAttempts = 0
         binding.webView.visibility = View.GONE
         binding.webView.loadUrl(ERP_DASHBOARD_URL)
     }
 
     private fun extractAndApplyProfile(view: WebView) {
         if (!loggedIn || !profileFetchInProgress) return
+
+        profileReadAttempts++
         view.evaluateJavascript(STUDENT_PROFILE_SCRIPT) { result ->
-            profileFetchInProgress = false
             val profile = decodeJavascriptString(result)
+            var extracted = false
+
             try {
                 val json = JSONObject(profile)
                 val name = json.optString("name").trim()
@@ -233,11 +240,21 @@ class MainActivity : AppCompatActivity() {
                     }
                     preferences.edit().putString(KEY_GPA, display).apply()
                     binding.studentGpa.text = display
+                    extracted = true
                 }
             } catch (_: Exception) {
-                // Keep cached profile values if ERP is temporarily unavailable.
+                // Retry below. Cached values are preserved until a fresh value is available.
             }
-            preloadAllModules()
+
+            if (extracted) {
+                profileFetchInProgress = false
+                preloadAllModules()
+            } else if (profileReadAttempts < MAX_PROFILE_READ_ATTEMPTS) {
+                handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_RETRY_DELAY_MS)
+            } else {
+                profileFetchInProgress = false
+                preloadAllModules()
+            }
         }
     }
 
@@ -294,7 +311,7 @@ class MainActivity : AppCompatActivity() {
         val savedName = preferences.getString(KEY_STUDENT_NAME, "") ?: ""
         val savedGpa = preferences.getString(KEY_GPA, "") ?: ""
         binding.studentName.text = if (isValidStudentName(savedName)) savedName else "Student"
-        binding.studentGpa.text = if (savedGpa.isBlank()) "GPA: Not available yet" else savedGpa
+        binding.studentGpa.text = if (savedGpa.isBlank()) "GPA: Loading from ERP…" else savedGpa
     }
 
     private fun showLogin() {
@@ -304,6 +321,7 @@ class MainActivity : AppCompatActivity() {
         restoringSession = false
         loginSubmitted = false
         profileFetchInProgress = false
+        profileReadAttempts = 0
         loginAttempt = 0
         preloadingModule = null
         preloadQueue.clear()
@@ -382,6 +400,8 @@ class MainActivity : AppCompatActivity() {
         private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
         private const val PROFILE_READ_DELAY_MS = 1200L
+        private const val PROFILE_RETRY_DELAY_MS = 1000L
+        private const val MAX_PROFILE_READ_ATTEMPTS = 8
         private const val MODULE_READ_DELAY_MS = 700L
 
         private const val LOGIN_SCRIPT = """
@@ -428,31 +448,37 @@ class MainActivity : AppCompatActivity() {
                 for(const card of cards){
                   const labelEl=card.querySelector('.stat-label');
                   const valueEl=card.querySelector('.stat-value');
-                  if(labelEl && valueEl && clean(textOf(labelEl)).toUpperCase()===label){
+                  const cardLabel=clean(textOf(labelEl)).toUpperCase();
+                  const value=numeric(textOf(valueEl));
+                  if(cardLabel===label && value)return value;
+                }
+
+                const labels=Array.from(document.querySelectorAll('.stat-label'));
+                for(const labelEl of labels){
+                  if(clean(textOf(labelEl)).toUpperCase()!==label)continue;
+                  const parent=labelEl.closest('.stat-card') || labelEl.parentElement;
+                  if(parent){
+                    const valueEl=parent.querySelector('.stat-value');
                     const value=numeric(textOf(valueEl));
                     if(value)return value;
                   }
                 }
 
-                const elements=Array.from(document.querySelectorAll('*'));
-                for(const el of elements){
-                  if(clean(el.textContent).toUpperCase()!==label) continue;
-                  let parent=el;
-                  for(let level=0; level<6 && parent; level++, parent=parent.parentElement){
-                    const candidates=Array.from(parent.querySelectorAll('.stat-value,.value,[class*="stat-value"],[class*="value"]'));
-                    for(const candidate of candidates){
-                      const value=numeric(textOf(candidate));
-                      if(value)return value;
-                    }
-                    const parentText=textOf(parent);
-                    const match=parentText.match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
-                    if(match)return match[1];
-                  }
+                const bodyLines=(document.body&&document.body.innerText||'')
+                  .split(/\\n+/).map(clean).filter(Boolean);
+                for(let i=0;i<bodyLines.length;i++){
+                  if(bodyLines[i].toUpperCase()!==label)continue;
+                  const previous=i>0?numeric(bodyLines[i-1]):'';
+                  const next=i+1<bodyLines.length?numeric(bodyLines[i+1]):'';
+                  if(previous)return previous;
+                  if(next)return next;
                 }
 
                 const body=clean(document.body?document.body.innerText:'');
-                const match=body.match(new RegExp(label+'\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)','i'));
-                return match?match[1]:'';
+                const afterLabel=body.match(new RegExp(label+'\\s*[:\\-]?\\s*(\\d+(?:\\.\\d+)?)','i'));
+                if(afterLabel)return afterLabel[1];
+                const beforeLabel=body.match(new RegExp('(\\d+(?:\\.\\d+)?)\\s*'+label,'i'));
+                return beforeLabel?beforeLabel[1]:'';
               }
 
               let name='';
@@ -478,7 +504,11 @@ class MainActivity : AppCompatActivity() {
                 }
               }
 
-              return JSON.stringify({name:name,cgpa:findMetric('CGPA'),sgpa:findMetric('SGPA')});
+              return JSON.stringify({
+                name:name,
+                cgpa:findMetric('CGPA'),
+                sgpa:findMetric('SGPA')
+              });
             })();
         """
     }
