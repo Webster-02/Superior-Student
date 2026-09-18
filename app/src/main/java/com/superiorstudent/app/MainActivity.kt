@@ -878,7 +878,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.rgb(126, 139, 158))
                 textSize = 9f
             })
-            addView(TextView(this).apply {
+            addView(TextView(this@MainActivity).apply {
                 text = value
                 setTextColor(Color.rgb(52, 64, 84))
                 textSize = 11f
