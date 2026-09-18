@@ -873,7 +873,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            addView(TextView(this).apply {
+            addView(TextView(this@MainActivity).apply {
                 text = label
                 setTextColor(Color.rgb(126, 139, 158))
                 textSize = 9f
