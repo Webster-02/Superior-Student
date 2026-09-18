@@ -501,8 +501,12 @@ class MainActivity : AppCompatActivity() {
         return AttendanceRow(course, code, percent, present, total)
     }
 
-    private fun parsePercent(value: String): Double? =
-        Regex("""(\d{1,3}(?:\.\d{1,2})?)\s*%""").find(value)?.groupValues?.getOrNull(1)?.toDoubleOrNull()?.coerceIn(0.0, 100.0)
+    private fun parsePercent(value: String): Double? {
+        val withSymbol = Regex("""(\d{1,3}(?:\.\d{1,2})?)\s*%""")
+            .find(value)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+        if (withSymbol != null) return withSymbol.coerceIn(0.0, 100.0)
+        return value.trim().toDoubleOrNull()?.takeIf { it in 0.0..100.0 }
+    }
 
     private fun extractCountNearLabel(text: String, vararg labels: String): String {
         for (label in labels) {
@@ -807,9 +811,9 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun createInvoiceCard(invoice: Map<String, String>): View {
-        val no = findMapValue(invoice, "invoice", "number", "no").ifBlank { "Invoice" }
-        val date = findMapValue(invoice, "invoice", "date")
-        val due = findMapValue(invoice, "due")
+        val no = findMapValue(invoice, "invoice no", "invoice number", "number", "no").ifBlank { "Invoice" }
+        val date = findMapValue(invoice, "invoice date", "date")
+        val due = findMapValue(invoice, "due date", "due")
         val amount = findMapValue(invoice, "amount", "total", "balance")
         val status = findMapValue(invoice, "status", "state")
 
