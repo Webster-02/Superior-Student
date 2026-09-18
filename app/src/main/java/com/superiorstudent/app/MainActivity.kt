@@ -415,7 +415,8 @@ class MainActivity : AppCompatActivity() {
         val cards: List<Pair<String, String>>,
         val tables: List<TableData>,
         val lines: List<String>,
-        val records: List<ModuleRecord>
+        val records: List<ModuleRecord>,
+        val overallAttendance: Double?
     )
 
 
@@ -446,7 +447,9 @@ class MainActivity : AppCompatActivity() {
 
         if (rows.isNotEmpty()) {
             val percentages = rows.mapNotNull { it.percent }
-            binding.moduleContent.addView(createAttendanceSummary(percentages, rows.size))
+            binding.moduleContent.addView(
+                createAttendanceSummary(data.overallAttendance, percentages, rows.size)
+            )
             rows.forEachIndexed { index, row ->
                 binding.moduleContent.addView(createAttendanceCard(row, index + 1))
             }
@@ -518,35 +521,60 @@ class MainActivity : AppCompatActivity() {
         return ""
     }
 
-    private fun createAttendanceSummary(percentages: List<Double>, count: Int): View {
-        val average = if (percentages.isNotEmpty()) percentages.average() else 0.0
+
+    private fun createAttendanceSummary(overall: Double?, percentages: List<Double>, count: Int): View {
         return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = roundedBackground(Color.rgb(18, 58, 112), 20f)
             elevation = dp(3).toFloat()
             setPadding(dp(18), dp(17), dp(18), dp(17))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
 
-            addView(TextView(this@MainActivity).apply {
-                text = "ATTENDANCE OVERVIEW"
-                setTextColor(Color.rgb(190, 214, 244))
-                textSize = 10f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                letterSpacing = 0.08f
+            val display = overall ?: percentages.takeIf { it.isNotEmpty() }?.average()
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+
+                addView(TextView(this@MainActivity).apply {
+                    text = if (overall != null) "OVERALL ATTENDANCE" else "SUBJECT ATTENDANCE"
+                    setTextColor(Color.rgb(190, 214, 244))
+                    textSize = 10f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    letterSpacing = 0.08f
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = display?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
+                    setTextColor(Color.WHITE)
+                    textSize = 32f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(0, dp(3), 0, 0)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = if (overall != null) {
+                        "$count subjects • official overall percentage"
+                    } else {
+                        "$count subjects • percentage shown per subject"
+                    }
+                    setTextColor(Color.rgb(221, 232, 247))
+                    textSize = 11f
+                })
             })
-            addView(TextView(this@MainActivity).apply {
-                text = if (percentages.isNotEmpty()) String.format(java.util.Locale.US, "%.1f%%", average) else "—"
-                setTextColor(Color.WHITE)
-                textSize = 32f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(0, dp(3), 0, 0)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = count.toString() + " subjects tracked"
-                setTextColor(Color.rgb(221, 232, 247))
-                textSize = 11f
-            })
+
+            if (display != null) {
+                addView(TextView(this@MainActivity).apply {
+                    text = attendanceStatus(display).second
+                    gravity = Gravity.CENTER
+                    setTextColor(attendanceStatus(display).first)
+                    textSize = 10f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBackground(Color.WHITE, 12f)
+                    setPadding(dp(9), dp(7), dp(9), dp(7))
+                })
+            }
         }
     }
 
@@ -765,6 +793,7 @@ class MainActivity : AppCompatActivity() {
 
         if (invoices.isNotEmpty()) {
             binding.moduleContent.addView(createFeeSummary(invoices.size))
+            binding.moduleContent.addView(createSectionHeading("Invoice history", "Recent fee records from your student account"))
             invoices.take(30).forEach { invoice -> binding.moduleContent.addView(createInvoiceCard(invoice)) }
         } else {
             data.cards.take(4).forEach { (label, value) -> binding.moduleContent.addView(createMetricCard(label, value)) }
@@ -1120,24 +1149,83 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
     private fun parseModuleData(payload: String): ModuleData? {
         return try {
-            val json=JSONObject(payload)
-            val cards=mutableListOf<Pair<String,String>>()
-            json.optJSONArray("cards")?.let{arr->for(i in 0 until arr.length()){val o=arr.optJSONObject(i)?:continue;val l=cleanDisplayText(o.optString("label",""));val v=cleanDisplayText(o.optString("value",""));if(l.isNotBlank()&&v.isNotBlank())cards.add(l to v)}}
-            val tables=mutableListOf<TableData>()
-            val records=mutableListOf<ModuleRecord>()
-            json.optJSONArray("tables")?.let{arr->for(i in 0 until arr.length()){
-                val t=arr.optJSONObject(i)?:continue;val headers=mutableListOf<String>()
-                t.optJSONArray("headers")?.let{h->for(j in 0 until h.length())headers.add(cleanDisplayText(h.optString(j,"")))}
-                val rows=mutableListOf<List<String>>()
-                t.optJSONArray("rows")?.let{rs->for(j in 0 until rs.length()){val ro=rs.optJSONArray(j)?:continue;val row=mutableListOf<String>();for(k in 0 until ro.length())row.add(cleanDisplayText(ro.optString(k,"")));if(row.any{it.isNotBlank()}){rows.add(row);records.add(ModuleRecord(headers,row))}}}
-                val title=cleanDisplayText(t.optString("title",""));if(headers.isNotEmpty()||rows.isNotEmpty())tables.add(TableData(title,headers,rows))
-            }}
-            json.optJSONArray("records")?.let{arr->for(i in 0 until arr.length()){val o=arr.optJSONObject(i)?:continue;val h=mutableListOf<String>();val v=mutableListOf<String>();o.optJSONArray("headers")?.let{q->for(j in 0 until q.length())h.add(cleanDisplayText(q.optString(j,"")))};o.optJSONArray("values")?.let{q->for(j in 0 until q.length())v.add(cleanDisplayText(q.optString(j,"")))};if(v.any{it.isNotBlank()})records.add(ModuleRecord(h,v))}}
-            val lines=mutableListOf<String>();json.optJSONArray("lines")?.let{arr->for(i in 0 until arr.length()){val line=cleanDisplayText(arr.optString(i,""));if(isUsefulDisplayText(line))lines.add(line)}}
-            ModuleData(cards.distinct(),tables,lines.distinct(),records.distinctBy{it.headers to it.values})
-        }catch(_:Exception){null}
+            val json = JSONObject(payload)
+            val cards = mutableListOf<Pair<String, String>>()
+            json.optJSONArray("cards")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val label = cleanDisplayText(o.optString("label", ""))
+                    val value = cleanDisplayText(o.optString("value", ""))
+                    if (label.isNotBlank() && value.isNotBlank()) cards.add(label to value)
+                }
+            }
+
+            val tables = mutableListOf<TableData>()
+            val records = mutableListOf<ModuleRecord>()
+            json.optJSONArray("tables")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val t = arr.optJSONObject(i) ?: continue
+                    val headers = mutableListOf<String>()
+                    t.optJSONArray("headers")?.let { h ->
+                        for (j in 0 until h.length()) headers.add(cleanDisplayText(h.optString(j, "")))
+                    }
+                    val rows = mutableListOf<List<String>>()
+                    t.optJSONArray("rows")?.let { rs ->
+                        for (j in 0 until rs.length()) {
+                            val ro = rs.optJSONArray(j) ?: continue
+                            val row = mutableListOf<String>()
+                            for (k in 0 until ro.length()) row.add(cleanDisplayText(ro.optString(k, "")))
+                            if (row.any { it.isNotBlank() }) {
+                                rows.add(row)
+                                records.add(ModuleRecord(headers, row))
+                            }
+                        }
+                    }
+                    val title = cleanDisplayText(t.optString("title", ""))
+                    if (headers.isNotEmpty() || rows.isNotEmpty()) tables.add(TableData(title, headers, rows))
+                }
+            }
+
+            json.optJSONArray("records")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val h = mutableListOf<String>()
+                    val v = mutableListOf<String>()
+                    o.optJSONArray("headers")?.let { q ->
+                        for (j in 0 until q.length()) h.add(cleanDisplayText(q.optString(j, "")))
+                    }
+                    o.optJSONArray("values")?.let { q ->
+                        for (j in 0 until q.length()) v.add(cleanDisplayText(q.optString(j, "")))
+                    }
+                    if (v.any { it.isNotBlank() }) records.add(ModuleRecord(h, v))
+                }
+            }
+
+            val lines = mutableListOf<String>()
+            json.optJSONArray("lines")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val line = cleanDisplayText(arr.optString(i, ""))
+                    if (isUsefulDisplayText(line)) lines.add(line)
+                }
+            }
+
+            val overall = json.optDouble("overallAttendance", Double.NaN)
+                .takeUnless { it.isNaN() }
+                ?.takeIf { it in 0.0..100.0 }
+
+            ModuleData(
+                cards.distinct(),
+                tables,
+                lines.distinct(),
+                records.distinctBy { it.headers to it.values },
+                overall
+            )
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun readModuleData(view: WebView, module: Module, displayWhenReady: Boolean) {
@@ -1417,11 +1505,72 @@ class MainActivity : AppCompatActivity() {
                 if(value&&/%/.test(value))records.push({headers:[],values:[value]});
               });
               
+              const percentPattern=/([0-9]{1,3}(?:\.[0-9]+)?)\s*%/;
+              const codePattern=/\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b/i;
+              const subjectPattern=/functional english|quantitative reasoning|civics and community engagement|management of refractive errors|visual optics and image processing|redefining success/i;
+
+              let overallAttendance=null;
+              const pageText=safe(clone.innerText||clone.textContent||'');
+              const overallMatches=[
+                /(?:overall|total)\s+attendance(?:\s+percentage)?\s*[:\-]?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*%/i,
+                /(?:attendance\s+percentage|overall\s+percentage)\s*[:\-]?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*%/i
+              ];
+              for(const pattern of overallMatches){
+                const m=pageText.match(pattern);
+                if(m){overallAttendance=parseFloat(m[1]);break;}
+              }
+
+              const structuredRecords=[];
+              const candidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item'));
+              candidates.forEach(function(el){
+                const raw=safe(textOf(el));
+                if(!raw || raw.length>320) return;
+                const percent=raw.match(percentPattern);
+                if(!percent) return;
+                if(!codePattern.test(raw) && !subjectPattern.test(raw)) return;
+
+                let subject=raw.replace(percent[0],'').trim();
+                const codeMatch=subject.match(codePattern);
+                const code=codeMatch ? codeMatch[0] : '';
+                if(code) subject=subject.replace(code,'').trim();
+                subject=subject.replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
+                if(subject.length<3) return;
+
+                structuredRecords.push({
+                  headers:['Subject','Course Code','Attendance Percentage'],
+                  values:[subject,code,percent[1]+'%']
+                });
+              });
+
+              structuredRecords.forEach(function(record){records.push(record);});
+
+              const scheduleStructured=[];
+              const timePattern=/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/;
+              const scheduleCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item'));
+              scheduleCandidates.forEach(function(el){
+                const raw=safe(textOf(el));
+                if(!raw || raw.length>320) return;
+                const time=raw.match(timePattern);
+                if(!time && !codePattern.test(raw) && !subjectPattern.test(raw)) return;
+                if(raw.match(percentPattern)) return;
+
+                const codeMatch=raw.match(codePattern);
+                const code=codeMatch ? codeMatch[0] : '';
+                const title=raw.replace(time ? time[0] : '','').replace(code,'').trim();
+                if(title.length<3) return;
+                scheduleStructured.push({
+                  headers:['Time','Class'],
+                  values:[time ? time[0] : '',title]
+                });
+              });
+              scheduleStructured.forEach(function(record){records.push(record);});
+
               return JSON.stringify({
                 cards:unique(cards).slice(0,8),
                 tables:unique(tables).slice(0,12),
                 lines:unique(lines).slice(0,60),
-                records:unique(records).slice(0,120)
+                records:unique(records).slice(0,160),
+                overallAttendance:overallAttendance
               });
             })();
         """;
