@@ -552,16 +552,18 @@
 
         <TextView
             android:id="@+id/moduleInfo"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="14dp"
             android:layout_marginTop="10dp"
-            android:layout_marginEnd="12dp"
+            android:layout_marginEnd="14dp"
             android:background="@drawable/bg_info_banner"
-            android:padding="11dp"
-            android:text="Student data"
+            android:gravity="center_vertical"
+            android:paddingStart="13dp"
+            android:paddingEnd="13dp"
+            android:text="Updated from your student account"
             android:textColor="#235B9B"
-            android:textSize="11sp" />
+            android:textSize="10sp" />
 
         <FrameLayout
             android:layout_width="match_parent"
