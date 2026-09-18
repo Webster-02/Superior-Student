@@ -407,112 +407,126 @@ class MainActivity : AppCompatActivity() {
         val rows: List<List<String>>
     )
 
+    private data class ModuleRecord(val headers: List<String>, val values: List<String>)
+
     private data class ModuleData(
         val cards: List<Pair<String, String>>,
         val tables: List<TableData>,
-        val lines: List<String>
+        val lines: List<String>,
+        val records: List<ModuleRecord>
     )
 
-
-    private fun renderModuleData(module: Module, data: ModuleData) {
-        binding.moduleContent.removeAllViews()
-        addModuleIntro(module)
-
-        when (module) {
-            Module.ATTENDANCE -> renderAttendance(data)
-            Module.TIMETABLE -> renderTimetable(data)
-            Module.FEE -> renderFee(data)
-        }
-
-        binding.moduleProgress.visibility = View.GONE
-        binding.moduleInfo.text = "Student data synced successfully"
+    private fun renderModuleData(module:Module,data:ModuleData){
+        binding.moduleContent.removeAllViews();addModuleIntro(module)
+        when(module){Module.ATTENDANCE->renderAttendance(data);Module.TIMETABLE->renderTimetable(data);Module.FEE->renderFee(data)}
+        binding.moduleProgress.visibility=View.GONE;binding.moduleInfo.text="Student data synced successfully"
     }
 
-    private fun renderAttendance(data: ModuleData) {
-        data.cards.take(3).forEach { (label, value) ->
-            binding.moduleContent.addView(createMetricCard(label, value))
-        }
+    private data class AttendanceRow(val course:String,val code:String,val percent:Double?,val present:String,val total:String)
 
-        data.lines
-            .map(::cleanDisplayText)
-            .filter(::isAttendanceCourseLine)
-            .distinct()
-            .take(12)
-            .forEachIndexed { index, item ->
-                binding.moduleContent.addView(createCourseCard(item, index + 1))
-            }
-
-        data.tables.forEachIndexed { index, table ->
-            binding.moduleContent.addView(
-                createTableSection(
-                    table.title.ifBlank { if (index == 0) "Attendance records" else "Attendance details" },
-                    table
-                )
-            )
+    private fun renderAttendance(data:ModuleData){
+        val rows=data.records.mapNotNull{toAttendanceRow(it)}.distinctBy{it.course to it.code}.take(20)
+        if(rows.isNotEmpty()){
+            val ps=rows.mapNotNull{it.percent};if(ps.isNotEmpty())binding.moduleContent.addView(createAttendanceSummary(ps.average(),rows.size))
+            rows.forEachIndexed{index,row->binding.moduleContent.addView(createAttendanceCard(row,index+1))}
+        }else{
+            data.lines.map(::cleanDisplayText).filter(::isAttendanceCourseLine).distinct().take(12).forEachIndexed{index,item->binding.moduleContent.addView(createCourseCard(item,index+1))}
+            data.tables.forEachIndexed{index,table->binding.moduleContent.addView(createTableSection(table.title.ifBlank{if(index==0)"Attendance records" else "Attendance details"},table))}
         }
-
-        if (data.cards.isEmpty() && data.tables.isEmpty() &&
-            data.lines.none { isAttendanceCourseLine(cleanDisplayText(it)) }) {
-            binding.moduleContent.addView(createEmptyState())
-        }
+        if(rows.isEmpty()&&data.tables.isEmpty()&&data.lines.none{isAttendanceCourseLine(cleanDisplayText(it))})binding.moduleContent.addView(createEmptyState())
     }
 
-    private fun renderTimetable(data: ModuleData) {
-        val times = data.lines
-            .map(::cleanDisplayText)
-            .filter { it.matches(Regex("""^(?:[01]?\d|2[0-3]):[0-5]\d$""")) }
-            .distinct()
+    private fun toAttendanceRow(record:ModuleRecord):AttendanceRow?{
+        val values=record.values.map(::cleanDisplayText).filter(String::isNotBlank);if(values.isEmpty())return null
+        val joined=values.joinToString(" ");if(joined.contains("session",true)||joined.contains("inactive",true)||joined.contains("stay online",true))return null
+        val percent=values.firstOrNull{Regex("""^\d{1,3}(?:\.\d{1,2})?\s*%$""").matches(it)}?.replace("%","")?.trim()?.toDoubleOrNull()?.coerceIn(0.0,100.0)
+        val code=Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b""",RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
+        val course=values.firstOrNull{it!=code&&!it.contains("%")&&!it.matches(Regex("""^\d+$"""))}.orEmpty().substringBefore(code).trim().ifBlank{if(code.isNotBlank())joined.substringBefore(code).trim()else joined}
+        if(course.length<3||(percent==null&&code.isBlank()))return null
+        val nums=values.filter{it.matches(Regex("""^\d+(?:\.\d+)?$"""))}
+        return AttendanceRow(course,code,percent,nums.getOrNull(0).orEmpty(),nums.getOrNull(1).orEmpty())
+    }
 
-        if (times.isNotEmpty()) binding.moduleContent.addView(createScheduleSummary(times))
+    private fun createAttendanceSummary(avg:Double,count:Int):View=LinearLayout(this).apply{
+        orientation=LinearLayout.VERTICAL;background=roundedBackground(Color.rgb(30,91,155),18f);elevation=dp(2).toFloat();setPadding(dp(18),dp(16),dp(18),dp(16));layoutParams=LinearLayout.LayoutParams(-1,-2).apply{setMargins(dp(12),dp(6),dp(12),dp(8))}
+        addView(TextView(this@MainActivity).apply{text="Overall attendance";setTextColor(Color.WHITE);textSize=13f;setTypeface(typeface,android.graphics.Typeface.BOLD)})
+        addView(TextView(this@MainActivity).apply{text=String.format(java.util.Locale.US,"%.1f%%",avg);setTextColor(Color.WHITE);textSize=30f;setTypeface(typeface,android.graphics.Typeface.BOLD);setPadding(0,dp(3),0,0)})
+        addView(TextView(this@MainActivity).apply{text=String.format(java.util.Locale.US,"%d subjects",count);setTextColor(Color.rgb(222,235,250));textSize=11f})
+    }
 
-        data.lines
-            .map(::cleanDisplayText)
-            .filter(::isTimetableCourseLine)
-            .distinct()
-            .take(20)
-            .forEachIndexed { index, item ->
-                binding.moduleContent.addView(createScheduleCard(item, index + 1))
-            }
-
-        data.tables.forEachIndexed { index, table ->
-            binding.moduleContent.addView(
-                createTableSection(
-                    table.title.ifBlank { if (index == 0) "Class schedule" else "Schedule details" },
-                    table
-                )
-            )
-        }
-
-        if (times.isEmpty() && data.tables.isEmpty() &&
-            data.lines.none { isTimetableCourseLine(cleanDisplayText(it)) }) {
-            binding.moduleContent.addView(createEmptyState())
+    private fun createAttendanceCard(row:AttendanceRow,position:Int):View{
+        val pct=row.percent?:0.0
+        return LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL;background=roundedBackground(Color.WHITE,16f);elevation=dp(1).toFloat();setPadding(dp(16),dp(14),dp(16),dp(14));layoutParams=LinearLayout.LayoutParams(-1,-2).apply{setMargins(dp(12),dp(5),dp(12),dp(5))}
+            val top=LinearLayout(this@MainActivity).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+            top.addView(TextView(this@MainActivity).apply{text=row.course;setTextColor(Color.rgb(23,42,70));textSize=14f;setTypeface(typeface,android.graphics.Typeface.BOLD);layoutParams=LinearLayout.LayoutParams(0,-2,1f)})
+            row.percent?.let{top.addView(TextView(this@MainActivity).apply{text=String.format(java.util.Locale.US,"%.1f%%",pct);setTextColor(when{pct>=85->Color.rgb(24,126,85);pct>=75->Color.rgb(196,125,18);else->Color.rgb(198,60,60)});textSize=17f;setTypeface(typeface,android.graphics.Typeface.BOLD)})}
+            addView(top);if(row.code.isNotBlank())addView(TextView(this@MainActivity).apply{text=row.code;setTextColor(Color.rgb(126,139,158));textSize=10f;setPadding(0,dp(4),0,0)})
+            addView(ProgressBar(this@MainActivity,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;progress=pct.roundToInt();layoutParams=LinearLayout.LayoutParams(-1,dp(8)).apply{topMargin=dp(10)}})
+            if(row.present.isNotBlank()||row.total.isNotBlank())addView(TextView(this@MainActivity).apply{text=if(row.total.isNotBlank())String.format(java.util.Locale.US,"%s of %s classes attended",row.present.ifBlank{"0"},row.total)else String.format(java.util.Locale.US,"%s classes attended",row.present);setTextColor(Color.rgb(102,112,133));textSize=11f;setPadding(0,dp(7),0,0)})
         }
     }
 
-    private fun renderFee(data: ModuleData) {
-        data.cards.take(4).forEach { (label, value) ->
-            binding.moduleContent.addView(createMetricCard(label, value))
-        }
+    private data class ScheduleRow(val day:String,val time:String,val course:String,val room:String)
 
-        data.tables.forEachIndexed { index, table ->
-            binding.moduleContent.addView(
-                createTableSection(
-                    table.title.ifBlank { if (index == 0) "Fee records" else "Fee details" },
-                    table
-                )
-            )
+    private fun renderTimetable(data:ModuleData){
+        val rows=data.records.mapNotNull{toScheduleRow(it)}.distinctBy{it.day to it.time to it.course}.take(40)
+        if(rows.isNotEmpty())rows.groupBy{it.day.ifBlank{"Class schedule"}}.forEach{(day,items)->binding.moduleContent.addView(createDayHeader(day,items.size));items.forEach{binding.moduleContent.addView(createScheduleCard(it))}}
+        else{
+            data.lines.map(::cleanDisplayText).filter(::isTimetableCourseLine).distinct().take(20).forEachIndexed{index,item->binding.moduleContent.addView(createScheduleCardFallback(item,index+1))}
+            data.tables.forEachIndexed{index,table->binding.moduleContent.addView(createTableSection(table.title.ifBlank{if(index==0)"Class schedule" else "Schedule details"},table))}
         }
+        if(rows.isEmpty()&&data.tables.isEmpty()&&data.lines.none{isTimetableCourseLine(cleanDisplayText(it))})binding.moduleContent.addView(createEmptyState())
+    }
 
-        if (data.cards.isEmpty() && data.tables.isEmpty()) {
-            val useful = data.lines
-                .map(::cleanDisplayText)
-                .filter(::isUsefulDisplayText)
-                .distinct()
-                .take(12)
-            if (useful.isNotEmpty()) binding.moduleContent.addView(createInformationSection(useful))
-            else binding.moduleContent.addView(createEmptyState())
+    private fun toScheduleRow(record:ModuleRecord):ScheduleRow?{
+        val values=record.values.map(::cleanDisplayText).filter(String::isNotBlank);if(values.isEmpty())return null
+        val joined=values.joinToString(" ");if(joined.contains("session",true)||joined.contains("inactive",true))return null
+        val time=values.firstOrNull{Regex("""(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?""").matches(it)}.orEmpty()
+        val day=values.firstOrNull{it.matches(Regex("""(?i)Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"""))}.orEmpty()
+        val code=Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b""",RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
+        val course=values.firstOrNull{!Regex("""(?:[01]?\d|2[0-3]):[0-5]\d""").containsMatchIn(it)&&!it.matches(Regex("""(?i)Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"""))&&!it.startsWith("Term",true)&&!it.startsWith("Month",true)&&!it.equals("Class Schedule",true)}.orEmpty().substringBefore(code).trim().ifBlank{code}
+        if(course.length<3)return null
+        val room=values.lastOrNull()?.takeIf{it!=course&&it!=time&&it!=day}.orEmpty()
+        return ScheduleRow(day,time,course,room)
+    }
+
+    private fun createDayHeader(day:String,count:Int):View=LinearLayout(this).apply{
+        orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(14),dp(14),dp(14),dp(7));layoutParams=LinearLayout.LayoutParams(-1,-2).apply{setMargins(dp(12),dp(8),dp(12),0)}
+        addView(TextView(this@MainActivity).apply{text=day;setTextColor(Color.rgb(18,58,112));textSize=15f;setTypeface(typeface,android.graphics.Typeface.BOLD);layoutParams=LinearLayout.LayoutParams(0,-2,1f)})
+        addView(TextView(this@MainActivity).apply{text=String.format(java.util.Locale.US,"%d classes",count);setTextColor(Color.rgb(126,139,158));textSize=11f})
+    }
+
+    private fun createScheduleCard(row:ScheduleRow):View=LinearLayout(this).apply{
+        orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;background=roundedBackground(Color.WHITE,16f);elevation=dp(1).toFloat();setPadding(dp(14),dp(13),dp(14),dp(13));layoutParams=LinearLayout.LayoutParams(-1,-2).apply{setMargins(dp(12),dp(4),dp(12),dp(4))}
+        addView(TextView(this@MainActivity).apply{text=row.time.ifBlank{"—"};gravity=Gravity.CENTER;setTextColor(Color.rgb(30,91,155));textSize=12f;setTypeface(typeface,android.graphics.Typeface.BOLD);background=roundedBackground(Color.rgb(239,245,255),12f);minWidth=dp(82);minHeight=dp(38)})
+        addView(TextView(this@MainActivity).apply{text=row.course;setTextColor(Color.rgb(23,42,70));textSize=13f;setTypeface(typeface,android.graphics.Typeface.BOLD);setPadding(dp(13),0,0,0);layoutParams=LinearLayout.LayoutParams(0,-2,1f)})
+    }
+
+    private fun createScheduleCardFallback(item:String,position:Int):View{
+        val time=Regex("""(?:[01]?\d|2[0-3]):[0-5]\d""").find(item)?.value.orEmpty();val clean=if(time.isNotBlank())item.replace(time,"").trim(" -–|")else item
+        return createScheduleCard(ScheduleRow("",time,clean,""))
+    }
+
+    private fun renderFee(data:ModuleData){
+        if(data.tables.isNotEmpty())data.tables.flatMap{table->table.rows.map{table.headers.zip(it).toMap()}}.forEach{binding.moduleContent.addView(createInvoiceCard(it))}
+        else data.cards.take(4).forEach{(label,value)->binding.moduleContent.addView(createMetricCard(label,value))}
+        if(data.tables.isEmpty()&&data.cards.isEmpty())binding.moduleContent.addView(createEmptyState())
+    }
+
+    private fun createInvoiceCard(invoice:Map<String,String>):View{
+        val no=findMapValue(invoice,"invoice","number","no").ifBlank{"Invoice"};val date=findMapValue(invoice,"invoice","date");val due=findMapValue(invoice,"due");val amount=findMapValue(invoice,"amount","total","balance");val status=findMapValue(invoice,"status","state")
+        return LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL;background=roundedBackground(Color.WHITE,16f);elevation=dp(1).toFloat();setPadding(dp(16),dp(14),dp(16),dp(14));layoutParams=LinearLayout.LayoutParams(-1,-2).apply{setMargins(dp(12),dp(5),dp(12),dp(5))}
+            val top=LinearLayout(this@MainActivity).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+            top.addView(TextView(this@MainActivity).apply{text=no;setTextColor(Color.rgb(23,42,70));textSize=13f;setTypeface(typeface,android.graphics.Typeface.BOLD);layoutParams=LinearLayout.LayoutParams(0,-2,1f)})
+            if(status.isNotBlank())top.addView(TextView(this@MainActivity).apply{text=status;setTextColor(Color.rgb(24,126,85));textSize=10f;background=roundedBackground(Color.rgb(233,248,241),10f);setPadding(dp(8),dp(5),dp(8),dp(5))})
+            addView(top);addInfoPair("Invoice date",date);addInfoPair("Due date",due);if(amount.isNotBlank())addInfoPair("Amount",amount)
         }
     }
+
+    private fun findMapValue(map:Map<String,String>,vararg keys:String):String=map.entries.firstOrNull{e->keys.any{k->e.key.contains(k,true)}}?.value.orEmpty()
+    private fun LinearLayout.addInfoPair(label:String,value:String){if(value.isNotBlank())addView(TextView(this@MainActivity).apply{text=String.format(java.util.Locale.US,"%s  %s",label,value);setTextColor(Color.rgb(102,112,133));textSize=11f;setPadding(0,dp(8),0,0)})}
 
     private fun addModuleIntro(module: Module) {
         val title = when (module) {
@@ -710,6 +724,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun isAttendanceCourseLine(value:String):Boolean{
+        val t=value.trim();if(t.length<8||t.length>180)return false
+        if(t.contains("session",true)||t.contains("inactive",true)||t.contains("stay online",true))return false
+        if(t.equals("attendance",true)||t.equals("attendance classes",true)||t.equals("active classes",true))return false
+        return Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}""",RegexOption.IGNORE_CASE).containsMatchIn(t)
+    }
+    private fun isTimetableCourseLine(value:String):Boolean{
+        val t=value.trim();if(t.length<8||t.length>180)return false
+        if(t.contains("session",true)||t.contains("inactive",true)||t.contains("stay online",true))return false
+        if(t.matches(Regex("""^(?:Class Schedule|Term\s*:?.*|Month\s*:?.*)$""",RegexOption.IGNORE_CASE)))return false
+        if(t.matches(Regex("""^(?:[01]?\d|2[0-3]):[0-5]\d$""")))return false
+        return Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}""",RegexOption.IGNORE_CASE).containsMatchIn(t)
+    }
     private fun createMetricCard(label: String, value: String): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -902,51 +929,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun parseModuleData(payload: String): ModuleData? {
         return try {
-            val json = JSONObject(payload)
-            val cards = mutableListOf<Pair<String, String>>()
-            json.optJSONArray("cards")?.let { array ->
-                for (i in 0 until array.length()) {
-                    val card = array.optJSONObject(i) ?: continue
-                    val label = cleanDisplayText(card.optString("label", ""))
-                    val value = cleanDisplayText(card.optString("value", ""))
-                    if (label.isNotBlank() && value.isNotBlank()) cards.add(label to value)
-                }
-            }
-
-            val tables = mutableListOf<TableData>()
-            json.optJSONArray("tables")?.let { array ->
-                for (i in 0 until array.length()) {
-                    val tableJson = array.optJSONObject(i) ?: continue
-                    val headers = mutableListOf<String>()
-                    tableJson.optJSONArray("headers")?.let { headerArray ->
-                        for (h in 0 until headerArray.length()) headers.add(headerArray.optString(h, ""))
-                    }
-                    val rows = mutableListOf<List<String>>()
-                    tableJson.optJSONArray("rows")?.let { rowArray ->
-                        for (r in 0 until rowArray.length()) {
-                            val rowJson = rowArray.optJSONArray(r) ?: continue
-                            val row = mutableListOf<String>()
-                            for (c in 0 until rowJson.length()) row.add(rowJson.optString(c, ""))
-                            rows.add(row)
-                        }
-                    }
-                    val title = cleanDisplayText(tableJson.optString("title", ""))
-                    if (headers.isNotEmpty() || rows.isNotEmpty()) tables.add(TableData(title, headers, rows))
-                }
-            }
-
-            val lines = mutableListOf<String>()
-            json.optJSONArray("lines")?.let { array ->
-                for (i in 0 until array.length()) {
-                    val line = cleanDisplayText(array.optString(i, ""))
-                    if (isUsefulDisplayText(line)) lines.add(line)
-                }
-            }
-
-            ModuleData(cards.distinct(), tables, lines.distinct())
-        } catch (_: Exception) {
-            null
-        }
+            val json=JSONObject(payload)
+            val cards=mutableListOf<Pair<String,String>>()
+            json.optJSONArray("cards")?.let{arr->for(i in 0 until arr.length()){val o=arr.optJSONObject(i)?:continue;val l=cleanDisplayText(o.optString("label",""));val v=cleanDisplayText(o.optString("value",""));if(l.isNotBlank()&&v.isNotBlank())cards.add(l to v)}}
+            val tables=mutableListOf<TableData>()
+            val records=mutableListOf<ModuleRecord>()
+            json.optJSONArray("tables")?.let{arr->for(i in 0 until arr.length()){
+                val t=arr.optJSONObject(i)?:continue;val headers=mutableListOf<String>()
+                t.optJSONArray("headers")?.let{h->for(j in 0 until h.length())headers.add(cleanDisplayText(h.optString(j,"")))}
+                val rows=mutableListOf<List<String>>()
+                t.optJSONArray("rows")?.let{rs->for(j in 0 until rs.length()){val ro=rs.optJSONArray(j)?:continue;val row=mutableListOf<String>();for(k in 0 until ro.length())row.add(cleanDisplayText(ro.optString(k,"")));if(row.any{it.isNotBlank()}){rows.add(row);records.add(ModuleRecord(headers,row))}}}
+                val title=cleanDisplayText(t.optString("title",""));if(headers.isNotEmpty()||rows.isNotEmpty())tables.add(TableData(title,headers,rows))
+            }}
+            json.optJSONArray("records")?.let{arr->for(i in 0 until arr.length()){val o=arr.optJSONObject(i)?:continue;val h=mutableListOf<String>();val v=mutableListOf<String>();o.optJSONArray("headers")?.let{q->for(j in 0 until q.length())h.add(cleanDisplayText(q.optString(j,"")))};o.optJSONArray("values")?.let{q->for(j in 0 until q.length())v.add(cleanDisplayText(q.optString(j,"")))};if(v.any{it.isNotBlank()})records.add(ModuleRecord(h,v))}}
+            val lines=mutableListOf<String>();json.optJSONArray("lines")?.let{arr->for(i in 0 until arr.length()){val line=cleanDisplayText(arr.optString(i,""));if(isUsefulDisplayText(line))lines.add(line)}}
+            ModuleData(cards.distinct(),tables,lines.distinct(),records.distinctBy{it.headers to it.values})
+        }catch(_:Exception){null}
     }
 
     private fun readModuleData(view: WebView, module: Module, displayWhenReady: Boolean) {
@@ -1204,6 +1202,11 @@ class MainActivity : AppCompatActivity() {
                 if(value && value.length<=250) lines.push(value);
               });
 
+              const records=[];
+              tables.forEach(function(table){table.rows.forEach(function(row){records.push({headers:table.headers,values:row});});});
+              const selectors=['[class*="attendance"] [class*="row"]','[class*="attendance"] [class*="item"]','[class*="course"]','[class*="event"]','[class*="schedule"] [class*="item"]','[class*="calendar"] [class*="event"]'];
+              selectors.forEach(function(selector){clone.querySelectorAll(selector).forEach(function(el){const value=safe(textOf(el));if(value&&value.length<=250)records.push({headers:[],values:[value]});});});
+              
               return JSON.stringify({
                 cards:unique(cards).slice(0,8),
                 tables:unique(tables).slice(0,12),
