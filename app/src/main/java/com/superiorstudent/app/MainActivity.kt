@@ -522,6 +522,37 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    private fun attendanceStatus(percent: Double): Pair<Int, String> {
+        return when {
+            percent >= 85.0 -> Color.rgb(25, 135, 84) to "Good standing"
+            percent >= 75.0 -> Color.rgb(205, 132, 24) to "Needs attention"
+            else -> Color.rgb(205, 67, 67) to "Low attendance"
+        }
+    }
+
+    private fun createSectionHeading(title: String, subtitle: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(14), dp(12), dp(7))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                setTextColor(Color.rgb(23, 42, 70))
+                textSize = 17f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = subtitle
+                setTextColor(Color.rgb(126, 139, 158))
+                textSize = 11f
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+    }
+
     private fun createAttendanceSummary(overall: Double?, percentages: List<Double>, count: Int): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -534,13 +565,13 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
 
-            val display = overall ?: percentages.takeIf { it.isNotEmpty() }?.average()
+            val display = overall
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
 
                 addView(TextView(this@MainActivity).apply {
-                    text = if (overall != null) "OVERALL ATTENDANCE" else "SUBJECT ATTENDANCE"
+                    text = if (overall != null) "OVERALL ATTENDANCE" else "ATTENDANCE SUMMARY"
                     setTextColor(Color.rgb(190, 214, 244))
                     textSize = 10f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
