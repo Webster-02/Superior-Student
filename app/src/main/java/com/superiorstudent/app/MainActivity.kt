@@ -1552,8 +1552,8 @@ class MainActivity : AppCompatActivity() {
               }
 
               const structuredRecords=[];
-              const candidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item'));
-              candidates.forEach(function(el){
+              const structuredCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item'));
+              structuredCandidates.forEach(function(el){
                 const raw=safe(textOf(el));
                 if(!raw || raw.length>320) return;
                 const percent=raw.match(percentPattern);
