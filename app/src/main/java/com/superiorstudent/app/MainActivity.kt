@@ -11,6 +11,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import kotlin.math.roundToInt
 import android.webkit.CookieManager
@@ -689,7 +690,7 @@ class MainActivity : AppCompatActivity() {
         }
         val code = Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
         val course = headerValue("subject", "course", "class", "name").ifBlank {
-            joined.replace(time, "").replace(day, "").trim(" -–|").substringBefore(code).trim().ifBlank { code }
+            joined.replace(time, "").replace(day, "").trim(' ', '-', '–', '|').substringBefore(code).trim().ifBlank { code }
         }
         val room = headerValue("room", "venue", "location").ifBlank {
             values.lastOrNull().orEmpty().takeIf { it != course && it != time && it != day && it != code }.orEmpty()
@@ -810,6 +811,19 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
+    private fun findMapValue(map: Map<String, String>, vararg keys: String): String {
+        val normalized = map.mapKeys { it.key.trim().lowercase() }
+        for (key in keys) {
+            val exact = normalized.entries.firstOrNull { it.key == key.lowercase() }
+            if (exact != null) return exact.value
+        }
+        for (key in keys) {
+            val partial = normalized.entries.firstOrNull { it.key.contains(key.lowercase()) }
+            if (partial != null) return partial.value
+        }
+        return ""
+    }
+
     private fun createInvoiceCard(invoice: Map<String, String>): View {
         val no = findMapValue(invoice, "invoice no", "invoice number", "number", "no").ifBlank { "Invoice" }
         val date = findMapValue(invoice, "invoice date", "date")
@@ -856,7 +870,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun addInvoiceDetail(container: LinearLayout, label: String, value: String) {
         if (value.isBlank()) return
-        container.addView(LinearLayout(this).apply {
+        container.addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             addView(TextView(this).apply {
@@ -881,9 +895,9 @@ class MainActivity : AppCompatActivity() {
             Module.FEE -> "Fee overview"
         }
         val subtitle = when (module) {
-            Module.ATTENDANCE -> "Your attendance information in a clean Superior Student view"
-            Module.TIMETABLE -> "Your classes and schedule in a clean Superior Student view"
-            Module.FEE -> "Your fee information in a clean Superior Student view"
+            Module.ATTENDANCE -> "Subject wise attendance and current percentage"
+            Module.TIMETABLE -> "Your classes, timings and rooms"
+            Module.FEE -> "Invoices, due dates and payment information"
         }
 
         val card = LinearLayout(this).apply {
