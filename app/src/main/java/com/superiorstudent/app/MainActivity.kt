@@ -759,7 +759,18 @@ class MainActivity : AppCompatActivity() {
             .take(50)
 
         if (rows.isNotEmpty()) {
-            rows.groupBy { it.day.ifBlank { "Class schedule" } }.forEach { (day, items) ->
+            val dayOrder = mapOf(
+                "Monday" to 1, "Tuesday" to 2, "Wednesday" to 3,
+                "Thursday" to 4, "Friday" to 5, "Saturday" to 6, "Sunday" to 7
+            )
+            val sortedRows = rows.sortedWith(
+                compareBy<ScheduleRow> { row ->
+                    dayOrder.entries.firstOrNull { entry -> row.day.equals(entry.key, true) }?.value ?: 99
+                }.thenBy { row ->
+                    Regex("""([01]?\d|2[0-3]):([0-5]\d)""").find(row.time)?.value ?: "99:99"
+                }
+            )
+            sortedRows.groupBy { it.day.ifBlank { "Scheduled classes" } }.forEach { (day, items) ->
                 binding.moduleContent.addView(createDayHeader(day, items.size))
                 items.forEach { binding.moduleContent.addView(createScheduleCard(it)) }
             }
@@ -797,7 +808,15 @@ class MainActivity : AppCompatActivity() {
             joined.replace(time, "").replace(day, "").trim(' ', '-', '–', '|').substringBefore(code).trim().ifBlank { code }
         }
         val room = headerValue("room", "venue", "location").ifBlank {
-            values.lastOrNull().orEmpty().takeIf { it != course && it != time && it != day && it != code }.orEmpty()
+            Regex("""(?:^|[| ])(?:Room\\s*)?([A-Z]{1,3}-\\d{1,3}|[A-Z]{1,3}\\d{1,3})$""", RegexOption.IGNORE_CASE)
+                .find(joined)?.groupValues?.getOrNull(1).orEmpty()
+                .ifBlank {
+                    values.lastOrNull().orEmpty()
+                        .takeIf { it != course && it != time && it != day && it != code }
+                        ?.replace(Regex("""\\(Lecture\\)""", RegexOption.IGNORE_CASE), "")
+                        ?.trim(' ', '-', '|')
+                        .orEmpty()
+                }
         }
         if (course.length < 3 || (time.isBlank() && code.isBlank())) return null
         return ScheduleRow(day, time, course, room)
@@ -829,35 +848,57 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             background = roundedBackground(Color.WHITE, 18f)
             elevation = dp(2).toFloat()
-            setPadding(dp(14), dp(13), dp(14), dp(13))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
 
-            addView(TextView(this@MainActivity).apply {
-                text = row.time.ifBlank { "—" }
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setTextColor(Color.rgb(30, 91, 155))
-                textSize = 11f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Color.rgb(239, 245, 255), 12f)
-                minWidth = dp(78)
-                minHeight = dp(40)
+                background = roundedBackground(Color.rgb(239, 245, 255), 14f)
+                layoutParams = LinearLayout.LayoutParams(dp(82), dp(58))
+                setPadding(dp(5), dp(5), dp(5), dp(5))
+
+                addView(TextView(this@MainActivity).apply {
+                    text = row.time.ifBlank { "Time" }
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.rgb(30, 91, 155))
+                    textSize = 12f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                if (row.day.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                    text = row.day.take(3).uppercase(java.util.Locale.US)
+                    gravity = Gravity.CENTER
+                    setTextColor(Color.rgb(93, 112, 140))
+                    textSize = 9f
+                    setPadding(0, dp(2), 0, 0)
+                })
             })
+
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     .apply { setPadding(dp(13), 0, 0, 0) }
+
                 addView(TextView(this@MainActivity).apply {
                     text = row.course
                     setTextColor(Color.rgb(23, 42, 70))
-                    textSize = 13f
+                    textSize = 14f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
+
                 if (row.room.isNotBlank()) addView(TextView(this@MainActivity).apply {
-                    text = row.room
-                    setTextColor(Color.rgb(126, 139, 158))
+                    text = "Room • " + row.room
+                    setTextColor(Color.rgb(105, 119, 141))
                     textSize = 10f
-                    setPadding(0, dp(4), 0, 0)
+                    setPadding(0, dp(5), 0, 0)
+                }) else addView(TextView(this@MainActivity).apply {
+                    text = "Class session"
+                    setTextColor(Color.rgb(151, 160, 175))
+                    textSize = 10f
+                    setPadding(0, dp(5), 0, 0)
                 })
             })
         }
@@ -1681,32 +1722,63 @@ class MainActivity : AppCompatActivity() {
                 });
               }
 
-              const scheduleCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item,a'));
+              function attrText(el){
+                if(!el) return '';
+                const attrs=['aria-label','title','data-time','data-start','data-end','data-date','data-start-time','data-end-time','data-event','data-event-data'];
+                return attrs.map(function(name){
+                  return el.getAttribute ? (el.getAttribute(name)||'') : '';
+                }).filter(Boolean).join(' | ');
+              }
+
+              function findTime(value){
+                const m=safe(value).match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/);
+                return m ? m[0] : '';
+              }
+
+              function findDay(value){
+                const m=safe(value).match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
+                return m ? m[0] : '';
+              }
+
+              const scheduleCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item,a,[data-start],[data-time],[data-event]'));
               scheduleCandidates.forEach(function(el){
                 const raw=safe(textOf(el));
-                if(!raw || raw.length>320 || raw.match(percentPattern)) return;
-                const codeMatch=raw.match(codePattern);
-                if(!codeMatch && !subjectPattern.test(raw)) return;
+                const attrs=safe(attrText(el));
+                if((!raw && !attrs) || raw.length>500) return;
 
-                let scope=raw;
+                const codeMatch=(raw+' '+attrs).match(codePattern);
+                if(!codeMatch && !subjectPattern.test(raw+' '+attrs)) return;
+
+                let scope=safe([raw,attrs].filter(Boolean).join(' | '));
+                let time=findTime(attrs) || findTime(raw);
+                let day=findDay(attrs) || findDay(raw);
+
                 let parent=el.parentElement;
-                for(let depth=0; depth<5 && parent; depth++, parent=parent.parentElement){
+                for(let depth=0; depth<10 && parent; depth++, parent=parent.parentElement){
                   const parentText=safe(textOf(parent));
-                  if(parentText.length>0 && parentText.length<=700 && /(?:[01]?\d|2[0-3]):[0-5]\d/.test(parentText)){
-                    scope=parentText;
-                    break;
+                  const parentAttrs=safe(attrText(parent));
+                  const combined=safe([parentText,parentAttrs].filter(Boolean).join(' | '));
+                  if(combined.length>0 && combined.length<=2000){
+                    if(!time) time=findTime(combined);
+                    if(!day) day=findDay(combined);
+                    if(time || day){
+                      scope=combined;
+                      if(time && codeMatch) break;
+                    }
                   }
                 }
 
-                const timeMatch=scope.match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/);
-                const dayMatch=scope.match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
                 const code=codeMatch ? codeMatch[0] : '';
-                let title=raw.replace(code,'').trim();
+                let title=raw || attrs;
+                title=title.replace(code,'').trim();
                 title=title.replace(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/g,'').trim();
                 title=title.replace(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/ig,'').trim();
                 title=title.replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
+
                 if(title.length<3 && code) title=code;
-                addScheduleRecord(timeMatch ? timeMatch[0] : '', dayMatch ? dayMatch[0] : '', title);
+                if(title.length<3) return;
+
+                addScheduleRecord(time,day,title);
               });
 
               scheduleStructured.forEach(function(record){records.push(record);});
