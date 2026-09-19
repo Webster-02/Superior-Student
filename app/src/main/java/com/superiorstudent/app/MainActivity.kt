@@ -46,10 +46,7 @@ class MainActivity : AppCompatActivity() {
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
     private var lastPausedAt = 0L
-
-    private companion object {
-        const val SESSION_RESUME_THRESHOLD_MS = 5 * 60 * 1000L
-    }
+    private val sessionResumeThresholdMs = 5 * 60 * 1000L
 
     private enum class Module(val path: String) {
         ATTENDANCE("student/attendance"),
@@ -187,7 +184,7 @@ class MainActivity : AppCompatActivity() {
             binding.dashboardScroll.visibility = View.VISIBLE
             webView.visibility = View.GONE
             showDashboard()
-            webView.loadUrl(ERP_DASHBOARD_URL)
+            binding.webView.loadUrl(ERP_DASHBOARD_URL)
         }
     }
 
@@ -200,14 +197,14 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val pausedFor = if (lastPausedAt > 0L) System.currentTimeMillis() - lastPausedAt else 0L
         lastPausedAt = 0L
-        if (pausedFor >= SESSION_RESUME_THRESHOLD_MS && loggedIn) {
+        if (pausedFor >= sessionResumeThresholdMs && loggedIn) {
             recoverSessionAfterBackground()
         }
     }
 
     private fun recoverSessionAfterBackground() {
         handler.removeCallbacksAndMessages(null)
-        webView.stopLoading()
+        binding.webView.stopLoading()
         binding.webView.visibility = View.INVISIBLE
         val module = activeModule
         if (module != null && binding.moduleScreen.visibility == View.VISIBLE) {
@@ -217,7 +214,7 @@ class MainActivity : AppCompatActivity() {
             binding.moduleProgress.visibility = View.VISIBLE
             binding.moduleContent.removeAllViews()
             binding.moduleInfo.text = "Reconnecting to your student account…"
-            webView.loadUrl(ERP_BASE_URL + module.path)
+            binding.webView.loadUrl(ERP_BASE_URL + module.path)
         } else {
             restoringSession = true
             webView.loadUrl(ERP_DASHBOARD_URL)
