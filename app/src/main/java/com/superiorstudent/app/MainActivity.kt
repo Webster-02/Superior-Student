@@ -217,7 +217,7 @@ class MainActivity : AppCompatActivity() {
             binding.webView.loadUrl(ERP_BASE_URL + module.path)
         } else {
             restoringSession = true
-            webView.loadUrl(ERP_DASHBOARD_URL)
+            binding.webView.loadUrl(ERP_DASHBOARD_URL)
         }
     }
 
