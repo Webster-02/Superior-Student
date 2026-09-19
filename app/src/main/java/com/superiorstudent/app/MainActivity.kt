@@ -45,6 +45,11 @@ class MainActivity : AppCompatActivity() {
     private val cachedModuleData = mutableMapOf<Module, String>()
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
+    private var lastPausedAt = 0L
+
+    private companion object {
+        const val SESSION_RESUME_THRESHOLD_MS = 5 * 60 * 1000L
+    }
 
     private enum class Module(val path: String) {
         ATTENDANCE("student/attendance"),
@@ -86,6 +91,15 @@ class MainActivity : AppCompatActivity() {
 
                 if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
                     binding.moduleProgress.visibility = View.GONE
+                }
+
+                if (!loginInProgress && !profileFetchInProgress && url.contains("/web/login", true)) {
+                    restoringSession = false
+                    loggedIn = false
+                    preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
+                    showLogin()
+                    Toast.makeText(this@MainActivity, "Your university session expired. Please sign in again.", Toast.LENGTH_LONG).show()
+                    return
                 }
 
                 if (restoringSession) {
@@ -173,6 +187,39 @@ class MainActivity : AppCompatActivity() {
             binding.dashboardScroll.visibility = View.VISIBLE
             webView.visibility = View.GONE
             showDashboard()
+            webView.loadUrl(ERP_DASHBOARD_URL)
+        }
+    }
+
+    override fun onPause() {
+        lastPausedAt = System.currentTimeMillis()
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val pausedFor = if (lastPausedAt > 0L) System.currentTimeMillis() - lastPausedAt else 0L
+        lastPausedAt = 0L
+        if (pausedFor >= SESSION_RESUME_THRESHOLD_MS && loggedIn) {
+            recoverSessionAfterBackground()
+        }
+    }
+
+    private fun recoverSessionAfterBackground() {
+        handler.removeCallbacksAndMessages(null)
+        webView.stopLoading()
+        binding.webView.visibility = View.INVISIBLE
+        val module = activeModule
+        if (module != null && binding.moduleScreen.visibility == View.VISIBLE) {
+            cachedModuleData.remove(module)
+            moduleFetchInProgress = true
+            moduleReadRequestId++
+            binding.moduleProgress.visibility = View.VISIBLE
+            binding.moduleContent.removeAllViews()
+            binding.moduleInfo.text = "Reconnecting to your student account…"
+            webView.loadUrl(ERP_BASE_URL + module.path)
+        } else {
+            restoringSession = true
             webView.loadUrl(ERP_DASHBOARD_URL)
         }
     }
@@ -339,6 +386,7 @@ class MainActivity : AppCompatActivity() {
         if (preloadQueue.isEmpty()) {
             preloadingModule = null
             binding.webView.visibility = View.GONE
+            updateNextClassPreview()
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
@@ -1298,6 +1346,51 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateNextClassPreview() {
+        val label = binding.nextClassLabel
+        val payload = cachedModuleData[Module.TIMETABLE]
+        val data = payload?.let { parseModuleData(it) }
+        val rows = data?.records?.mapNotNull(::toScheduleRow)
+            ?.filter { it.time.isNotBlank() }
+            ?.distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.room }
+            .orEmpty()
+
+        if (rows.isEmpty()) {
+            label.text = "Schedule synced"
+            return
+        }
+
+        val now = java.util.Calendar.getInstance()
+        val currentDay = when (now.get(java.util.Calendar.DAY_OF_WEEK)) {
+            java.util.Calendar.MONDAY -> "Monday"
+            java.util.Calendar.TUESDAY -> "Tuesday"
+            java.util.Calendar.WEDNESDAY -> "Wednesday"
+            java.util.Calendar.THURSDAY -> "Thursday"
+            java.util.Calendar.FRIDAY -> "Friday"
+            java.util.Calendar.SATURDAY -> "Saturday"
+            else -> "Sunday"
+        }
+        val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+
+        fun startMinutes(time: String): Int? {
+            val match = Regex("""([01]?\d|2[0-3]):([0-5]\d)""").find(time) ?: return null
+            return match.groupValues[1].toInt() * 60 + match.groupValues[2].toInt()
+        }
+
+        val sameDay = rows.filter { it.day.equals(currentDay, true) }
+        val next = sameDay.mapNotNull { row ->
+            startMinutes(row.time)?.let { start -> if (start >= currentMinutes) start to row else null }
+        }.minByOrNull { it.first }?.second
+            ?: rows.mapNotNull { row -> startMinutes(row.time)?.let { it to row } }
+                .minByOrNull { it.first }?.second
+
+        if (next == null) {
+            label.text = "Schedule synced"
+        } else {
+            label.text = "Next: " + next.time + " • " + next.course
+        }
+    }
+
     private fun showDashboard() {
         activeModule = null
         binding.webView.stopLoading()
@@ -1318,6 +1411,7 @@ class MainActivity : AppCompatActivity() {
         binding.studentName.text = if (isValidStudentName(savedName)) savedName else "Student"
         binding.studentCgpa.text = if (savedCgpa.isNotBlank()) savedCgpa else findGpaValue(legacyGpa, "CGPA").ifBlank { "—" }
         binding.studentSgpa.text = if (savedSgpa.isNotBlank()) savedSgpa else findGpaValue(legacyGpa, "SGPA").ifBlank { "—" }
+        updateNextClassPreview()
     }
 
     private fun showLogin() {
@@ -1576,24 +1670,48 @@ class MainActivity : AppCompatActivity() {
               structuredRecords.forEach(function(record){records.push(record);});
 
               const scheduleStructured=[];
-              const timePattern=/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/;
-              const scheduleCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item'));
+              const scheduleSeen={};
+
+              function addScheduleRecord(time, day, title){
+                time=safe(time); day=safe(day); title=safe(title);
+                if(title.length<3 || (!time && !day)) return;
+                const key=time+'|'+day+'|'+title;
+                if(scheduleSeen[key]) return;
+                scheduleSeen[key]=true;
+                scheduleStructured.push({
+                  headers:['Day','Time','Class'],
+                  values:[day,time,title]
+                });
+              }
+
+              const scheduleCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item,a'));
               scheduleCandidates.forEach(function(el){
                 const raw=safe(textOf(el));
-                if(!raw || raw.length>320) return;
-                const time=raw.match(timePattern);
-                if(!time && !codePattern.test(raw) && !subjectPattern.test(raw)) return;
-                if(raw.match(percentPattern)) return;
-
+                if(!raw || raw.length>320 || raw.match(percentPattern)) return;
                 const codeMatch=raw.match(codePattern);
+                if(!codeMatch && !subjectPattern.test(raw)) return;
+
+                let scope=raw;
+                let parent=el.parentElement;
+                for(let depth=0; depth<5 && parent; depth++, parent=parent.parentElement){
+                  const parentText=safe(textOf(parent));
+                  if(parentText.length>0 && parentText.length<=700 && /(?:[01]?\d|2[0-3]):[0-5]\d/.test(parentText)){
+                    scope=parentText;
+                    break;
+                  }
+                }
+
+                const timeMatch=scope.match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/);
+                const dayMatch=scope.match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
                 const code=codeMatch ? codeMatch[0] : '';
-                const title=raw.replace(time ? time[0] : '','').replace(code,'').trim();
-                if(title.length<3) return;
-                scheduleStructured.push({
-                  headers:['Time','Class'],
-                  values:[time ? time[0] : '',title]
-                });
+                let title=raw.replace(code,'').trim();
+                title=title.replace(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/g,'').trim();
+                title=title.replace(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/ig,'').trim();
+                title=title.replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
+                if(title.length<3 && code) title=code;
+                addScheduleRecord(timeMatch ? timeMatch[0] : '', dayMatch ? dayMatch[0] : '', title);
               });
+
               scheduleStructured.forEach(function(record){records.push(record);});
 
               return JSON.stringify({
