@@ -798,10 +798,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         val time = headerValue("time", "timing").ifBlank {
-            Regex("""(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?""").find(joined)?.value.orEmpty()
+            Regex("""(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?""")
+                .find(joined)?.value.orEmpty()
         }
         val day = headerValue("day", "date").ifBlank {
-            Regex("""(?i)\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b""").find(joined)?.value.orEmpty()
+            Regex("""(?i)\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b""")
+                .find(joined)?.value.orEmpty()
         }
         val code = Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
         val course = headerValue("subject", "course", "class", "name").ifBlank {
@@ -862,7 +864,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(5), dp(5), dp(5), dp(5))
 
                 addView(TextView(this@MainActivity).apply {
-                    text = row.time.ifBlank { "Time" }
+                    text = row.time.ifBlank { "Time unavailable" }
                     gravity = Gravity.CENTER
                     setTextColor(Color.rgb(30, 91, 155))
                     textSize = 12f
@@ -895,7 +897,7 @@ class MainActivity : AppCompatActivity() {
                     textSize = 10f
                     setPadding(0, dp(5), 0, 0)
                 }) else addView(TextView(this@MainActivity).apply {
-                    text = "Class session"
+                    text = "Time not provided by ERP"
                     setTextColor(Color.rgb(151, 160, 175))
                     textSize = 10f
                     setPadding(0, dp(5), 0, 0)
@@ -1724,60 +1726,237 @@ class MainActivity : AppCompatActivity() {
 
               function attrText(el){
                 if(!el) return '';
-                const attrs=['aria-label','title','data-time','data-start','data-end','data-date','data-start-time','data-end-time','data-event','data-event-data'];
+                const attrs=[
+                  'aria-label','title','data-time','data-start','data-end','data-date',
+                  'data-start-time','data-end-time','data-event','data-event-data',
+                  'data-datetime','data-date-time','data-starttime','data-endtime'
+                ];
                 return attrs.map(function(name){
                   return el.getAttribute ? (el.getAttribute(name)||'') : '';
                 }).filter(Boolean).join(' | ');
               }
 
               function findTime(value){
-                const m=safe(value).match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/);
+                const m=safe(value).match(/\\b(?:[01]?\\d|2[0-3]):[0-5]\\d(?:\\s*[-–]\\s*(?:[01]?\\d|2[0-3]):[0-5]\\d)?\\b/);
                 return m ? m[0] : '';
               }
 
               function findDay(value){
-                const m=safe(value).match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
+                const m=safe(value).match(/\\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\b/i);
                 return m ? m[0] : '';
               }
 
-              const scheduleCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item,a,[data-start],[data-time],[data-event]'));
-              scheduleCandidates.forEach(function(el){
+              function timeFromDate(value){
+                const raw=safe(value);
+                const match=raw.match(/T(\\d{2}):(\\d{2})/);
+                if(match) return match[1]+':'+match[2];
+                return '';
+              }
+
+              function dayFromDate(value){
+                const raw=safe(value);
+                const iso=raw.match(/(\\d{4})-(\\d{2})-(\\d{2})/);
+                if(!iso) return '';
+                const date=new Date(iso[1]+'-'+iso[2]+'-'+iso[3]+'T12:00:00');
+                if(Number.isNaN(date.getTime())) return '';
+                return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][date.getDay()];
+              }
+
+              function titleFromElement(el){
+                if(!el) return '';
+                const selectors=[
+                  '.fc-event-title','.fc-title','.fc-event-main',
+                  '[class*="event-title"]','[class*="course-name"]',
+                  '[class*="course_title"]','[class*="subject-name"]',
+                  '[class*="subject_name"]'
+                ];
+                for(const selector of selectors){
+                  const node=el.querySelector ? el.querySelector(selector) : null;
+                  const value=safe(textOf(node));
+                  if(value.length>=3) return value;
+                }
+                return safe(el.getAttribute && (el.getAttribute('data-title')||el.getAttribute('data-name')||''));
+              }
+
+              function cleanScheduleTitle(value, code, time, day){
+                let title=safe(value);
+                if(!title) return '';
+                title=title.replace(code,'').trim();
+                if(time) title=title.replace(time,'').trim();
+                if(day) title=title.replace(new RegExp('\\\\b'+day+'\\\\b','ig'),'').trim();
+                title=title.replace(/\\b(?:Lecture|Lab|Practical|Theory)\\b/ig,' ').trim();
+                title=title.replace(/(?:^|[|•])\\s*(?:Room\\s*)?[A-Z]{1,3}-?\\d{1,3}\\s*(?:\\|)?/ig,' ').trim();
+                title=title.replace(/\\s+/g,' ').replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
+                return title;
+              }
+
+              function collectTimeLabels(){
+                const labels=[];
+                const nodes=Array.from(clone.querySelectorAll('div,span,td,th,a'));
+                nodes.forEach(function(el){
+                  const value=safe(textOf(el));
+                  if(!/^\\d{1,2}:\\d{2}$/.test(value)) return;
+                  const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+                  if(!rect || rect.width<=0 || rect.height<=0) return;
+                  const minutes=parseInt(value.slice(0,2),10)*60+parseInt(value.slice(3),10);
+                  labels.push({time:value,minutes:minutes,top:rect.top,left:rect.left});
+                });
+                const uniqueLabels={};
+                return labels.filter(function(item){
+                  const key=item.time+'|'+Math.round(item.top);
+                  if(uniqueLabels[key]) return false;
+                  uniqueLabels[key]=true;
+                  return true;
+                });
+              }
+
+              function collectDayLabels(){
+                const labels=[];
+                const nodes=Array.from(clone.querySelectorAll('div,span,td,th,a'));
+                nodes.forEach(function(el){
+                  const value=safe(textOf(el));
+                  const day=findDay(value);
+                  if(!day || value.length>30) return;
+                  const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+                  if(!rect || rect.width<=0 || rect.height<=0) return;
+                  labels.push({day:day,center:rect.left+(rect.width/2),top:rect.top});
+                });
+                return labels;
+              }
+
+              const timeLabels=collectTimeLabels();
+              const dayLabels=collectDayLabels();
+
+              function inferTimeFromPosition(el){
+                if(!el || !timeLabels.length || !el.getBoundingClientRect) return '';
+                const rect=el.getBoundingClientRect();
+                if(rect.width<=0 || rect.height<=0) return '';
+                const centerTop=rect.top+(rect.height/2);
+                let nearest=null;
+                let distance=Infinity;
+                timeLabels.forEach(function(label){
+                  const d=Math.abs(centerTop-label.top);
+                  if(d<distance){distance=d;nearest=label;}
+                });
+                if(!nearest || distance>95) return '';
+                return nearest.time;
+              }
+
+              function inferDayFromPosition(el){
+                if(!el || !dayLabels.length || !el.getBoundingClientRect) return '';
+                const rect=el.getBoundingClientRect();
+                if(rect.width<=0 || rect.height<=0) return '';
+                const center=rect.left+(rect.width/2);
+                let nearest=null;
+                let distance=Infinity;
+                dayLabels.forEach(function(label){
+                  const d=Math.abs(center-label.center);
+                  if(d<distance){distance=d;nearest=label;}
+                });
+                if(!nearest || distance>180) return '';
+                return nearest.day;
+              }
+
+              const eventSelectors=[
+                '.fc-event','.fc-event-main','.fc-daygrid-event','.fc-timegrid-event',
+                '.o_calendar_event','.calendar_event','[class*="calendar-event"]',
+                '[class*="schedule-event"]','[class*="timetable-event"]',
+                '[data-start]','[data-event]','[data-event-data]',
+                '[data-time]','[data-datetime]'
+              ];
+              const eventNodes=[];
+              eventSelectors.forEach(function(selector){
+                clone.querySelectorAll(selector).forEach(function(el){
+                  if(eventNodes.indexOf(el)<0) eventNodes.push(el);
+                });
+              });
+
+              eventNodes.forEach(function(el){
                 const raw=safe(textOf(el));
                 const attrs=safe(attrText(el));
-                if((!raw && !attrs) || raw.length>500) return;
+                const titleCandidate=titleFromElement(el);
+                if((!raw && !attrs && !titleCandidate) || raw.length>900) return;
 
-                const codeMatch=(raw+' '+attrs).match(codePattern);
-                if(!codeMatch && !subjectPattern.test(raw+' '+attrs)) return;
+                const combined=safe([raw,attrs,titleCandidate].filter(Boolean).join(' | '));
+                const codeMatch=combined.match(codePattern);
+                if(!codeMatch && !subjectPattern.test(combined)) return;
 
-                let scope=safe([raw,attrs].filter(Boolean).join(' | '));
-                let time=findTime(attrs) || findTime(raw);
-                let day=findDay(attrs) || findDay(raw);
+                let time=findTime(attrs) || findTime(raw) || findTime(titleCandidate);
+                let day=findDay(attrs) || findDay(raw) || findDay(titleCandidate);
 
-                let parent=el.parentElement;
-                for(let depth=0; depth<10 && parent; depth++, parent=parent.parentElement){
-                  const parentText=safe(textOf(parent));
-                  const parentAttrs=safe(attrText(parent));
-                  const combined=safe([parentText,parentAttrs].filter(Boolean).join(' | '));
-                  if(combined.length>0 && combined.length<=2000){
-                    if(!time) time=findTime(combined);
-                    if(!day) day=findDay(combined);
-                    if(time || day){
-                      scope=combined;
-                      if(time && codeMatch) break;
-                    }
+                if(!time){
+                  time=timeFromDate(el.getAttribute && (
+                    el.getAttribute('data-start') ||
+                    el.getAttribute('data-datetime') ||
+                    el.getAttribute('data-date-time') ||
+                    ''
+                  ));
+                }
+                if(!day){
+                  day=dayFromDate(el.getAttribute && (
+                    el.getAttribute('data-start') ||
+                    el.getAttribute('data-datetime') ||
+                    el.getAttribute('data-date-time') ||
+                    ''
+                  ));
+                }
+
+                // Some calendar implementations keep the actual event time/day only
+                // in an ancestor's data attributes. Read attributes only, never ancestor
+                // text, so the page's 08:00 time-axis label cannot contaminate every class.
+                if(!time || !day){
+                  let parent=el.parentElement;
+                  for(let depth=0; depth<3 && parent; depth++, parent=parent.parentElement){
+                    const parentAttrs=safe(attrText(parent));
+                    if(!time) time=findTime(parentAttrs) || timeFromDate(parent.getAttribute && parent.getAttribute('data-start') || '');
+                    if(!day) day=findDay(parentAttrs) || dayFromDate(parent.getAttribute && parent.getAttribute('data-start') || '');
+                    if(time && day) break;
                   }
                 }
 
+                if(!time) time=inferTimeFromPosition(el);
+                if(!day) day=inferDayFromPosition(el);
+
                 const code=codeMatch ? codeMatch[0] : '';
-                let title=raw || attrs;
-                title=title.replace(code,'').trim();
-                title=title.replace(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/g,'').trim();
-                title=title.replace(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/ig,'').trim();
-                title=title.replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
+                let title=titleCandidate || raw || attrs;
+                title=cleanScheduleTitle(title,code,time,day);
+
+                // If the outer event node contains multiple nested labels, prefer
+                // the first clean subject line instead of rendering the whole parent.
+                if(title.length>140){
+                  const fragments=title.split(/\\s{2,}|\\|/).map(clean).filter(Boolean);
+                  const candidate=fragments.find(function(fragment){
+                    return fragment.length>=3 && fragment.length<=110 &&
+                      (subjectPattern.test(fragment) || codePattern.test(fragment));
+                  });
+                  if(candidate) title=candidate;
+                }
 
                 if(title.length<3 && code) title=code;
                 if(title.length<3) return;
 
+                addScheduleRecord(time,day,title);
+              });
+
+              // Fallback for timetable pages that use ordinary rows/cards rather
+              // than FullCalendar classes. Crucially, this fallback uses only the
+              // element's own text/attributes and never inherits a time from a
+              // large calendar container.
+              const fallbackNodes=Array.from(clone.querySelectorAll('li,td,tr,.card,.item,.row'));
+              fallbackNodes.forEach(function(el){
+                if(eventNodes.indexOf(el)>=0) return;
+                const raw=safe(textOf(el));
+                if(!raw || raw.length>320) return;
+                const attrs=safe(attrText(el));
+                const combined=safe([raw,attrs].filter(Boolean).join(' | '));
+                if(!codePattern.test(combined) && !subjectPattern.test(combined)) return;
+
+                const codeMatch=combined.match(codePattern);
+                const code=codeMatch ? codeMatch[0] : '';
+                const time=findTime(attrs) || findTime(raw);
+                const day=findDay(attrs) || findDay(raw);
+                const title=cleanScheduleTitle(raw,code,time,day);
+                if(title.length<3 || (!time && !day)) return;
                 addScheduleRecord(time,day,title);
               });
 
