@@ -1024,6 +1024,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        data.records.mapNotNull { record ->
+            if (record.values.size != 1) return@mapNotNull null
+            val value = cleanDisplayText(record.values.first())
+            if (value.length < 3 || value.length > 350) null else value
+        }.distinct()
+            .take(60)
+            .forEach { value ->
+                binding.moduleContent.addView(createResultCard("ERP result record", value))
+            }
+
         if (data.cards.isEmpty() && data.tables.isEmpty() && resultRecords.isEmpty()) {
             binding.moduleContent.addView(
                 createEmptyState("Results are unavailable", "Refresh to sync your latest academic results from ERP.")
@@ -1999,10 +2009,11 @@ class MainActivity : AppCompatActivity() {
                 if(!title) return '';
                 title=title.replace(code,'').trim();
                 if(time) title=title.replace(time,'').trim();
-                if(day) title=title.replace(new RegExp('\\\\b'+day+'\\\\b','ig'),'').trim();
-                title=title.replace(/\\b(?:Lecture|Lab|Practical|Theory)\\b/ig,' ').trim();
-                title=title.replace(/(?:^|[|•])\\s*(?:Room\\s*)?[A-Z]{1,3}-?\\d{1,3}\\s*(?:\\|)?/ig,' ').trim();
-                title=title.replace(/\\s+/g,' ').replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
+                if(day) title=title.replace(new RegExp('\\b'+day+'\\b','ig'),'').trim();
+                title=title.replace(/\b(?:Lecture|Lab|Practical|Theory)\b/ig,' ').trim();
+                title=title.replace(/\b[A-Z]{1,3}-\d{1,3}\b/ig,' ').trim();
+                title=title.replace(/(?:^|[|•])\s*(?:Room\s*)?[A-Z]{1,3}\d{1,3}\s*(?:\|)?/ig,' ').trim();
+                title=title.replace(/\s+/g,' ').replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
                 return title;
               }
 
