@@ -1947,34 +1947,49 @@ class MainActivity : AppCompatActivity() {
 
               function collectTimeLabels(){
                 const labels=[];
-                const nodes=Array.from(clone.querySelectorAll('div,span,td,th,a'));
+                const nodes=Array.from(document.querySelectorAll('.fc-timegrid-slot-label,.fc-timegrid-slot-label-cushion,.fc-timegrid-axis-cushion,[class*="timegrid-slot-label"],div,span,td,th'));
                 nodes.forEach(function(el){
                   const value=safe(textOf(el));
-                  if(!/^\\d{1,2}:\\d{2}$/.test(value)) return;
+                  if(!/^\d{1,2}:\d{2}$/.test(value)) return;
                   const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
                   if(!rect || rect.width<=0 || rect.height<=0) return;
                   const minutes=parseInt(value.slice(0,2),10)*60+parseInt(value.slice(3),10);
                   labels.push({time:value,minutes:minutes,top:rect.top,left:rect.left});
                 });
-                const uniqueLabels={};
-                return labels.filter(function(item){
-                  const key=item.time+'|'+Math.round(item.top);
-                  if(uniqueLabels[key]) return false;
-                  uniqueLabels[key]=true;
-                  return true;
+                labels.sort(function(a,b){return a.top-b.top;});
+                const unique=[];
+                labels.forEach(function(item){
+                  const duplicate=unique.some(function(existing){
+                    return existing.time===item.time && Math.abs(existing.top-item.top)<3;
+                  });
+                  if(!duplicate) unique.push(item);
                 });
+                return unique;
               }
 
               function collectDayLabels(){
                 const labels=[];
-                const nodes=Array.from(clone.querySelectorAll('div,span,td,th,a'));
-                nodes.forEach(function(el){
-                  const value=safe(textOf(el));
-                  const day=findDay(value);
-                  if(!day || value.length>30) return;
+                document.querySelectorAll('[data-date]').forEach(function(el){
+                  const date=safe(el.getAttribute('data-date')||'');
+                  const day=dayFromDate(date);
+                  if(!day) return;
                   const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
                   if(!rect || rect.width<=0 || rect.height<=0) return;
-                  labels.push({day:day,center:rect.left+(rect.width/2),top:rect.top});
+                  labels.push({
+                    day:day,
+                    date:date,
+                    center:rect.left+(rect.width/2),
+                    top:rect.top
+                  });
+                });
+
+                document.querySelectorAll('.fc-col-header-cell-cushion,.fc-col-header-cell,.fc-day-header,[class*="day-header"]').forEach(function(el){
+                  const value=safe(textOf(el));
+                  const day=findDay(value);
+                  if(!day) return;
+                  const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+                  if(!rect || rect.width<=0 || rect.height<=0) return;
+                  labels.push({day:day,date:'',center:rect.left+(rect.width/2),top:rect.top});
                 });
                 return labels;
               }
@@ -1986,19 +2001,50 @@ class MainActivity : AppCompatActivity() {
                 if(!el || !timeLabels.length || !el.getBoundingClientRect) return '';
                 const rect=el.getBoundingClientRect();
                 if(rect.width<=0 || rect.height<=0) return '';
-                const centerTop=rect.top+(rect.height/2);
-                let nearest=null;
-                let distance=Infinity;
+
+                // FullCalendar time-grid events are positioned vertically by their
+                // start time. Use the event's TOP, not its center, to avoid shifting
+                // a 08:00 class into the next slot.
+                const eventTop=rect.top;
+                let best=null;
+                let bestDistance=Infinity;
                 timeLabels.forEach(function(label){
-                  const d=Math.abs(centerTop-label.top);
-                  if(d<distance){distance=d;nearest=label;}
+                  const d=Math.abs(eventTop-label.top);
+                  if(d<bestDistance){bestDistance=d;best=label;}
                 });
-                if(!nearest || distance>95) return '';
-                return nearest.time;
+
+                if(!best) return '';
+
+                // If labels are evenly spaced, interpolate between adjacent labels
+                // so 08:30/09:00/etc are recovered even when the event does not sit
+                // exactly on the label pixel.
+                const ordered=timeLabels.slice().sort(function(a,b){return a.top-b.top;});
+                for(let i=0;i<ordered.length-1;i++){
+                  const a=ordered[i], b=ordered[i+1];
+                  if(eventTop>=a.top && eventTop<=b.top && b.top>a.top){
+                    const ratio=(eventTop-a.top)/(b.top-a.top);
+                    const minutes=Math.round(a.minutes+(b.minutes-a.minutes)*ratio);
+                    const snapped=Math.max(0,Math.min(1439,minutes));
+                    const hh=String(Math.floor(snapped/60)).padStart(2,'0');
+                    const mm=String(snapped%60).padStart(2,'0');
+                    return hh+':'+mm;
+                  }
+                }
+
+                return bestDistance<=140 ? best.time : '';
               }
 
               function inferDayFromPosition(el){
-                if(!el || !dayLabels.length || !el.getBoundingClientRect) return '';
+                if(!el || !el.getBoundingClientRect) return '';
+
+                let parent=el;
+                for(let depth=0;depth<8 && parent;depth++,parent=parent.parentElement){
+                  const date=safe(parent.getAttribute && (parent.getAttribute('data-date')||''));
+                  const day=dayFromDate(date);
+                  if(day) return day;
+                }
+
+                if(!dayLabels.length) return '';
                 const rect=el.getBoundingClientRect();
                 if(rect.width<=0 || rect.height<=0) return '';
                 const center=rect.left+(rect.width/2);
@@ -2008,12 +2054,11 @@ class MainActivity : AppCompatActivity() {
                   const d=Math.abs(center-label.center);
                   if(d<distance){distance=d;nearest=label;}
                 });
-                if(!nearest || distance>180) return '';
-                return nearest.day;
+                return nearest && distance<=220 ? nearest.day : '';
               }
 
               const eventSelectors=[
-                '.fc-event','.fc-event-main','.fc-daygrid-event','.fc-timegrid-event',
+                '.fc-timegrid-event','.fc-event','.fc-daygrid-event','.fc-event-main',
                 '.o_calendar_event','.calendar_event','[class*="calendar-event"]',
                 '[class*="schedule-event"]','[class*="timetable-event"]',
                 '[data-start]','[data-event]','[data-event-data]',
@@ -2021,7 +2066,7 @@ class MainActivity : AppCompatActivity() {
               ];
               const eventNodes=[];
               eventSelectors.forEach(function(selector){
-                clone.querySelectorAll(selector).forEach(function(el){
+                document.querySelectorAll(selector).forEach(function(el){
                   if(eventNodes.indexOf(el)<0) eventNodes.push(el);
                 });
               });
@@ -2056,12 +2101,9 @@ class MainActivity : AppCompatActivity() {
                   ));
                 }
 
-                // Some calendar implementations keep the actual event time/day only
-                // in an ancestor's data attributes. Read attributes only, never ancestor
-                // text, so the page's 08:00 time-axis label cannot contaminate every class.
                 if(!time || !day){
                   let parent=el.parentElement;
-                  for(let depth=0; depth<3 && parent; depth++, parent=parent.parentElement){
+                  for(let depth=0;depth<4 && parent;depth++,parent=parent.parentElement){
                     const parentAttrs=safe(attrText(parent));
                     if(!time) time=findTime(parentAttrs) || timeFromDate(parent.getAttribute && parent.getAttribute('data-start') || '');
                     if(!day) day=findDay(parentAttrs) || dayFromDate(parent.getAttribute && parent.getAttribute('data-start') || '');
@@ -2076,10 +2118,8 @@ class MainActivity : AppCompatActivity() {
                 let title=titleCandidate || raw || attrs;
                 title=cleanScheduleTitle(title,code,time,day);
 
-                // If the outer event node contains multiple nested labels, prefer
-                // the first clean subject line instead of rendering the whole parent.
                 if(title.length>140){
-                  const fragments=title.split(/\\s{2,}|\\|/).map(clean).filter(Boolean);
+                  const fragments=title.split(/\s{2,}|\|/).map(clean).filter(Boolean);
                   const candidate=fragments.find(function(fragment){
                     return fragment.length>=3 && fragment.length<=110 &&
                       (subjectPattern.test(fragment) || codePattern.test(fragment));
@@ -2089,14 +2129,12 @@ class MainActivity : AppCompatActivity() {
 
                 if(title.length<3 && code) title=code;
                 if(title.length<3) return;
-
                 addScheduleRecord(time,day,title);
               });
 
-              // Fallback for timetable pages that use ordinary rows/cards rather
-              // than FullCalendar classes. Crucially, this fallback uses only the
-              // element's own text/attributes and never inherits a time from a
-              // large calendar container.
+              // Non-calendar fallback: only use explicit time/day values from the
+              // row itself. This prevents the first visible 08:00 axis label from
+              // becoming the time for every subject.
               const fallbackNodes=Array.from(clone.querySelectorAll('li,td,tr,.card,.item,.row'));
               fallbackNodes.forEach(function(el){
                 if(eventNodes.indexOf(el)>=0) return;
