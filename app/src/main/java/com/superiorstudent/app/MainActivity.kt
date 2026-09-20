@@ -51,7 +51,9 @@ class MainActivity : AppCompatActivity() {
     private enum class Module(val path: String) {
         ATTENDANCE("student/attendance"),
         TIMETABLE("student/class/schedule"),
-        FEE("student/invoices")
+        FEE("student/invoices"),
+        PROFILE("student/profile"),
+        RESULTS("student/results")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -171,6 +173,8 @@ class MainActivity : AppCompatActivity() {
         binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
         binding.timetableButton.setOnClickListener { loadModule(Module.TIMETABLE) }
         binding.feeButton.setOnClickListener { loadModule(Module.FEE) }
+        binding.profileButton.setOnClickListener { loadModule(Module.PROFILE) }
+        binding.resultsButton.setOnClickListener { loadModule(Module.RESULTS) }
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.logoutButton.setOnClickListener { logout() }
@@ -421,9 +425,18 @@ class MainActivity : AppCompatActivity() {
                 binding.moduleTitle.text = "Fee Details"
                 binding.moduleSubtitle.text = "Your fee information"
             }
+            Module.PROFILE -> {
+                binding.moduleTitle.text = "My Profile"
+                binding.moduleSubtitle.text = "Your student information"
+            }
+            Module.RESULTS -> {
+                binding.moduleTitle.text = "Results"
+                binding.moduleSubtitle.text = "Your academic results"
+            }
         }
 
-        val payload = cachedModuleData[module]
+        val forceLive = module == Module.TIMETABLE || module == Module.PROFILE || module == Module.RESULTS
+        val payload = if (forceLive) null else cachedModuleData[module]
         val data = payload?.let { parseModuleData(it) }
         if (data != null) {
             renderModuleData(module, data)
@@ -472,6 +485,8 @@ class MainActivity : AppCompatActivity() {
             Module.ATTENDANCE -> renderAttendance(data)
             Module.TIMETABLE -> renderTimetable(data)
             Module.FEE -> renderFee(data)
+            Module.PROFILE -> renderProfile(data)
+            Module.RESULTS -> renderResults(data)
         }
         binding.moduleProgress.visibility = View.GONE
         binding.moduleInfo.text = "Updated from your student account"
@@ -905,6 +920,142 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
+
+    private fun renderProfile(data: ModuleData) {
+        val fieldRecords = data.records.mapNotNull { record ->
+            val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+            if (values.size < 2) return@mapNotNull null
+            val field = cleanDisplayText(values[0])
+            val value = cleanDisplayText(values.drop(1).joinToString(" • "))
+            if (field.length < 2 || value.isBlank()) null else field to value
+        }.distinctBy { it.first.lowercase() + "|" + it.second.lowercase() }
+
+        if (fieldRecords.isNotEmpty()) {
+            binding.moduleContent.addView(createSectionHeading("Personal information", "Details fetched from your Superior ERP profile"))
+            fieldRecords.take(40).forEach { (label, value) ->
+                binding.moduleContent.addView(createProfileFieldCard(label, value))
+            }
+        }
+
+        data.cards.take(12).forEach { (label, value) ->
+            binding.moduleContent.addView(createProfileFieldCard(label, value))
+        }
+
+        data.tables.take(10).forEachIndexed { index, table ->
+            binding.moduleContent.addView(
+                createTableSection(
+                    table.title.ifBlank { if (index == 0) "Profile details" else "Additional profile information" },
+                    table
+                )
+            )
+        }
+
+        if (fieldRecords.isEmpty() && data.cards.isEmpty() && data.tables.isEmpty()) {
+            data.lines.distinct().take(40).forEach { line ->
+                binding.moduleContent.addView(createProfileFieldCard("Student information", line))
+            }
+        }
+
+        if (fieldRecords.isEmpty() && data.cards.isEmpty() && data.tables.isEmpty() && data.lines.isEmpty()) {
+            binding.moduleContent.addView(
+                createEmptyState("Profile information is unavailable", "Refresh to sync your latest ERP profile.")
+            )
+        }
+    }
+
+    private fun createProfileFieldCard(label: String, value: String): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = cleanDisplayText(label).uppercase(java.util.Locale.US)
+                setTextColor(Color.rgb(102, 112, 133))
+                textSize = 10f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                letterSpacing = 0.04f
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = cleanDisplayText(value)
+                setTextColor(Color.rgb(23, 42, 70))
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, dp(5), 0, 0)
+            })
+        }
+
+    private fun renderResults(data: ModuleData) {
+        data.cards.take(8).forEach { (label, value) ->
+            binding.moduleContent.addView(createMetricCard(label, value))
+        }
+
+        if (data.tables.isNotEmpty()) {
+            binding.moduleContent.addView(
+                createSectionHeading("Result history", "Courses, grades, credits and other academic records from ERP")
+            )
+            data.tables.take(12).forEachIndexed { index, table ->
+                binding.moduleContent.addView(
+                    createTableSection(
+                        table.title.ifBlank { if (index == 0) "Academic results" else "Result details" },
+                        table
+                    )
+                )
+            }
+        }
+
+        val resultRecords = data.records.mapNotNull { record ->
+            val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+            if (values.size < 2) return@mapNotNull null
+            val joined = values.joinToString(" • ")
+            if (joined.length < 3) null else values
+        }.distinctBy { it.joinToString("|").lowercase() }
+
+        resultRecords.take(60).forEach { values ->
+            val title = values.first()
+            val details = values.drop(1).joinToString(" • ")
+            if (details.isNotBlank() && !data.tables.any { table -> table.rows.any { it == values } }) {
+                binding.moduleContent.addView(createResultCard(title, details))
+            }
+        }
+
+        if (data.cards.isEmpty() && data.tables.isEmpty() && resultRecords.isEmpty()) {
+            binding.moduleContent.addView(
+                createEmptyState("Results are unavailable", "Refresh to sync your latest academic results from ERP.")
+            )
+        }
+    }
+
+    private fun createResultCard(title: String, details: String): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = cleanDisplayText(title)
+                setTextColor(Color.rgb(18, 58, 112))
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = cleanDisplayText(details)
+                setTextColor(Color.rgb(82, 93, 112))
+                textSize = 11f
+                setPadding(0, dp(6), 0, 0)
+            })
+        }
+
     private fun renderFee(data: ModuleData) {
         val invoices = data.tables.flatMap { table ->
             table.rows.map { row -> table.headers.zip(row).toMap() }
@@ -1041,11 +1192,15 @@ class MainActivity : AppCompatActivity() {
             Module.ATTENDANCE -> "Attendance overview"
             Module.TIMETABLE -> "Class schedule"
             Module.FEE -> "Fee overview"
+            Module.PROFILE -> "Student profile"
+            Module.RESULTS -> "Academic results"
         }
         val subtitle = when (module) {
             Module.ATTENDANCE -> "Subject wise attendance and current percentage"
             Module.TIMETABLE -> "Your classes, timings and rooms"
             Module.FEE -> "Invoices, due dates and payment information"
+            Module.PROFILE -> "Live student information from your ERP account"
+            Module.RESULTS -> "Live academic results from your ERP account"
         }
 
         val card = LinearLayout(this).apply {
