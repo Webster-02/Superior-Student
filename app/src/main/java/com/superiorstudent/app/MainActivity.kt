@@ -2094,7 +2094,7 @@ class MainActivity : AppCompatActivity() {
                 if(!title) return '';
                 title=title.replace(code,'').trim();
                 if(time) title=title.replace(time,'').trim();
-                if(day) title=title.replace(new RegExp('\b'+day+'\b','ig'),'').trim();
+                if(day) title=title.replace(new RegExp('\\b'+day+'\\b','ig'),'').trim();
                 title=title.replace(/\b(?:Lecture|Lab|Practical|Theory)\b/ig,' ').trim();
                 title=title.replace(/\b[A-Z]{1,3}-\d{1,3}\b/ig,' ').trim();
                 title=title.replace(/(?:^|[|•])\s*(?:Room\s*)?[A-Z]{1,3}\d{1,3}\s*(?:\|)?/ig,' ').trim();
