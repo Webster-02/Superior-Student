@@ -825,12 +825,12 @@ class MainActivity : AppCompatActivity() {
             joined.replace(time, "").replace(day, "").trim(' ', '-', '–', '|').substringBefore(code).trim().ifBlank { code }
         }
         val room = headerValue("room", "venue", "location").ifBlank {
-            Regex("""(?:^|[| ])(?:Room\\s*)?([A-Z]{1,3}-\\d{1,3}|[A-Z]{1,3}\\d{1,3})$""", RegexOption.IGNORE_CASE)
+            Regex("""(?:^|[| ])(?:Room\s*)?([A-Z]{1,3}-\d{1,3}|[A-Z]{1,3}\d{1,3})$""", RegexOption.IGNORE_CASE)
                 .find(joined)?.groupValues?.getOrNull(1).orEmpty()
                 .ifBlank {
                     values.lastOrNull().orEmpty()
                         .takeIf { it != course && it != time && it != day && it != code }
-                        ?.replace(Regex("""\\(Lecture\\)""", RegexOption.IGNORE_CASE), "")
+                        ?.replace(Regex("""\(Lecture\)""", RegexOption.IGNORE_CASE), "")
                         ?.trim(' ', '-', '|')
                         .orEmpty()
                 }
@@ -1828,7 +1828,7 @@ class MainActivity : AppCompatActivity() {
               });
               
               const percentPattern=/([0-9]{1,3}(?:\.[0-9]+)?)\s*%/;
-              const codePattern=/\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b/i;
+              const codePattern=/\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b/i;
               const subjectPattern=/functional english|quantitative reasoning|civics and community engagement|management of refractive errors|visual optics and image processing|redefining success/i;
 
               let overallAttendance=null;
@@ -2081,7 +2081,8 @@ class MainActivity : AppCompatActivity() {
 
                 const combined=safe([raw,attrs,titleCandidate].filter(Boolean).join(' | '));
                 const codeMatch=combined.match(codePattern);
-                if(!codeMatch && !subjectPattern.test(combined)) return;
+                const genericTitle = titleCandidate && titleCandidate.length >= 3 && titleCandidate.length <= 140;
+                if(!codeMatch && !subjectPattern.test(combined) && !genericTitle) return;
 
                 let time=findTime(attrs) || findTime(raw) || findTime(titleCandidate);
                 let day=findDay(attrs) || findDay(raw) || findDay(titleCandidate);
