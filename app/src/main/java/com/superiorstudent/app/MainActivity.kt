@@ -46,7 +46,15 @@ class MainActivity : AppCompatActivity() {
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
     private var lastPausedAt = 0L
+    private var sessionHeartbeatRunning = false
     private val sessionResumeThresholdMs = 5 * 60 * 1000L
+    private val sessionHeartbeatRunnable = object : Runnable {
+        override fun run() {
+            if (!sessionHeartbeatRunning || !loggedIn) return
+            pingSession()
+            handler.postDelayed(this, SESSION_HEARTBEAT_INTERVAL_MS)
+        }
+    }
 
     private enum class Module(val path: String) {
         ATTENDANCE("student/attendance"),
@@ -257,10 +265,12 @@ class MainActivity : AppCompatActivity() {
         restoringSession = false
         loggedIn = true
         profileReadAttempts = 0
+        startSessionHeartbeat()
         preferences.edit()
             .putBoolean(KEY_SESSION_ACTIVE, true)
             .putString(KEY_USERNAME, username)
             .apply()
+        CookieManager.getInstance().flush()
         binding.loginStatus.text = ""
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
@@ -1598,6 +1608,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun startSessionHeartbeat() {
+        if (sessionHeartbeatRunning) return
+        sessionHeartbeatRunning = true
+        handler.removeCallbacks(sessionHeartbeatRunnable)
+        handler.postDelayed(sessionHeartbeatRunnable, SESSION_HEARTBEAT_INTERVAL_MS)
+    }
+
+    private fun stopSessionHeartbeat() {
+        sessionHeartbeatRunning = false
+        handler.removeCallbacks(sessionHeartbeatRunnable)
+    }
+
+    private fun pingSession() {
+        if (!loggedIn) return
+        binding.webView.evaluateJavascript(SESSION_HEARTBEAT_SCRIPT) { result ->
+            if (!loggedIn) return@evaluateJavascript
+            val state = decodeJavascriptString(result)
+            if (state == "EXPIRED") {
+                handleSessionExpired()
+            } else if (state == "OFFLINE") {
+                // Keep the local app session intact. A transient network failure
+                // must not force the student back to the login screen.
+            }
+        }
+    }
+
+    private fun handleSessionExpired() {
+        if (!loggedIn) return
+        loggedIn = false
+        profileFetchInProgress = false
+        moduleFetchInProgress = false
+        preloadingModule = null
+        preloadQueue.clear()
+        preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
+        stopSessionHeartbeat()
+        showLogin()
+        Toast.makeText(this, "Your university session has expired. Please sign in again.", Toast.LENGTH_LONG).show()
+    }
+
     private fun showDashboard() {
         activeModule = null
         binding.webView.stopLoading()
@@ -1622,6 +1671,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLogin() {
+        stopSessionHeartbeat()
         activeModule = null
         loggedIn = false
         loginInProgress = false
@@ -1686,6 +1736,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onDestroy() {
+        stopSessionHeartbeat()
+        handler.removeCallbacksAndMessages(null)
+        super.onDestroy()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         binding.webView.saveState(outState)
         super.onSaveInstanceState(outState)
@@ -1715,6 +1771,21 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_PROFILE_READ_ATTEMPTS = 8
         private const val MODULE_READ_DELAY_MS = 900L
         private const val MODULE_VISUAL_DELAY_MS = 300L
+        private const val SESSION_HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000L
+
+        private const val SESSION_HEARTBEAT_SCRIPT = """
+            (function(){
+              return fetch('/student/dashboard',{credentials:'include',cache:'no-store'})
+                .then(function(response){
+                  var finalUrl=(response.url||'').toLowerCase();
+                  if(finalUrl.indexOf('/web/login')!==-1 || response.redirected && finalUrl.indexOf('/web/login')!==-1){
+                    return 'EXPIRED';
+                  }
+                  return response.ok ? 'OK' : 'OFFLINE';
+                })
+                .catch(function(){ return 'OFFLINE'; });
+            })();
+        """
 
         private const val LOGIN_SCRIPT = """
             (function(){
@@ -1759,8 +1830,20 @@ class MainActivity : AppCompatActivity() {
                 });
               }
 
-              let root=document.querySelector('main,[role="main"],.oe_structure,.container-fluid,.container');
-              const candidates=Array.from(document.querySelectorAll('main,[role="main"],.oe_structure,.container-fluid,.container'));
+              const path=(location.pathname||'').toLowerCase();
+              const pageRootSelectors = path.indexOf('/student/class/schedule') !== -1
+                ? ['.fc','.o_calendar_view','.o_calendar_renderer','main,[role="main"]','.o_portal_wrap','.container-fluid','.container']
+                : path.indexOf('/student/profile') !== -1
+                  ? ['.o_portal_wrap','.o_portal_my_home','main,[role="main"]','.oe_structure','.container-fluid','.container']
+                  : path.indexOf('/student/results') !== -1
+                    ? ['.o_list_view','.o_portal_wrap','main,[role="main"]','.container-fluid','.container']
+                    : ['.o_portal_wrap','main,[role="main"]','.oe_structure','.container-fluid','.container'];
+              let root=null;
+              for(const selector of pageRootSelectors){
+                const candidate=document.querySelector(selector);
+                if(candidate){ root=candidate; break; }
+              }
+              const candidates=Array.from(document.querySelectorAll(pageRootSelectors.join(',')));
               for(const candidate of candidates){
                 if(candidate.querySelector('table')){root=candidate;break;}
               }
@@ -1845,8 +1928,8 @@ class MainActivity : AppCompatActivity() {
               // those pairs explicitly so the native presentation does not lose fields.
               if(/\/student\/profile/i.test(location.pathname)){
                 const profileSelectors=[
-                  'dt','dd','.form-group','.form-row','.profile-field','.profile-item',
-                  '.info-row','.info-item','.student-details .row',
+                  'dt','dd','label','.o_form_label','.o_field_widget','.form-group','.form-row','.profile-field','.profile-item',
+                  '.info-row','.info-item','.student-details .row','.o_form_sheet_bg .o_group',
                   '[class*="profile"] [class*="row"]',
                   '[class*="profile"] [class*="item"]',
                   '[class*="profile"] [class*="field"]',
@@ -1886,6 +1969,8 @@ class MainActivity : AppCompatActivity() {
                   '[class*="grade"] [class*="item"]',
                   '[class*="marks"] [class*="row"]',
                   '[class*="marks"] [class*="item"]',
+                  '.o_list_view tbody tr',
+                  '.o_portal_my_doc_table tbody tr',
                   '[class*="course"] [class*="row"]'
                 ];
                 resultSelectors.forEach(function(selector){
@@ -1963,25 +2048,25 @@ class MainActivity : AppCompatActivity() {
               }
 
               function findTime(value){
-                const m=safe(value).match(/\\b(?:[01]?\\d|2[0-3]):[0-5]\\d(?:\\s*[-–]\\s*(?:[01]?\\d|2[0-3]):[0-5]\\d)?\\b/);
+                const m=safe(value).match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/);
                 return m ? m[0] : '';
               }
 
               function findDay(value){
-                const m=safe(value).match(/\\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\b/i);
+                const m=safe(value).match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
                 return m ? m[0] : '';
               }
 
               function timeFromDate(value){
                 const raw=safe(value);
-                const match=raw.match(/T(\\d{2}):(\\d{2})/);
+                const match=raw.match(/T(\d{2}):(\d{2})/);
                 if(match) return match[1]+':'+match[2];
                 return '';
               }
 
               function dayFromDate(value){
                 const raw=safe(value);
-                const iso=raw.match(/(\\d{4})-(\\d{2})-(\\d{2})/);
+                const iso=raw.match(/(\d{4})-(\d{2})-(\d{2})/);
                 if(!iso) return '';
                 const date=new Date(iso[1]+'-'+iso[2]+'-'+iso[3]+'T12:00:00');
                 if(Number.isNaN(date.getTime())) return '';
@@ -2009,7 +2094,7 @@ class MainActivity : AppCompatActivity() {
                 if(!title) return '';
                 title=title.replace(code,'').trim();
                 if(time) title=title.replace(time,'').trim();
-                if(day) title=title.replace(new RegExp('\\b'+day+'\\b','ig'),'').trim();
+                if(day) title=title.replace(new RegExp('\b'+day+'\b','ig'),'').trim();
                 title=title.replace(/\b(?:Lecture|Lab|Practical|Theory)\b/ig,' ').trim();
                 title=title.replace(/\b[A-Z]{1,3}-\d{1,3}\b/ig,' ').trim();
                 title=title.replace(/(?:^|[|•])\s*(?:Room\s*)?[A-Z]{1,3}\d{1,3}\s*(?:\|)?/ig,' ').trim();
