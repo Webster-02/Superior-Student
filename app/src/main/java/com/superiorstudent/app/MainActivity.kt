@@ -1831,6 +1831,65 @@ class MainActivity : AppCompatActivity() {
               const codePattern=/\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b/i;
               const subjectPattern=/functional english|quantitative reasoning|civics and community engagement|management of refractive errors|visual optics and image processing|redefining success/i;
 
+              // Profile pages often use label/value rows instead of tables. Capture
+              // those pairs explicitly so the native presentation does not lose fields.
+              if(/\/student\/profile/i.test(location.pathname)){
+                const profileSelectors=[
+                  'dt','dd','.form-group','.form-row','.profile-field','.profile-item',
+                  '.info-row','.info-item','.student-details .row',
+                  '[class*="profile"] [class*="row"]',
+                  '[class*="profile"] [class*="item"]',
+                  '[class*="profile"] [class*="field"]',
+                  '[class*="student"] [class*="row"]'
+                ];
+                profileSelectors.forEach(function(selector){
+                  clone.querySelectorAll(selector).forEach(function(el){
+                    if(el.closest('table')) return;
+                    const parts=Array.from(el.children || []).map(function(child){return safe(textOf(child));}).filter(Boolean);
+                    const raw=safe(textOf(el));
+                    if(parts.length>=2 && parts.length<=6){
+                      records.push({
+                        headers:['Field','Value'],
+                        values:[parts[0],parts.slice(1).join(' • ')]
+                      });
+                    }else if(raw && raw.length<=240){
+                      const split=raw.split(/\n+/).map(clean).filter(Boolean);
+                      if(split.length>=2 && split.length<=6){
+                        records.push({
+                          headers:['Field','Value'],
+                          values:[split[0],split.slice(1).join(' • ')]
+                        });
+                      }
+                    }
+                  });
+                });
+              }
+
+              // Results can be rendered as cards/list rows depending on the ERP
+              // version. Capture semantic result/grade rows in addition to tables.
+              if(/\/student\/results/i.test(location.pathname)){
+                const resultSelectors=[
+                  '[class*="result"] [class*="row"]',
+                  '[class*="result"] [class*="item"]',
+                  '[class*="result"] [class*="card"]',
+                  '[class*="grade"] [class*="row"]',
+                  '[class*="grade"] [class*="item"]',
+                  '[class*="marks"] [class*="row"]',
+                  '[class*="marks"] [class*="item"]',
+                  '[class*="course"] [class*="row"]'
+                ];
+                resultSelectors.forEach(function(selector){
+                  clone.querySelectorAll(selector).forEach(function(el){
+                    if(el.closest('table')) return;
+                    const value=safe(textOf(el));
+                    if(value && value.length>=3 && value.length<=350){
+                      records.push({headers:['Result'],values:[value]});
+                    }
+                  });
+                });
+              }
+
+
               let overallAttendance=null;
               const pageText=safe(clone.innerText||clone.textContent||'');
               const overallMatches=[
