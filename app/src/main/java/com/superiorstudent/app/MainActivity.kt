@@ -1420,6 +1420,8 @@ class MainActivity : AppCompatActivity() {
             Module.ATTENDANCE -> if (index == 0) "Attendance records" else "Attendance details"
             Module.TIMETABLE -> if (index == 0) "Class schedule" else "Schedule details"
             Module.FEE -> if (index == 0) "Fee records" else "Fee details"
+            Module.PROFILE -> if (index == 0) "Profile details" else "Additional profile information"
+            Module.RESULTS -> if (index == 0) "Academic results" else "Result details"
         }
     }
 
