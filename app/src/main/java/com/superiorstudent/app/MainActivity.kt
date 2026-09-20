@@ -820,7 +820,7 @@ class MainActivity : AppCompatActivity() {
             Regex("""(?i)\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b""")
                 .find(joined)?.value.orEmpty()
         }
-        val code = Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
+        val code = Regex("""\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
         val course = headerValue("subject", "course", "class", "name").ifBlank {
             joined.replace(time, "").replace(day, "").trim(' ', '-', '–', '|').substringBefore(code).trim().ifBlank { code }
         }
