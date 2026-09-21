@@ -57,17 +57,17 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Superior University"
+                        android:text="SUPERIOR UNIVERSITY"
                         android:textColor="#EAF0FF"
-                        android:textSize="11sp"
+                        android:textSize="10sp"
                         android:textStyle="bold"
-                        android:letterSpacing="0.04" />
+                        android:letterSpacing="0.06" />
                 </LinearLayout>
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
+                    android:layout_marginTop="4dp"
                     android:text="Your campus. One app."
                     android:textColor="#E7ECF8"
                     android:textSize="13sp" />
