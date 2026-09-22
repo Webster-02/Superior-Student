@@ -300,15 +300,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun waitForProfileDom(view: WebView) {
         if (!loggedIn || !profileFetchInProgress) return
+        val generation = profileFetchGeneration
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             view.postVisualStateCallback(profileReadAttempts.toLong(), object : WebView.VisualStateCallback() {
                 override fun onComplete(requestId: Long) {
-                    handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_VISUAL_DELAY_MS)
+                    if (!loggedIn || !profileFetchInProgress || generation != profileFetchGeneration) return
+                    handler.postDelayed({
+                        if (generation == profileFetchGeneration) extractAndApplyProfile(view)
+                    }, PROFILE_VISUAL_DELAY_MS)
                 }
             })
         } else {
-            handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_READ_DELAY_MS)
+            handler.postDelayed({
+                if (generation == profileFetchGeneration) extractAndApplyProfile(view)
+            }, PROFILE_READ_DELAY_MS)
         }
     }
 
