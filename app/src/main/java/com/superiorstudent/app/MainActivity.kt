@@ -186,6 +186,12 @@ class MainActivity : AppCompatActivity() {
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.logoutButton.setOnClickListener { logout() }
+        binding.menuButton.setOnClickListener { openSideMenu() }
+        binding.closeMenuButton.setOnClickListener { closeSideMenu() }
+        binding.menuScrim.setOnClickListener { closeSideMenu() }
+        binding.menuProfileButton.setOnClickListener { closeSideMenu(); loadModule(Module.PROFILE) }
+        binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(Module.RESULTS) }
+        binding.menuLogoutButton.setOnClickListener { closeSideMenu(); logout() }
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
@@ -407,6 +413,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadModule(module: Module) {
         if (!loggedIn) return
+        closeSideMenu()
 
         preloadingModule = null
         preloadQueue.clear()
@@ -932,44 +939,64 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun renderProfile(data: ModuleData) {
-        val fieldRecords = data.records.mapNotNull { record ->
+        val fields = data.records.mapNotNull { record ->
             val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
             if (values.size < 2) return@mapNotNull null
-            val field = cleanDisplayText(values[0])
+            val label = cleanDisplayText(values.first())
             val value = cleanDisplayText(values.drop(1).joinToString(" • "))
-            if (field.length < 2 || value.isBlank()) null else field to value
+            if (label.length < 2 || value.isBlank() || label.equals(value, true)) null else label to value
         }.distinctBy { it.first.lowercase() + "|" + it.second.lowercase() }
 
-        if (fieldRecords.isNotEmpty()) {
-            binding.moduleContent.addView(createSectionHeading("Personal information", "Details fetched from your Superior ERP profile"))
-            fieldRecords.take(40).forEach { (label, value) ->
-                binding.moduleContent.addView(createProfileFieldCard(label, value))
+        binding.moduleContent.addView(
+            createSectionHeading(
+                "Student profile",
+                "Personal and academic information synced from your Superior ERP account"
+            )
+        )
+
+        if (fields.isNotEmpty()) {
+            fields.take(40).chunked(2).forEach { pair ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                }
+                pair.forEach { (label, value) ->
+                    row.addView(createProfileFieldCard(label, value).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                        ).apply { setMargins(dp(6), dp(4), dp(6), dp(4)) }
+                    })
+                }
+                binding.moduleContent.addView(row)
             }
         }
 
-        data.cards.take(12).forEach { (label, value) ->
-            binding.moduleContent.addView(createProfileFieldCard(label, value))
-        }
-
-        data.tables.take(10).forEachIndexed { index, table ->
+        data.tables.take(6).forEachIndexed { index, table ->
             binding.moduleContent.addView(
                 createTableSection(
-                    table.title.ifBlank { if (index == 0) "Profile details" else "Additional profile information" },
+                    table.title.ifBlank { if (index == 0) "Academic profile" else "Additional information" },
                     table
                 )
             )
         }
 
-        if (fieldRecords.isEmpty() && data.cards.isEmpty() && data.tables.isEmpty()) {
-            data.lines.distinct().take(40).forEach { line ->
-                binding.moduleContent.addView(createProfileFieldCard("Student information", line))
+        if (fields.isEmpty() && data.tables.isEmpty()) {
+            val fallback = data.lines.distinct().filter(::isUsefulDisplayText).take(30)
+            if (fallback.isNotEmpty()) {
+                fallback.forEach { line ->
+                    binding.moduleContent.addView(createProfileFieldCard("ERP information", line))
+                }
+            } else {
+                binding.moduleContent.addView(
+                    createEmptyState(
+                        "Profile information unavailable",
+                        "The ERP profile page did not expose readable fields. Tap Refresh to sync again."
+                    )
+                )
             }
-        }
-
-        if (fieldRecords.isEmpty() && data.cards.isEmpty() && data.tables.isEmpty() && data.lines.isEmpty()) {
-            binding.moduleContent.addView(
-                createEmptyState("Profile information is unavailable", "Refresh to sync your latest ERP profile.")
-            )
         }
     }
 
@@ -1001,80 +1028,177 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun renderResults(data: ModuleData) {
-        data.cards.take(8).forEach { (label, value) ->
-            binding.moduleContent.addView(createMetricCard(label, value))
+        val resultTables = data.tables.filter { table ->
+            table.headers.any { h ->
+                h.contains("subject", true) || h.contains("course", true) ||
+                h.contains("marks", true) || h.contains("obtained", true) ||
+                h.contains("grade", true) || h.contains("credit", true)
+            }
         }
 
-        if (data.tables.isNotEmpty()) {
+        if (resultTables.isNotEmpty()) {
             binding.moduleContent.addView(
-                createSectionHeading("Result history", "Courses, grades, credits and other academic records from ERP")
-            )
-            data.tables.take(12).forEachIndexed { index, table ->
-                binding.moduleContent.addView(
-                    createTableSection(
-                        table.title.ifBlank { if (index == 0) "Academic results" else "Result details" },
-                        table
-                    )
+                createSectionHeading(
+                    "Semester results",
+                    "Subject wise marks, grades and credits from your ERP account"
                 )
+            )
+            resultTables.take(6).forEach { table ->
+                table.rows.forEachIndexed { index, row ->
+                    createAcademicResultCard(table.headers, row, index + 1)?.let {
+                        binding.moduleContent.addView(it)
+                    }
+                }
             }
+        }
+
+        val otherTables = data.tables.filterNot { resultTables.contains(it) }
+        otherTables.take(6).forEachIndexed { index, table ->
+            binding.moduleContent.addView(
+                createTableSection(
+                    table.title.ifBlank { if (index == 0) "Academic details" else "Additional details" },
+                    table
+                )
+            )
         }
 
         val resultRecords = data.records.mapNotNull { record ->
             val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
-            if (values.size < 2) return@mapNotNull null
-            val joined = values.joinToString(" • ")
-            if (joined.length < 3) null else values
+            if (values.size < 2) null else values
         }.distinctBy { it.joinToString("|").lowercase() }
 
-        resultRecords.take(60).forEach { values ->
-            val title = values.first()
-            val details = values.drop(1).joinToString(" • ")
-            if (details.isNotBlank() && !data.tables.any { table -> table.rows.any { it == values } }) {
-                binding.moduleContent.addView(createResultCard(title, details))
+        if (resultTables.isEmpty()) {
+            resultRecords.take(60).forEach { values ->
+                val title = values.first()
+                val details = values.drop(1).joinToString(" • ")
+                if (details.isNotBlank()) binding.moduleContent.addView(createResultCard(title, details))
             }
         }
 
-        data.records.mapNotNull { record ->
-            if (record.values.size != 1) return@mapNotNull null
-            val value = cleanDisplayText(record.values.first())
-            if (value.length < 3 || value.length > 350) null else value
-        }.distinct()
-            .take(60)
-            .forEach { value ->
-                binding.moduleContent.addView(createResultCard("ERP result record", value))
-            }
+        val pageMessage = data.lines.firstOrNull {
+            it.contains("no result", true) ||
+            it.contains("not uploaded", true) ||
+            it.contains("no record", true) ||
+            it.contains("result is not", true) ||
+            it.contains("not available", true)
+        }
 
-        if (data.cards.isEmpty() && data.tables.isEmpty() && resultRecords.isEmpty()) {
+        if (resultTables.isEmpty() && resultRecords.isEmpty() && data.cards.isEmpty()) {
             binding.moduleContent.addView(
-                createEmptyState("Results are unavailable", "Refresh to sync your latest academic results from ERP.")
+                createEmptyState(
+                    "Current semester results are not uploaded yet",
+                    pageMessage ?: "No published result record was returned by the ERP. Previous semester records will appear here when the ERP provides them."
+                )
             )
         }
     }
 
-    private fun createResultCard(title: String, details: String): View =
-        LinearLayout(this).apply {
+    private fun createAcademicResultCard(headers: List<String>, values: List<String>, position: Int): View? {
+        if (values.none { it.isNotBlank() }) return null
+
+        fun valueFor(vararg names: String): String {
+            val index = headers.indexOfFirst { header ->
+                names.any { key -> header.contains(key, true) }
+            }
+            return if (index >= 0 && index < values.size) cleanDisplayText(values[index]) else ""
+        }
+
+        val subject = valueFor("subject", "course name", "course title", "course")
+            .ifBlank { values.firstOrNull().orEmpty() }
+        if (subject.isBlank()) return null
+
+        val code = valueFor("code", "course code", "subject code")
+        val marks = valueFor("marks", "obtained", "score", "total marks", "marks obtained")
+        val maxMarks = valueFor("maximum", "max marks", "out of")
+        val grade = valueFor("grade", "letter grade")
+        val credits = valueFor("credit", "credit hours", "cr")
+        val gpa = valueFor("gpa", "grade point", "points")
+
+        return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 16f)
-            elevation = dp(1).toFloat()
-            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = roundedBackground(Color.WHITE, 18f)
+            elevation = dp(2).toFloat()
+            setPadding(dp(16), dp(15), dp(16), dp(15))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
 
-            addView(TextView(this@MainActivity).apply {
-                text = cleanDisplayText(title)
-                setTextColor(Color.rgb(18, 58, 112))
-                textSize = 14f
+            val top = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            addView(top)
+            top.addView(TextView(this@MainActivity).apply {
+                text = position.toString().padStart(2, '0')
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(30, 91, 155))
+                textSize = 10f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = roundedBackground(Color.rgb(239,245,255), 10f)
+                minWidth = dp(36)
+                minHeight = dp(32)
             })
-            addView(TextView(this@MainActivity).apply {
-                text = cleanDisplayText(details)
-                setTextColor(Color.rgb(82, 93, 112))
+            top.addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { setPadding(dp(12), 0, dp(8), 0) }
+                addView(TextView(this@MainActivity).apply {
+                    text = subject
+                    setTextColor(Color.rgb(23,42,70))
+                    textSize = 14f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                if (code.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                    text = code
+                    setTextColor(Color.rgb(126,139,158))
+                    textSize = 10f
+                    setPadding(0, dp(3), 0, 0)
+                })
+            })
+            if (grade.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                text = grade
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
                 textSize = 11f
-                setPadding(0, dp(6), 0, 0)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = roundedBackground(Color.rgb(18,58,112), 10f)
+                setPadding(dp(9), dp(6), dp(9), dp(6))
             })
+
+            val metrics = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    .apply { setMargins(dp(48), dp(11), 0, 0) }
+            }
+            fun addMetric(label: String, value: String) {
+                if (value.isBlank()) return
+                metrics.addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { setMargins(dp(4), 0, dp(4), 0) }
+                    addView(TextView(this@MainActivity).apply {
+                        text = label.uppercase(java.util.Locale.US)
+                        setTextColor(Color.rgb(126,139,158))
+                        textSize = 9f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    })
+                    addView(TextView(this@MainActivity).apply {
+                        text = value
+                        setTextColor(Color.rgb(23,42,70))
+                        textSize = 13f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setPadding(0, dp(3), 0, 0)
+                    })
+                })
+            }
+            addMetric("Marks", marks)
+            addMetric("Max", maxMarks)
+            addMetric("Credits", credits)
+            addMetric("GPA", gpa)
+            if (metrics.childCount > 0) addView(metrics)
         }
+    }
 
     private fun renderFee(data: ModuleData) {
         val invoices = data.tables.flatMap { table ->
@@ -1286,15 +1410,15 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
+            ).apply { setMargins(dp(12), dp(7), dp(12), dp(7)) }
         }
 
         outer.addView(TextView(this).apply {
             text = cleanDisplayText(title)
-            setTextColor(Color.rgb(23, 32, 51))
+            setTextColor(Color.rgb(23,32,51))
             textSize = 15f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(16), dp(15), dp(16), dp(11))
+            setPadding(dp(16), dp(14), dp(16), dp(9))
         })
 
         val horizontal = HorizontalScrollView(this).apply {
@@ -1310,13 +1434,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(10), 0, dp(10), dp(10))
         }
 
-        if (table.headers.isNotEmpty()) {
-            tableLayout.addView(createTableRow(table.headers, true))
-        }
+        if (table.headers.isNotEmpty()) tableLayout.addView(createTableRow(table.headers, true))
         table.rows.forEach { row ->
             if (row.any { it.isNotBlank() }) tableLayout.addView(createTableRow(row, false))
         }
-
         horizontal.addView(tableLayout)
         outer.addView(horizontal)
         return outer
@@ -1325,7 +1446,7 @@ class MainActivity : AppCompatActivity() {
     private fun createTableRow(values: List<String>, header: Boolean): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = if (header) roundedBackground(Color.rgb(239, 245, 255), 10f) else roundedBackground(Color.WHITE, 0f)
+            background = if (header) roundedBackground(Color.rgb(239,245,255), 10f) else roundedBackground(Color.WHITE, 0f)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1335,17 +1456,18 @@ class MainActivity : AppCompatActivity() {
         values.forEach { value ->
             row.addView(TextView(this).apply {
                 text = cleanDisplayText(value).ifBlank { "—" }
-                setTextColor(if (header) Color.rgb(18, 58, 112) else Color.rgb(52, 64, 84))
-                textSize = if (header) 11f else 12f
+                setTextColor(if (header) Color.rgb(18,58,112) else Color.rgb(52,64,84))
+                textSize = if (header) 10f else 11f
                 if (header) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(11), dp(12), dp(11))
-                minWidth = dp(112)
-                maxWidth = dp(240)
+                setPadding(dp(10), dp(10), dp(10), dp(10))
+                minWidth = dp(if (header) 96 else 88)
+                maxWidth = dp(220)
             })
         }
         return row
     }
+
 
     private fun createInformationSection(lines: List<String>): View {
         return LinearLayout(this).apply {
@@ -1647,6 +1769,16 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Your university session has expired. Please sign in again.", Toast.LENGTH_LONG).show()
     }
 
+    private fun openSideMenu() {
+        if (!loggedIn || binding.dashboardScroll.visibility != View.VISIBLE) return
+        binding.sideMenuOverlay.visibility = View.VISIBLE
+        binding.sideMenu.bringToFront()
+    }
+
+    private fun closeSideMenu() {
+        if (::binding.isInitialized) binding.sideMenuOverlay.visibility = View.GONE
+    }
+
     private fun showDashboard() {
         activeModule = null
         binding.webView.stopLoading()
@@ -1671,6 +1803,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLogin() {
+        closeSideMenu()
         stopSessionHeartbeat()
         activeModule = null
         loggedIn = false
