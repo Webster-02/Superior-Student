@@ -318,35 +318,44 @@ class MainActivity : AppCompatActivity() {
         profileReadAttempts++
         view.evaluateJavascript(STUDENT_PROFILE_TEXT_SCRIPT) { result ->
             val payload = decodeJavascriptString(result)
+            var name = ""
+            var cgpa = ""
+            var sgpa = ""
+            var hasUsefulProfileFields = false
+
             try {
                 val json = JSONObject(payload)
-                val name = json.optString("name", "").trim()
+                name = json.optString("name", "").trim()
                 val bodyText = json.optString("body", "")
                 val cards = json.optJSONArray("cards")
+                cgpa = findGpaInText(cards, bodyText, "CGPA")
+                sgpa = findGpaInText(cards, bodyText, "SGPA")
+                hasUsefulProfileFields = json.optBoolean("hasUsefulFields", false)
 
                 if (isValidStudentName(name)) {
                     preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
                     binding.studentName.text = name
                 }
-
-                val cgpa = findGpaInText(cards, bodyText, "CGPA")
-                val sgpa = findGpaInText(cards, bodyText, "SGPA")
-
-                if (cgpa.isNotBlank() && sgpa.isNotBlank()) {
-                    val display = "CGPA: $cgpa  |  SGPA: $sgpa"
-                    preferences.edit()
-                        .putString(KEY_CGPA, cgpa)
-                        .putString(KEY_SGPA, sgpa)
-                        .putString(KEY_GPA, display)
-                        .apply()
+                if (cgpa.isNotBlank()) {
+                    preferences.edit().putString(KEY_CGPA, cgpa).apply()
                     binding.studentCgpa.text = cgpa
+                }
+                if (sgpa.isNotBlank()) {
+                    preferences.edit().putString(KEY_SGPA, sgpa).apply()
                     binding.studentSgpa.text = sgpa
-                    profileFetchInProgress = false
-                    preloadAllModules()
-                    return@evaluateJavascript
+                }
+                if (cgpa.isNotBlank() && sgpa.isNotBlank()) {
+                    preferences.edit().putString(KEY_GPA, "CGPA: $cgpa  |  SGPA: $sgpa").apply()
                 }
             } catch (_: Exception) {
-                // Retry when the WebView has not exposed the final ERP text yet.
+                // The ERP may still be hydrating dynamic fields.
+            }
+
+            val ready = isValidStudentName(name) && (cgpa.isNotBlank() || sgpa.isNotBlank())
+            if (ready || (hasUsefulProfileFields && isValidStudentName(name))) {
+                profileFetchInProgress = false
+                preloadAllModules()
+                return@evaluateJavascript
             }
 
             if (profileReadAttempts < MAX_PROFILE_READ_ATTEMPTS) {
