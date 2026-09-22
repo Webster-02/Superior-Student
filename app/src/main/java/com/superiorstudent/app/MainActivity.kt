@@ -489,7 +489,8 @@ class MainActivity : AppCompatActivity() {
         val tables: List<TableData>,
         val lines: List<String>,
         val records: List<ModuleRecord>,
-        val overallAttendance: Double?
+        val overallAttendance: Double?,
+        val semesterOptions: List<String> = emptyList()
     )
 
 
@@ -1026,6 +1027,10 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun renderResults(data: ModuleData) {
+        if (data.semesterOptions.size > 1) {
+            binding.moduleContent.addView(createSemesterSelector(data.semesterOptions))
+        }
+
         val resultTables = data.tables.filter { table ->
             table.headers.any { h ->
                 h.contains("subject", true) || h.contains("course", true) ||
@@ -1089,6 +1094,87 @@ class MainActivity : AppCompatActivity() {
                 )
             )
         }
+    }
+
+    private fun createSemesterSelector(options: List<String>): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+        }
+
+        card.addView(TextView(this).apply {
+            text = "Select semester"
+            setTextColor(Color.rgb(23,42,70))
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        })
+
+        val spinner = android.widget.Spinner(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+            ).apply { setMargins(0, dp(7), 0, 0) }
+            adapter = android.widget.ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                options
+            )
+        }
+
+        spinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            private var first = true
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                if (first) {
+                    first = false
+                    return
+                }
+                val label = options.getOrNull(position) ?: return
+                val script = """
+                    (function(){
+                      const wanted=${JSONObject.quote(label)};
+                      const selects=Array.from(document.querySelectorAll('select'));
+                      const select=selects.find(function(s){
+                        return Array.from(s.options||[]).some(function(o){
+                          return (o.textContent||'').trim()===wanted;
+                        });
+                      });
+                      if(!select)return 'NO_SELECT';
+                      const option=Array.from(select.options||[]).find(function(o){
+                        return (o.textContent||'').trim()===wanted;
+                      });
+                      if(!option)return 'NO_OPTION';
+                      select.value=option.value;
+                      select.dispatchEvent(new Event('change',{bubbles:true}));
+                      return 'CHANGED';
+                    })();
+                """.trimIndent()
+                binding.moduleProgress.visibility = View.VISIBLE
+                binding.moduleInfo.text = "Loading $label…"
+                binding.webView.evaluateJavascript(script) {
+                    handler.postDelayed({
+                        if (activeModule == Module.RESULTS) {
+                            readModuleData(binding.webView, Module.RESULTS, true)
+                        }
+                    }, 900L)
+                }
+            }
+        }
+        card.addView(spinner)
+        return card
     }
 
     private fun createAcademicResultCard(headers: List<String>, values: List<String>, position: Int): View? {
@@ -1628,6 +1714,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            val semesterOptions = records
+                .filter { it.headers.any { h -> h.equals("Semester options", true) } }
+                .flatMap { it.values }
+                .map(::cleanDisplayText)
+                .filter { it.isNotBlank() }
+                .distinct()
+                .take(12)
+
             val overall = json.optDouble("overallAttendance", Double.NaN)
                 .takeUnless { it.isNaN() }
                 ?.takeIf { it in 0.0..100.0 }
@@ -1637,7 +1731,8 @@ class MainActivity : AppCompatActivity() {
                 tables,
                 lines.distinct(),
                 records.distinctBy { it.headers to it.values },
-                overall
+                overall,
+                semesterOptions
             )
         } catch (_: Exception) {
             null
@@ -2093,7 +2188,7 @@ class MainActivity : AppCompatActivity() {
                 clone.querySelectorAll('label[for]').forEach(function(label){
                   const fieldId=label.getAttribute('for');
                   if(!fieldId) return;
-                  const field=clone.querySelector('#'+CSS.escape(fieldId));
+                  const field=Array.from(clone.querySelectorAll('[id]')).find(function(node){return node.id===fieldId;});
                   const value=safe(field ? (field.value || field.getAttribute('value') || textOf(field)) : '');
                   const labelText=safe(textOf(label));
                   if(labelText && value && value.length<=180){
@@ -2130,7 +2225,7 @@ class MainActivity : AppCompatActivity() {
                     const parent=labelNode.parentElement;
                     const valueNode=parent ? parent.querySelector('.o_field_widget,.o_field_char,.o_field_text,.o_field_integer,.o_field_float,.o_field_monetary,.o_field_many2one') : null;
                     const value=safe(textOf(valueNode));
-                    if(value && value.length<=180 && !label.equals(value)){
+                    if(value && value.length<=180 && label !== value){
                       records.push({headers:['Field','Value'],values:[label,value]});
                     }
                   });
