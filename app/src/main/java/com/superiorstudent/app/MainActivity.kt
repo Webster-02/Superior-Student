@@ -1101,6 +1101,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun createResultCard(title: String, details: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 16f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(15), dp(13), dp(15), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                setTextColor(Color.rgb(23, 42, 70))
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+
+            if (details.isNotBlank()) {
+                addView(TextView(this@MainActivity).apply {
+                    text = details
+                    setTextColor(Color.rgb(102, 112, 133))
+                    textSize = 11f
+                    setPadding(0, dp(5), 0, 0)
+                })
+            }
+        }
+    }
+
     private fun createSemesterSelector(options: List<String>): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
