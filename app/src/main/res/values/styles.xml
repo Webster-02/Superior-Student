@@ -3,8 +3,8 @@
     <style name="Theme.SuperiorStudent" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#1E5EFF</item>
-        <item name="android:navigationBarColor">#061426</item>
-        <item name="android:statusBarColor">#061426</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:statusBarColor">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

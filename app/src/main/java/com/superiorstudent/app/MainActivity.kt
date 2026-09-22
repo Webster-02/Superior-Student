@@ -181,8 +181,6 @@ class MainActivity : AppCompatActivity() {
         binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
         binding.timetableButton.setOnClickListener { loadModule(Module.TIMETABLE) }
         binding.feeButton.setOnClickListener { loadModule(Module.FEE) }
-        binding.profileButton.setOnClickListener { loadModule(Module.PROFILE) }
-        binding.resultsButton.setOnClickListener { loadModule(Module.RESULTS) }
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.logoutButton.setOnClickListener { logout() }
@@ -2089,6 +2087,54 @@ class MainActivity : AppCompatActivity() {
                     }
                   });
                 });
+                // Odoo form views expose labels and field widgets in several nested patterns.
+                // Capture label -> rendered value pairs from the same row/column so the app
+                // can present the real ERP fields without depending on one CSS class.
+                clone.querySelectorAll('label[for]').forEach(function(label){
+                  const fieldId=label.getAttribute('for');
+                  if(!fieldId) return;
+                  const field=clone.querySelector('#'+CSS.escape(fieldId));
+                  const value=safe(field ? (field.value || field.getAttribute('value') || textOf(field)) : '');
+                  const labelText=safe(textOf(label));
+                  if(labelText && value && value.length<=180){
+                    records.push({headers:['Field','Value'],values:[labelText,value]});
+                  }
+                });
+
+                clone.querySelectorAll('input[name],textarea[name],select[name]').forEach(function(field){
+                  if(field.type==='hidden' || field.type==='password' || field.type==='search') return;
+                  const value=safe(field.value || field.getAttribute('value') || textOf(field));
+                  if(!value) return;
+                  let label='';
+                  const id=field.getAttribute('id');
+                  if(id){
+                    const labelNode=clone.querySelector('label[for="'+id.replace(/"/g,'')+'"]');
+                    label=safe(textOf(labelNode));
+                  }
+                  if(!label){
+                    const parent=field.closest('.o_field_widget,.form-group,.form-row,.row,.o_form_field,.o_form_label');
+                    const labelNode=parent ? parent.querySelector('label,.o_form_label,.form-label') : null;
+                    label=safe(textOf(labelNode));
+                  }
+                  if(!label) label=safe(field.getAttribute('placeholder')||field.getAttribute('aria-label')||field.getAttribute('name')||'');
+                  if(label && value.length<=180 && !/password|search|login/i.test(label)){
+                    records.push({headers:['Field','Value'],values:[label,value]});
+                  }
+                });
+
+                clone.querySelectorAll('.o_form_sheet,.o_form_sheet_bg,.o_form_view,.o_form_nosheet,.o_group').forEach(function(container){
+                  const labels=Array.from(container.querySelectorAll('.o_form_label,label'));
+                  labels.forEach(function(labelNode){
+                    const label=safe(textOf(labelNode));
+                    if(!label || label.length>100) return;
+                    const parent=labelNode.parentElement;
+                    const valueNode=parent ? parent.querySelector('.o_field_widget,.o_field_char,.o_field_text,.o_field_integer,.o_field_float,.o_field_monetary,.o_field_many2one') : null;
+                    const value=safe(textOf(valueNode));
+                    if(value && value.length<=180 && !label.equals(value)){
+                      records.push({headers:['Field','Value'],values:[label,value]});
+                    }
+                  });
+                });
               }
 
               // Results can be rendered as cards/list rows depending on the ERP
@@ -2114,6 +2160,22 @@ class MainActivity : AppCompatActivity() {
                       records.push({headers:['Result'],values:[value]});
                     }
                   });
+                });
+                // Capture semester/term selectors and common result grids.
+                clone.querySelectorAll('select').forEach(function(select){
+                  const options=Array.from(select.options||[]);
+                  if(options.length<2) return;
+                  const labels=options.map(function(o){return safe(o.textContent||o.innerText||'');}).filter(Boolean);
+                  if(labels.some(function(v){return /semester|term|fall|spring|summer|202[0-9]/i.test(v);})){
+                    records.push({headers:['Semester options'],values:labels});
+                  }
+                });
+
+                clone.querySelectorAll('[class*="result"] [class*="course"],[class*="result"] [class*="subject"],[class*="grade"] [class*="course"],[class*="marks"] [class*="course"]').forEach(function(el){
+                  const value=safe(textOf(el));
+                  if(value && value.length>=3 && value.length<=260){
+                    records.push({headers:['Result'],values:[value]});
+                  }
                 });
               }
 
