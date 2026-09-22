@@ -1145,7 +1145,7 @@ class MainActivity : AppCompatActivity() {
                 val label = options.getOrNull(position) ?: return
                 val script = """
                     (function(){
-                      const wanted=${JSONObject.quote(label)};
+                      const wanted=""" + JSONObject.quote(label) + """;
                       const selects=Array.from(document.querySelectorAll('select'));
                       const select=selects.find(function(s){
                         return Array.from(s.options||[]).some(function(o){
