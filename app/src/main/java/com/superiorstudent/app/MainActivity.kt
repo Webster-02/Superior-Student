@@ -1030,16 +1030,16 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             background = roundedBackground(Color.WHITE, 16f)
             elevation = dp(1).toFloat()
-            setPadding(dp(16), dp(13), dp(16), dp(13))
+            setPadding(dp(15), dp(13), dp(15), dp(13))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
+            ).apply { setMargins(dp(6), dp(5), dp(6), dp(5)) }
 
             addView(TextView(this@MainActivity).apply {
                 text = cleanDisplayText(label).uppercase(java.util.Locale.US)
                 setTextColor(Color.rgb(102, 112, 133))
-                textSize = 10f
+                textSize = 9f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 letterSpacing = 0.04f
             })
@@ -1051,6 +1051,97 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, dp(5), 0, 0)
             })
         }
+
+    private fun isProfileLabel(label: String, vararg aliases: String): Boolean {
+        val value = label.trim().lowercase()
+        return aliases.any { alias -> value == alias || value.contains(alias) }
+    }
+
+    private fun extractProfileFields(data: ModuleData): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        data.records.forEach { record ->
+            val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+            val fieldRecord = record.headers.any { h ->
+                h.equals("Field", true) || h.equals("Label", true)
+            }
+            if (fieldRecord && values.size >= 2) {
+                val label = values.first()
+                val value = values.drop(1).joinToString(" • ")
+                if (label.length <= 90 && value.length <= 180 && !label.equals(value, true)) {
+                    result.add(label to value)
+                }
+            }
+        }
+        return result.distinctBy { it.first.lowercase() + "|" + it.second.lowercase() }
+    }
+
+    private fun createProfileHero(fields: List<Pair<String, String>>): View {
+        val name = fields.firstOrNull { isProfileLabel(it.first, "student name", "full name", "name") }
+            ?.second
+            ?.takeIf(::isValidStudentName)
+            ?: preferences.getString(KEY_STUDENT_NAME, "").orEmpty().takeIf(::isValidStudentName)
+            ?: "Student"
+        val program = fields.firstOrNull { isProfileLabel(it.first, "program", "degree", "course of study") }?.second.orEmpty()
+        val reg = fields.firstOrNull { isProfileLabel(it.first, "registration", "roll no", "student id", "student code") }?.second.orEmpty()
+        val initials = name.split(Regex("\s+")).filter { it.isNotBlank() }.take(2)
+            .joinToString("") { it.first().uppercaseChar().toString() }.ifBlank { "S" }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBackground(Color.rgb(18, 58, 112), 22f)
+            elevation = dp(3).toFloat()
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = initials
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(18, 58, 112))
+                textSize = 17f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = roundedBackground(Color.WHITE, 18f)
+                minWidth = dp(58)
+                minHeight = dp(58)
+            })
+
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { setPadding(dp(14), 0, 0, 0) }
+
+                addView(TextView(this@MainActivity).apply {
+                    text = "STUDENT PROFILE"
+                    setTextColor(Color.rgb(190, 214, 244))
+                    textSize = 9f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    letterSpacing = 0.09f
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = name
+                    setTextColor(Color.WHITE)
+                    textSize = 18f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(0, dp(3), 0, 0)
+                })
+                if (program.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                    text = program
+                    setTextColor(Color.rgb(221, 232, 247))
+                    textSize = 11f
+                    setPadding(0, dp(4), 0, 0)
+                })
+                if (reg.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                    text = reg
+                    setTextColor(Color.rgb(190, 214, 244))
+                    textSize = 10f
+                    setPadding(0, dp(3), 0, 0)
+                })
+            })
+        }
+    }
 
     private fun renderResults(data: ModuleData) {
         if (data.semesterOptions.size > 1) {
