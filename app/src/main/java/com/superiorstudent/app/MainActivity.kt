@@ -1984,10 +1984,10 @@ class MainActivity : AppCompatActivity() {
     private fun readModuleData(view: WebView, module: Module, displayWhenReady: Boolean) {
         if (!loggedIn) return
         val requestId = moduleReadRequestId
-        moduleReadAttempts = 0
 
         fun readNow() {
             if (!loggedIn || requestId != moduleReadRequestId) return
+            moduleReadAttempts++
             view.evaluateJavascript(MODULE_DATA_SCRIPT) { result ->
                 if (!loggedIn || requestId != moduleReadRequestId) return@evaluateJavascript
                 val payload = decodeJavascriptString(result)
