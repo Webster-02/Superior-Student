@@ -36,6 +36,8 @@ class MainActivity : AppCompatActivity() {
     private var loggedIn = false
     private var profileFetchInProgress = false
     private var profileReadAttempts = 0
+    private var profileFetchGeneration = 0L
+    private var moduleReadAttempts = 0
     private var activeModule: Module? = null
     private var username = ""
     private var password = ""
@@ -102,10 +104,6 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
-
-                if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
-                    binding.moduleProgress.visibility = View.GONE
-                }
 
                 if (!loginInProgress && !profileFetchInProgress && url.contains("/web/login", true)) {
                     restoringSession = false
@@ -291,6 +289,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchStudentProfile() {
         if (!loggedIn) return
+        profileFetchGeneration++
         profileFetchInProgress = true
         profileReadAttempts = 0
         // Keep the WebView attached while waiting for the visual DOM state.
@@ -423,6 +422,7 @@ class MainActivity : AppCompatActivity() {
         preloadingModule = null
         preloadQueue.clear()
         moduleFetchInProgress = false
+        moduleReadAttempts = 0
         moduleReadRequestId++
 
         activeModule = module
@@ -473,6 +473,7 @@ class MainActivity : AppCompatActivity() {
         val module = activeModule ?: return
         cachedModuleData.remove(module)
         moduleFetchInProgress = false
+        moduleReadAttempts = 0
         moduleReadRequestId++
         binding.moduleProgress.visibility = View.VISIBLE
         binding.moduleContent.removeAllViews()
@@ -845,7 +846,12 @@ class MainActivity : AppCompatActivity() {
         }
         val code = Regex("""\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
         val course = headerValue("subject", "course", "class", "name").ifBlank {
-            joined.replace(time, "").replace(day, "").trim(' ', '-', '–', '|').substringBefore(code).trim().ifBlank { code }
+            val withoutMeta = joined
+                .replace(time, "")
+                .replace(day, "")
+                .replace(code, "")
+                .trim(' ', '-', '–', '|')
+            withoutMeta.split("  ").firstOrNull()?.trim().orEmpty().ifBlank { withoutMeta.trim() }
         }
         val room = headerValue("room", "venue", "location").ifBlank {
             Regex("""(?:^|[| ])(?:Room\s*)?([A-Z]{1,3}-\d{1,3}|[A-Z]{1,3}\d{1,3})$""", RegexOption.IGNORE_CASE)
@@ -858,7 +864,7 @@ class MainActivity : AppCompatActivity() {
                         .orEmpty()
                 }
         }
-        if (course.length < 3 || (time.isBlank() && code.isBlank())) return null
+        if (course.length < 3 || (time.isBlank() && day.isBlank())) return null
         return ScheduleRow(day, time, course, room)
     }
 
@@ -1780,9 +1786,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun hasUsableModuleData(module: Module, data: ModuleData): Boolean {
+        return when (module) {
+            Module.ATTENDANCE -> data.overallAttendance != null ||
+                data.records.any { it.values.size >= 2 } ||
+                data.tables.any { it.rows.isNotEmpty() } ||
+                data.lines.any { it.contains("%") }
+            Module.TIMETABLE -> data.records.any(::looksLikeScheduleRecord) ||
+                data.tables.any { it.rows.isNotEmpty() } ||
+                data.lines.any { Regex("""\b\d{1,2}:\d{2}\b""").containsMatchIn(it) }
+            Module.FEE -> data.tables.any { it.rows.isNotEmpty() } ||
+                data.cards.isNotEmpty() ||
+                data.records.any { it.values.size >= 2 }
+            Module.PROFILE -> data.cards.isNotEmpty() ||
+                data.records.any { it.headers.any { h -> h.equals("Field", true) } } ||
+                data.tables.any { it.rows.isNotEmpty() }
+            Module.RESULTS -> data.semesterOptions.isNotEmpty() ||
+                data.tables.any { it.rows.isNotEmpty() } ||
+                data.records.any { it.values.size >= 2 } ||
+                data.lines.any { it.contains("result", true) || it.contains("grade", true) }
+        }
+    }
+
+    private fun looksLikeScheduleRecord(record: ModuleRecord): Boolean {
+        val joined = record.values.joinToString(" ")
+        return Regex("""\b(?:[01]?\d|2[0-3]):[0-5]\d\b""").containsMatchIn(joined) ||
+            Regex("""\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(joined)
+    }
+
     private fun readModuleData(view: WebView, module: Module, displayWhenReady: Boolean) {
         if (!loggedIn) return
         val requestId = moduleReadRequestId
+        moduleReadAttempts = 0
 
         fun readNow() {
             if (!loggedIn || requestId != moduleReadRequestId) return
@@ -1791,14 +1827,25 @@ class MainActivity : AppCompatActivity() {
                 val payload = decodeJavascriptString(result)
                 val data = parseModuleData(payload)
 
-                if (data != null) {
+                val usable = data != null && hasUsableModuleData(module, data)
+                if (usable && data != null) {
                     cachedModuleData[module] = payload
                     if (displayWhenReady && activeModule == module) renderModuleData(module, data)
                 } else if (displayWhenReady && activeModule == module) {
+                    if (moduleReadAttempts < MAX_MODULE_READ_ATTEMPTS) {
+                        binding.moduleInfo.text = "Waiting for the ERP data…"
+                        handler.postDelayed({ readModuleData(view, module, true) }, MODULE_RETRY_DELAY_MS)
+                        return@evaluateJavascript
+                    }
                     binding.moduleProgress.visibility = View.GONE
-                    binding.moduleInfo.text = "Could not read the latest data"
+                    binding.moduleInfo.text = "No readable data returned"
                     binding.moduleContent.removeAllViews()
-                    binding.moduleContent.addView(createEmptyState())
+                    binding.moduleContent.addView(
+                        createEmptyState(
+                            "No readable data returned",
+                            "The ERP page loaded, but its data is not ready yet. Tap Refresh to try again."
+                        )
+                    )
                 }
 
                 if (!displayWhenReady && preloadingModule == module) {
@@ -2039,7 +2086,9 @@ class MainActivity : AppCompatActivity() {
         private const val PROFILE_RETRY_DELAY_MS = 1000L
         private const val MAX_PROFILE_READ_ATTEMPTS = 8
         private const val MODULE_READ_DELAY_MS = 900L
-        private const val MODULE_VISUAL_DELAY_MS = 300L
+        private const val MODULE_VISUAL_DELAY_MS = 500L
+        private const val MODULE_RETRY_DELAY_MS = 800L
+        private const val MAX_MODULE_READ_ATTEMPTS = 6
         private const val SESSION_HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000L
 
         private const val SESSION_HEARTBEAT_SCRIPT = """
