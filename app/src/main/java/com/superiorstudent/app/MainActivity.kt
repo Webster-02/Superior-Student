@@ -960,61 +960,79 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun renderProfile(data: ModuleData) {
-        val fields = data.records.mapNotNull { record ->
-            val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
-            if (values.size < 2) return@mapNotNull null
-            val label = cleanDisplayText(values.first())
-            val value = cleanDisplayText(values.drop(1).joinToString(" • "))
-            if (label.length < 2 || value.isBlank() || label.equals(value, true)) null else label to value
-        }.distinctBy { it.first.lowercase() + "|" + it.second.lowercase() }
+        val fields = extractProfileFields(data)
 
         binding.moduleContent.addView(
             createSectionHeading(
                 "Student profile",
-                "Personal and academic information synced from your Superior ERP account"
+                "Live personal and academic information from your ERP account"
             )
         )
 
-        data.cards.take(12).forEach { (label, value) ->
-            binding.moduleContent.addView(createProfileFieldCard(label, value))
-        }
-
         if (fields.isNotEmpty()) {
-            fields.take(40).chunked(2).forEach { pair ->
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                }
-                pair.forEach { (label, value) ->
-                    row.addView(createProfileFieldCard(label, value).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-                        ).apply { setMargins(dp(6), dp(4), dp(6), dp(4)) }
-                    })
-                }
-                binding.moduleContent.addView(row)
-            }
-        }
+            binding.moduleContent.addView(createProfileHero(fields))
 
-        data.tables.take(6).forEachIndexed { index, table ->
-            binding.moduleContent.addView(
-                createTableSection(
-                    table.title.ifBlank { if (index == 0) "Academic profile" else "Additional information" },
-                    table
+            val priority = fields.filter { field ->
+                isProfileLabel(
+                    field.first,
+                    "student name", "full name", "name",
+                    "registration", "roll no", "student id", "student code",
+                    "program", "degree", "course of study",
+                    "department", "faculty", "semester", "session", "campus"
                 )
-            )
-        }
+            }.distinctBy { it.first.lowercase() + "|" + it.second.lowercase() }
 
-        if (fields.isEmpty() && data.tables.isEmpty()) {
-            val fallback = data.lines.distinct().filter(::isUsefulDisplayText).take(30)
-            if (fallback.isNotEmpty()) {
-                fallback.forEach { line ->
-                    binding.moduleContent.addView(createProfileFieldCard("ERP information", line))
+            if (priority.isNotEmpty()) {
+                binding.moduleContent.addView(
+                    createSectionHeading(
+                        "Academic & identity",
+                        "Key fields returned by the ERP"
+                    )
+                )
+                priority.take(12).chunked(2).forEach { pair ->
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                    }
+                    pair.forEach { field ->
+                        row.addView(createProfileFieldCard(field.first, field.second).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                            ).apply { setMargins(dp(5), dp(4), dp(5), dp(4)) }
+                        })
+                    }
+                    binding.moduleContent.addView(row)
                 }
-            } else {
+            }
+
+            val secondary = fields.filterNot { priority.contains(it) }
+            if (secondary.isNotEmpty()) {
+                binding.moduleContent.addView(
+                    createSectionHeading(
+                        "Additional details",
+                        "Other readable ERP fields"
+                    )
+                )
+                secondary.take(24).forEach { (label, value) ->
+                    binding.moduleContent.addView(createProfileFieldCard(label, value))
+                }
+            }
+        } else {
+            data.cards.take(6).forEach { (label, value) ->
+                binding.moduleContent.addView(createProfileFieldCard(label, value))
+            }
+            data.tables.take(3).forEachIndexed { index, table ->
+                binding.moduleContent.addView(
+                    createTableSection(
+                        table.title.ifBlank { if (index == 0) "Profile details" else "Additional information" },
+                        table
+                    )
+                )
+            }
+            if (data.cards.isEmpty() && data.tables.isEmpty()) {
                 binding.moduleContent.addView(
                     createEmptyState(
                         "Profile information unavailable",
@@ -1023,6 +1041,41 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    private fun extractProfileFields(data: ModuleData): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+
+        data.records.forEach { record ->
+            val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+            if (values.size < 2) return@forEach
+
+            val explicitField = record.headers.any { h ->
+                h.equals("Field", true) || h.equals("Label", true)
+            }
+            if (!explicitField) return@forEach
+
+            val label = values.first()
+            val value = values.drop(1).joinToString(" • ")
+            if (label.length <= 90 && value.length <= 180 && !label.equals(value, true)) {
+                result.add(label to value)
+            }
+        }
+
+        if (result.isEmpty()) {
+            data.records.forEach { record ->
+                val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+                if (values.size == 2 && !record.headers.any { it.contains("Result", true) }) {
+                    val label = values[0]
+                    val value = values[1]
+                    if (label.length <= 90 && value.length <= 180 && !label.equals(value, true)) {
+                        result.add(label to value)
+                    }
+                }
+            }
+        }
+
+        return result.distinctBy { it.first.lowercase() + "|" + it.second.lowercase() }
     }
 
     private fun createProfileFieldCard(label: String, value: String): View =
