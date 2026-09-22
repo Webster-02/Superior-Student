@@ -70,6 +70,12 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        binding.loginScroll.visibility = View.VISIBLE
+        binding.dashboardScroll.visibility = View.GONE
+        binding.moduleScreen.visibility = View.GONE
+        binding.webView.visibility = View.GONE
+        binding.sideMenuOverlay.visibility = View.GONE
+
         val webView = binding.webView
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -78,6 +84,7 @@ class MainActivity : AppCompatActivity() {
         webView.settings.databaseEnabled = true
         webView.settings.loadsImagesAutomatically = true
         webView.settings.setSupportZoom(false)
+        webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         webView.settings.allowFileAccess = false
         webView.settings.allowContentAccess = false
         webView.webChromeClient = WebChromeClient()
@@ -1917,6 +1924,7 @@ class MainActivity : AppCompatActivity() {
         moduleReadRequestId++
         binding.dashboardScroll.visibility = View.VISIBLE
         binding.loginScroll.visibility = View.GONE
+        binding.sideMenuOverlay.visibility = View.GONE
 
         val savedName = preferences.getString(KEY_STUDENT_NAME, "") ?: ""
         val savedCgpa = preferences.getString(KEY_CGPA, "") ?: ""
@@ -1949,6 +1957,7 @@ class MainActivity : AppCompatActivity() {
         binding.moduleScreen.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.loginScroll.visibility = View.VISIBLE
+        binding.sideMenuOverlay.visibility = View.GONE
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
         binding.loginStatus.text = ""
