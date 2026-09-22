@@ -913,8 +913,8 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 background = roundedBackground(Color.rgb(239, 245, 255), 14f)
-                layoutParams = LinearLayout.LayoutParams(dp(82), dp(58))
-                setPadding(dp(5), dp(5), dp(5), dp(5))
+                layoutParams = LinearLayout.LayoutParams(dp(84), dp(66))
+                setPadding(dp(6), dp(6), dp(6), dp(6))
 
                 addView(TextView(this@MainActivity).apply {
                     text = row.time.ifBlank { "Time unavailable" }
@@ -944,13 +944,26 @@ class MainActivity : AppCompatActivity() {
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
 
+                if (row.code.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                    text = row.code
+                    setTextColor(Color.rgb(30, 91, 155))
+                    textSize = 10f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBackground(Color.rgb(239, 245, 255), 8f)
+                    setPadding(dp(7), dp(4), dp(7), dp(4))
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(0, dp(5), 0, 0) }
+                })
+
                 if (row.room.isNotBlank()) addView(TextView(this@MainActivity).apply {
                     text = "Room • " + row.room
                     setTextColor(Color.rgb(105, 119, 141))
                     textSize = 10f
                     setPadding(0, dp(5), 0, 0)
                 }) else addView(TextView(this@MainActivity).apply {
-                    text = "Time not provided by ERP"
+                    text = "Room not provided by ERP"
                     setTextColor(Color.rgb(151, 160, 175))
                     textSize = 10f
                     setPadding(0, dp(5), 0, 0)
