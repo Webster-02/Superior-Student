@@ -953,6 +953,10 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
+        data.cards.take(12).forEach { (label, value) ->
+            binding.moduleContent.addView(createProfileFieldCard(label, value))
+        }
+
         if (fields.isNotEmpty()) {
             fields.take(40).chunked(2).forEach { pair ->
                 val row = LinearLayout(this).apply {
@@ -1066,6 +1070,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val resultRecords = data.records.mapNotNull { record ->
+            if (record.headers.any { it.equals("Semester options", true) }) return@mapNotNull null
             val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
             if (values.size < 2) null else values
         }.distinctBy { it.joinToString("|").lowercase() }
@@ -2060,9 +2065,9 @@ class MainActivity : AppCompatActivity() {
               const pageRootSelectors = path.indexOf('/student/class/schedule') !== -1
                 ? ['.fc','.o_calendar_view','.o_calendar_renderer','main,[role="main"]','.o_portal_wrap','.container-fluid','.container']
                 : path.indexOf('/student/profile') !== -1
-                  ? ['.o_portal_wrap','.o_portal_my_home','main,[role="main"]','.oe_structure','.container-fluid','.container']
+                  ? ['.o_form_view','.o_form_sheet_bg','.o_portal_wrap','.o_portal_my_home','main,[role="main"]','.oe_structure','.container-fluid','.container']
                   : path.indexOf('/student/results') !== -1
-                    ? ['.o_list_view','.o_portal_wrap','main,[role="main"]','.container-fluid','.container']
+                    ? ['.o_list_view','.o_kanban_view','.o_form_view','.o_action_manager','.o_portal_wrap','main,[role="main"]','.container-fluid','.container']
                     : ['.o_portal_wrap','main,[role="main"]','.oe_structure','.container-fluid','.container'];
               let root=null;
               for(const selector of pageRootSelectors){
