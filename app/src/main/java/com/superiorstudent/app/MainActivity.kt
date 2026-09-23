@@ -2094,7 +2094,10 @@ class MainActivity : AppCompatActivity() {
                 data.tables.any { it.rows.isNotEmpty() } ||
                 data.lines.any { it.contains("%") }
             Module.TIMETABLE -> data.records.any(::looksLikeScheduleRecord) ||
-                data.tables.any { it.rows.isNotEmpty() } ||
+                data.records.any { record ->
+                    record.headers.any { h -> h.contains("time", true) || h.contains("day", true) || h.contains("course", true) } &&
+                        record.values.any { v -> Regex("""\b\d{1,2}:\d{2}\b""").containsMatchIn(v) }
+                } ||
                 data.lines.any { Regex("""\b\d{1,2}:\d{2}\b""").containsMatchIn(it) }
             Module.FEE -> data.tables.any { it.rows.isNotEmpty() } ||
                 data.cards.isNotEmpty() ||
@@ -2920,7 +2923,10 @@ class MainActivity : AppCompatActivity() {
                 const combined=safe([raw,attrs,titleCandidate].filter(Boolean).join(' | '));
                 const codeMatch=combined.match(codePattern);
                 const genericTitle = titleCandidate && titleCandidate.length >= 3 && titleCandidate.length <= 140;
-                if(!codeMatch && !subjectPattern.test(combined) && !genericTitle) return;
+                const scheduleNode = /fc-event|calendar-event|schedule-event|timetable-event|o_calendar_event|calendar_event/i.test(
+                  String(el.className||'')
+                );
+                if(!codeMatch && !subjectPattern.test(combined) && !genericTitle && !scheduleNode) return;
 
                 let time=findTime(attrs) || findTime(raw) || findTime(titleCandidate);
                 let day=findDay(attrs) || findDay(raw) || findDay(titleCandidate);
@@ -2991,7 +2997,10 @@ class MainActivity : AppCompatActivity() {
                 const day=findDay(attrs) || findDay(raw);
                 const title=cleanScheduleTitle(raw,code,time,day);
                 if(title.length<3 || (!time && !day)) return;
-                addScheduleRecord(time,day,title,code,'');
+                let room='';
+                const roomMatch=combined.match(/(?:room|venue|location)\s*[:#-]?\s*([A-Z0-9-]+)/i);
+                if(roomMatch) room=roomMatch[1];
+                addScheduleRecord(time,day,title,code,room);
               });
 
               scheduleStructured.forEach(function(record){records.push(record);});
