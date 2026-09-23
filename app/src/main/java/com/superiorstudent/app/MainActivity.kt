@@ -972,49 +972,6 @@ class MainActivity : AppCompatActivity() {
         return ScheduleRow(day, time, course, room, code)
     }
 
-    private fun toScheduleRow(record: ModuleRecord): ScheduleRow? {
-        val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
-        if (values.isEmpty()) return null
-        val joined = values.joinToString(" ")
-        if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
-
-        fun headerValue(vararg keys: String): String {
-            val index = record.headers.indexOfFirst { h -> keys.any { key -> h.contains(key, true) } }
-            return if (index >= 0 && index < values.size) values[index] else ""
-        }
-
-        val time = headerValue("time", "timing").ifBlank {
-            Regex("""(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?""")
-                .find(joined)?.value.orEmpty()
-        }
-        val day = headerValue("day", "date").ifBlank {
-            Regex("""(?i)\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b""")
-                .find(joined)?.value.orEmpty()
-        }
-        val code = Regex("""\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
-        val course = headerValue("subject", "course", "class", "name").ifBlank {
-            val withoutMeta = joined
-                .replace(time, "")
-                .replace(day, "")
-                .replace(code, "")
-                .trim(' ', '-', '–', '|')
-            withoutMeta.split("  ").firstOrNull()?.trim().orEmpty().ifBlank { withoutMeta.trim() }
-        }
-        val room = headerValue("room", "venue", "location").ifBlank {
-            Regex("""(?:^|[| ])(?:Room\s*)?([A-Z]{1,3}-\d{1,3}|[A-Z]{1,3}\d{1,3})$""", RegexOption.IGNORE_CASE)
-                .find(joined)?.groupValues?.getOrNull(1).orEmpty()
-                .ifBlank {
-                    values.lastOrNull().orEmpty()
-                        .takeIf { it != course && it != time && it != day && it != code }
-                        ?.replace(Regex("""\(Lecture\)""", RegexOption.IGNORE_CASE), "")
-                        ?.trim(' ', '-', '|')
-                        .orEmpty()
-                }
-        }
-        if (course.length < 3 || (time.isBlank() && day.isBlank())) return null
-        return ScheduleRow(day, time, course, room, code)
-    }
-
     private fun createDayHeader(day: String, count: Int): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
