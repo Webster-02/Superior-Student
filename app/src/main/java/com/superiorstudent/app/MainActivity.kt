@@ -809,35 +809,167 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderTimetable(data: ModuleData) {
         val rows = data.records.mapNotNull(::toScheduleRow)
-            .distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.room }
-            .take(50)
+            .distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.room + "|" + it.code }
+            .take(60)
 
-        if (rows.isNotEmpty()) {
-            val dayOrder = mapOf(
-                "Monday" to 1, "Tuesday" to 2, "Wednesday" to 3,
-                "Thursday" to 4, "Friday" to 5, "Saturday" to 6, "Sunday" to 7
-            )
-            val sortedRows = rows.sortedWith(
-                compareBy<ScheduleRow> { row ->
-                    dayOrder.entries.firstOrNull { entry -> row.day.equals(entry.key, true) }?.value ?: 99
-                }.thenBy { row ->
-                    Regex("""([01]?\d|2[0-3]):([0-5]\d)""").find(row.time)?.value ?: "99:99"
-                }
-            )
-            sortedRows.groupBy { it.day.ifBlank { "Scheduled classes" } }.forEach { (day, items) ->
-                binding.moduleContent.addView(createDayHeader(day, items.size))
-                items.forEach { binding.moduleContent.addView(createScheduleCard(it)) }
-            }
-        } else {
+        binding.moduleContent.addView(createTimetableToolbar(rows.size))
+
+        if (rows.isEmpty()) {
             data.tables.forEachIndexed { index, table ->
-                binding.moduleContent.addView(createTableSection(
-                    table.title.ifBlank { if (index == 0) "Class schedule" else "Schedule details" }, table
-                ))
+                binding.moduleContent.addView(
+                    createTableSection(
+                        table.title.ifBlank { if (index == 0) "Class schedule" else "Schedule details" },
+                        table
+                    )
+                )
             }
-            if (data.tables.isEmpty()) binding.moduleContent.addView(
-                createEmptyState("Timetable data is unavailable", "Refresh to sync your latest class schedule.")
+            binding.moduleContent.addView(
+                createEmptyState(
+                    "Timetable is still syncing",
+                    "The ERP timetable is loaded dynamically. Tap Refresh and the app will retry the live schedule."
+                )
             )
+            return
         }
+
+        val dayOrder = mapOf(
+            "Monday" to 1, "Tuesday" to 2, "Wednesday" to 3,
+            "Thursday" to 4, "Friday" to 5, "Saturday" to 6, "Sunday" to 7
+        )
+        val sortedRows = rows.sortedWith(
+            compareBy<ScheduleRow> { row ->
+                dayOrder.entries.firstOrNull { entry -> row.day.equals(entry.key, true) }?.value ?: 99
+            }.thenBy { row ->
+                timeSortKey(row.time)
+            }
+        )
+
+        sortedRows.groupBy { it.day.ifBlank { "Scheduled classes" } }
+            .toSortedMap(compareBy { dayOrder[it] ?: 99 })
+            .forEach { (day, items) ->
+                binding.moduleContent.addView(createDayHeader(day, items.size))
+                items.forEach { row ->
+                    binding.moduleContent.addView(createScheduleCard(row))
+                }
+            }
+
+        binding.moduleContent.addView(createTimetableInfoCard())
+    }
+
+    private fun timeSortKey(value: String): Int {
+        val match = Regex("""([01]?\\d|2[0-3]):([0-5]\\d)""").find(value) ?: return 9999
+        return match.groupValues[1].toInt() * 60 + match.groupValues[2].toInt()
+    }
+
+    private fun createTimetableToolbar(count: Int): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.rgb(18, 58, 112), 22f)
+            setPadding(dp(18), dp(17), dp(18), dp(17))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = "THIS WEEK"
+                setTextColor(Color.rgb(190, 214, 244))
+                textSize = 9f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                letterSpacing = 0.10f
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Your Class Schedule"
+                setTextColor(Color.WHITE)
+                textSize = 21f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, dp(3), 0, dp(2))
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = if (count == 1) "1 class fetched from ERP" else "$count classes fetched from ERP"
+                setTextColor(Color.rgb(221, 232, 247))
+                textSize = 11f
+            })
+        }
+
+    private fun createTimetableInfoCard(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBackground(Color.rgb(238, 244, 255), 18f)
+            setPadding(dp(15), dp(14), dp(15), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(12), dp(12), dp(18)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = "ⓘ"
+                setTextColor(Color.rgb(30, 91, 155))
+                textSize = 22f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(dp(32), ViewGroup.LayoutParams.WRAP_CONTENT)
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = "Timetable Information"
+                    setTextColor(Color.rgb(18, 58, 112))
+                    textSize = 12f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = "Timings, courses, codes and rooms are read from your ERP account."
+                    setTextColor(Color.rgb(82, 103, 133))
+                    textSize = 10f
+                    setPadding(0, dp(3), 0, 0)
+                })
+            })
+        }
+
+    private fun toScheduleRow(record: ModuleRecord): ScheduleRow? {
+        val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+        if (values.isEmpty()) return null
+        val headers = record.headers.map(::cleanDisplayText)
+        val joined = values.joinToString(" ")
+        if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
+
+        fun headerValue(vararg keys: String): String {
+            val index = headers.indexOfFirst { h -> keys.any { key -> h.contains(key, true) } }
+            return if (index >= 0 && index < values.size) values[index] else ""
+        }
+
+        val time = headerValue("time", "timing", "start time", "period").ifBlank {
+            Regex("""(?:[01]?\\d|2[0-3]):[0-5]\\d(?:\\s*[-–]\\s*(?:[01]?\\d|2[0-3]):[0-5]\\d)?""")
+                .find(joined)?.value.orEmpty()
+        }
+        val day = headerValue("day", "date", "weekday").ifBlank {
+            Regex("""(?i)\\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\b""")
+                .find(joined)?.value.orEmpty()
+        }
+        val code = headerValue("course code", "subject code", "code").ifBlank {
+            Regex("""\\b[A-Z]{2,8}[- ]?\\d{2,6}[A-Z0-9-]*\\b""", RegexOption.IGNORE_CASE)
+                .find(joined)?.value.orEmpty()
+        }
+        val course = headerValue("subject", "course name", "course", "class", "title", "name").ifBlank {
+            val withoutMeta = joined
+                .replace(time, "")
+                .replace(day, "")
+                .replace(code, "")
+                .replace(Regex("""(?i)\\b(?:room|venue|location)\\s*[:#-]?\\s*[A-Z0-9-]+\\b"""), "")
+                .trim(' ', '-', '–', '|', '•')
+            withoutMeta.split(Regex("""\\s{2,}|\\|"""))
+                .map { it.trim() }
+                .firstOrNull { it.length >= 3 }
+                ?: withoutMeta
+        }
+        val room = headerValue("room", "venue", "location", "class room").ifBlank {
+            Regex("""(?i)\\b(?:room|venue)\\s*[:#-]?\\s*([A-Z0-9-]+)\\b""")
+                .find(joined)?.groupValues?.getOrNull(1).orEmpty()
+        }
+        if (course.length < 3 || (time.isBlank() && day.isBlank())) return null
+        return ScheduleRow(day, time, course, room, code)
     }
 
     private fun toScheduleRow(record: ModuleRecord): ScheduleRow? {
@@ -909,74 +1041,98 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             background = roundedBackground(Color.WHITE, 18f)
             elevation = dp(2).toFloat()
-            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setPadding(dp(12), dp(12), dp(14), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
 
+            val accent = when (timeSortKey(row.time) % 5) {
+                0 -> Color.rgb(42, 111, 219)
+                1 -> Color.rgb(24, 166, 93)
+                2 -> Color.rgb(244, 164, 35)
+                3 -> Color.rgb(133, 82, 214)
+                else -> Color.rgb(226, 70, 117)
+            }
+
+            addView(View(this@MainActivity).apply {
+                background = roundedBackground(accent, 5f)
+                layoutParams = LinearLayout.LayoutParams(dp(5), dp(88))
+            })
+
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                background = roundedBackground(Color.rgb(239, 245, 255), 14f)
-                layoutParams = LinearLayout.LayoutParams(dp(84), dp(66))
-                setPadding(dp(6), dp(6), dp(6), dp(6))
+                background = roundedBackground(Color.rgb(246, 249, 253), 14f)
+                layoutParams = LinearLayout.LayoutParams(dp(82), dp(70)).apply {
+                    setMargins(dp(9), 0, dp(10), 0)
+                }
+                setPadding(dp(4), dp(5), dp(4), dp(5))
 
                 addView(TextView(this@MainActivity).apply {
-                    text = row.time.ifBlank { "Time unavailable" }
+                    text = formatScheduleTime(row.time)
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(30, 91, 155))
+                    setTextColor(Color.rgb(23, 42, 70))
                     textSize = 12f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
-                if (row.day.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                addView(TextView(this@MainActivity).apply {
                     text = row.day.take(3).uppercase(java.util.Locale.US)
                     gravity = Gravity.CENTER
                     setTextColor(Color.rgb(93, 112, 140))
                     textSize = 9f
-                    setPadding(0, dp(2), 0, 0)
+                    setPadding(0, dp(3), 0, 0)
                 })
             })
 
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { setPadding(dp(13), 0, 0, 0) }
 
                 addView(TextView(this@MainActivity).apply {
                     text = row.course
                     setTextColor(Color.rgb(23, 42, 70))
                     textSize = 14f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    maxLines = 2
                 })
 
                 if (row.code.isNotBlank()) addView(TextView(this@MainActivity).apply {
-                    text = row.code
+                    text = "▣  " + row.code
                     setTextColor(Color.rgb(30, 91, 155))
                     textSize = 10f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBackground(Color.rgb(239, 245, 255), 8f)
+                    background = roundedBackground(Color.rgb(233, 243, 255), 9f)
                     setPadding(dp(7), dp(4), dp(7), dp(4))
                     layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, dp(5), 0, 0) }
+                    ).apply { setMargins(0, dp(6), 0, 0) }
                 })
 
-                if (row.room.isNotBlank()) addView(TextView(this@MainActivity).apply {
-                    text = "Room • " + row.room
-                    setTextColor(Color.rgb(105, 119, 141))
+                addView(TextView(this@MainActivity).apply {
+                    text = if (row.room.isNotBlank()) "●  Room " + row.room else "●  Room not provided by ERP"
+                    setTextColor(if (row.room.isNotBlank()) Color.rgb(35, 139, 82) else Color.rgb(143, 153, 169))
                     textSize = 10f
-                    setPadding(0, dp(5), 0, 0)
-                }) else addView(TextView(this@MainActivity).apply {
-                    text = "Room not provided by ERP"
-                    setTextColor(Color.rgb(151, 160, 175))
-                    textSize = 10f
-                    setPadding(0, dp(5), 0, 0)
+                    setPadding(0, dp(6), 0, 0)
                 })
             })
         }
 
+    private fun formatScheduleTime(value: String): String {
+        val match = Regex("""([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s*[-–]\\s*([01]?\\d|2[0-3]):([0-5]\\d))?""").find(value)
+            ?: return value.ifBlank { "Time" }
+        fun format(hour: Int, minute: Int): String {
+            val suffix = if (hour >= 12) "PM" else "AM"
+            val h = when (val twelve = hour % 12) { 0 -> 12 else -> twelve }
+            return String.format(java.util.Locale.US, "%02d:%02d %s", h, minute, suffix)
+        }
+        val start = format(match.groupValues[1].toInt(), match.groupValues[2].toInt())
+        val end = if (match.groupValues[3].isNotBlank()) {
+            format(match.groupValues[3].toInt(), match.groupValues[4].toInt())
+        } else ""
+        return if (end.isNotBlank()) start + "\n–\n" + end else start
+    }
 
     private fun isProfileLabel(label: String, vararg candidates: String): Boolean {
         val normalized = label.trim().lowercase()
@@ -2230,10 +2386,10 @@ class MainActivity : AppCompatActivity() {
         private const val PROFILE_VISUAL_DELAY_MS = 500L
         private const val PROFILE_RETRY_DELAY_MS = 1000L
         private const val MAX_PROFILE_READ_ATTEMPTS = 8
-        private const val MODULE_READ_DELAY_MS = 900L
-        private const val MODULE_VISUAL_DELAY_MS = 500L
-        private const val MODULE_RETRY_DELAY_MS = 800L
-        private const val MAX_MODULE_READ_ATTEMPTS = 6
+        private const val MODULE_READ_DELAY_MS = 1400L
+        private const val MODULE_VISUAL_DELAY_MS = 900L
+        private const val MODULE_RETRY_DELAY_MS = 1200L
+        private const val MAX_MODULE_READ_ATTEMPTS = 12
         private const val SESSION_HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000L
 
         private const val SESSION_HEARTBEAT_SCRIPT = """
@@ -2835,7 +2991,7 @@ class MainActivity : AppCompatActivity() {
                 const day=findDay(attrs) || findDay(raw);
                 const title=cleanScheduleTitle(raw,code,time,day);
                 if(title.length<3 || (!time && !day)) return;
-                addScheduleRecord(time,day,title);
+                addScheduleRecord(time,day,title,code,'');
               });
 
               scheduleStructured.forEach(function(record){records.push(record);});
