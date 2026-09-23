@@ -188,7 +188,6 @@ class MainActivity : AppCompatActivity() {
         binding.feeButton.setOnClickListener { loadModule(Module.FEE) }
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
-        binding.logoutButton.setOnClickListener { logout() }
         binding.menuButton.setOnClickListener { openSideMenu() }
         binding.closeMenuButton.setOnClickListener { closeSideMenu() }
         binding.menuScrim.setOnClickListener { closeSideMenu() }
@@ -804,7 +803,8 @@ class MainActivity : AppCompatActivity() {
         val day: String,
         val time: String,
         val course: String,
-        val room: String
+        val room: String,
+        val code: String
     )
 
     private fun renderTimetable(data: ModuleData) {
@@ -880,7 +880,7 @@ class MainActivity : AppCompatActivity() {
                 }
         }
         if (course.length < 3 || (time.isBlank() && day.isBlank())) return null
-        return ScheduleRow(day, time, course, room)
+        return ScheduleRow(day, time, course, room, code)
     }
 
     private fun createDayHeader(day: String, count: Int): View =
@@ -977,6 +977,46 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
+
+    private fun isProfileLabel(label: String, vararg candidates: String): Boolean {
+        val normalized = label.trim().lowercase()
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .trim()
+        return candidates.any { candidate ->
+            val target = candidate.trim().lowercase()
+                .replace(Regex("[^a-z0-9]+"), " ")
+                .trim()
+            normalized == target || normalized.contains(target)
+        }
+    }
+
+    private fun createProfileFieldCard(label: String, value: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Color.WHITE, 14f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(12), dp(11), dp(12), dp(11))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
+
+            addView(TextView(this@MainActivity).apply {
+                text = label.trim()
+                setTextColor(Color.rgb(126, 139, 158))
+                textSize = 9f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                letterSpacing = 0.04f
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = value.trim()
+                setTextColor(Color.rgb(23, 42, 70))
+                textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, dp(4), 0, 0)
+            })
+        }
+    }
 
     private fun renderProfile(data: ModuleData) {
         val fields = extractProfileFields(data)
@@ -1088,7 +1128,7 @@ class MainActivity : AppCompatActivity() {
             ?: "Student"
         val program = fields.firstOrNull { isProfileLabel(it.first, "program", "degree", "course of study") }?.second.orEmpty()
         val reg = fields.firstOrNull { isProfileLabel(it.first, "registration", "roll no", "student id", "student code") }?.second.orEmpty()
-        val initials = name.split(Regex("\s+")).filter { it.isNotBlank() }.take(2)
+        val initials = name.split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercaseChar().toString() }.ifBlank { "S" }
 
         return LinearLayout(this).apply {
@@ -2898,6 +2938,6 @@ class MainActivity : AppCompatActivity() {
                 hasUsefulFields:fields.length>0 || cards.length>0
               });
             })();
-        
+        """;
     }
 }
