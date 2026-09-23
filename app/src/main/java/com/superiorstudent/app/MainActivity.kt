@@ -612,7 +612,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun extractCountNearLabel(text: String, vararg labels: String): String {
         for (label in labels) {
-            val pattern = "(?i)\\\\b" + Regex.escape(label) + "\\\\b\\\\s*[:\\\\-]?\\\\s*(\\\\d+(?:\\\\.\\\\d+)?)"
+            val pattern = "(?i)\\b" + Regex.escape(label) + "\\b\\s*[:\\-]?\\s*(\\d+(?:\\.\\d+)?)"
             val match = Regex(pattern).find(text)
             if (match != null) return match.groupValues[1]
         }
@@ -2550,15 +2550,15 @@ class MainActivity : AppCompatActivity() {
               const scheduleStructured=[];
               const scheduleSeen={};
 
-              function addScheduleRecord(time, day, title){
-                time=safe(time); day=safe(day); title=safe(title);
+              function addScheduleRecord(time, day, title, code, room){
+                time=safe(time); day=safe(day); title=safe(title); code=safe(code); room=safe(room);
                 if(title.length<3 || (!time && !day)) return;
-                const key=time+'|'+day+'|'+title;
+                const key=time+'|'+day+'|'+title+'|'+code+'|'+room;
                 if(scheduleSeen[key]) return;
                 scheduleSeen[key]=true;
                 scheduleStructured.push({
-                  headers:['Day','Time','Class'],
-                  values:[day,time,title]
+                  headers:['Day','Time','Class','Course Code','Room'],
+                  values:[day,time,title,code,room]
                 });
               }
 
@@ -2814,7 +2814,7 @@ class MainActivity : AppCompatActivity() {
 
                 if(title.length<3 && code) title=code;
                 if(title.length<3) return;
-                addScheduleRecord(time,day,title);
+                addScheduleRecord(time,day,title,code,'');
               });
 
               // Non-calendar fallback: only use explicit time/day values from the
