@@ -2043,6 +2043,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Very low-alpha tint of [color], for glass fills and soft washes on hero cards. */
+    private fun tintAlpha(color: Int, alpha: Int): Int =
+        Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+
     /** Custom circular progress ring with a centered percentage label. */
     private fun createProgressRing(percent: Double, sizeDp: Int, strokeWidthDp: Int, color: Int): View {
         val density = resources.displayMetrics.density

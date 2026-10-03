@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Midnight Indigo login backdrop: deep navy → indigo → violet -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:startColor="#0A1130"
+        android:centerColor="#141B4D"
+        android:endColor="#2B1E63"
+        android:type="linear" />
+</shape>
