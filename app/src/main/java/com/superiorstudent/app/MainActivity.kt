@@ -28,7 +28,8 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val handler = Handler(Looper.getMainLooper())
-    private val preferences by lazy { getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE) }
+    private val sessionStore by lazy { SessionStore(this) }
+    private val profileCache by lazy { ProfileCache(this) }
 
     private var loginInProgress = false
     private var loginSubmitted = false
@@ -69,6 +70,8 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Scripts.loadAll(this)
+        sessionStore.migrateFromLegacy()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -89,10 +92,51 @@ class MainActivity : AppCompatActivity() {
         webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
         webView.settings.allowFileAccess = false
         webView.settings.allowContentAccess = false
-        webView.webChromeClient = WebChromeClient()
+        // Defense-in-depth: mixed content (http resources on https pages) is blocked.
+        webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
+                // The student portal never needs camera/mic; deny explicitly.
+                request.deny()
+            }
+
+            override fun onCreateWindow(
+                view: WebView,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                // Block popups that could leak the session to an external page.
+                Toast.makeText(view.context, "External popups are blocked for your security.", Toast.LENGTH_SHORT).show()
+                return false
+            }
+        }
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val target = request.url.toString()
+                if (!ErpConfig.belongsToErp(target)) {
+                    // Never navigate the authenticated WebView away from the ERP host.
+                    return true
+                }
+                return false
+            }
+
+            override fun onReceivedSslError(
+                view: WebView,
+                handler: android.webkit.SslErrorHandler,
+                error: android.webkit.SslError?
+            ) {
+                // Strict TLS: refuse to load content when certificate validation fails.
+                handler.cancel()
+                if (activeModule != null) {
+                    binding.moduleProgress.visibility = View.GONE
+                    binding.moduleInfo.text = "Secure connection failed. Check your network and tap Refresh."
+                } else if (loginInProgress || restoringSession) {
+                    failLogin("Secure connection to the university portal failed. Please try again.")
+                }
+            }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 super.onReceivedError(view, request, error)
@@ -105,10 +149,10 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
 
-                if (!loginInProgress && !profileFetchInProgress && url.contains("/web/login", true)) {
+                if (!loginInProgress && !profileFetchInProgress && ErpConfig.isLoginUrl(url)) {
                     restoringSession = false
                     loggedIn = false
-                    preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
+                    sessionStore.sessionActive = false
                     showLogin()
                     Toast.makeText(this@MainActivity, "Your university session expired. Please sign in again.", Toast.LENGTH_LONG).show()
                     return
@@ -118,9 +162,9 @@ class MainActivity : AppCompatActivity() {
                     if (isAuthenticatedUrl(url)) {
                         restoringSession = false
                         completeLogin()
-                    } else if (url.contains("/web/login", true)) {
+                    } else if (ErpConfig.isLoginUrl(url)) {
                         restoringSession = false
-                        preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
+                        sessionStore.sessionActive = false
                         showLogin()
                     }
                     return
@@ -129,12 +173,12 @@ class MainActivity : AppCompatActivity() {
                 if (loginInProgress) {
                     if (isAuthenticatedUrl(url)) {
                         completeLogin()
-                    } else if (url.contains("/web/login", true)) {
+                    } else if (ErpConfig.isLoginUrl(url)) {
                         if (!loginSubmitted) {
                             loginAttempt = 0
                             scheduleLoginInjection(view)
                         } else {
-                            view.evaluateJavascript(LOGIN_ERROR_CHECK_SCRIPT) { result ->
+                            view.evaluateJavascript(Scripts.loginErrorCheck) { result ->
                                 if (result == "true") failLogin("Login failed. Check your ERP username or password.")
                             }
                         }
@@ -180,7 +224,7 @@ class MainActivity : AppCompatActivity() {
             binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
             binding.loginStatus.text = "Signing in securely…"
             webView.visibility = View.GONE
-            webView.loadUrl(ERP_LOGIN_URL)
+            webView.loadUrl(ErpConfig.LOGIN_URL)
         }
 
         binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
@@ -197,14 +241,14 @@ class MainActivity : AppCompatActivity() {
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
-        } else if (preferences.getBoolean(KEY_SESSION_ACTIVE, false)) {
-            username = preferences.getString(KEY_USERNAME, "") ?: ""
+        } else if (sessionStore.sessionActive) {
+            username = sessionStore.username
             restoringSession = true
             binding.loginScroll.visibility = View.GONE
             binding.dashboardScroll.visibility = View.VISIBLE
             webView.visibility = View.GONE
             showDashboard()
-            binding.webView.loadUrl(ERP_DASHBOARD_URL)
+            binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
         }
     }
 
@@ -234,10 +278,10 @@ class MainActivity : AppCompatActivity() {
             binding.moduleProgress.visibility = View.VISIBLE
             binding.moduleContent.removeAllViews()
             binding.moduleInfo.text = "Reconnecting to your student account…"
-            binding.webView.loadUrl(ERP_BASE_URL + module.path)
+            binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
         } else {
             restoringSession = true
-            binding.webView.loadUrl(ERP_DASHBOARD_URL)
+            binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
         }
     }
 
@@ -252,9 +296,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun injectLogin(view: WebView) {
         if (!loginInProgress || loginSubmitted) return
-        val script = LOGIN_SCRIPT
-            .replace("%USERNAME%", JSONObject.quote(username))
-            .replace("%PASSWORD%", JSONObject.quote(password))
+        val script = Scripts.loginScript(username, password)
         loginAttempt++
         view.evaluateJavascript(script) { result ->
             if (!loginInProgress || loginSubmitted) return@evaluateJavascript
@@ -274,10 +316,8 @@ class MainActivity : AppCompatActivity() {
         loggedIn = true
         profileReadAttempts = 0
         startSessionHeartbeat()
-        preferences.edit()
-            .putBoolean(KEY_SESSION_ACTIVE, true)
-            .putString(KEY_USERNAME, username)
-            .apply()
+        sessionStore.sessionActive = true
+        sessionStore.username = username
         CookieManager.getInstance().flush()
         binding.loginStatus.text = ""
         binding.loginButton.isEnabled = true
@@ -294,7 +334,7 @@ class MainActivity : AppCompatActivity() {
         // Keep the WebView attached while waiting for the visual DOM state.
         // This makes postVisualStateCallback reliable even though the ERP page is not shown to the user.
         binding.webView.visibility = View.INVISIBLE
-        binding.webView.loadUrl(ERP_DASHBOARD_URL)
+        binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
     }
 
     private fun waitForProfileDom(view: WebView) {
@@ -321,8 +361,8 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn || !profileFetchInProgress) return
 
         profileReadAttempts++
-        view.evaluateJavascript(STUDENT_PROFILE_TEXT_SCRIPT) { result ->
-            val payload = decodeJavascriptString(result)
+        view.evaluateJavascript(Scripts.studentProfileText) { result ->
+            val payload = ParsingUtils.decodeJavascriptString(result)
             var name = ""
             var cgpa = ""
             var sgpa = ""
@@ -337,27 +377,22 @@ class MainActivity : AppCompatActivity() {
                 sgpa = findGpaInText(cards, bodyText, "SGPA")
                 hasUsefulProfileFields = json.optBoolean("hasUsefulFields", false)
 
-                if (isValidStudentName(name)) {
-                    preferences.edit().putString(KEY_STUDENT_NAME, name).apply()
+                if (ParsingUtils.isValidStudentName(name)) {
                     binding.studentName.text = name
                 }
-                if (cgpa.isNotBlank()) {
-                    preferences.edit().putString(KEY_CGPA, cgpa).apply()
-                    binding.studentCgpa.text = cgpa
-                }
-                if (sgpa.isNotBlank()) {
-                    preferences.edit().putString(KEY_SGPA, sgpa).apply()
-                    binding.studentSgpa.text = sgpa
-                }
-                if (cgpa.isNotBlank() && sgpa.isNotBlank()) {
-                    preferences.edit().putString(KEY_GPA, "CGPA: $cgpa  |  SGPA: $sgpa").apply()
-                }
+                if (cgpa.isNotBlank()) binding.studentCgpa.text = cgpa
+                if (sgpa.isNotBlank()) binding.studentSgpa.text = sgpa
+                profileCache.save(
+                    name.takeIf { ParsingUtils.isValidStudentName(it) },
+                    cgpa.ifBlank { null },
+                    sgpa.ifBlank { null }
+                )
             } catch (_: Exception) {
                 // The ERP may still be hydrating dynamic fields.
             }
 
-            val ready = isValidStudentName(name) && (cgpa.isNotBlank() || sgpa.isNotBlank())
-            if (ready || (hasUsefulProfileFields && isValidStudentName(name))) {
+            val ready = ParsingUtils.isValidStudentName(name) && (cgpa.isNotBlank() || sgpa.isNotBlank())
+            if (ready || (hasUsefulProfileFields && ParsingUtils.isValidStudentName(name))) {
                 profileFetchInProgress = false
                 preloadAllModules()
                 return@evaluateJavascript
@@ -376,38 +411,15 @@ class MainActivity : AppCompatActivity() {
         if (cards != null) {
             for (index in 0 until cards.length()) {
                 val cardText = cards.optString(index, "")
-                val value = findGpaValue(cardText, label)
+                val value = ParsingUtils.findGpaValue(cardText, label)
                 if (value.isNotBlank()) return value
             }
         }
-        return findGpaValue(bodyText, label)
+        return ParsingUtils.findGpaValue(bodyText, label)
     }
 
-    private fun findGpaValue(text: String, label: String): String {
-        val normalized = text.replace(Regex("\\s+"), " ").trim()
-        if (normalized.isBlank()) return ""
-
-        val escapedLabel = Regex.escape(label)
-        val after = Regex(
-            """\b$escapedLabel\b\s*[:\-]?\s*([0-4](?:\.\d{1,2})?)\b""",
-            RegexOption.IGNORE_CASE
-        ).find(normalized)
-        if (after != null) return validGpa(after.groupValues[1])
-
-        val before = Regex(
-            """([0-4](?:\.\d{1,2})?)\s*\b$escapedLabel\b""",
-            RegexOption.IGNORE_CASE
-        ).find(normalized)
-        if (before != null) return validGpa(before.groupValues[1])
-
-        return ""
-    }
-
-    private fun validGpa(value: String): String {
-        val number = value.trim().toDoubleOrNull() ?: return ""
-        return if (number in 0.0..4.0) String.format(java.util.Locale.US, "%.2f", number).trimEnd('0').trimEnd('.') else ""
-    }
-
+    
+    
 
     private fun preloadAllModules() {
         if (!loggedIn || profileFetchInProgress || preloadingModule != null) return
@@ -426,7 +438,7 @@ class MainActivity : AppCompatActivity() {
         }
         preloadingModule = preloadQueue.removeAt(0)
         binding.webView.visibility = View.INVISIBLE
-        binding.webView.loadUrl(ERP_BASE_URL + preloadingModule!!.path)
+        binding.webView.loadUrl(ErpConfig.moduleUrl(preloadingModule!!.path))
     }
 
     private fun loadModule(module: Module) {
@@ -480,7 +492,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         moduleFetchInProgress = true
-        binding.webView.loadUrl(ERP_BASE_URL + module.path)
+        binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
     }
 
     private fun refreshActiveModule() {
@@ -493,7 +505,7 @@ class MainActivity : AppCompatActivity() {
         binding.moduleContent.removeAllViews()
         binding.moduleInfo.text = "Syncing the latest information…"
         binding.webView.visibility = View.INVISIBLE
-        binding.webView.loadUrl(ERP_BASE_URL + module.path)
+        binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
         moduleFetchInProgress = true
     }
 
@@ -567,9 +579,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toAttendanceRow(record: ModuleRecord): AttendanceRow? {
-        val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+        val values = record.values.map(ParsingUtils::cleanDisplayText).filter(String::isNotBlank)
         if (values.isEmpty()) return null
-        val headers = record.headers.map(::cleanDisplayText)
+        val headers = record.headers.map(ParsingUtils::cleanDisplayText)
         val joined = values.joinToString(" ")
         if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
 
@@ -584,7 +596,7 @@ class MainActivity : AppCompatActivity() {
         val presentFromHeader = valueFor("present", "attended", "classes attended")
         val totalFromHeader = valueFor("total", "total classes", "classes held")
 
-        val percent = parsePercent(percentFromHeader)
+        val percent = ParsingUtils.parsePercent(percentFromHeader)
             ?: Regex("""(\d{1,3}(?:\.\d{1,2})?)\s*%""").find(joined)?.groupValues?.getOrNull(1)?.toDoubleOrNull()?.coerceIn(0.0, 100.0)
 
         val code = codeFromHeader.ifBlank {
@@ -596,29 +608,15 @@ class MainActivity : AppCompatActivity() {
             withoutPercent.substringBefore(code).trim().ifBlank { withoutPercent.trim() }
         }
 
-        val present = presentFromHeader.ifBlank { extractCountNearLabel(joined, "present", "attended", "attendance") }
-        val total = totalFromHeader.ifBlank { extractCountNearLabel(joined, "total", "classes") }
+        val present = presentFromHeader.ifBlank { ParsingUtils.extractCountNearLabel(joined, "present", "attended", "attendance") }
+        val total = totalFromHeader.ifBlank { ParsingUtils.extractCountNearLabel(joined, "total", "classes") }
 
         if (course.length < 3 || (percent == null && code.isBlank())) return null
         return AttendanceRow(course, code, percent, present, total)
     }
 
-    private fun parsePercent(value: String): Double? {
-        val withSymbol = Regex("""(\d{1,3}(?:\.\d{1,2})?)\s*%""")
-            .find(value)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
-        if (withSymbol != null) return withSymbol.coerceIn(0.0, 100.0)
-        return value.trim().toDoubleOrNull()?.takeIf { it in 0.0..100.0 }
-    }
-
-    private fun extractCountNearLabel(text: String, vararg labels: String): String {
-        for (label in labels) {
-            val pattern = "(?i)\\b" + Regex.escape(label) + "\\b\\s*[:\\-]?\\s*(\\d+(?:\\.\\d+)?)"
-            val match = Regex(pattern).find(text)
-            if (match != null) return match.groupValues[1]
-        }
-        return ""
-    }
-
+    
+    
 
     private fun attendanceStatus(percent: Double): Pair<Int, String> {
         return when {
@@ -840,7 +838,7 @@ class MainActivity : AppCompatActivity() {
             compareBy<ScheduleRow> { row ->
                 dayOrder.entries.firstOrNull { entry -> row.day.equals(entry.key, true) }?.value ?: 99
             }.thenBy { row ->
-                timeSortKey(row.time)
+                ParsingUtils.timeSortKey(row.time)
             }
         )
 
@@ -856,11 +854,7 @@ class MainActivity : AppCompatActivity() {
         binding.moduleContent.addView(createTimetableInfoCard())
     }
 
-    private fun timeSortKey(value: String): Int {
-        val match = Regex("""([01]?\\d|2[0-3]):([0-5]\\d)""").find(value) ?: return 9999
-        return match.groupValues[1].toInt() * 60 + match.groupValues[2].toInt()
-    }
-
+    
     private fun createTimetableToolbar(count: Int): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -929,9 +923,9 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun toScheduleRow(record: ModuleRecord): ScheduleRow? {
-        val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+        val values = record.values.map(ParsingUtils::cleanDisplayText).filter(String::isNotBlank)
         if (values.isEmpty()) return null
-        val headers = record.headers.map(::cleanDisplayText)
+        val headers = record.headers.map(ParsingUtils::cleanDisplayText)
         val joined = values.joinToString(" ")
         if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
 
@@ -1004,7 +998,7 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
 
-            val accent = when (timeSortKey(row.time) % 5) {
+            val accent = when (ParsingUtils.timeSortKey(row.time) % 5) {
                 0 -> Color.rgb(42, 111, 219)
                 1 -> Color.rgb(24, 166, 93)
                 2 -> Color.rgb(244, 164, 35)
@@ -1027,7 +1021,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(4), dp(5), dp(4), dp(5))
 
                 addView(TextView(this@MainActivity).apply {
-                    text = formatScheduleTime(row.time)
+                    text = ParsingUtils.formatScheduleTime(row.time)
                     gravity = Gravity.CENTER
                     setTextColor(Color.rgb(23, 42, 70))
                     textSize = 12f
@@ -1076,33 +1070,8 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
-    private fun formatScheduleTime(value: String): String {
-        val match = Regex("""([01]?\\d|2[0-3]):([0-5]\\d)(?:\\s*[-–]\\s*([01]?\\d|2[0-3]):([0-5]\\d))?""").find(value)
-            ?: return value.ifBlank { "Time" }
-        fun format(hour: Int, minute: Int): String {
-            val suffix = if (hour >= 12) "PM" else "AM"
-            val h = when (val twelve = hour % 12) { 0 -> 12 else -> twelve }
-            return String.format(java.util.Locale.US, "%02d:%02d %s", h, minute, suffix)
-        }
-        val start = format(match.groupValues[1].toInt(), match.groupValues[2].toInt())
-        val end = if (match.groupValues[3].isNotBlank()) {
-            format(match.groupValues[3].toInt(), match.groupValues[4].toInt())
-        } else ""
-        return if (end.isNotBlank()) start + "\n–\n" + end else start
-    }
-
-    private fun isProfileLabel(label: String, vararg candidates: String): Boolean {
-        val normalized = label.trim().lowercase()
-            .replace(Regex("[^a-z0-9]+"), " ")
-            .trim()
-        return candidates.any { candidate ->
-            val target = candidate.trim().lowercase()
-                .replace(Regex("[^a-z0-9]+"), " ")
-                .trim()
-            normalized == target || normalized.contains(target)
-        }
-    }
-
+    
+    
     private fun createProfileFieldCard(label: String, value: String): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1145,7 +1114,7 @@ class MainActivity : AppCompatActivity() {
             binding.moduleContent.addView(createProfileHero(fields))
 
             val priority = fields.filter { field ->
-                isProfileLabel(
+                ParsingUtils.isProfileLabel(
                     field.first,
                     "student name", "full name", "name",
                     "registration", "roll no", "student id", "student code",
@@ -1218,7 +1187,7 @@ class MainActivity : AppCompatActivity() {
     private fun extractProfileFields(data: ModuleData): List<Pair<String, String>> {
         val result = mutableListOf<Pair<String, String>>()
         data.records.forEach { record ->
-            val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+            val values = record.values.map(ParsingUtils::cleanDisplayText).filter(String::isNotBlank)
             val fieldRecord = record.headers.any { h ->
                 h.equals("Field", true) || h.equals("Label", true)
             }
@@ -1234,13 +1203,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createProfileHero(fields: List<Pair<String, String>>): View {
-        val name = fields.firstOrNull { isProfileLabel(it.first, "student name", "full name", "name") }
+        val name = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "student name", "full name", "name") }
             ?.second
-            ?.takeIf(::isValidStudentName)
-            ?: preferences.getString(KEY_STUDENT_NAME, "").orEmpty().takeIf(::isValidStudentName)
+            ?.takeIf(ParsingUtils::isValidStudentName)
+            ?: profileCache.studentName.takeIf(ParsingUtils::isValidStudentName)
             ?: "Student"
-        val program = fields.firstOrNull { isProfileLabel(it.first, "program", "degree", "course of study") }?.second.orEmpty()
-        val reg = fields.firstOrNull { isProfileLabel(it.first, "registration", "roll no", "student id", "student code") }?.second.orEmpty()
+        val program = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "program", "degree", "course of study") }?.second.orEmpty()
+        val reg = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "registration", "roll no", "student id", "student code") }?.second.orEmpty()
         val initials = name.split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercaseChar().toString() }.ifBlank { "S" }
 
@@ -1342,7 +1311,7 @@ class MainActivity : AppCompatActivity() {
 
         val resultRecords = data.records.mapNotNull { record ->
             if (record.headers.any { it.equals("Semester options", true) }) return@mapNotNull null
-            val values = record.values.map(::cleanDisplayText).filter(String::isNotBlank)
+            val values = record.values.map(ParsingUtils::cleanDisplayText).filter(String::isNotBlank)
             if (values.size < 2) null else values
         }.distinctBy { it.joinToString("|").lowercase() }
 
@@ -1448,25 +1417,7 @@ class MainActivity : AppCompatActivity() {
                     return
                 }
                 val label = options.getOrNull(position) ?: return
-                val script = """
-                    (function(){
-                      const wanted=""" + JSONObject.quote(label) + """;
-                      const selects=Array.from(document.querySelectorAll('select'));
-                      const select=selects.find(function(s){
-                        return Array.from(s.options||[]).some(function(o){
-                          return (o.textContent||'').trim()===wanted;
-                        });
-                      });
-                      if(!select)return 'NO_SELECT';
-                      const option=Array.from(select.options||[]).find(function(o){
-                        return (o.textContent||'').trim()===wanted;
-                      });
-                      if(!option)return 'NO_OPTION';
-                      select.value=option.value;
-                      select.dispatchEvent(new Event('change',{bubbles:true}));
-                      return 'CHANGED';
-                    })();
-                """.trimIndent()
+                val script = Scripts.semesterSelectScript(label)
                 binding.moduleProgress.visibility = View.VISIBLE
                 binding.moduleInfo.text = "Loading $label…"
                 binding.webView.evaluateJavascript(script) {
@@ -1489,7 +1440,7 @@ class MainActivity : AppCompatActivity() {
             val index = headers.indexOfFirst { header ->
                 names.any { key -> header.contains(key, true) }
             }
-            return if (index >= 0 && index < values.size) cleanDisplayText(values[index]) else ""
+            return if (index >= 0 && index < values.size) ParsingUtils.cleanDisplayText(values[index]) else ""
         }
 
         val subject = valueFor("subject", "course name", "course title", "course")
@@ -1776,13 +1727,13 @@ class MainActivity : AppCompatActivity() {
             ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
 
             addView(TextView(this@MainActivity).apply {
-                text = cleanDisplayText(label)
+                text = ParsingUtils.cleanDisplayText(label)
                 setTextColor(Color.rgb(102, 112, 133))
                 textSize = 11f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(TextView(this@MainActivity).apply {
-                text = cleanDisplayText(value)
+                text = ParsingUtils.cleanDisplayText(value)
                 setTextColor(Color.rgb(18, 58, 112))
                 textSize = 20f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -1803,7 +1754,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         outer.addView(TextView(this).apply {
-            text = cleanDisplayText(title)
+            text = ParsingUtils.cleanDisplayText(title)
             setTextColor(Color.rgb(23,32,51))
             textSize = 15f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -1844,7 +1795,7 @@ class MainActivity : AppCompatActivity() {
 
         values.forEach { value ->
             row.addView(TextView(this).apply {
-                text = cleanDisplayText(value).ifBlank { "—" }
+                text = ParsingUtils.cleanDisplayText(value).ifBlank { "—" }
                 setTextColor(if (header) Color.rgb(18,58,112) else Color.rgb(52,64,84))
                 textSize = if (header) 10f else 11f
                 if (header) setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -1926,26 +1877,8 @@ class MainActivity : AppCompatActivity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
 
-    private fun cleanDisplayText(value: String): String {
-        return value
-            .replace(Regex("(?i)\\bERP\\b"), "")
-            .replace(Regex("(?i)\\bOdoo\\b"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-    }
-
-    private fun isUsefulDisplayText(value: String): Boolean {
-        val text = value.trim()
-        if (text.length < 2) return false
-        if (text.equals("home", true) || text.equals("logout", true)) return false
-        if (text.equals("dashboard", true) || text.equals("menu", true)) return false
-        if (text.contains("your session", true) || text.contains("you've been inactive", true)) return false
-        if (text.contains("stay online", true) || text.contains("session will expire", true)) return false
-        if (text.equals("attendance", true) || text.equals("attendance classes", true) ||
-            text.equals("active classes", true)) return false
-        return true
-    }
-
+    
+    
     private fun moduleDefaultTableTitle(module: Module, index: Int): String {
         return when (module) {
             Module.ATTENDANCE -> if (index == 0) "Attendance records" else "Attendance details"
@@ -1964,8 +1897,8 @@ class MainActivity : AppCompatActivity() {
             json.optJSONArray("cards")?.let { arr ->
                 for (i in 0 until arr.length()) {
                     val o = arr.optJSONObject(i) ?: continue
-                    val label = cleanDisplayText(o.optString("label", ""))
-                    val value = cleanDisplayText(o.optString("value", ""))
+                    val label = ParsingUtils.cleanDisplayText(o.optString("label", ""))
+                    val value = ParsingUtils.cleanDisplayText(o.optString("value", ""))
                     if (label.isNotBlank() && value.isNotBlank()) cards.add(label to value)
                 }
             }
@@ -1977,21 +1910,21 @@ class MainActivity : AppCompatActivity() {
                     val t = arr.optJSONObject(i) ?: continue
                     val headers = mutableListOf<String>()
                     t.optJSONArray("headers")?.let { h ->
-                        for (j in 0 until h.length()) headers.add(cleanDisplayText(h.optString(j, "")))
+                        for (j in 0 until h.length()) headers.add(ParsingUtils.cleanDisplayText(h.optString(j, "")))
                     }
                     val rows = mutableListOf<List<String>>()
                     t.optJSONArray("rows")?.let { rs ->
                         for (j in 0 until rs.length()) {
                             val ro = rs.optJSONArray(j) ?: continue
                             val row = mutableListOf<String>()
-                            for (k in 0 until ro.length()) row.add(cleanDisplayText(ro.optString(k, "")))
+                            for (k in 0 until ro.length()) row.add(ParsingUtils.cleanDisplayText(ro.optString(k, "")))
                             if (row.any { it.isNotBlank() }) {
                                 rows.add(row)
                                 records.add(ModuleRecord(headers, row))
                             }
                         }
                     }
-                    val title = cleanDisplayText(t.optString("title", ""))
+                    val title = ParsingUtils.cleanDisplayText(t.optString("title", ""))
                     if (headers.isNotEmpty() || rows.isNotEmpty()) tables.add(TableData(title, headers, rows))
                 }
             }
@@ -2002,10 +1935,10 @@ class MainActivity : AppCompatActivity() {
                     val h = mutableListOf<String>()
                     val v = mutableListOf<String>()
                     o.optJSONArray("headers")?.let { q ->
-                        for (j in 0 until q.length()) h.add(cleanDisplayText(q.optString(j, "")))
+                        for (j in 0 until q.length()) h.add(ParsingUtils.cleanDisplayText(q.optString(j, "")))
                     }
                     o.optJSONArray("values")?.let { q ->
-                        for (j in 0 until q.length()) v.add(cleanDisplayText(q.optString(j, "")))
+                        for (j in 0 until q.length()) v.add(ParsingUtils.cleanDisplayText(q.optString(j, "")))
                     }
                     if (v.any { it.isNotBlank() }) records.add(ModuleRecord(h, v))
                 }
@@ -2014,15 +1947,15 @@ class MainActivity : AppCompatActivity() {
             val lines = mutableListOf<String>()
             json.optJSONArray("lines")?.let { arr ->
                 for (i in 0 until arr.length()) {
-                    val line = cleanDisplayText(arr.optString(i, ""))
-                    if (isUsefulDisplayText(line)) lines.add(line)
+                    val line = ParsingUtils.cleanDisplayText(arr.optString(i, ""))
+                    if (ParsingUtils.isUsefulDisplayText(line)) lines.add(line)
                 }
             }
 
             val semesterOptions = records
                 .filter { it.headers.any { h -> h.equals("Semester options", true) } }
                 .flatMap { it.values }
-                .map(::cleanDisplayText)
+                .map(ParsingUtils::cleanDisplayText)
                 .filter { it.isNotBlank() }
                 .distinct()
                 .take(12)
@@ -2083,9 +2016,9 @@ class MainActivity : AppCompatActivity() {
         fun readNow() {
             if (!loggedIn || requestId != moduleReadRequestId) return
             moduleReadAttempts++
-            view.evaluateJavascript(MODULE_DATA_SCRIPT) { result ->
+            view.evaluateJavascript(Scripts.moduleData) { result ->
                 if (!loggedIn || requestId != moduleReadRequestId) return@evaluateJavascript
-                val payload = decodeJavascriptString(result)
+                val payload = ParsingUtils.decodeJavascriptString(result)
                 val data = parseModuleData(payload)
 
                 val usable = data != null && hasUsableModuleData(module, data)
@@ -2153,16 +2086,11 @@ class MainActivity : AppCompatActivity() {
         }
         val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
 
-        fun startMinutes(time: String): Int? {
-            val match = Regex("""([01]?\d|2[0-3]):([0-5]\d)""").find(time) ?: return null
-            return match.groupValues[1].toInt() * 60 + match.groupValues[2].toInt()
-        }
-
         val sameDay = rows.filter { it.day.equals(currentDay, true) }
         val next = sameDay.mapNotNull { row ->
-            startMinutes(row.time)?.let { start -> if (start >= currentMinutes) start to row else null }
+            ParsingUtils.startMinutesOf(row.time)?.let { start -> if (start >= currentMinutes) start to row else null }
         }.minByOrNull { it.first }?.second
-            ?: rows.mapNotNull { row -> startMinutes(row.time)?.let { it to row } }
+            ?: rows.mapNotNull { row -> ParsingUtils.startMinutesOf(row.time)?.let { it to row } }
                 .minByOrNull { it.first }?.second
 
         if (next == null) {
@@ -2186,9 +2114,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun pingSession() {
         if (!loggedIn) return
-        binding.webView.evaluateJavascript(SESSION_HEARTBEAT_SCRIPT) { result ->
+        binding.webView.evaluateJavascript(Scripts.sessionHeartbeat) { result ->
             if (!loggedIn) return@evaluateJavascript
-            val state = decodeJavascriptString(result)
+            val state = ParsingUtils.decodeJavascriptString(result)
             if (state == "EXPIRED") {
                 handleSessionExpired()
             } else if (state == "OFFLINE") {
@@ -2205,7 +2133,7 @@ class MainActivity : AppCompatActivity() {
         moduleFetchInProgress = false
         preloadingModule = null
         preloadQueue.clear()
-        preferences.edit().putBoolean(KEY_SESSION_ACTIVE, false).apply()
+        sessionStore.sessionActive = false
         stopSessionHeartbeat()
         showLogin()
         Toast.makeText(this, "Your university session has expired. Please sign in again.", Toast.LENGTH_LONG).show()
@@ -2234,14 +2162,10 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.sideMenuOverlay.visibility = View.GONE
 
-        val savedName = preferences.getString(KEY_STUDENT_NAME, "") ?: ""
-        val savedCgpa = preferences.getString(KEY_CGPA, "") ?: ""
-        val savedSgpa = preferences.getString(KEY_SGPA, "") ?: ""
-        val legacyGpa = preferences.getString(KEY_GPA, "") ?: ""
-
-        binding.studentName.text = if (isValidStudentName(savedName)) savedName else "Student"
-        binding.studentCgpa.text = if (savedCgpa.isNotBlank()) savedCgpa else findGpaValue(legacyGpa, "CGPA").ifBlank { "—" }
-        binding.studentSgpa.text = if (savedSgpa.isNotBlank()) savedSgpa else findGpaValue(legacyGpa, "SGPA").ifBlank { "—" }
+        binding.studentName.text =
+            if (ParsingUtils.isValidStudentName(profileCache.studentName)) profileCache.studentName else "Student"
+        binding.studentCgpa.text = profileCache.cgpa.ifBlank { "—" }
+        binding.studentSgpa.text = profileCache.sgpa.ifBlank { "—" }
         updateNextClassPreview()
     }
 
@@ -2272,7 +2196,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun logout() {
-        preferences.edit().clear().apply()
+        sessionStore.clear()
+        profileCache.clear()
+        getSharedPreferences("superior_student_preferences", MODE_PRIVATE).edit().clear().apply()
         CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
         binding.webView.clearHistory()
         binding.webView.clearCache(true)
@@ -2281,8 +2207,7 @@ class MainActivity : AppCompatActivity() {
         showLogin()
     }
 
-    private fun isAuthenticatedUrl(url: String): Boolean =
-        url.contains("/student/", true) && !url.contains("/web/login", true)
+    private fun isAuthenticatedUrl(url: String): Boolean = ErpConfig.isAuthenticatedUrl(url)
 
     private fun failLogin(message: String) {
         loginInProgress = false
@@ -2292,27 +2217,8 @@ class MainActivity : AppCompatActivity() {
         binding.loginStatus.text = message
     }
 
-    private fun isValidStudentName(value: String): Boolean {
-        val text = value.trim()
-        return text.isNotBlank() &&
-            text.length >= 2 &&
-            !text.contains("session", true) &&
-            !text.contains("expire", true) &&
-            !text.contains("dashboard", true) &&
-            !text.contains("welcome", true) &&
-            !text.contains("student information", true) &&
-            !text.matches(Regex("SU\\d+[-A-Z0-9]*", RegexOption.IGNORE_CASE))
-    }
-
-    private fun decodeJavascriptString(value: String?): String {
-        if (value.isNullOrBlank() || value == "null") return ""
-        return try {
-            JSONObject("{\"value\":$value}").optString("value", "")
-        } catch (_: Exception) {
-            ""
-        }
-    }
-
+    
+    
     override fun onDestroy() {
         stopSessionHeartbeat()
         handler.removeCallbacksAndMessages(null)
@@ -2330,17 +2236,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val PREFERENCES_NAME = "superior_student_preferences"
-        private const val KEY_SESSION_ACTIVE = "session_active"
-        private const val KEY_USERNAME = "username"
-        private const val KEY_STUDENT_NAME = "student_name"
-        private const val KEY_CGPA = "student_cgpa"
-        private const val KEY_SGPA = "student_sgpa"
-        private const val KEY_GPA = "student_gpa"
-        private const val ERP_BASE_URL = "https://erp.superior.edu.pk/"
-        private const val ERP_LOGIN_URL = "https://erp.superior.edu.pk/web/login"
-        private const val ERP_DASHBOARD_URL = "https://erp.superior.edu.pk/student/dashboard"
-        private const val LOGIN_INJECTION_DELAY_MS = 500L
+                                private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
         private const val PROFILE_READ_DELAY_MS = 1200L
         private const val PROFILE_VISUAL_DELAY_MS = 500L
@@ -2352,714 +2248,5 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_MODULE_READ_ATTEMPTS = 12
         private const val SESSION_HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000L
 
-        private const val SESSION_HEARTBEAT_SCRIPT = """
-            (function(){
-              return fetch('/student/dashboard',{credentials:'include',cache:'no-store'})
-                .then(function(response){
-                  var finalUrl=(response.url||'').toLowerCase();
-                  if(finalUrl.indexOf('/web/login')!==-1 || response.redirected && finalUrl.indexOf('/web/login')!==-1){
-                    return 'EXPIRED';
-                  }
-                  return response.ok ? 'OK' : 'OFFLINE';
-                })
-                .catch(function(){ return 'OFFLINE'; });
-            })();
-        """
-
-        private const val LOGIN_SCRIPT = """
-            (function(){
-              const user=document.querySelector('input[name="login"]');
-              const pass=document.querySelector('input[name="password"],input[type="password"]');
-              if(!user||!pass)return 'NO_FORM';
-              user.value=%USERNAME%;
-              pass.value=%PASSWORD%;
-              user.dispatchEvent(new Event('input',{bubbles:true}));
-              user.dispatchEvent(new Event('change',{bubbles:true}));
-              pass.dispatchEvent(new Event('input',{bubbles:true}));
-              pass.dispatchEvent(new Event('change',{bubbles:true}));
-              const form=pass.form||user.form;
-              if(!form)return 'NO_FORM';
-              const redirect=form.querySelector('input[name="redirect"]');
-              if(redirect)redirect.value='/student/dashboard';
-              HTMLFormElement.prototype.submit.call(form);
-              return 'SUBMITTED';
-            })();
-        """
-
-        private const val LOGIN_ERROR_CHECK_SCRIPT = """
-            (function(){
-              const text=(document.body&&document.body.innerText||'').toLowerCase();
-              return text.includes('wrong login') || text.includes('invalid login') || text.includes('incorrect') || text.includes('authentication failed');
-            })();
-        """
-
-
-        private const val MODULE_DATA_SCRIPT = """
-            (function(){
-              function clean(value){return (value||'').replace(/\s+/g,' ').trim();}
-              function textOf(el){return el ? clean(el.innerText || el.textContent || '') : '';}
-              function safe(value){return clean(value).replace(/\bERP\b/gi,'').replace(/\bOdoo\b/gi,'').replace(/\s+/g,' ').trim();}
-              function unique(list){
-                const seen=new Set();
-                return list.filter(function(item){
-                  const key=JSON.stringify(item);
-                  if(seen.has(key)) return false;
-                  seen.add(key);
-                  return true;
-                });
-              }
-
-              const path=(location.pathname||'').toLowerCase();
-              const pageRootSelectors = path.indexOf('/student/class/schedule') !== -1
-                ? ['.fc','.o_calendar_view','.o_calendar_renderer','main,[role="main"]','.o_portal_wrap','.container-fluid','.container']
-                : path.indexOf('/student/profile') !== -1
-                  ? ['.o_form_view','.o_form_sheet_bg','.o_portal_wrap','.o_portal_my_home','main,[role="main"]','.oe_structure','.container-fluid','.container']
-                  : path.indexOf('/student/results') !== -1
-                    ? ['.o_list_view','.o_kanban_view','.o_form_view','.o_action_manager','.o_portal_wrap','main,[role="main"]','.container-fluid','.container']
-                    : ['.o_portal_wrap','main,[role="main"]','.oe_structure','.container-fluid','.container'];
-              let root=null;
-              for(const selector of pageRootSelectors){
-                const candidate=document.querySelector(selector);
-                if(candidate){ root=candidate; break; }
-              }
-              const candidates=Array.from(document.querySelectorAll(pageRootSelectors.join(',')));
-              for(const candidate of candidates){
-                if(candidate.querySelector('table')){root=candidate;break;}
-              }
-              if(!root) root=document.body;
-
-              const clone=root.cloneNode(true);
-              clone.querySelectorAll('header,nav,footer,aside,script,style,noscript,form').forEach(function(el){el.remove();});
-
-              const tables=[];
-              clone.querySelectorAll('table').forEach(function(table){
-                const rows=Array.from(table.querySelectorAll('tr')).map(function(tr){
-                  return Array.from(tr.querySelectorAll('th,td')).map(function(cell){return safe(textOf(cell));}).filter(function(v){return v!=='';});
-                }).filter(function(row){return row.length>0;});
-                if(!rows.length) return;
-
-                let headers=[];
-                const headerCells=table.querySelectorAll('thead th');
-                if(headerCells.length){
-                  headers=Array.from(headerCells).map(function(cell){return safe(textOf(cell));});
-                }else if(table.querySelector('tr th')){
-                  headers=Array.from(table.querySelectorAll('tr:first-child th')).map(function(cell){return safe(textOf(cell));});
-                }
-
-                let dataRows=rows;
-                if(headers.length && dataRows.length && dataRows[0].join('|')===headers.join('|')) dataRows=dataRows.slice(1);
-
-                const caption=table.querySelector('caption');
-                tables.push({
-                  title:safe(caption ? textOf(caption) : ''),
-                  headers:headers,
-                  rows:dataRows.slice(0,100)
-                });
-              });
-
-              const cards=[];
-              clone.querySelectorAll('.stat-card,.summary-card,.info-box').forEach(function(card){
-                if(card.querySelector('table')) return;
-                const cardLines=(card.innerText||card.textContent||'').split(/\n+/).map(clean).filter(Boolean);
-                if(cardLines.length>=2) cards.push({label:safe(cardLines[0]),value:safe(cardLines.slice(1).join(' '))});
-              });
-
-              const lines=[];
-              clone.querySelectorAll('h1,h2,h3,h4,p,li,.alert').forEach(function(el){
-                if(el.closest('table')) return;
-                const value=safe(textOf(el));
-                if(value && value.length<=180) lines.push(value);
-              });
-
-              clone.querySelectorAll('[class*="calendar"],[class*="schedule"],[class*="event"],[class*="course"],[class*="attendance"],[id*="calendar"],[id*="schedule"],[id*="event"],[id*="course"],[id*="attendance"]').forEach(function(el){
-                if(el.closest('table')) return;
-                const value=safe(textOf(el));
-                if(value && value.length<=250) lines.push(value);
-              });
-
-              const records=[];
-              tables.forEach(function(table){table.rows.forEach(function(row){records.push({headers:table.headers,values:row});});});
-              const selectors=['[class*="attendance"] [class*="row"]','[class*="attendance"] [class*="item"]','[class*="course"]','[class*="event"]','[class*="schedule"] [class*="item"]','[class*="calendar"] [class*="event"]'];
-              selectors.forEach(function(selector){
-                clone.querySelectorAll(selector).forEach(function(el){
-                  const value=safe(textOf(el));
-                  const label=safe(el.getAttribute('aria-label')||el.getAttribute('title')||'');
-                  const combined=safe([label,value].filter(Boolean).join(' | '));
-                  if(combined&&combined.length<=350)records.push({headers:[],values:[combined]});
-                });
-              });
-
-              clone.querySelectorAll('[class*="progress"],[class*="percentage"],[class*="percent"],[aria-valuenow]').forEach(function(el){
-                const value=safe([
-                  el.getAttribute('aria-label')||'',
-                  el.getAttribute('title')||'',
-                  el.getAttribute('aria-valuenow') ? el.getAttribute('aria-valuenow')+'%' : '',
-                  textOf(el)
-                ].filter(Boolean).join(' '));
-                if(value&&/%/.test(value))records.push({headers:[],values:[value]});
-              });
-              
-              const percentPattern=/([0-9]{1,3}(?:\.[0-9]+)?)\s*%/;
-              const codePattern=/\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b/i;
-              const subjectPattern=/functional english|quantitative reasoning|civics and community engagement|management of refractive errors|visual optics and image processing|redefining success/i;
-
-              // Profile pages often use label/value rows instead of tables. Capture
-              // those pairs explicitly so the native presentation does not lose fields.
-              if(/\/student\/profile/i.test(location.pathname)){
-                const profileSelectors=[
-                  'dt','dd','label','.o_form_label','.o_field_widget','.form-group','.form-row','.profile-field','.profile-item',
-                  '.info-row','.info-item','.student-details .row','.o_form_sheet_bg .o_group',
-                  '[class*="profile"] [class*="row"]',
-                  '[class*="profile"] [class*="item"]',
-                  '[class*="profile"] [class*="field"]',
-                  '[class*="student"] [class*="row"]'
-                ];
-                profileSelectors.forEach(function(selector){
-                  clone.querySelectorAll(selector).forEach(function(el){
-                    if(el.closest('table')) return;
-                    const parts=Array.from(el.children || []).map(function(child){return safe(textOf(child));}).filter(Boolean);
-                    const raw=safe(textOf(el));
-                    if(parts.length>=2 && parts.length<=6){
-                      records.push({
-                        headers:['Field','Value'],
-                        values:[parts[0],parts.slice(1).join(' • ')]
-                      });
-                    }else if(raw && raw.length<=240){
-                      const split=raw.split(/\n+/).map(clean).filter(Boolean);
-                      if(split.length>=2 && split.length<=6){
-                        records.push({
-                          headers:['Field','Value'],
-                          values:[split[0],split.slice(1).join(' • ')]
-                        });
-                      }
-                    }
-                  });
-                });
-                // Odoo form views expose labels and field widgets in several nested patterns.
-                // Capture label -> rendered value pairs from the same row/column so the app
-                // can present the real ERP fields without depending on one CSS class.
-                clone.querySelectorAll('label[for]').forEach(function(label){
-                  const fieldId=label.getAttribute('for');
-                  if(!fieldId) return;
-                  const field=Array.from(clone.querySelectorAll('[id]')).find(function(node){return node.id===fieldId;});
-                  const value=safe(field ? (field.value || field.getAttribute('value') || textOf(field)) : '');
-                  const labelText=safe(textOf(label));
-                  if(labelText && value && value.length<=180){
-                    records.push({headers:['Field','Value'],values:[labelText,value]});
-                  }
-                });
-
-                clone.querySelectorAll('input[name],textarea[name],select[name]').forEach(function(field){
-                  if(field.type==='hidden' || field.type==='password' || field.type==='search') return;
-                  const value=safe(field.value || field.getAttribute('value') || textOf(field));
-                  if(!value) return;
-                  let label='';
-                  const id=field.getAttribute('id');
-                  if(id){
-                    const labelNode=clone.querySelector('label[for="'+id.replace(/"/g,'')+'"]');
-                    label=safe(textOf(labelNode));
-                  }
-                  if(!label){
-                    const parent=field.closest('.o_field_widget,.form-group,.form-row,.row,.o_form_field,.o_form_label');
-                    const labelNode=parent ? parent.querySelector('label,.o_form_label,.form-label') : null;
-                    label=safe(textOf(labelNode));
-                  }
-                  if(!label) label=safe(field.getAttribute('placeholder')||field.getAttribute('aria-label')||field.getAttribute('name')||'');
-                  if(label && value.length<=180 && !/password|search|login/i.test(label)){
-                    records.push({headers:['Field','Value'],values:[label,value]});
-                  }
-                });
-
-                clone.querySelectorAll('.o_form_sheet,.o_form_sheet_bg,.o_form_view,.o_form_nosheet,.o_group').forEach(function(container){
-                  const labels=Array.from(container.querySelectorAll('.o_form_label,label'));
-                  labels.forEach(function(labelNode){
-                    const label=safe(textOf(labelNode));
-                    if(!label || label.length>100) return;
-                    const parent=labelNode.parentElement;
-                    const valueNode=parent ? parent.querySelector('.o_field_widget,.o_field_char,.o_field_text,.o_field_integer,.o_field_float,.o_field_monetary,.o_field_many2one') : null;
-                    const value=safe(textOf(valueNode));
-                    if(value && value.length<=180 && label !== value){
-                      records.push({headers:['Field','Value'],values:[label,value]});
-                    }
-                  });
-                });
-              }
-
-              // Results can be rendered as cards/list rows depending on the ERP
-              // version. Capture semantic result/grade rows in addition to tables.
-              if(/\/student\/results/i.test(location.pathname)){
-                const resultSelectors=[
-                  '[class*="result"] [class*="row"]',
-                  '[class*="result"] [class*="item"]',
-                  '[class*="result"] [class*="card"]',
-                  '[class*="grade"] [class*="row"]',
-                  '[class*="grade"] [class*="item"]',
-                  '[class*="marks"] [class*="row"]',
-                  '[class*="marks"] [class*="item"]',
-                  '.o_list_view tbody tr',
-                  '.o_portal_my_doc_table tbody tr',
-                  '[class*="course"] [class*="row"]'
-                ];
-                resultSelectors.forEach(function(selector){
-                  clone.querySelectorAll(selector).forEach(function(el){
-                    if(el.closest('table')) return;
-                    const value=safe(textOf(el));
-                    if(value && value.length>=3 && value.length<=350){
-                      records.push({headers:['Result'],values:[value]});
-                    }
-                  });
-                });
-                // Capture semester/term selectors and common result grids.
-                clone.querySelectorAll('select').forEach(function(select){
-                  const options=Array.from(select.options||[]);
-                  if(options.length<2) return;
-                  const labels=options.map(function(o){return safe(o.textContent||o.innerText||'');}).filter(Boolean);
-                  if(labels.some(function(v){return /semester|term|fall|spring|summer|202[0-9]/i.test(v);})){
-                    records.push({headers:['Semester options'],values:labels});
-                  }
-                });
-
-                clone.querySelectorAll('[class*="result"] [class*="course"],[class*="result"] [class*="subject"],[class*="grade"] [class*="course"],[class*="marks"] [class*="course"]').forEach(function(el){
-                  const value=safe(textOf(el));
-                  if(value && value.length>=3 && value.length<=260){
-                    records.push({headers:['Result'],values:[value]});
-                  }
-                });
-              }
-
-
-              let overallAttendance=null;
-              const pageText=safe(clone.innerText||clone.textContent||'');
-              const overallMatches=[
-                /(?:overall|total)\s+attendance(?:\s+percentage)?\s*[:\-]?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*%/i,
-                /(?:attendance\s+percentage|overall\s+percentage)\s*[:\-]?\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*%/i
-              ];
-              for(const pattern of overallMatches){
-                const m=pageText.match(pattern);
-                if(m){overallAttendance=parseFloat(m[1]);break;}
-              }
-
-              const structuredRecords=[];
-              const structuredCandidates=Array.from(clone.querySelectorAll('div,li,td,tr,section,article,.card,.row,.item'));
-              structuredCandidates.forEach(function(el){
-                const raw=safe(textOf(el));
-                if(!raw || raw.length>320) return;
-                const percent=raw.match(percentPattern);
-                if(!percent) return;
-                if(!codePattern.test(raw) && !subjectPattern.test(raw)) return;
-
-                let subject=raw.replace(percent[0],'').trim();
-                const codeMatch=subject.match(codePattern);
-                const code=codeMatch ? codeMatch[0] : '';
-                if(code) subject=subject.replace(code,'').trim();
-                subject=subject.replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
-                if(subject.length<3) return;
-
-                structuredRecords.push({
-                  headers:['Subject','Course Code','Attendance Percentage'],
-                  values:[subject,code,percent[1]+'%']
-                });
-              });
-
-              structuredRecords.forEach(function(record){records.push(record);});
-
-              const scheduleStructured=[];
-              const scheduleSeen={};
-
-              function addScheduleRecord(time, day, title, code, room){
-                time=safe(time); day=safe(day); title=safe(title); code=safe(code); room=safe(room);
-                if(title.length<3 || (!time && !day)) return;
-                const key=time+'|'+day+'|'+title+'|'+code+'|'+room;
-                if(scheduleSeen[key]) return;
-                scheduleSeen[key]=true;
-                scheduleStructured.push({
-                  headers:['Day','Time','Class','Course Code','Room'],
-                  values:[day,time,title,code,room]
-                });
-              }
-
-              function attrText(el){
-                if(!el) return '';
-                const attrs=[
-                  'aria-label','title','data-time','data-start','data-end','data-date',
-                  'data-start-time','data-end-time','data-event','data-event-data',
-                  'data-datetime','data-date-time','data-starttime','data-endtime'
-                ];
-                return attrs.map(function(name){
-                  return el.getAttribute ? (el.getAttribute(name)||'') : '';
-                }).filter(Boolean).join(' | ');
-              }
-
-              function findTime(value){
-                const m=safe(value).match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/);
-                return m ? m[0] : '';
-              }
-
-              function findDay(value){
-                const m=safe(value).match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/i);
-                return m ? m[0] : '';
-              }
-
-              function timeFromDate(value){
-                const raw=safe(value);
-                const match=raw.match(/T(\d{2}):(\d{2})/);
-                if(match) return match[1]+':'+match[2];
-                return '';
-              }
-
-              function dayFromDate(value){
-                const raw=safe(value);
-                const iso=raw.match(/(\d{4})-(\d{2})-(\d{2})/);
-                if(!iso) return '';
-                const date=new Date(iso[1]+'-'+iso[2]+'-'+iso[3]+'T12:00:00');
-                if(Number.isNaN(date.getTime())) return '';
-                return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][date.getDay()];
-              }
-
-              function titleFromElement(el){
-                if(!el) return '';
-                const selectors=[
-                  '.fc-event-title','.fc-title','.fc-event-main',
-                  '[class*="event-title"]','[class*="course-name"]',
-                  '[class*="course_title"]','[class*="subject-name"]',
-                  '[class*="subject_name"]'
-                ];
-                for(const selector of selectors){
-                  const node=el.querySelector ? el.querySelector(selector) : null;
-                  const value=safe(textOf(node));
-                  if(value.length>=3) return value;
-                }
-                return safe(el.getAttribute && (el.getAttribute('data-title')||el.getAttribute('data-name')||''));
-              }
-
-              function cleanScheduleTitle(value, code, time, day){
-                let title=safe(value);
-                if(!title) return '';
-                title=title.replace(code,'').trim();
-                if(time) title=title.replace(time,'').trim();
-                if(day) title=title.replace(new RegExp('\\b'+day+'\\b','ig'),'').trim();
-                title=title.replace(/\b(?:Lecture|Lab|Practical|Theory)\b/ig,' ').trim();
-                title=title.replace(/\b[A-Z]{1,3}-\d{1,3}\b/ig,' ').trim();
-                title=title.replace(/(?:^|[|•])\s*(?:Room\s*)?[A-Z]{1,3}\d{1,3}\s*(?:\|)?/ig,' ').trim();
-                title=title.replace(/\s+/g,' ').replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
-                return title;
-              }
-
-              function collectTimeLabels(){
-                const labels=[];
-                const nodes=Array.from(document.querySelectorAll('.fc-timegrid-slot-label,.fc-timegrid-slot-label-cushion,.fc-timegrid-axis-cushion,[class*="timegrid-slot-label"],div,span,td,th'));
-                nodes.forEach(function(el){
-                  const value=safe(textOf(el));
-                  if(!/^\d{1,2}:\d{2}$/.test(value)) return;
-                  const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-                  if(!rect || rect.width<=0 || rect.height<=0) return;
-                  const minutes=parseInt(value.slice(0,2),10)*60+parseInt(value.slice(3),10);
-                  labels.push({time:value,minutes:minutes,top:rect.top,left:rect.left});
-                });
-                labels.sort(function(a,b){return a.top-b.top;});
-                const unique=[];
-                labels.forEach(function(item){
-                  const duplicate=unique.some(function(existing){
-                    return existing.time===item.time && Math.abs(existing.top-item.top)<3;
-                  });
-                  if(!duplicate) unique.push(item);
-                });
-                return unique;
-              }
-
-              function collectDayLabels(){
-                const labels=[];
-                document.querySelectorAll('[data-date]').forEach(function(el){
-                  const date=safe(el.getAttribute('data-date')||'');
-                  const day=dayFromDate(date);
-                  if(!day) return;
-                  const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-                  if(!rect || rect.width<=0 || rect.height<=0) return;
-                  labels.push({
-                    day:day,
-                    date:date,
-                    center:rect.left+(rect.width/2),
-                    top:rect.top
-                  });
-                });
-
-                document.querySelectorAll('.fc-col-header-cell-cushion,.fc-col-header-cell,.fc-day-header,[class*="day-header"]').forEach(function(el){
-                  const value=safe(textOf(el));
-                  const day=findDay(value);
-                  if(!day) return;
-                  const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-                  if(!rect || rect.width<=0 || rect.height<=0) return;
-                  labels.push({day:day,date:'',center:rect.left+(rect.width/2),top:rect.top});
-                });
-                return labels;
-              }
-
-              const timeLabels=collectTimeLabels();
-              const dayLabels=collectDayLabels();
-
-              function inferTimeFromPosition(el){
-                if(!el || !timeLabels.length || !el.getBoundingClientRect) return '';
-                const rect=el.getBoundingClientRect();
-                if(rect.width<=0 || rect.height<=0) return '';
-
-                // FullCalendar time-grid events are positioned vertically by their
-                // start time. Use the event's TOP, not its center, to avoid shifting
-                // a 08:00 class into the next slot.
-                const eventTop=rect.top;
-                let best=null;
-                let bestDistance=Infinity;
-                timeLabels.forEach(function(label){
-                  const d=Math.abs(eventTop-label.top);
-                  if(d<bestDistance){bestDistance=d;best=label;}
-                });
-
-                if(!best) return '';
-
-                // If labels are evenly spaced, interpolate between adjacent labels
-                // so 08:30/09:00/etc are recovered even when the event does not sit
-                // exactly on the label pixel.
-                const ordered=timeLabels.slice().sort(function(a,b){return a.top-b.top;});
-                for(let i=0;i<ordered.length-1;i++){
-                  const a=ordered[i], b=ordered[i+1];
-                  if(eventTop>=a.top && eventTop<=b.top && b.top>a.top){
-                    const ratio=(eventTop-a.top)/(b.top-a.top);
-                    const minutes=Math.round(a.minutes+(b.minutes-a.minutes)*ratio);
-                    const snapped=Math.max(0,Math.min(1439,minutes));
-                    const hh=String(Math.floor(snapped/60)).padStart(2,'0');
-                    const mm=String(snapped%60).padStart(2,'0');
-                    return hh+':'+mm;
-                  }
-                }
-
-                return bestDistance<=140 ? best.time : '';
-              }
-
-              function inferDayFromPosition(el){
-                if(!el || !el.getBoundingClientRect) return '';
-
-                let parent=el;
-                for(let depth=0;depth<8 && parent;depth++,parent=parent.parentElement){
-                  const date=safe(parent.getAttribute && (parent.getAttribute('data-date')||''));
-                  const day=dayFromDate(date);
-                  if(day) return day;
-                }
-
-                if(!dayLabels.length) return '';
-                const rect=el.getBoundingClientRect();
-                if(rect.width<=0 || rect.height<=0) return '';
-                const center=rect.left+(rect.width/2);
-                let nearest=null;
-                let distance=Infinity;
-                dayLabels.forEach(function(label){
-                  const d=Math.abs(center-label.center);
-                  if(d<distance){distance=d;nearest=label;}
-                });
-                return nearest && distance<=220 ? nearest.day : '';
-              }
-
-              const eventSelectors=[
-                '.fc-timegrid-event','.fc-event','.fc-daygrid-event','.fc-event-main',
-                '.o_calendar_event','.calendar_event','[class*="calendar-event"]',
-                '[class*="schedule-event"]','[class*="timetable-event"]',
-                '[data-start]','[data-event]','[data-event-data]',
-                '[data-time]','[data-datetime]'
-              ];
-              const eventNodes=[];
-              eventSelectors.forEach(function(selector){
-                document.querySelectorAll(selector).forEach(function(el){
-                  if(eventNodes.indexOf(el)<0) eventNodes.push(el);
-                });
-              });
-
-              eventNodes.forEach(function(el){
-                const raw=safe(textOf(el));
-                const attrs=safe(attrText(el));
-                const titleCandidate=titleFromElement(el);
-                if((!raw && !attrs && !titleCandidate) || raw.length>900) return;
-
-                const combined=safe([raw,attrs,titleCandidate].filter(Boolean).join(' | '));
-                const codeMatch=combined.match(codePattern);
-                const genericTitle = titleCandidate && titleCandidate.length >= 3 && titleCandidate.length <= 140;
-                const scheduleNode = /fc-event|calendar-event|schedule-event|timetable-event|o_calendar_event|calendar_event/i.test(
-                  String(el.className||'')
-                );
-                if(!codeMatch && !subjectPattern.test(combined) && !genericTitle && !scheduleNode) return;
-
-                let time=findTime(attrs) || findTime(raw) || findTime(titleCandidate);
-                let day=findDay(attrs) || findDay(raw) || findDay(titleCandidate);
-
-                if(!time){
-                  time=timeFromDate(el.getAttribute && (
-                    el.getAttribute('data-start') ||
-                    el.getAttribute('data-datetime') ||
-                    el.getAttribute('data-date-time') ||
-                    ''
-                  ));
-                }
-                if(!day){
-                  day=dayFromDate(el.getAttribute && (
-                    el.getAttribute('data-start') ||
-                    el.getAttribute('data-datetime') ||
-                    el.getAttribute('data-date-time') ||
-                    ''
-                  ));
-                }
-
-                if(!time || !day){
-                  let parent=el.parentElement;
-                  for(let depth=0;depth<4 && parent;depth++,parent=parent.parentElement){
-                    const parentAttrs=safe(attrText(parent));
-                    if(!time) time=findTime(parentAttrs) || timeFromDate(parent.getAttribute && parent.getAttribute('data-start') || '');
-                    if(!day) day=findDay(parentAttrs) || dayFromDate(parent.getAttribute && parent.getAttribute('data-start') || '');
-                    if(time && day) break;
-                  }
-                }
-
-                if(!time) time=inferTimeFromPosition(el);
-                if(!day) day=inferDayFromPosition(el);
-
-                const code=codeMatch ? codeMatch[0] : '';
-                let title=titleCandidate || raw || attrs;
-                title=cleanScheduleTitle(title,code,time,day);
-
-                if(title.length>140){
-                  const fragments=title.split(/\s{2,}|\|/).map(clean).filter(Boolean);
-                  const candidate=fragments.find(function(fragment){
-                    return fragment.length>=3 && fragment.length<=110 &&
-                      (subjectPattern.test(fragment) || codePattern.test(fragment));
-                  });
-                  if(candidate) title=candidate;
-                }
-
-                if(title.length<3 && code) title=code;
-                if(title.length<3) return;
-                addScheduleRecord(time,day,title,code,'');
-              });
-
-              // Non-calendar fallback: only use explicit time/day values from the
-              // row itself. This prevents the first visible 08:00 axis label from
-              // becoming the time for every subject.
-              const fallbackNodes=Array.from(clone.querySelectorAll('li,td,tr,.card,.item,.row'));
-              fallbackNodes.forEach(function(el){
-                if(eventNodes.indexOf(el)>=0) return;
-                const raw=safe(textOf(el));
-                if(!raw || raw.length>320) return;
-                const attrs=safe(attrText(el));
-                const combined=safe([raw,attrs].filter(Boolean).join(' | '));
-                if(!codePattern.test(combined) && !subjectPattern.test(combined)) return;
-
-                const codeMatch=combined.match(codePattern);
-                const code=codeMatch ? codeMatch[0] : '';
-                const time=findTime(attrs) || findTime(raw);
-                const day=findDay(attrs) || findDay(raw);
-                const title=cleanScheduleTitle(raw,code,time,day);
-                if(title.length<3 || (!time && !day)) return;
-                let room='';
-                const roomMatch=combined.match(/(?:room|venue|location)\s*[:#-]?\s*([A-Z0-9-]+)/i);
-                if(roomMatch) room=roomMatch[1];
-                addScheduleRecord(time,day,title,code,room);
-              });
-
-              scheduleStructured.forEach(function(record){records.push(record);});
-
-              return JSON.stringify({
-                cards:unique(cards).slice(0,8),
-                tables:unique(tables).slice(0,12),
-                lines:unique(lines).slice(0,60),
-                records:unique(records).slice(0,160),
-                overallAttendance:overallAttendance
-              });
-            })();
-        """;
-        private const val STUDENT_PROFILE_TEXT_SCRIPT = """
-            (function(){
-              function clean(v){return (v||'').replace(/\s+/g,' ').trim();}
-              function safe(v){return clean(v).replace(/\bERP\b/gi,'').replace(/\bOdoo\b/gi,'').trim();}
-              function textOf(el){return el ? safe(el.innerText || el.textContent || el.value || '') : '';}
-              function validName(v){
-                v=clean(v);
-                return v.length>=3 && v.length<=80 &&
-                  !/session|expire|dashboard|welcome|student information/i.test(v) &&
-                  !/functional english|quantitative reasoning|civics and community engagement/i.test(v) &&
-                  !/^SU\d+[-A-Z0-9]*$/i.test(v) &&
-                  !/^\d[\d .:/-]*$/.test(v);
-              }
-
-              let name='';
-              const selectors=[
-                '.student-details h1','.student-details h2','.student-name','.student_name',
-                '[data-field="student_name"]','[name="student_name"]',
-                '[class*="student"] [class*="name"]'
-              ];
-              for(const selector of selectors){
-                for(const el of Array.from(document.querySelectorAll(selector))){
-                  const v=textOf(el);
-                  if(validName(v) && v.split(/\s+/).length>=2){name=v;break;}
-                }
-                if(name)break;
-              }
-
-              if(!name){
-                for(const label of Array.from(document.querySelectorAll('label,.o_form_label,dt'))){
-                  const labelText=textOf(label);
-                  if(!/^(student\s*name|full\s*name|name)$/i.test(labelText))continue;
-                  const parent=label.parentElement;
-                  const candidates=[
-                    parent && parent.querySelector('.o_field_widget,.o_field_char,.o_field_text,.form-control,dd'),
-                    parent && parent.nextElementSibling
-                  ];
-                  for(const el of candidates){
-                    const v=textOf(el);
-                    if(validName(v)){name=v;break;}
-                  }
-                  if(name)break;
-                }
-              }
-
-              const fields=[];
-              const seen=new Set();
-              function addField(label,value){
-                label=safe(label); value=safe(value);
-                if(!label||!value||label.length>100||value.length>180||label.toLowerCase()===value.toLowerCase())return;
-                if(/password|csrf|token|search|login/i.test(label))return;
-                const key=label.toLowerCase()+'|'+value.toLowerCase();
-                if(seen.has(key))return;
-                seen.add(key);
-                fields.push({label:label,value:value});
-              }
-
-              document.querySelectorAll('label[for]').forEach(function(label){
-                const id=label.getAttribute('for'); if(!id)return;
-                const field=Array.from(document.querySelectorAll('[id]')).find(function(n){return n.id===id;});
-                addField(textOf(label),textOf(field));
-              });
-
-              document.querySelectorAll('dt').forEach(function(dt){
-                if(dt.nextElementSibling)addField(textOf(dt),textOf(dt.nextElementSibling));
-              });
-
-              document.querySelectorAll('tr').forEach(function(tr){
-                const cells=Array.from(tr.querySelectorAll('th,td')).map(textOf).filter(Boolean);
-                if(cells.length===2)addField(cells[0],cells[1]);
-              });
-
-              document.querySelectorAll('.o_group,.o_form_sheet,.o_form_nosheet,.o_form_view,.form-group,.form-row,.profile-item,.profile-field,.info-row,.info-item').forEach(function(row){
-                const label=row.querySelector('label,.o_form_label,dt,.form-label');
-                const value=row.querySelector('.o_field_widget,.o_field_char,.o_field_text,.o_field_integer,.o_field_float,.o_field_many2one,.form-control,dd');
-                if(label&&value)addField(textOf(label),textOf(value));
-              });
-
-              const cards=Array.from(document.querySelectorAll('.stat-card,.summary-card,.info-box'))
-                .map(textOf).filter(Boolean).slice(0,20);
-              const body=safe(document.body ? (document.body.innerText||document.body.textContent||'') : '');
-              return JSON.stringify({
-                name:name,
-                fields:fields,
-                cards:cards,
-                body:body,
-                hasUsefulFields:fields.length>0 || cards.length>0
-              });
-            })();
-        """;
     }
 }
