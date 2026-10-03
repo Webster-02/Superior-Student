@@ -50,6 +50,9 @@ class MainActivity : AppCompatActivity() {
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
     private var lastPausedAt = 0L
+    /** Brand display font (Roboto Medium) used across programmatic views. */
+    private val typeface: android.graphics.Typeface
+        get() = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     private var sessionHeartbeatRunning = false
     private val sessionResumeThresholdMs = 5 * 60 * 1000L
     private val sessionHeartbeatRunnable = object : Runnable {
@@ -124,10 +127,11 @@ class MainActivity : AppCompatActivity() {
                 return false
             }
 
+            @Suppress("DEPRECATION", "Overriding")
             override fun onReceivedSslError(
                 view: WebView,
                 handler: android.webkit.SslErrorHandler,
-                error: android.webkit.SslError?
+                error: android.net.http.SslError
             ) {
                 // Strict TLS: refuse to load content when certificate validation fails.
                 handler.cancel()
@@ -260,6 +264,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        val pausedFor = if (lastPausedAt > 0L) System.currentTimeMillis() - lastPausedAt else 0L
+        lastPausedAt = 0L
+        if (pausedFor >= sessionResumeThresholdMs && loggedIn) {
+            recoverSessionAfterBackground()
+        }
         // Staggered entrance animation whenever the dashboard becomes visible.
         if (loggedIn && binding.dashboardScroll.visibility == View.VISIBLE) {
             animateDashboardEntrance()
@@ -287,15 +296,6 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         lastPausedAt = System.currentTimeMillis()
         super.onPause()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        val pausedFor = if (lastPausedAt > 0L) System.currentTimeMillis() - lastPausedAt else 0L
-        lastPausedAt = 0L
-        if (pausedFor >= sessionResumeThresholdMs && loggedIn) {
-            recoverSessionAfterBackground()
-        }
     }
 
     private fun recoverSessionAfterBackground() {
@@ -1111,9 +1111,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 addView(View(this@MainActivity).apply {
                     background = gradientBackground(
-                        accent,
-                        Palette.ink900(this@MainActivity).let { it }, 18f
-                    ).apply { alpha = 26 }
+                        tintAlpha(accent, 26),
+                        tintAlpha(Palette.ink900(this@MainActivity), 26),
+                        18f
+                    )
                     layoutParams = android.widget.FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
                     )
@@ -1183,7 +1184,7 @@ class MainActivity : AppCompatActivity() {
                     text = if (row.room.isNotBlank()) "📍 ${row.room}" else "📍 Room TBA"
                     setTextColor(if (row.room.isNotBlank()) Palette.success(this@MainActivity) else Palette.ink400(this@MainActivity))
                     textSize = 10f
-                    setTypeface(typeface, if (row.room.isNotBlank()) android.graphics.Typeface.BOLD else android.graphics.Typeface.DEFAULT)
+                    typeface = android.graphics.Typeface.create("sans-serif-medium", if (row.room.isNotBlank()) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
                     setPadding(if (row.code.isNotBlank()) dp(9) else 0, 0, 0, 0)
                 })
                 addView(metaRow)
@@ -2048,7 +2049,7 @@ class MainActivity : AppCompatActivity() {
         Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
     /** Custom circular progress ring with a centered percentage label. */
-    private fun createProgressRing(percent: Double, sizeDp: Int, strokeWidthDp: Int, color: Int): View {
+    private fun createProgressRing(percent: Double, sizeDp: Int, strokeWidthDp: Int, ringColor: Int): View {
         val density = resources.displayMetrics.density
         val sizePx = (sizeDp * density).roundToInt()
         val strokePx = (strokeWidthDp * density).roundToInt()
@@ -2061,7 +2062,7 @@ class MainActivity : AppCompatActivity() {
             style = android.graphics.Paint.Style.STROKE
             strokeWidth = strokePx.toFloat()
             strokeCap = android.graphics.Paint.Cap.ROUND
-            color = color
+            color = ringColor
         }
         val tv = TextView(this)
         tv.text = String.format(java.util.Locale.US, "%.0f%%", percent)

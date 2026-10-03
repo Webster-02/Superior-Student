@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.Base64
 
 /**
- * Loads the ERP page-interaction JavaScript from assets (js/*.js) instead of
+ * Loads the ERP page-interaction JavaScript from assets (js folder) instead of
  * embedding huge string literals in Kotlin. Keeping the scripts as plain JS
  * files makes them editable, syntax-checkable and diffable independently.
  *
@@ -43,23 +43,28 @@ object Scripts {
     fun semesterSelectScript(label: String): String =
         semesterSelectTemplate.replace("%SEMESTER_B64%", b64JsonString(label))
 
-    /** Encodes [value] as base64 of its JSON string literal (e.g. "a\"b" -> safe inside '...'). */
+    /**
+     * Encodes [value] as Base64 of its JSON string representation so arbitrary
+     * user input can never break out of the injected script or be executed.
+     */
     private fun b64JsonString(value: String): String {
-        val quoted = StringBuilder(""")
+        val sb = StringBuilder()
+        sb.append('"')
         for (ch in value) {
             when (ch) {
-                '"' -> quoted.append("\\"")
-                '\\' -> quoted.append("\\\\")
-                '\n' -> quoted.append("\\n")
-                '\r' -> quoted.append("\\r")
-                '\t' -> quoted.append("\\t")
-                else -> if (ch.code < 0x20) quoted.append(String.format("\\u%04x", ch.code)) else quoted.append(ch)
+                '"' -> { sb.append('\\'); sb.append('"') }
+                '\\' -> { sb.append('\\'); sb.append('\\') }
+                '\n' -> { sb.append('\\'); sb.append('n') }
+                '\r' -> { sb.append('\\'); sb.append('r') }
+                '\t' -> { sb.append('\\'); sb.append('t') }
+                else -> if (ch.code < 0x20) sb.append(String.format("\\u%04x", ch.code)) else sb.append(ch)
             }
         }
-        quoted.append('"')
-        return Base64.encodeToString(quoted.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        sb.append('"')
+        return Base64.encodeToString(sb.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
     }
 
-    private fun android.content.res.AssetManager.read(path: String): String =
-        open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
 }
+
+private fun android.content.res.AssetManager.read(path: String): String =
+    open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
