@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== Dark variant: deep indigo night surfaces ===== -->
+
+    <color name="brand_primary">#818CF8</color>
+    <color name="brand_primary_dark">#4F46E5</color>
+    <color name="brand_primary_light">#A5B4FC</color>
+    <color name="brand_accent">#22D3EE</color>
+    <color name="brand_accent_deep">#06B6D4</color>
+
+    <color name="surface">#171A2E</color>
+    <color name="surface_alt">#0F1120</color>
+    <color name="surface_stroke">#2A2E4A</color>
+    <color name="scrim">#99000000</color>
+
+    <color name="ink_900">#F3F4F6</color>
+    <color name="ink_700">#D1D5DB</color>
+    <color name="ink_500">#9CA3AF</color>
+    <color name="ink_400">#6B7280</color>
+    <color name="on_brand">#FFFFFF</color>
+
+    <color name="success">#34D399</color>
+    <color name="success_bg">#064E3B</color>
+    <color name="warning">#FBBF24</color>
+    <color name="warning_bg">#78350F</color>
+    <color name="danger">#F87171</color>
+    <color name="danger_bg">#7F1D1D</color>
+    <color name="info">#60A5FA</color>
+    <color name="info_bg">#1E3A8A</color>
+    <color name="violet">#A78BFA</color>
+    <color name="violet_bg">#4C1D95</color>
+
+    <color name="grad_header_start">#0F1120</color>
+    <color name="grad_header_mid">#1E1B4B</color>
+    <color name="grad_header_end">#312E81</color>
+    <color name="grad_button_start">#4338CA</color>
+    <color name="grad_button_end">#6D28D9</color>
+    <color name="grad_login_start">#0B0D1A</color>
+    <color name="grad_login_end">#1E1B4B</color>
+
+    <color name="splash_background">#0B0D1A</color>
+    <color name="ring_track">#2A2E4A</color>
+</resources>

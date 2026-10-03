@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp" android:height="120dp"
+    android:viewportWidth="120" android:viewportHeight="120">
+    <!-- rounded indigo tile -->
+    <path android:pathData="M24,8 L96,8 A16,16 0 0 1 112,24 L112,96 A16,16 0 0 1 96,112 L24,112 A16,16 0 0 1 8,96 L8,24 A16,16 0 0 1 24,8 Z"
+        android:fillColor="#4F46E5"/>
+    <!-- open book -->
+    <path android:pathData="M28,78 L28,42 C28,38 31,36 35,37 L55,43 L55,82 L35,76 C31,75 28,77 28,81 Z"
+        android:fillColor="#FFFFFF" android:fillAlpha="0.95"/>
+    <path android:pathData="M92,78 L92,42 C92,38 89,36 85,37 L65,43 L65,82 L85,76 C89,75 92,77 92,81 Z"
+        android:fillColor="#E0E7FF"/>
+    <!-- graduation cap on top -->
+    <path android:pathData="M60,22 L86,32 L60,42 L34,32 Z" android:fillColor="#22D3EE"/>
+    <path android:pathData="M74,37 L74,50 C74,54 68,57 60,57 C52,57 46,54 46,50 L46,37 L60,42 Z"
+        android:fillColor="#1E1B4B" android:fillAlpha="0.9"/>
+    <!-- tassel -->
+    <path android:pathData="M84,33 L84,48" stroke="#FBBF24" stroke-width="3" stroke-linecap="round"/>
+    <path android:pathData="M84,50 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" android:fillColor="#FBBF24"/>
+</vector>

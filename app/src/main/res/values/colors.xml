@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ===== Superior Student — "Midnight Indigo" design system ===== -->
+
+    <!-- Brand core -->
+    <color name="brand_primary">#4F46E5</color>        <!-- indigo 600 -->
+    <color name="brand_primary_dark">#3730A3</color>   <!-- indigo 800 -->
+    <color name="brand_primary_light">#818CF8</color>  <!-- indigo 400 -->
+    <color name="brand_accent">#22D3EE</color>         <!-- cyan 400 -->
+    <color name="brand_accent_deep">#0891B2</color>    <!-- cyan 600 -->
+
+    <!-- Surfaces -->
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_alt">#F4F5FB</color>
+    <color name="surface_stroke">#E4E6F2</color>
+    <color name="scrim">#66000000</color>
+
+    <!-- Ink / text -->
+    <color name="ink_900">#111827</color>
+    <color name="ink_700">#374151</color>
+    <color name="ink_500">#6B7280</color>
+    <color name="ink_400">#9CA3AF</color>
+    <color name="on_brand">#FFFFFF</color>
+
+    <!-- Status palette -->
+    <color name="success">#10B981</color>
+    <color name="success_bg">#D1FAE5</color>
+    <color name="warning">#F59E0B</color>
+    <color name="warning_bg">#FEF3C7</color>
+    <color name="danger">#EF4444</color>
+    <color name="danger_bg">#FEE2E2</color>
+    <color name="info">#3B82F6</color>
+    <color name="info_bg">#DBEAFE</color>
+    <color name="violet">#8B5CF6</color>
+    <color name="violet_bg">#EDE9FE</color>
+
+    <!-- Gradients (start/end) -->
+    <color name="grad_header_start">#312E81</color>
+    <color name="grad_header_mid">#4338CA</color>
+    <color name="grad_header_end">#6D28D9</color>
+    <color name="grad_button_start">#4F46E5</color>
+    <color name="grad_button_end">#7C3AED</color>
+    <color name="grad_login_start">#1E1B4B</color>
+    <color name="grad_login_end">#312E81</color>
+
+    <!-- Splash -->
+    <color name="splash_background">#1E1B4B</color>
+
+    <!-- Attendance ring track -->
+    <color name="ring_track">#E5E7EB</color>
+</resources>

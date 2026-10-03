@@ -23,6 +23,7 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.superiorstudent.app.databinding.ActivityMainBinding
+import com.superiorstudent.app.ui.Palette
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -209,7 +210,7 @@ class MainActivity : AppCompatActivity() {
             username = binding.usernameInput.text.toString().trim()
             password = binding.passwordInput.text.toString()
             if (username.isBlank() || password.isBlank()) {
-                binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
+                binding.loginStatus.setTextColor(Palette.danger(this@MainActivity))
                 binding.loginStatus.text = "Please enter your university username and password."
                 return@setOnClickListener
             }
@@ -221,7 +222,7 @@ class MainActivity : AppCompatActivity() {
             profileReadAttempts = 0
             cachedModuleData.clear()
             binding.loginButton.isEnabled = false
-            binding.loginStatus.setTextColor(Color.rgb(102, 112, 133))
+            binding.loginStatus.setTextColor(Palette.ink500(this@MainActivity))
             binding.loginStatus.text = "Signing in securely…"
             webView.visibility = View.GONE
             webView.loadUrl(ErpConfig.LOGIN_URL)
@@ -239,6 +240,11 @@ class MainActivity : AppCompatActivity() {
         binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(Module.RESULTS) }
         binding.menuLogoutButton.setOnClickListener { closeSideMenu(); logout() }
 
+        // Design-system touches: press-scale feedback on dashboard action cards.
+        attachPressFeedback(binding.attendanceButton)
+        attachPressFeedback(binding.timetableButton)
+        attachPressFeedback(binding.feeButton)
+
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
         } else if (sessionStore.sessionActive) {
@@ -249,6 +255,32 @@ class MainActivity : AppCompatActivity() {
             webView.visibility = View.GONE
             showDashboard()
             binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Staggered entrance animation whenever the dashboard becomes visible.
+        if (loggedIn && binding.dashboardScroll.visibility == View.VISIBLE) {
+            animateDashboardEntrance()
+        }
+    }
+
+    /** Sequential fade/scale-in for the dashboard hero + stat + action cards. */
+    private fun animateDashboardEntrance() {
+        val targets = listOf(
+            binding.dashboardScreen.getChildAt(0),  // gradient header
+            binding.studentName                      // welcome card name
+        )
+        var delay = 0L
+        for (t in targets) {
+            t?.animate()?.alpha(0f)?.setDuration(0)?.withEndAction {
+                android.view.animation.AnimationUtils.loadAnimation(this, R.anim.fade_scale_in).let { anim ->
+                    anim.startOffset = delay
+                    t.startAnimation(anim)
+                }
+            }?.start()
+            delay += 90
         }
     }
 
@@ -620,9 +652,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun attendanceStatus(percent: Double): Pair<Int, String> {
         return when {
-            percent >= 85.0 -> Color.rgb(25, 135, 84) to "Good standing"
-            percent >= 75.0 -> Color.rgb(205, 132, 24) to "Needs attention"
-            else -> Color.rgb(205, 67, 67) to "Low attendance"
+            percent >= 85.0 -> Palette.success(this@MainActivity) to "Good standing"
+            percent >= 75.0 -> Palette.warning(this@MainActivity) to "Needs attention"
+            else -> Palette.danger(this@MainActivity) to "Low attendance"
         }
     }
 
@@ -636,13 +668,13 @@ class MainActivity : AppCompatActivity() {
             )
             addView(TextView(this@MainActivity).apply {
                 text = title
-                setTextColor(Color.rgb(23, 42, 70))
+                setTextColor(Palette.ink900(this@MainActivity))
                 textSize = 17f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(TextView(this@MainActivity).apply {
                 text = subtitle
-                setTextColor(Color.rgb(126, 139, 158))
+                setTextColor(Palette.ink500(this@MainActivity))
                 textSize = 11f
                 setPadding(0, dp(3), 0, 0)
             })
@@ -650,56 +682,64 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createAttendanceSummary(overall: Double?, percentages: List<Double>, count: Int): View {
-        return LinearLayout(this).apply {
+        val activity = this@MainActivity
+        return LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Color.rgb(18, 58, 112), 20f)
-            elevation = dp(3).toFloat()
-            setPadding(dp(18), dp(17), dp(18), dp(17))
+            background = gradientBackground(Palette.primary(activity), Palette.violet(activity), 22f)
+            elevation = dp(4).toFloat()
+            setPadding(dp(20), dp(18), dp(20), dp(18))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
+            ).apply { setMargins(dp(12), dp(6), dp(12), dp(12)) }
 
             val display = overall
-            addView(LinearLayout(this@MainActivity).apply {
+            addView(LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
 
-                addView(TextView(this@MainActivity).apply {
+                addView(TextView(activity).apply {
                     text = if (overall != null) "OVERALL ATTENDANCE" else "ATTENDANCE SUMMARY"
-                    setTextColor(Color.rgb(190, 214, 244))
+                    setTextColor(Color.argb(230, 255, 255, 255))
                     textSize = 10f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    letterSpacing = 0.08f
+                    letterSpacing = 0.10f
                 })
-                addView(TextView(this@MainActivity).apply {
+                addView(TextView(activity).apply {
                     text = display?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
                     setTextColor(Color.WHITE)
-                    textSize = 32f
+                    textSize = 34f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setPadding(0, dp(3), 0, 0)
+                    setPadding(0, dp(4), 0, 0)
                 })
-                addView(TextView(this@MainActivity).apply {
+                addView(TextView(activity).apply {
                     text = if (overall != null) {
                         "$count subjects • official overall percentage"
                     } else {
                         "$count subjects • percentage shown per subject"
                     }
-                    setTextColor(Color.rgb(221, 232, 247))
+                    setTextColor(Color.argb(210, 255, 255, 255))
                     textSize = 11f
                 })
             })
 
             if (display != null) {
-                addView(TextView(this@MainActivity).apply {
-                    text = attendanceStatus(display).second
+                // Animated-feel progress ring with centered label on the gradient card.
+                addView(LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                    setTextColor(attendanceStatus(display).first)
-                    textSize = 10f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBackground(Color.WHITE, 12f)
-                    setPadding(dp(9), dp(7), dp(9), dp(7))
+                    setPadding(dp(10), 0, 0, 0)
+                    addView(createProgressRing(display, 74, 8, Color.WHITE))
+                    addView(TextView(activity).apply {
+                        text = attendanceStatus(display).second.uppercase(java.util.Locale.US)
+                        setTextColor(Color.argb(220, 255, 255, 255))
+                        textSize = 9f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        letterSpacing = 0.08f
+                        setPadding(0, dp(6), 0, 0)
+                        gravity = Gravity.CENTER
+                    })
                 })
             }
         }
@@ -708,15 +748,15 @@ class MainActivity : AppCompatActivity() {
     private fun createAttendanceCard(row: AttendanceRow, position: Int): View {
         val percent = row.percent
         val statusColor = when {
-            percent == null -> Color.rgb(102, 112, 133)
-            percent >= 85.0 -> Color.rgb(25, 135, 84)
-            percent >= 75.0 -> Color.rgb(205, 132, 24)
-            else -> Color.rgb(205, 67, 67)
+            percent == null -> Palette.ink500(this@MainActivity)
+            percent >= 85.0 -> Palette.success(this@MainActivity)
+            percent >= 75.0 -> Palette.warning(this@MainActivity)
+            else -> Palette.danger(this@MainActivity)
         }
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 18f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
             elevation = dp(2).toFloat()
             setPadding(dp(16), dp(15), dp(16), dp(15))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -729,10 +769,10 @@ class MainActivity : AppCompatActivity() {
             header.addView(TextView(this@MainActivity).apply {
                 text = position.toString().padStart(2, '0')
                 gravity = Gravity.CENTER
-                setTextColor(Color.rgb(30, 91, 155))
+                setTextColor(Palette.primary(this@MainActivity))
                 textSize = 10f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Color.rgb(239, 245, 255), 11f)
+                background = roundedBackground(Palette.infoBg(this@MainActivity), 11f)
                 minWidth = dp(38)
                 minHeight = dp(34)
             })
@@ -742,13 +782,13 @@ class MainActivity : AppCompatActivity() {
                     .apply { setPadding(dp(12), 0, dp(8), 0) }
                 addView(TextView(this@MainActivity).apply {
                     text = row.course
-                    setTextColor(Color.rgb(23, 42, 70))
+                    setTextColor(Palette.ink900(this@MainActivity))
                     textSize = 14f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
                 if (row.code.isNotBlank()) addView(TextView(this@MainActivity).apply {
                     text = row.code
-                    setTextColor(Color.rgb(126, 139, 158))
+                    setTextColor(Palette.ink500(this@MainActivity))
                     textSize = 10f
                     setPadding(0, dp(3), 0, 0)
                 })
@@ -767,7 +807,7 @@ class MainActivity : AppCompatActivity() {
                 max = 100
                 progress = percent.roundToInt()
                 progressTintList = ColorStateList.valueOf(statusColor)
-                progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(231, 236, 244))
+                progressBackgroundTintList = ColorStateList.valueOf(Palette.ringTrack(this@MainActivity))
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(7)).apply { topMargin = dp(12) }
             })
 
@@ -791,7 +831,7 @@ class MainActivity : AppCompatActivity() {
     private fun addStat(container: LinearLayout, label: String, value: String) {
         container.addView(TextView(this).apply {
             text = label + "  " + value
-            setTextColor(Color.rgb(82, 93, 112))
+            setTextColor(Palette.ink700(this@MainActivity))
             textSize = 11f
             setPadding(0, 0, dp(18), 0)
         })
@@ -857,32 +897,66 @@ class MainActivity : AppCompatActivity() {
     
     private fun createTimetableToolbar(count: Int): View =
         LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.rgb(18, 58, 112), 22f)
-            setPadding(dp(18), dp(17), dp(18), dp(17))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = gradientBackground(
+                Palette.primary(this@MainActivity),
+                Palette.violet(this@MainActivity), 24f
+            )
+            elevation = dp(5).toFloat()
+            setPadding(dp(18), dp(16), dp(18), dp(16))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
 
+            // Calendar glyph badge
             addView(TextView(this@MainActivity).apply {
-                text = "THIS WEEK"
-                setTextColor(Color.rgb(190, 214, 244))
-                textSize = 9f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                letterSpacing = 0.10f
+                text = "🗓"
+                gravity = Gravity.CENTER
+                textSize = 19f
+                background = roundedBackground(Color.argb(60, 255, 255, 255), 14f)
+                minWidth = dp(46)
+                minHeight = dp(46)
+                layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply {
+                    setMargins(0, 0, dp(13), 0)
+                }
             })
+
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = "THIS WEEK"
+                    setTextColor(Palette.primaryLight(this@MainActivity))
+                    textSize = 9f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    letterSpacing = 0.12f
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = "Your Class Schedule"
+                    setTextColor(Color.WHITE)
+                    textSize = 20f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(0, dp(2), 0, dp(1))
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = if (count == 1) "1 class synced from ERP" else "$count classes synced from ERP"
+                    setTextColor(Color.argb(210, 255, 255, 255))
+                    textSize = 11f
+                })
+            })
+
+            // Live pill
             addView(TextView(this@MainActivity).apply {
-                text = "Your Class Schedule"
+                text = "LIVE"
                 setTextColor(Color.WHITE)
-                textSize = 21f
+                textSize = 9f
+                letterSpacing = 0.14f
+                gravity = Gravity.CENTER
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(0, dp(3), 0, dp(2))
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = if (count == 1) "1 class fetched from ERP" else "$count classes fetched from ERP"
-                setTextColor(Color.rgb(221, 232, 247))
-                textSize = 11f
+                background = roundedBackground(Color.argb(60, 255, 255, 255), 20f)
+                setPadding(dp(11), dp(6), dp(11), dp(6))
             })
         }
 
@@ -890,7 +964,7 @@ class MainActivity : AppCompatActivity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Color.rgb(238, 244, 255), 18f)
+            background = roundedBackground(Palette.infoBg(this@MainActivity), 18f)
             setPadding(dp(15), dp(14), dp(15), dp(14))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -899,7 +973,7 @@ class MainActivity : AppCompatActivity() {
 
             addView(TextView(this@MainActivity).apply {
                 text = "ⓘ"
-                setTextColor(Color.rgb(30, 91, 155))
+                setTextColor(Palette.primary(this@MainActivity))
                 textSize = 22f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(dp(32), ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -909,13 +983,13 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 addView(TextView(this@MainActivity).apply {
                     text = "Timetable Information"
-                    setTextColor(Color.rgb(18, 58, 112))
+                    setTextColor(Palette.primaryDark(this@MainActivity))
                     textSize = 12f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
                 addView(TextView(this@MainActivity).apply {
                     text = "Timings, courses, codes and rooms are read from your ERP account."
-                    setTextColor(Color.rgb(82, 103, 133))
+                    setTextColor(Palette.ink700(this@MainActivity))
                     textSize = 10f
                     setPadding(0, dp(3), 0, 0)
                 })
@@ -971,18 +1045,42 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(dp(14), dp(12), dp(14), dp(3)) }
-            addView(TextView(this@MainActivity).apply {
-                text = day
-                setTextColor(Color.rgb(18, 58, 112))
-                textSize = 15f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { setMargins(dp(14), dp(14), dp(14), dp(4)) }
+
+            // Accent rail
+            addView(View(this@MainActivity).apply {
+                background = gradientBackground(
+                    Palette.primary(this@MainActivity),
+                    Palette.accent(this@MainActivity), 4f
+                )
+                layoutParams = LinearLayout.LayoutParams(dp(4), dp(20)).apply {
+                    setMargins(0, 0, dp(9), 0)
+                }
             })
             addView(TextView(this@MainActivity).apply {
-                text = count.toString() + " classes"
-                setTextColor(Color.rgb(126, 139, 158))
+                text = day.uppercase(java.util.Locale.US)
+                setTextColor(Palette.ink900(this@MainActivity))
+                textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                letterSpacing = 0.08f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            // Count chip
+            addView(TextView(this@MainActivity).apply {
+                text = "$count"
+                setTextColor(Palette.primaryDark(this@MainActivity))
                 textSize = 10f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                background = roundedBackground(Palette.infoBg(this@MainActivity), 16f)
+                minWidth = dp(26)
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = if (count == 1) "class" else "classes"
+                setTextColor(Palette.ink500(this@MainActivity))
+                textSize = 10f
+                setPadding(dp(6), 0, 0, 0)
             })
         }
 
@@ -990,49 +1088,65 @@ class MainActivity : AppCompatActivity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Color.WHITE, 18f)
-            elevation = dp(2).toFloat()
+            background = roundedBackground(Palette.surface(this@MainActivity), 20f)
+            elevation = dp(3).toFloat()
             setPadding(dp(12), dp(12), dp(14), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
 
             val accent = when (ParsingUtils.timeSortKey(row.time) % 5) {
-                0 -> Color.rgb(42, 111, 219)
-                1 -> Color.rgb(24, 166, 93)
-                2 -> Color.rgb(244, 164, 35)
-                3 -> Color.rgb(133, 82, 214)
-                else -> Color.rgb(226, 70, 117)
+                0 -> Palette.primary(this@MainActivity)
+                1 -> Palette.success(this@MainActivity)
+                2 -> Palette.warning(this@MainActivity)
+                3 -> Palette.violet(this@MainActivity)
+                else -> Palette.danger(this@MainActivity)
             }
 
-            addView(View(this@MainActivity).apply {
-                background = roundedBackground(accent, 5f)
-                layoutParams = LinearLayout.LayoutParams(dp(5), dp(88))
-            })
-
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                background = roundedBackground(Color.rgb(246, 249, 253), 14f)
-                layoutParams = LinearLayout.LayoutParams(dp(82), dp(70)).apply {
-                    setMargins(dp(9), 0, dp(10), 0)
+            // Gradient time tile with top rail
+            addView(android.widget.FrameLayout(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(86), dp(76)).apply {
+                    setMargins(0, 0, dp(11), 0)
                 }
-                setPadding(dp(4), dp(5), dp(4), dp(5))
-
-                addView(TextView(this@MainActivity).apply {
-                    text = ParsingUtils.formatScheduleTime(row.time)
-                    gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(23, 42, 70))
-                    textSize = 12f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                addView(View(this@MainActivity).apply {
+                    background = gradientBackground(
+                        accent,
+                        Palette.ink900(this@MainActivity).let { it }, 18f
+                    ).apply { alpha = 26 }
+                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+                    )
                 })
-                addView(TextView(this@MainActivity).apply {
-                    text = row.day.take(3).uppercase(java.util.Locale.US)
+                addView(View(this@MainActivity).apply {
+                    background = roundedBackground(accent, 3f)
+                    layoutParams = android.widget.FrameLayout.LayoutParams(dp(34), dp(4)).apply {
+                        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    }
+                })
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                    setTextColor(Color.rgb(93, 112, 140))
-                    textSize = 9f
-                    setPadding(0, dp(3), 0, 0)
+                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    setPadding(dp(4), dp(9), dp(4), dp(4))
+                    addView(TextView(this@MainActivity).apply {
+                        text = ParsingUtils.formatScheduleTime(row.time)
+                            .ifBlank { "—" }
+                        gravity = Gravity.CENTER
+                        setTextColor(Palette.ink900(this@MainActivity))
+                        textSize = 12f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    })
+                    addView(TextView(this@MainActivity).apply {
+                        text = row.day.take(3).uppercase(java.util.Locale.US).ifBlank { "TBD" }
+                        gravity = Gravity.CENTER
+                        setTextColor(Palette.ink500(this@MainActivity))
+                        textSize = 9f
+                        letterSpacing = 0.12f
+                        setPadding(0, dp(4), 0, 0)
+                    })
                 })
             })
 
@@ -1042,32 +1156,40 @@ class MainActivity : AppCompatActivity() {
 
                 addView(TextView(this@MainActivity).apply {
                     text = row.course
-                    setTextColor(Color.rgb(23, 42, 70))
+                    setTextColor(Palette.ink900(this@MainActivity))
                     textSize = 14f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                     maxLines = 2
                 })
 
-                if (row.code.isNotBlank()) addView(TextView(this@MainActivity).apply {
-                    text = "▣  " + row.code
-                    setTextColor(Color.rgb(30, 91, 155))
-                    textSize = 10f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBackground(Color.rgb(233, 243, 255), 9f)
-                    setPadding(dp(7), dp(4), dp(7), dp(4))
+                val metaRow = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
                     layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, dp(6), 0, 0) }
+                    ).apply { setMargins(0, dp(7), 0, 0) }
+                }
+                if (row.code.isNotBlank()) metaRow.addView(TextView(this@MainActivity).apply {
+                    text = row.code
+                    setTextColor(Palette.primaryDark(this@MainActivity))
+                    textSize = 9f
+                    letterSpacing = 0.05f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBackground(Palette.infoBg(this@MainActivity), 9f)
+                    setPadding(dp(8), dp(4), dp(8), dp(4))
                 })
-
-                addView(TextView(this@MainActivity).apply {
-                    text = if (row.room.isNotBlank()) "●  Room " + row.room else "●  Room not provided by ERP"
-                    setTextColor(if (row.room.isNotBlank()) Color.rgb(35, 139, 82) else Color.rgb(143, 153, 169))
+                metaRow.addView(TextView(this@MainActivity).apply {
+                    text = if (row.room.isNotBlank()) "📍 ${row.room}" else "📍 Room TBA"
+                    setTextColor(if (row.room.isNotBlank()) Palette.success(this@MainActivity) else Palette.ink400(this@MainActivity))
                     textSize = 10f
-                    setPadding(0, dp(6), 0, 0)
+                    setTypeface(typeface, if (row.room.isNotBlank()) android.graphics.Typeface.BOLD else android.graphics.Typeface.DEFAULT)
+                    setPadding(if (row.code.isNotBlank()) dp(9) else 0, 0, 0, 0)
                 })
+                addView(metaRow)
             })
+
+            attachPressFeedback(this)
         }
 
     
@@ -1075,27 +1197,27 @@ class MainActivity : AppCompatActivity() {
     private fun createProfileFieldCard(label: String, value: String): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 14f)
-            elevation = dp(1).toFloat()
-            setPadding(dp(12), dp(11), dp(12), dp(11))
+            background = roundedBackground(Palette.surface(this@MainActivity), 16f)
+            elevation = dp(2).toFloat()
+            setPadding(dp(13), dp(11), dp(13), dp(11))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(4), dp(12), dp(4)) }
 
             addView(TextView(this@MainActivity).apply {
-                text = label.trim()
-                setTextColor(Color.rgb(126, 139, 158))
+                text = label.trim().uppercase(java.util.Locale.US)
+                setTextColor(Palette.primary(this@MainActivity))
                 textSize = 9f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                letterSpacing = 0.04f
+                letterSpacing = 0.07f
             })
             addView(TextView(this@MainActivity).apply {
                 text = value.trim()
-                setTextColor(Color.rgb(23, 42, 70))
+                setTextColor(Palette.ink900(this@MainActivity))
                 textSize = 13f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(0, dp(4), 0, 0)
+                setPadding(0, dp(5), 0, 0)
             })
         }
     }
@@ -1210,62 +1332,96 @@ class MainActivity : AppCompatActivity() {
             ?: "Student"
         val program = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "program", "degree", "course of study") }?.second.orEmpty()
         val reg = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "registration", "roll no", "student id", "student code") }?.second.orEmpty()
+        val campus = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "campus") }?.second.orEmpty()
+        val session = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "session") }?.second.orEmpty()
         val initials = name.split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercaseChar().toString() }.ifBlank { "S" }
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Color.rgb(18, 58, 112), 22f)
-            elevation = dp(3).toFloat()
-            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = gradientBackground(
+                Palette.primaryDark(this@MainActivity),
+                Palette.violet(this@MainActivity), 26f
+            )
+            elevation = dp(6).toFloat()
+            setPadding(dp(18), dp(20), dp(18), dp(18))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
+            ).apply { setMargins(dp(12), dp(8), dp(12), dp(10)) }
 
-            addView(TextView(this@MainActivity).apply {
-                text = initials
-                gravity = Gravity.CENTER
-                setTextColor(Color.rgb(18, 58, 112))
-                textSize = 17f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Color.WHITE, 18f)
-                minWidth = dp(58)
-                minHeight = dp(58)
+            // Avatar with white ring + inner tinted circle
+            addView(android.widget.FrameLayout(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64)).apply {
+                    setMargins(0, 0, dp(15), 0)
+                }
+                addView(View(this@MainActivity).apply {
+                    background = roundedBackground(Color.argb(70, 255, 255, 255), 22f)
+                    layoutParams = android.widget.FrameLayout.LayoutParams(dp(64), dp(64))
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = initials
+                    gravity = Gravity.CENTER
+                    setTextColor(Palette.primaryDark(this@MainActivity))
+                    textSize = 20f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    background = roundedBackground(Color.WHITE, 19f)
+                    layoutParams = android.widget.FrameLayout.LayoutParams(dp(56), dp(56)).apply {
+                        gravity = Gravity.CENTER
+                    }
+                })
             })
 
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { setPadding(dp(14), 0, 0, 0) }
 
                 addView(TextView(this@MainActivity).apply {
                     text = "STUDENT PROFILE"
-                    setTextColor(Color.rgb(190, 214, 244))
+                    setTextColor(Color.argb(190, 255, 255, 255))
                     textSize = 9f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    letterSpacing = 0.09f
+                    letterSpacing = 0.12f
                 })
                 addView(TextView(this@MainActivity).apply {
                     text = name
                     setTextColor(Color.WHITE)
-                    textSize = 18f
+                    textSize = 19f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                     setPadding(0, dp(3), 0, 0)
                 })
                 if (program.isNotBlank()) addView(TextView(this@MainActivity).apply {
                     text = program
-                    setTextColor(Color.rgb(221, 232, 247))
+                    setTextColor(Color.argb(225, 255, 255, 255))
                     textSize = 11f
                     setPadding(0, dp(4), 0, 0)
                 })
-                if (reg.isNotBlank()) addView(TextView(this@MainActivity).apply {
-                    text = reg
-                    setTextColor(Color.rgb(190, 214, 244))
-                    textSize = 10f
-                    setPadding(0, dp(3), 0, 0)
-                })
+
+                // Badge chips row for reg / session / campus
+                val chips = listOf(reg, session, campus).filter(String::isNotBlank)
+                if (chips.isNotEmpty()) {
+                    addView(LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(0, dp(9), 0, 0)
+                        chips.forEachIndexed { i, chip ->
+                            addView(TextView(this@MainActivity).apply {
+                                text = chip
+                                setTextColor(Color.WHITE)
+                                textSize = 9f
+                                letterSpacing = 0.03f
+                                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                                maxLines = 1
+                                background = roundedBackground(Color.argb(55, 255, 255, 255), 20f)
+                                setPadding(dp(10), dp(5), dp(10), dp(5))
+                                layoutParams = LinearLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                                    ViewGroup.LayoutParams.WRAP_CONTENT
+                                ).apply { if (i > 0) setMargins(dp(6), 0, 0, 0) }
+                            })
+                        }
+                    })
+                }
             })
         }
     }
@@ -1344,7 +1500,7 @@ class MainActivity : AppCompatActivity() {
     private fun createResultCard(title: String, details: String): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 16f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 16f)
             elevation = dp(1).toFloat()
             setPadding(dp(15), dp(13), dp(15), dp(13))
             layoutParams = LinearLayout.LayoutParams(
@@ -1354,7 +1510,7 @@ class MainActivity : AppCompatActivity() {
 
             addView(TextView(this@MainActivity).apply {
                 text = title
-                setTextColor(Color.rgb(23, 42, 70))
+                setTextColor(Palette.ink900(this@MainActivity))
                 textSize = 14f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
@@ -1362,7 +1518,7 @@ class MainActivity : AppCompatActivity() {
             if (details.isNotBlank()) {
                 addView(TextView(this@MainActivity).apply {
                     text = details
-                    setTextColor(Color.rgb(102, 112, 133))
+                    setTextColor(Palette.ink500(this@MainActivity))
                     textSize = 11f
                     setPadding(0, dp(5), 0, 0)
                 })
@@ -1373,7 +1529,7 @@ class MainActivity : AppCompatActivity() {
     private fun createSemesterSelector(options: List<String>): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 16f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 16f)
             elevation = dp(1).toFloat()
             setPadding(dp(16), dp(13), dp(16), dp(13))
             layoutParams = LinearLayout.LayoutParams(
@@ -1384,7 +1540,7 @@ class MainActivity : AppCompatActivity() {
 
         card.addView(TextView(this).apply {
             text = "Select semester"
-            setTextColor(Color.rgb(23,42,70))
+            setTextColor(Palette.ink900(this@MainActivity))
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
@@ -1456,7 +1612,7 @@ class MainActivity : AppCompatActivity() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 18f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
             elevation = dp(2).toFloat()
             setPadding(dp(16), dp(15), dp(16), dp(15))
             layoutParams = LinearLayout.LayoutParams(
@@ -1472,10 +1628,10 @@ class MainActivity : AppCompatActivity() {
             top.addView(TextView(this@MainActivity).apply {
                 text = position.toString().padStart(2, '0')
                 gravity = Gravity.CENTER
-                setTextColor(Color.rgb(30, 91, 155))
+                setTextColor(Palette.primary(this@MainActivity))
                 textSize = 10f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Color.rgb(239,245,255), 10f)
+                background = roundedBackground(Palette.infoBg(this@MainActivity), 10f)
                 minWidth = dp(36)
                 minHeight = dp(32)
             })
@@ -1485,13 +1641,13 @@ class MainActivity : AppCompatActivity() {
                     .apply { setPadding(dp(12), 0, dp(8), 0) }
                 addView(TextView(this@MainActivity).apply {
                     text = subject
-                    setTextColor(Color.rgb(23,42,70))
+                    setTextColor(Palette.ink900(this@MainActivity))
                     textSize = 14f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
                 if (code.isNotBlank()) addView(TextView(this@MainActivity).apply {
                     text = code
-                    setTextColor(Color.rgb(126,139,158))
+                    setTextColor(Palette.ink500(this@MainActivity))
                     textSize = 10f
                     setPadding(0, dp(3), 0, 0)
                 })
@@ -1502,7 +1658,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.WHITE)
                 textSize = 11f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Color.rgb(18,58,112), 10f)
+                background = roundedBackground(Palette.primaryDark(this@MainActivity), 10f)
                 setPadding(dp(9), dp(6), dp(9), dp(6))
             })
 
@@ -1519,13 +1675,13 @@ class MainActivity : AppCompatActivity() {
                         .apply { setMargins(dp(4), 0, dp(4), 0) }
                     addView(TextView(this@MainActivity).apply {
                         text = label.uppercase(java.util.Locale.US)
-                        setTextColor(Color.rgb(126,139,158))
+                        setTextColor(Palette.ink500(this@MainActivity))
                         textSize = 9f
                         setTypeface(typeface, android.graphics.Typeface.BOLD)
                     })
                     addView(TextView(this@MainActivity).apply {
                         text = value
-                        setTextColor(Color.rgb(23,42,70))
+                        setTextColor(Palette.ink900(this@MainActivity))
                         textSize = 13f
                         setTypeface(typeface, android.graphics.Typeface.BOLD)
                         setPadding(0, dp(3), 0, 0)
@@ -1561,7 +1717,7 @@ class MainActivity : AppCompatActivity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Color.WHITE, 18f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
             elevation = dp(2).toFloat()
             setPadding(dp(16), dp(15), dp(16), dp(15))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -1571,13 +1727,13 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 addView(TextView(this@MainActivity).apply {
                     text = "Fee records"
-                    setTextColor(Color.rgb(23, 42, 70))
+                    setTextColor(Palette.ink900(this@MainActivity))
                     textSize = 16f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 })
                 addView(TextView(this@MainActivity).apply {
                     text = "Your latest invoices"
-                    setTextColor(Color.rgb(126, 139, 158))
+                    setTextColor(Palette.ink500(this@MainActivity))
                     textSize = 11f
                     setPadding(0, dp(3), 0, 0)
                 })
@@ -1585,10 +1741,10 @@ class MainActivity : AppCompatActivity() {
             addView(TextView(this@MainActivity).apply {
                 text = count.toString()
                 gravity = Gravity.CENTER
-                setTextColor(Color.rgb(30, 91, 155))
+                setTextColor(Palette.primary(this@MainActivity))
                 textSize = 20f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Color.rgb(239, 245, 255), 12f)
+                background = roundedBackground(Palette.infoBg(this@MainActivity), 12f)
                 minWidth = dp(44)
                 minHeight = dp(38)
             })
@@ -1616,7 +1772,7 @@ class MainActivity : AppCompatActivity() {
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 18f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
             elevation = dp(2).toFloat()
             setPadding(dp(16), dp(14), dp(16), dp(14))
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -1626,17 +1782,17 @@ class MainActivity : AppCompatActivity() {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(TextView(this@MainActivity).apply {
                     text = no
-                    setTextColor(Color.rgb(23, 42, 70))
+                    setTextColor(Palette.ink900(this@MainActivity))
                     textSize = 13f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 })
                 if (status.isNotBlank()) addView(TextView(this@MainActivity).apply {
                     text = status
-                    setTextColor(Color.rgb(25, 135, 84))
+                    setTextColor(Palette.success(this@MainActivity))
                     textSize = 10f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBackground(Color.rgb(233, 248, 241), 10f)
+                    background = roundedBackground(Palette.successBg(this@MainActivity), 10f)
                     setPadding(dp(8), dp(5), dp(8), dp(5))
                 })
             })
@@ -1658,12 +1814,12 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             addView(TextView(this@MainActivity).apply {
                 text = label
-                setTextColor(Color.rgb(126, 139, 158))
+                setTextColor(Palette.ink500(this@MainActivity))
                 textSize = 9f
             })
             addView(TextView(this@MainActivity).apply {
                 text = value
-                setTextColor(Color.rgb(52, 64, 84))
+                setTextColor(Palette.ink900(this@MainActivity))
                 textSize = 11f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(0, dp(3), 0, 0)
@@ -1689,7 +1845,7 @@ class MainActivity : AppCompatActivity() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 18f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
             setPadding(dp(18), dp(16), dp(18), dp(16))
             elevation = dp(2).toFloat()
             layoutParams = LinearLayout.LayoutParams(
@@ -1700,13 +1856,13 @@ class MainActivity : AppCompatActivity() {
 
         card.addView(TextView(this).apply {
             text = title
-            setTextColor(Color.rgb(18, 58, 112))
+            setTextColor(Palette.primaryDark(this@MainActivity))
             textSize = 18f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         })
         card.addView(TextView(this).apply {
             text = subtitle
-            setTextColor(Color.rgb(102, 112, 133))
+            setTextColor(Palette.ink500(this@MainActivity))
             textSize = 12f
             setPadding(0, dp(5), 0, 0)
         })
@@ -1718,7 +1874,7 @@ class MainActivity : AppCompatActivity() {
     private fun createMetricCard(label: String, value: String): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 16f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 16f)
             setPadding(dp(16), dp(13), dp(16), dp(13))
             elevation = dp(1).toFloat()
             layoutParams = LinearLayout.LayoutParams(
@@ -1728,13 +1884,13 @@ class MainActivity : AppCompatActivity() {
 
             addView(TextView(this@MainActivity).apply {
                 text = ParsingUtils.cleanDisplayText(label)
-                setTextColor(Color.rgb(102, 112, 133))
+                setTextColor(Palette.ink500(this@MainActivity))
                 textSize = 11f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             addView(TextView(this@MainActivity).apply {
                 text = ParsingUtils.cleanDisplayText(value)
-                setTextColor(Color.rgb(18, 58, 112))
+                setTextColor(Palette.primaryDark(this@MainActivity))
                 textSize = 20f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(0, dp(4), 0, 0)
@@ -1745,7 +1901,7 @@ class MainActivity : AppCompatActivity() {
     private fun createTableSection(title: String, table: TableData): View {
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 16f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 16f)
             elevation = dp(1).toFloat()
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1755,7 +1911,7 @@ class MainActivity : AppCompatActivity() {
 
         outer.addView(TextView(this).apply {
             text = ParsingUtils.cleanDisplayText(title)
-            setTextColor(Color.rgb(23,32,51))
+            setTextColor(Palette.ink900(this@MainActivity))
             textSize = 15f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setPadding(dp(16), dp(14), dp(16), dp(9))
@@ -1786,7 +1942,7 @@ class MainActivity : AppCompatActivity() {
     private fun createTableRow(values: List<String>, header: Boolean): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = if (header) roundedBackground(Color.rgb(239,245,255), 10f) else roundedBackground(Color.WHITE, 0f)
+            background = if (header) roundedBackground(Palette.infoBg(this@MainActivity), 10f) else roundedBackground(Palette.surface(this@MainActivity), 0f)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1796,7 +1952,7 @@ class MainActivity : AppCompatActivity() {
         values.forEach { value ->
             row.addView(TextView(this).apply {
                 text = ParsingUtils.cleanDisplayText(value).ifBlank { "—" }
-                setTextColor(if (header) Color.rgb(18,58,112) else Color.rgb(52,64,84))
+                setTextColor(if (header) Palette.primaryDark(this@MainActivity) else Palette.ink900(this@MainActivity))
                 textSize = if (header) 10f else 11f
                 if (header) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER_VERTICAL
@@ -1812,7 +1968,7 @@ class MainActivity : AppCompatActivity() {
     private fun createInformationSection(lines: List<String>): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Color.WHITE, 16f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 16f)
             elevation = dp(1).toFloat()
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1821,7 +1977,7 @@ class MainActivity : AppCompatActivity() {
 
             addView(TextView(this@MainActivity).apply {
                 text = "Additional information"
-                setTextColor(Color.rgb(23, 32, 51))
+                setTextColor(Palette.ink900(this@MainActivity))
                 textSize = 15f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(dp(16), dp(15), dp(16), dp(8))
@@ -1829,7 +1985,7 @@ class MainActivity : AppCompatActivity() {
             lines.forEach { line ->
                 addView(TextView(this@MainActivity).apply {
                     text = "• $line"
-                    setTextColor(Color.rgb(82, 93, 112))
+                    setTextColor(Palette.ink700(this@MainActivity))
                     textSize = 12f
                     setPadding(dp(16), dp(5), dp(16), dp(5))
                 })
@@ -1845,21 +2001,21 @@ class MainActivity : AppCompatActivity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = roundedBackground(Color.WHITE, 18f)
+            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
             elevation = dp(1).toFloat()
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 .apply { setMargins(dp(12), dp(12), dp(12), dp(12)) }
             setPadding(dp(24), dp(32), dp(24), dp(32))
             addView(TextView(this@MainActivity).apply {
                 text = title
-                setTextColor(Color.rgb(18, 58, 112))
+                setTextColor(Palette.primaryDark(this@MainActivity))
                 textSize = 17f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
             })
             addView(TextView(this@MainActivity).apply {
                 text = message
-                setTextColor(Color.rgb(102, 112, 133))
+                setTextColor(Palette.ink500(this@MainActivity))
                 textSize = 12f
                 gravity = Gravity.CENTER
                 setPadding(0, dp(6), 0, 0)
@@ -1871,6 +2027,72 @@ class MainActivity : AppCompatActivity() {
         return android.graphics.drawable.GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(radiusDp.toInt()).toFloat()
+        }
+    }
+
+    /** Gradient pill background used across the redesigned screens. */
+    private fun gradientBackground(startColor: Int, endColor: Int, radiusDp: Float, angleDeg: Float = 135f): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            orientation = when (angleDeg.toInt()) {
+                90 -> android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT
+                270 -> android.graphics.drawable.GradientDrawable.Orientation.RIGHT_LEFT
+                else -> android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+            }
+            colors = intArrayOf(startColor, endColor)
+            cornerRadius = dp(radiusDp.toInt()).toFloat()
+        }
+    }
+
+    /** Custom circular progress ring with a centered percentage label. */
+    private fun createProgressRing(percent: Double, sizeDp: Int, strokeWidthDp: Int, color: Int): View {
+        val density = resources.displayMetrics.density
+        val sizePx = (sizeDp * density).roundToInt()
+        val strokePx = (strokeWidthDp * density).roundToInt()
+        val trackPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = strokePx.toFloat()
+            color = Palette.ringTrack(this@MainActivity)
+        }
+        val progressPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeWidth = strokePx.toFloat()
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            color = color
+        }
+        val tv = TextView(this)
+        tv.text = String.format(java.util.Locale.US, "%.0f%%", percent)
+        tv.setTextColor(Palette.ink900(this@MainActivity))
+        tv.textSize = 14f
+        tv.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        tv.gravity = Gravity.CENTER
+
+        return object : android.widget.FrameLayout(this) {
+            init {
+                layoutParams = LinearLayout.LayoutParams(sizePx, sizePx)
+                setWillNotDraw(false)
+                addView(tv, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            }
+            override fun onDraw(canvas: android.graphics.Canvas) {
+                super.onDraw(canvas)
+                val inset = strokePx / 2f + 1f
+                val rect = android.graphics.RectF(inset, inset, width - inset, height - inset)
+                canvas.drawArc(rect, 0f, 360f, false, trackPaint)
+                val sweep = (percent.coerceIn(0.0, 100.0) / 100.0 * 360.0).toFloat()
+                canvas.drawArc(rect, -90f, sweep, false, progressPaint)
+            }
+        }
+    }
+
+    /** Subtle press animation applied to tappable cards. */
+    private fun attachPressFeedback(view: View) {
+        view.setOnClickListener { /* ensures clickable ripple on API 21+ */ }
+        view.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN,
+                android.view.MotionEvent.ACTION_MOVE -> v.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start()
+                else -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start()
+            }
+            false
         }
     }
 
@@ -2213,7 +2435,7 @@ class MainActivity : AppCompatActivity() {
         loginInProgress = false
         loginSubmitted = false
         binding.loginButton.isEnabled = true
-        binding.loginStatus.setTextColor(Color.rgb(198, 40, 40))
+        binding.loginStatus.setTextColor(Palette.danger(this@MainActivity))
         binding.loginStatus.text = message
     }
 
