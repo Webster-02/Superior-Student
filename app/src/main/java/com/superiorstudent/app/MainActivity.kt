@@ -73,7 +73,67 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Wrap the whole startup in a safety net: if anything unexpected throws
+        // (corrupt encrypted prefs, missing resource, WebView provider issues)
+        // the app must never die silently with a black screen. Instead it shows
+        // a readable error and recovers by wiping the damaged state.
+        try {
+            safeOnCreate(savedInstanceState)
+        } catch (t: Throwable) {
+            try {
+                recoverFromStartupCrash(t)
+            } catch (inner: Throwable) {
+                // Last resort: plain toast + graceful finish instead of a crash loop.
+                android.util.Log.e("MainActivity", "Unrecoverable startup failure", inner)
+                Toast.makeText(applicationContext, "App failed to start. Please reinstall.", Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+    }
+
+    /**
+     * Emergency recovery for startup crashes. Wipes the damaged local state
+     * (encrypted prefs, caches, cookies) and retries the launch exactly once.
+     * If the retry also fails the user sees a clear message instead of a
+     * silent black-screen crash loop.
+     */
+    private var startupRecovered = false
+
+    private fun recoverFromStartupCrash(t: Throwable) {
+        android.util.Log.e("MainActivity", "Startup failed; wiping local state and retrying", t)
+        if (startupRecovered) {
+            Toast.makeText(applicationContext, "App could not start even after reset. Please reinstall.", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+        startupRecovered = true
+        try {
+            getSharedPreferences("superior_session_encrypted", MODE_PRIVATE).edit().clear().apply()
+            getSharedPreferences("superior_session_fallback", MODE_PRIVATE).edit().clear().apply()
+            getSharedPreferences("superior_student_preferences", MODE_PRIVATE).edit().clear().apply()
+            deleteDatabase("superior_session_encrypted")
+            java.io.File(filesDir, "student_profile_cache.json").delete()
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+        } catch (ignored: Throwable) {
+        }
+        // Re-run startup with clean state (no saved instance -> fresh login screen).
+        onCreate(null)
+    }
+
+    private fun safeOnCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // WebView provider can be missing/disabled on some devices (e.g. System
+        // WebView disabled by user). Detect it up-front and tell the user
+        // instead of crashing when inflating the layout.
+        try {
+            val pkg = android.webkit.WebView.getCurrentWebViewPackage()
+            if (pkg == null || pkg.applicationInfo?.enabled != true) {
+                showErrorAndFinish("Android System WebView is disabled or missing on this device. Enable it from Play Store, then reopen the app.")
+                return
+            }
+        } catch (ignored: Throwable) {
+        }
         Scripts.loadAll(this)
         sessionStore.migrateFromLegacy()
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -2368,8 +2428,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun openSideMenu() {
         if (!loggedIn || binding.dashboardScroll.visibility != View.VISIBLE) return
-        binding.sideMenuOverlay.visibility = View.VISIBLE
-        binding.sideMenu.bringToFront()
+        try {
+            binding.sideMenuOverlay.bringToFront()
+            binding.sideMenuOverlay.visibility = View.VISIBLE
+            binding.sideMenu.bringToFront()
+        } catch (t: Throwable) {
+            android.util.Log.e("MainActivity", "Side menu failed to open", t)
+            try { binding.sideMenuOverlay.visibility = View.GONE } catch (ignored: Throwable) { }
+        }
     }
 
     private fun closeSideMenu() {
@@ -2377,6 +2443,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDashboard() {
+        try {
+            showDashboardInternal()
+        } catch (t: Throwable) {
+            // Never leave the user on a dead screen: fall back to login.
+            android.util.Log.e("MainActivity", "Dashboard render failed", t)
+            try { showLogin() } catch (ignored: Throwable) { }
+        }
+    }
+
+    private fun showDashboardInternal() {
         activeModule = null
         binding.webView.stopLoading()
         binding.webView.visibility = View.GONE
@@ -2442,6 +2518,20 @@ class MainActivity : AppCompatActivity() {
         binding.loginButton.isEnabled = true
         binding.loginStatus.setTextColor(Palette.danger(this@MainActivity))
         binding.loginStatus.text = message
+    }
+
+    /** Full-screen readable error for fatal startup conditions (e.g. no WebView provider). */
+    private fun showErrorAndFinish(message: String) {
+        val view = android.widget.TextView(this).apply {
+            text = message
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(48, 48, 48, 48)
+            setBackgroundColor(0xFF071426.toInt())
+        }
+        setContentView(view)
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     

@@ -1,13 +1,12 @@
-# Gradle
+# Android build artifacts
+*.apk
+
+# Compressed files / Archives
+*.zip
+# Gradle/IDE local build state
 .gradle/
 build/
+app/build/
 local.properties
-
-# IDEs and editors
 .idea/
 *.iml
-.vscode/
-
-# OS generated files
-.DS_Store
-Thumbs.db
