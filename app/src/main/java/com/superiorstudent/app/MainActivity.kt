@@ -399,15 +399,6 @@ class MainActivity : AppCompatActivity() {
         startSessionHeartbeat()
     }
 
-    private val moduleRecoveryRunnable = Runnable { 
-        if (!loggedIn) return@Runnable
-        val module = activeModule ?: return@Runnable
-        if (!moduleFetchInProgress || binding.moduleScreen.visibility != View.VISIBLE) return@Runnable
-        binding.moduleInfo.text = "ERP is taking longer than usual…"
-        binding.moduleProgress.visibility = View.VISIBLE
-        binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
-    }
-
     private fun scheduleLoginInjection(view: WebView) {
         if (!loginInProgress || loginSubmitted) return
         if (loginAttempt >= MAX_LOGIN_INJECTION_ATTEMPTS) {
