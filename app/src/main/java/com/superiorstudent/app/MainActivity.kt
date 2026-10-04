@@ -102,8 +102,16 @@ class MainActivity : AppCompatActivity() {
     private fun recoverFromStartupCrash(t: Throwable) {
         android.util.Log.e("MainActivity", "Startup failed; wiping local state and retrying", t)
         if (startupRecovered) {
-            Toast.makeText(applicationContext, "App could not start even after reset. Please reinstall.", Toast.LENGTH_LONG).show()
-            finish()
+            android.util.Log.e(
+                "MainActivity",
+                "Second startup attempt failed. Keeping activity alive for diagnosis.",
+                t
+            )
+            showErrorAndFinish(
+                "Superior Student could not start correctly.\n\n" +
+                    "Please update Android System WebView and try again.\n" +
+                    "If the problem continues, send the screenshot of this message."
+            )
             return
         }
         startupRecovered = true
