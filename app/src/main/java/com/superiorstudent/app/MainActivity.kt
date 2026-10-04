@@ -362,8 +362,6 @@ class MainActivity : AppCompatActivity() {
         // Do not cancel the global Handler queue here. The session heartbeat and
         // pending extraction retries are lifecycle-aware and should survive a
         // normal background/foreground transition.
-        handler.removeCallbacks(moduleRecoveryRunnable)
-
         if (!loggedIn) return
 
         val module = activeModule
