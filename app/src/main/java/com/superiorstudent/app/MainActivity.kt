@@ -359,22 +359,53 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun recoverSessionAfterBackground() {
-        handler.removeCallbacksAndMessages(null)
+        // Do not cancel the global Handler queue here. The session heartbeat and
+        // pending extraction retries are lifecycle-aware and should survive a
+        // normal background/foreground transition.
+        handler.removeCallbacks(moduleRecoveryRunnable)
+
+        if (!loggedIn) return
+
+        val module = activeModule
         binding.webView.stopLoading()
         binding.webView.visibility = View.INVISIBLE
-        val module = activeModule
+
         if (module != null && binding.moduleScreen.visibility == View.VISIBLE) {
-            cachedModuleData.remove(module)
-            moduleFetchInProgress = true
             moduleReadRequestId++
-            binding.moduleProgress.visibility = View.VISIBLE
-            binding.moduleContent.removeAllViews()
+            moduleReadAttempts = 0
             binding.moduleInfo.text = "Reconnecting to your student account…"
+            binding.moduleProgress.visibility = View.VISIBLE
+
+            // Keep the last known good presentation visible during reconnects.
+            // This prevents the blank-screen flash reported after the app sits
+            // idle in the background for several minutes.
+            cachedModuleData[module]?.let { payload ->
+                parseModuleData(payload)?.takeIf { hasUsableModuleData(module, it) }?.let { cached ->
+                    binding.moduleContent.removeAllViews()
+                    renderModuleData(module, cached)
+                    binding.moduleInfo.text = "Last synced data • Updating from ERP…"
+                    binding.moduleProgress.visibility = View.VISIBLE
+                }
+            }
+
+            moduleFetchInProgress = true
             binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
         } else {
             restoringSession = true
             binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
         }
+
+        // Always restart the heartbeat after a long resume.
+        startSessionHeartbeat()
+    }
+
+    private val moduleRecoveryRunnable = Runnable { 
+        if (!loggedIn) return@Runnable
+        val module = activeModule ?: return@Runnable
+        if (!moduleFetchInProgress || binding.moduleScreen.visibility != View.VISIBLE) return@Runnable
+        binding.moduleInfo.text = "ERP is taking longer than usual…"
+        binding.moduleProgress.visibility = View.VISIBLE
+        binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
     }
 
     private fun scheduleLoginInjection(view: WebView) {
