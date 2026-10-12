@@ -28,12 +28,12 @@ object ErpPageParser {
 
     fun parse(payload: String): ModuleData? =
         try {
-            parseOrThrow(payload)
+            parseInternal(payload)
         } catch (_: Exception) {
             null
         }
 
-    internal fun parseOrThrow(payload: String): ModuleData {
+    private fun parseInternal(payload: String): ModuleData {
         val json = JSONObject(payload)
         val cards = mutableListOf<Pair<String, String>>()
         json.optJSONArray("cards")?.let { arr ->

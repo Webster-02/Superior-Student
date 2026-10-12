@@ -43,7 +43,7 @@ class ErpPageParserTest {
             }
         """.trimIndent()
 
-        val result = ErpPageParser.parseOrThrow(payload)
+        val result = ErpPageParser.parse(payload)
 
         assertNotNull(result)
         assertEquals("Functional English", result!!.attendanceDetail!!.course)
