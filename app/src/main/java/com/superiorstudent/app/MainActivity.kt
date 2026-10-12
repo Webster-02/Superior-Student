@@ -28,6 +28,8 @@ import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private lateinit var webView: WebView
+    private var webViewReady = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
     private val profileCache by lazy { ProfileCache(this) }
@@ -73,210 +75,31 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Wrap the whole startup in a safety net: if anything unexpected throws
-        // (corrupt encrypted prefs, missing resource, WebView provider issues)
-        // the app must never die silently with a black screen. Instead it shows
-        // a readable error and recovers by wiping the damaged state.
+        super.onCreate(savedInstanceState)
         try {
             safeOnCreate(savedInstanceState)
         } catch (t: Throwable) {
-            try {
-                recoverFromStartupCrash(t)
-            } catch (inner: Throwable) {
-                // Last resort: plain toast + graceful finish instead of a crash loop.
-                android.util.Log.e("MainActivity", "Unrecoverable startup failure", inner)
-                Toast.makeText(applicationContext, "App failed to start. Please reinstall.", Toast.LENGTH_LONG).show()
-                finish()
-            }
-        }
-    }
-
-    /**
-     * Emergency recovery for startup crashes. Wipes the damaged local state
-     * (encrypted prefs, caches, cookies) and retries the launch exactly once.
-     * If the retry also fails the user sees a clear message instead of a
-     * silent black-screen crash loop.
-     */
-    private var startupRecovered = false
-
-    private fun recoverFromStartupCrash(t: Throwable) {
-        android.util.Log.e("MainActivity", "Startup failed; wiping local state and retrying", t)
-        if (startupRecovered) {
-            android.util.Log.e(
-                "MainActivity",
-                "Second startup attempt failed. Keeping activity alive for diagnosis.",
-                t
-            )
+            android.util.Log.e("MainActivity", "Startup failed before login UI was ready", t)
             showErrorAndFinish(
-                "Superior Student could not start correctly.\n\n" +
-                    "Please update Android System WebView and try again.\n" +
-                    "If the problem continues, send the screenshot of this message."
+                "Superior Student could not start.\n\n" +
+                    "Error: " + t.javaClass.simpleName + "\n" +
+                    (t.message ?: "No additional error details.") +
+                    "\n\nPlease send this screen to support."
             )
-            return
         }
-        startupRecovered = true
-        try {
-            getSharedPreferences("superior_session_encrypted", MODE_PRIVATE).edit().clear().apply()
-            getSharedPreferences("superior_session_fallback", MODE_PRIVATE).edit().clear().apply()
-            getSharedPreferences("superior_student_preferences", MODE_PRIVATE).edit().clear().apply()
-            deleteDatabase("superior_session_encrypted")
-            java.io.File(filesDir, "student_profile_cache.json").delete()
-            CookieManager.getInstance().removeAllCookies(null)
-            CookieManager.getInstance().flush()
-        } catch (ignored: Throwable) {
-        }
-        // Re-run startup with clean state (no saved instance -> fresh login screen).
-        onCreate(null)
     }
 
     private fun safeOnCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // WebView provider can be missing/disabled on some devices (e.g. System
-        // WebView disabled by user). Detect it up-front and tell the user
-        // instead of crashing when inflating the layout.
-        try {
-            val pkg = android.webkit.WebView.getCurrentWebViewPackage()
-            if (pkg == null || pkg.applicationInfo?.enabled != true) {
-                showErrorAndFinish("Android System WebView is disabled or missing on this device. Enable it from Play Store, then reopen the app.")
-                return
-            }
-        } catch (ignored: Throwable) {
-        }
-        Scripts.loadAll(this)
-        sessionStore.migrateFromLegacy()
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        try { sessionStore.migrateFromLegacy() } catch (t: Throwable) {
+            android.util.Log.w("MainActivity", "Could not migrate saved session; showing login screen", t)
+        }
 
         binding.loginScroll.visibility = View.VISIBLE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
-        binding.webView.visibility = View.GONE
         binding.sideMenuOverlay.visibility = View.GONE
-
-        val webView = binding.webView
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.settings.databaseEnabled = true
-        webView.settings.loadsImagesAutomatically = true
-        webView.settings.setSupportZoom(false)
-        webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-        webView.settings.allowFileAccess = false
-        webView.settings.allowContentAccess = false
-        // Defense-in-depth: mixed content (http resources on https pages) is blocked.
-        webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
-                // The student portal never needs camera/mic; deny explicitly.
-                request.deny()
-            }
-
-            override fun onCreateWindow(
-                view: WebView,
-                isDialog: Boolean,
-                isUserGesture: Boolean,
-                resultMsg: android.os.Message?
-            ): Boolean {
-                // Block popups that could leak the session to an external page.
-                Toast.makeText(view.context, "External popups are blocked for your security.", Toast.LENGTH_SHORT).show()
-                return false
-            }
-        }
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val target = request.url.toString()
-                if (!ErpConfig.belongsToErp(target)) {
-                    // Never navigate the authenticated WebView away from the ERP host.
-                    return true
-                }
-                return false
-            }
-
-            @Suppress("DEPRECATION", "Overriding")
-            override fun onReceivedSslError(
-                view: WebView,
-                handler: android.webkit.SslErrorHandler,
-                error: android.net.http.SslError
-            ) {
-                // Strict TLS: refuse to load content when certificate validation fails.
-                handler.cancel()
-                if (activeModule != null) {
-                    binding.moduleProgress.visibility = View.GONE
-                    binding.moduleInfo.text = "Secure connection failed. Check your network and tap Refresh."
-                } else if (loginInProgress || restoringSession) {
-                    failLogin("Secure connection to the university portal failed. Please try again.")
-                }
-            }
-
-            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                super.onReceivedError(view, request, error)
-                if (request.isForMainFrame && activeModule != null) {
-                    binding.moduleProgress.visibility = View.GONE
-                    Toast.makeText(this@MainActivity, "Unable to load your information. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
-                }
-            }
-
-            override fun onPageFinished(view: WebView, url: String) {
-                super.onPageFinished(view, url)
-
-                if (!loginInProgress && !profileFetchInProgress && ErpConfig.isLoginUrl(url)) {
-                    restoringSession = false
-                    loggedIn = false
-                    sessionStore.sessionActive = false
-                    showLogin()
-                    Toast.makeText(this@MainActivity, "Your university session expired. Please sign in again.", Toast.LENGTH_LONG).show()
-                    return
-                }
-
-                if (restoringSession) {
-                    if (isAuthenticatedUrl(url)) {
-                        restoringSession = false
-                        completeLogin()
-                    } else if (ErpConfig.isLoginUrl(url)) {
-                        restoringSession = false
-                        sessionStore.sessionActive = false
-                        showLogin()
-                    }
-                    return
-                }
-
-                if (loginInProgress) {
-                    if (isAuthenticatedUrl(url)) {
-                        completeLogin()
-                    } else if (ErpConfig.isLoginUrl(url)) {
-                        if (!loginSubmitted) {
-                            loginAttempt = 0
-                            scheduleLoginInjection(view)
-                        } else {
-                            view.evaluateJavascript(Scripts.loginErrorCheck) { result ->
-                                if (result == "true") failLogin("Login failed. Check your ERP username or password.")
-                            }
-                        }
-                    }
-                    return
-                }
-
-                if (profileFetchInProgress && isAuthenticatedUrl(url)) {
-                    waitForProfileDom(view)
-                    return
-                }
-
-                val preload = preloadingModule
-                if (preload != null && url.contains(preload.path, true)) {
-                    readModuleData(view, preload, false)
-                    return
-                }
-
-                val active = activeModule
-                if (moduleFetchInProgress && active != null && url.contains(active.path, true)) {
-                    moduleFetchInProgress = false
-                    readModuleData(view, active, true)
-                }
-            }
-        }
 
         binding.loginButton.setOnClickListener {
             username = binding.usernameInput.text.toString().trim()
@@ -286,6 +109,7 @@ class MainActivity : AppCompatActivity() {
                 binding.loginStatus.text = "Please enter your university username and password."
                 return@setOnClickListener
             }
+            if (!ensureWebView()) return@setOnClickListener
             loginInProgress = true
             loginSubmitted = false
             restoringSession = false
@@ -317,16 +141,174 @@ class MainActivity : AppCompatActivity() {
         attachPressFeedback(binding.timetableButton)
         attachPressFeedback(binding.feeButton)
 
+        val hasSavedSession = try { sessionStore.sessionActive } catch (t: Throwable) {
+            android.util.Log.w("MainActivity", "Ignoring unreadable saved session", t)
+            false
+        }
         if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState)
-        } else if (sessionStore.sessionActive) {
-            username = sessionStore.username
-            restoringSession = true
-            binding.loginScroll.visibility = View.GONE
-            binding.dashboardScroll.visibility = View.VISIBLE
-            webView.visibility = View.GONE
-            showDashboard()
-            binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
+            if (ensureWebView()) webView.restoreState(savedInstanceState)
+        } else if (hasSavedSession) {
+            username = try { sessionStore.username } catch (_: Throwable) { "" }
+            if (ensureWebView()) {
+                restoringSession = true
+                binding.loginScroll.visibility = View.GONE
+                binding.dashboardScroll.visibility = View.VISIBLE
+                webView.visibility = View.GONE
+                showDashboard()
+                webView.loadUrl(ErpConfig.DASHBOARD_URL)
+            }
+        }
+    }
+
+    /**
+     * Create WebView only on demand so a bad provider cannot prevent the
+     * native login screen from appearing at app launch.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun ensureWebView(): Boolean {
+        return try {
+            if (!::webView.isInitialized) {
+                webView = WebView(this).apply {
+                    layoutParams = android.widget.FrameLayout.LayoutParams(dp(1), dp(1))
+                    visibility = View.INVISIBLE
+                    alpha = 0f
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }
+                binding.webViewContainer.addView(webView)
+            }
+            if (!webViewReady) {
+                Scripts.loadAll(this)
+                CookieManager.getInstance().setAcceptCookie(true)
+                CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+                webView.settings.javaScriptEnabled = true
+                webView.settings.domStorageEnabled = true
+                webView.settings.databaseEnabled = true
+                webView.settings.loadsImagesAutomatically = true
+                webView.settings.setSupportZoom(false)
+                webView.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                webView.settings.allowFileAccess = false
+                webView.settings.allowContentAccess = false
+                // Defense-in-depth: mixed content (http resources on https pages) is blocked.
+                webView.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        
+                webView.webChromeClient = object : WebChromeClient() {
+                    override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
+                        // The student portal never needs camera/mic; deny explicitly.
+                        request.deny()
+                    }
+        
+                    override fun onCreateWindow(
+                        view: WebView,
+                        isDialog: Boolean,
+                        isUserGesture: Boolean,
+                        resultMsg: android.os.Message?
+                    ): Boolean {
+                        // Block popups that could leak the session to an external page.
+                        Toast.makeText(view.context, "External popups are blocked for your security.", Toast.LENGTH_SHORT).show()
+                        return false
+                    }
+                }
+        
+                webView.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        val target = request.url.toString()
+                        if (!ErpConfig.belongsToErp(target)) {
+                            // Never navigate the authenticated WebView away from the ERP host.
+                            return true
+                        }
+                        return false
+                    }
+        
+                    @Suppress("DEPRECATION", "Overriding")
+                    override fun onReceivedSslError(
+                        view: WebView,
+                        handler: android.webkit.SslErrorHandler,
+                        error: android.net.http.SslError
+                    ) {
+                        // Strict TLS: refuse to load content when certificate validation fails.
+                        handler.cancel()
+                        if (activeModule != null) {
+                            binding.moduleProgress.visibility = View.GONE
+                            binding.moduleInfo.text = "Secure connection failed. Check your network and tap Refresh."
+                        } else if (loginInProgress || restoringSession) {
+                            failLogin("Secure connection to the university portal failed. Please try again.")
+                        }
+                    }
+        
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                        super.onReceivedError(view, request, error)
+                        if (request.isForMainFrame && activeModule != null) {
+                            binding.moduleProgress.visibility = View.GONE
+                            Toast.makeText(this@MainActivity, "Unable to load your information. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+        
+                    override fun onPageFinished(view: WebView, url: String) {
+                        super.onPageFinished(view, url)
+        
+                        if (!loginInProgress && !profileFetchInProgress && ErpConfig.isLoginUrl(url)) {
+                            restoringSession = false
+                            loggedIn = false
+                            sessionStore.sessionActive = false
+                            showLogin()
+                            Toast.makeText(this@MainActivity, "Your university session expired. Please sign in again.", Toast.LENGTH_LONG).show()
+                            return
+                        }
+        
+                        if (restoringSession) {
+                            if (isAuthenticatedUrl(url)) {
+                                restoringSession = false
+                                completeLogin()
+                            } else if (ErpConfig.isLoginUrl(url)) {
+                                restoringSession = false
+                                sessionStore.sessionActive = false
+                                showLogin()
+                            }
+                            return
+                        }
+        
+                        if (loginInProgress) {
+                            if (isAuthenticatedUrl(url)) {
+                                completeLogin()
+                            } else if (ErpConfig.isLoginUrl(url)) {
+                                if (!loginSubmitted) {
+                                    loginAttempt = 0
+                                    scheduleLoginInjection(view)
+                                } else {
+                                    view.evaluateJavascript(Scripts.loginErrorCheck) { result ->
+                                        if (result == "true") failLogin("Login failed. Check your ERP username or password.")
+                                    }
+                                }
+                            }
+                            return
+                        }
+        
+                        if (profileFetchInProgress && isAuthenticatedUrl(url)) {
+                            waitForProfileDom(view)
+                            return
+                        }
+        
+                        val preload = preloadingModule
+                        if (preload != null && url.contains(preload.path, true)) {
+                            readModuleData(view, preload, false)
+                            return
+                        }
+        
+                        val active = activeModule
+                        if (moduleFetchInProgress && active != null && url.contains(active.path, true)) {
+                            moduleFetchInProgress = false
+                            readModuleData(view, active, true)
+                        }
+                    }
+                }
+                webViewReady = true
+            }
+            true
+        } catch (t: Throwable) {
+            android.util.Log.e("MainActivity", "Could not initialize university portal WebView", t)
+            binding.loginStatus.setTextColor(Palette.danger(this))
+            binding.loginStatus.text = "University sign-in is unavailable. Update Android System WebView and Chrome, then try again."
+            false
         }
     }
 
@@ -373,8 +355,8 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn) return
 
         val module = activeModule
-        binding.webView.stopLoading()
-        binding.webView.visibility = View.INVISIBLE
+        webView.stopLoading()
+        webView.visibility = View.INVISIBLE
 
         if (module != null && binding.moduleScreen.visibility == View.VISIBLE) {
             moduleReadRequestId++
@@ -395,10 +377,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             moduleFetchInProgress = true
-            binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
+            webView.loadUrl(ErpConfig.moduleUrl(module.path))
         } else {
             restoringSession = true
-            binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
+            webView.loadUrl(ErpConfig.DASHBOARD_URL)
         }
 
         // Always restart the heartbeat after a long resume.
@@ -453,8 +435,8 @@ class MainActivity : AppCompatActivity() {
         profileReadAttempts = 0
         // Keep the WebView attached while waiting for the visual DOM state.
         // This makes postVisualStateCallback reliable even though the ERP page is not shown to the user.
-        binding.webView.visibility = View.INVISIBLE
-        binding.webView.loadUrl(ErpConfig.DASHBOARD_URL)
+        webView.visibility = View.INVISIBLE
+        webView.loadUrl(ErpConfig.DASHBOARD_URL)
     }
 
     private fun waitForProfileDom(view: WebView) {
@@ -552,13 +534,13 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn) return
         if (preloadQueue.isEmpty()) {
             preloadingModule = null
-            binding.webView.visibility = View.GONE
+            webView.visibility = View.GONE
             updateNextClassPreview()
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
-        binding.webView.visibility = View.INVISIBLE
-        binding.webView.loadUrl(ErpConfig.moduleUrl(preloadingModule!!.path))
+        webView.visibility = View.INVISIBLE
+        webView.loadUrl(ErpConfig.moduleUrl(preloadingModule!!.path))
     }
 
     private fun loadModule(module: Module) {
@@ -575,7 +557,7 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
-        binding.webView.visibility = View.INVISIBLE
+        webView.visibility = View.INVISIBLE
         binding.moduleProgress.visibility = View.VISIBLE
         binding.moduleContent.removeAllViews()
         binding.moduleInfo.text = "Syncing your latest information…"
@@ -612,7 +594,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         moduleFetchInProgress = true
-        binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
+        webView.loadUrl(ErpConfig.moduleUrl(module.path))
     }
 
     private fun refreshActiveModule() {
@@ -624,8 +606,8 @@ class MainActivity : AppCompatActivity() {
         binding.moduleProgress.visibility = View.VISIBLE
         binding.moduleContent.removeAllViews()
         binding.moduleInfo.text = "Syncing the latest information…"
-        binding.webView.visibility = View.INVISIBLE
-        binding.webView.loadUrl(ErpConfig.moduleUrl(module.path))
+        webView.visibility = View.INVISIBLE
+        webView.loadUrl(ErpConfig.moduleUrl(module.path))
         moduleFetchInProgress = true
     }
 
@@ -1665,10 +1647,10 @@ class MainActivity : AppCompatActivity() {
                 val script = Scripts.semesterSelectScript(label)
                 binding.moduleProgress.visibility = View.VISIBLE
                 binding.moduleInfo.text = "Loading $label…"
-                binding.webView.evaluateJavascript(script) {
+                webView.evaluateJavascript(script) {
                     handler.postDelayed({
                         if (activeModule == Module.RESULTS) {
-                            readModuleData(binding.webView, Module.RESULTS, true)
+                            readModuleData(webView, Module.RESULTS, true)
                         }
                     }, 900L)
                 }
@@ -2429,7 +2411,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun pingSession() {
         if (!loggedIn) return
-        binding.webView.evaluateJavascript(Scripts.sessionHeartbeat) { result ->
+        webView.evaluateJavascript(Scripts.sessionHeartbeat) { result ->
             if (!loggedIn) return@evaluateJavascript
             val state = ParsingUtils.decodeJavascriptString(result)
             if (state == "EXPIRED") {
@@ -2482,8 +2464,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDashboardInternal() {
         activeModule = null
-        binding.webView.stopLoading()
-        binding.webView.visibility = View.GONE
+        webView.stopLoading()
+        webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
         binding.moduleContent.removeAllViews()
@@ -2514,8 +2496,8 @@ class MainActivity : AppCompatActivity() {
         preloadingModule = null
         preloadQueue.clear()
         cachedModuleData.clear()
-        binding.webView.stopLoading()
-        binding.webView.visibility = View.GONE
+        webView.stopLoading()
+        webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
@@ -2531,9 +2513,9 @@ class MainActivity : AppCompatActivity() {
         profileCache.clear()
         getSharedPreferences("superior_student_preferences", MODE_PRIVATE).edit().clear().apply()
         CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
-        binding.webView.clearHistory()
-        binding.webView.clearCache(true)
-        binding.webView.clearFormData()
+        webView.clearHistory()
+        webView.clearCache(true)
+        webView.clearFormData()
         cachedModuleData.clear()
         showLogin()
     }
@@ -2571,13 +2553,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        binding.webView.saveState(outState)
+        if (::webView.isInitialized) webView.saveState(outState)
         super.onSaveInstanceState(outState)
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (binding.webView.visibility == View.VISIBLE) showDashboard() else super.onBackPressed()
+        if (::webView.isInitialized && webView.visibility == View.VISIBLE) showDashboard() else super.onBackPressed()
     }
 
     companion object {
