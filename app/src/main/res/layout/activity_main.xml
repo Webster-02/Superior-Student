@@ -735,12 +735,12 @@
                     android:paddingBottom="24dp" />
             </ScrollView>
 
-            <WebView
-                android:id="@+id/webView"
+            <!-- Keep the student login UI independent of WebView provider startup. -->
+            <FrameLayout
+                android:id="@+id/webViewContainer"
                 android:layout_width="1dp"
                 android:layout_height="1dp"
                 android:visibility="invisible"
-                android:alpha="0"
                 android:importantForAccessibility="no" />
 
             <ProgressBar
