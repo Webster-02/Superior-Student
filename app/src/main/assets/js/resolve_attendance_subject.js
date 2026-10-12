@@ -30,7 +30,7 @@
     const normalized = normalize(text);
     if (targetCodeNorm.length >= 5 && normalized.indexOf(targetCodeNorm) !== -1) return true;
     const simple = simplifyCourse(text);
-    return targetCourseNorm.length >= 5 &&
+    return targetCourseNorm.length >= 5 && simple.length >= 5 &&
       (simple.indexOf(targetCourseNorm) !== -1 || targetCourseNorm.indexOf(simple) !== -1);
   }
 

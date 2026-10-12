@@ -104,8 +104,9 @@
   });
 
   const percentPattern=/([0-9]{1,3}(?:\.[0-9]+)?)\s*%/;
-  const codePattern=/\b[A-Z]{2,6}\d{5,}[A-Z0-9-]*\b/i;
-  const subjectPattern=/functional english|quantitative reasoning|civics and community engagement|management of refractive errors|visual optics and image processing|redefining success/i;
+  // Accept course codes across faculties, not just a few known Optometry subjects.
+  const codePattern=/\b[A-Z]{2,8}[- ]?\d{3,}[A-Z0-9-]*\b/i;
+  const subjectPattern=/\b(?:course|subject|attendance|lecture|lab|tutorial|seminar|practical|clinical|rotation)\b/i;
 
   // Profile pages often use label/value rows instead of tables. Capture
   // those pairs explicitly so the native presentation does not lose fields.
@@ -250,7 +251,7 @@
     if(!raw || raw.length>320) return;
     const percent=raw.match(percentPattern);
     if(!percent) return;
-    if(!codePattern.test(raw) && !subjectPattern.test(raw)) return;
+    if(!codePattern.test(raw) && !/\\battendance\\b/i.test(raw)) return;
 
     let subject=raw.replace(percent[0],'').trim();
     const codeMatch=subject.match(codePattern);
@@ -550,7 +551,7 @@
     if(!raw || raw.length>320) return;
     const attrs=safe(attrText(el));
     const combined=safe([raw,attrs].filter(Boolean).join(' | '));
-    if(!codePattern.test(combined) && !subjectPattern.test(combined)) return;
+    if(!codePattern.test(combined) && !/\\battendance\\b/i.test(combined)) return;
 
     const codeMatch=combined.match(codePattern);
     const code=codeMatch ? codeMatch[0] : '';

@@ -96,6 +96,9 @@ class MainActivity : AppCompatActivity() {
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
     private var activeAttendanceDetailUrl: String? = null
+    private var pendingAttendanceResolution = false
+    private var pendingAttendanceCourse = ""
+    private var pendingAttendanceCode = ""
     private var lastPausedAt = 0L
     /** Brand display font (Roboto Medium) used across programmatic views. */
     private val typeface: android.graphics.Typeface
@@ -429,6 +432,16 @@ class MainActivity : AppCompatActivity() {
         
                         if (profileFetchInProgress && isAuthenticatedUrl(url)) {
                             waitForProfileDom(view)
+                            return
+                        }
+
+                        if (pendingAttendanceResolution &&
+                            activeModule == StudentModule.ATTENDANCE &&
+                            ErpConfig.belongsToErp(url) &&
+                            url.contains(StudentModule.ATTENDANCE.path, ignoreCase = true) &&
+                            !url.contains("/student/attendancedetail", ignoreCase = true)) {
+                            pendingAttendanceResolution = false
+                            resolvePendingAttendanceSubject(view, pendingAttendanceCourse, pendingAttendanceCode)
                             return
                         }
         
@@ -785,6 +798,9 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn) return
 
         if (url.isNotBlank()) {
+            pendingAttendanceResolution = false
+            pendingAttendanceCourse = ""
+            pendingAttendanceCode = ""
             if (!ErpConfig.belongsToErp(url) || !url.contains("/student/attendancedetail", ignoreCase = true)) {
                 Toast.makeText(this, "This subject's ERP detail link is unavailable.", Toast.LENGTH_SHORT).show()
                 return
@@ -798,9 +814,19 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Ask the authenticated ERP DOM for this subject's actual link; never hard-code record IDs.
+        // The hidden WebView may currently be showing a preloaded module.
+        // Always return to the authenticated attendance summary before resolving a subject.
+        pendingAttendanceCourse = course
+        pendingAttendanceCode = code
+        pendingAttendanceResolution = true
         beginAttendanceDetailNavigation(null)
-        webView.evaluateJavascript(Scripts.attendanceSubjectResolverScript(course, code)) { result ->
+        webView.loadUrl(ErpConfig.moduleUrl(StudentModule.ATTENDANCE.path))
+    }
+
+    private fun resolvePendingAttendanceSubject(view: WebView, course: String, code: String) {
+        if (!loggedIn || activeModule != StudentModule.ATTENDANCE) return
+        binding.moduleInfo.text = "Finding this subject's class history…"
+        view.evaluateJavascript(Scripts.attendanceSubjectResolverScript(course, code)) { result ->
             if (!loggedIn || activeModule != StudentModule.ATTENDANCE) return@evaluateJavascript
 
             val payload = ParsingUtils.decodeJavascriptString(result)
@@ -818,8 +844,11 @@ class MainActivity : AppCompatActivity() {
                         !resolvedUrl.contains("/student/attendancedetail", ignoreCase = true)) {
                         failAttendanceDetailResolution()
                     } else {
+                        pendingAttendanceCourse = ""
+                        pendingAttendanceCode = ""
                         activeAttendanceDetailUrl = resolvedUrl
-                        webView.loadUrl(resolvedUrl)
+                        moduleFetchInProgress = true
+                        view.loadUrl(resolvedUrl)
                     }
                 }
                 clicked -> handler.postDelayed({
@@ -835,7 +864,7 @@ class MainActivity : AppCompatActivity() {
                     } else if (activeAttendanceDetailUrl.isNullOrBlank()) {
                         failAttendanceDetailResolution()
                     }
-                }, 1400L)
+                }, 1800L)
                 else -> failAttendanceDetailResolution()
             }
         }
@@ -862,6 +891,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun failAttendanceDetailResolution() {
+        pendingAttendanceResolution = false
+        pendingAttendanceCourse = ""
+        pendingAttendanceCode = ""
         moduleFetchInProgress = false
         moduleReadAttempts = 0
         moduleReadRequestId++
@@ -878,6 +910,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showAttendanceSummary() {
+        pendingAttendanceResolution = false
+        pendingAttendanceCourse = ""
+        pendingAttendanceCode = ""
         activeAttendanceDetailUrl = null
         moduleFetchInProgress = false
         moduleReadAttempts = 0

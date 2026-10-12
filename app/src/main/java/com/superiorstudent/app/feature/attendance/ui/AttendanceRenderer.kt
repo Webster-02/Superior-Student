@@ -347,10 +347,10 @@ class AttendanceRenderer(
     }
 
     private fun toAttendanceRow(record: ModuleRecord): AttendanceRow? {
-        val values = record.values.map(ParsingUtils::cleanDisplayText).filter(String::isNotBlank)
-        if (values.isEmpty()) return null
+        val values = record.values.map(ParsingUtils::cleanDisplayText)
+        if (values.none(String::isNotBlank)) return null
         val headers = record.headers.map(ParsingUtils::cleanDisplayText)
-        val joined = values.joinToString(" ")
+        val joined = values.filter(String::isNotBlank).joinToString(" ")
         if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
 
         fun valueFor(vararg keys: String): String {
@@ -368,7 +368,7 @@ class AttendanceRenderer(
             ?: Regex("""(\d{1,3}(?:\.\d{1,2})?)\s*%""").find(joined)?.groupValues?.getOrNull(1)?.toDoubleOrNull()?.coerceIn(0.0, 100.0)
 
         val code = codeFromHeader.ifBlank {
-            Regex("""\b(?:HOM|HIM|GEN|HOQ)\d{5,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
+            Regex("""\b[A-Z]{2,8}[- ]?\d{3,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE).find(joined)?.value.orEmpty()
         }
 
         val course = courseFromHeader.ifBlank {
