@@ -39,6 +39,22 @@ class TimetableParserTest {
     }
 
     @Test
+    fun keepsHeaderIndexesAlignedWhenErpRowContainsBlankCells() {
+        val row = TimetableParser.toRow(
+            ModuleRecord(
+                headers = listOf("Day", "Time", "Instructor", "Course Name", "Course Code", "Room"),
+                values = listOf("Monday", "09:00 - 10:00", "", "Functional English", "HOQ061140", "204")
+            )
+        )!!
+
+        assertEquals("Monday", row.day)
+        assertEquals("09:00 - 10:00", row.time)
+        assertEquals("Functional English", row.course)
+        assertEquals("HOQ061140", row.code)
+        assertEquals("204", row.room)
+    }
+
+    @Test
     fun skipsNonScheduleSessionNoise() {
         assertNull(TimetableParser.toRow(ModuleRecord(emptyList(), listOf("Session inactive stay online"))))
     }

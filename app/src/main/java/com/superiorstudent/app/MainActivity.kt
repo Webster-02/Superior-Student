@@ -42,6 +42,7 @@ import com.superiorstudent.app.data.parser.ErpPageParser
 import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
 import com.superiorstudent.app.feature.attendance.ui.AttendanceRenderer
 import com.superiorstudent.app.feature.timetable.ui.TimetableRenderer
+import com.superiorstudent.app.feature.timetable.domain.NextClassSelector
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -1865,19 +1866,9 @@ class MainActivity : AppCompatActivity() {
             else -> "Sunday"
         }
         val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+        val next = NextClassSelector.selectNext(rows, currentDay, currentMinutes)
 
-        val sameDay = rows.filter { it.day.equals(currentDay, true) }
-        val next = sameDay.mapNotNull { row ->
-            ParsingUtils.startMinutesOf(row.time)?.let { start -> if (start >= currentMinutes) start to row else null }
-        }.minByOrNull { it.first }?.second
-            ?: rows.mapNotNull { row -> ParsingUtils.startMinutesOf(row.time)?.let { it to row } }
-                .minByOrNull { it.first }?.second
-
-        if (next == null) {
-            label.text = "Schedule synced"
-        } else {
-            label.text = "Next: " + next.time + " • " + next.course
-        }
+        label.text = next?.let { "Next: " + it.time + " • " + it.course } ?: "Schedule synced"
     }
 
     private fun startSessionHeartbeat() {

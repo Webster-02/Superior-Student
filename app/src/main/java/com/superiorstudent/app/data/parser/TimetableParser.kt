@@ -10,10 +10,10 @@ import com.superiorstudent.app.data.model.TimetableRow
  */
 object TimetableParser {
     fun toRow(record: ModuleRecord): TimetableRow? {
-        val values = record.values.map(ParsingUtils::cleanDisplayText).filter(String::isNotBlank)
-        if (values.isEmpty()) return null
+        val values = record.values.map(ParsingUtils::cleanDisplayText)
+        if (values.none(String::isNotBlank)) return null
         val headers = record.headers.map(ParsingUtils::cleanDisplayText)
-        val joined = values.joinToString(" ")
+        val joined = values.filter(String::isNotBlank).joinToString(" ")
         if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
 
         fun headerValue(vararg keys: String): String {
