@@ -662,11 +662,17 @@
       if (seenAttendanceUrls.has(parsed.href)) return;
       seenAttendanceUrls.add(parsed.href);
 
-      const context = (node.closest && node.closest('tr,li,.o_data_row,.o_kanban_record,.list-group-item,.row,.card,[role="row"]')) ||
+      /* The ERP renders each subject as a .md-card inside a shared .row.
+       * Match the nearest subject card first; a shared .row can contain every
+       * course and mistakenly assign the first course code to every link. */
+      const context = (node.closest && node.closest('.md-card,tr,li,.o_data_row,.o_kanban_record,.list-group-item,.card,[role="row"]')) ||
         node.parentElement || node;
       const contextText = safe(textOf(context));
-      const anchorText = safe(textOf(node) || node.getAttribute('title') || node.getAttribute('aria-label') || '');
-      const code = (contextText.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/i) || [])[0] || '';
+      const titleNode = context.querySelector && context.querySelector('.md-list-heading');
+      const codeNode = context.querySelector && context.querySelector('.sub-heading');
+      const anchorText = safe((titleNode && textOf(titleNode)) || textOf(node) || node.getAttribute('title') || node.getAttribute('aria-label') || '');
+      const codeSource = safe((codeNode && textOf(codeNode)) || contextText);
+      const code = (codeSource.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/i) || [])[0] || '';
       const percentMatch = contextText.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
       const genericAnchor = /^(view|details|attendance|open|show|\d+|›|→)?$/i.test(anchorText);
       const label = !genericAnchor && anchorText.length >= 3 ? anchorText : contextText;
