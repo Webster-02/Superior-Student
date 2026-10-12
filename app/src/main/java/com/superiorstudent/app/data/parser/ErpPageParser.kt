@@ -15,6 +15,17 @@ import org.json.JSONObject
  * This class has no Activity dependency, so malformed page data cannot affect UI code.
  */
 object ErpPageParser {
+    private fun JSONObject.optPercent(key: String): Double? {
+        val raw = opt(key)
+        if (raw == null || raw === JSONObject.NULL) return null
+        val value = when (raw) {
+            is Number -> raw.toDouble()
+            is String -> raw.toDoubleOrNull()
+            else -> null
+        } ?: return null
+        return value.takeIf { !it.isNaN() && !it.isInfinite() && it in 0.0..100.0 }
+    }
+
     fun parse(payload: String): ModuleData? {
             return try {
                 val json = JSONObject(payload)
@@ -85,16 +96,12 @@ object ErpPageParser {
                     .distinct()
                     .take(12)
     
-                val overall = json.optDouble("overallAttendance", Double.NaN)
-                    .takeUnless { it.isNaN() }
-                    ?.takeIf { it in 0.0..100.0 }
+                val overall = json.optPercent("overallAttendance")
     
                 val attendanceDetail = json.optJSONObject("attendanceDetail")?.let { detail ->
                     fun intOrNull(key: String): Int? =
                         if (detail.has(key) && !detail.isNull(key)) detail.optInt(key) else null
-                    val percentage = detail.optDouble("percentage", Double.NaN)
-                        .takeUnless { it.isNaN() }
-                        ?.takeIf { it in 0.0..100.0 }
+                    val percentage = detail.optPercent("percentage")
                     val sessions = mutableListOf<AttendanceSession>()
                     detail.optJSONArray("sessions")?.let { items ->
                         for (i in 0 until items.length()) {
@@ -121,9 +128,7 @@ object ErpPageParser {
                         val item = items.optJSONObject(i) ?: continue
                         val url = item.optString("url", "")
                         if (!ErpConfig.belongsToErp(url) || !url.contains("/student/attendancedetail", ignoreCase = true)) continue
-                        val percentage = item.optDouble("percentage", Double.NaN)
-                            .takeUnless { it.isNaN() }
-                            ?.takeIf { it in 0.0..100.0 }
+                        val percentage = item.optPercent("percentage")
                         attendanceDetailLinks.add(AttendanceDetailLink(
                             ParsingUtils.cleanDisplayText(item.optString("course", "")),
                             ParsingUtils.cleanDisplayText(item.optString("code", "")),
@@ -143,9 +148,7 @@ object ErpPageParser {
                     attendanceDetail,
                     attendanceDetailLinks.distinctBy { it.url }
                 )
-            } catch (error: Exception) {
-                // Deliberately exclude the ERP payload because it may contain student data.
-                System.err.println("ErpPageParser failed: ${error.javaClass.name}: ${error.message}")
+            } catch (_: Exception) {
                 null
             }
         }
