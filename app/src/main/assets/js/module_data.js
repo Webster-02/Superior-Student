@@ -565,11 +565,98 @@
 
   scheduleStructured.forEach(function(record){records.push(record);});
 
+  // Subject attendance detail pages expose exact ERP counts and per-class statuses.
+  // Keep this separate from the summary parser because the summary does not
+  // always include conducted/attended counts.
+  let attendanceDetail = null;
+  const isAttendanceDetail = /\\/student\\/attendancedetail(?:\\/|$)/i.test(path);
+  if (isAttendanceDetail) {
+    const detailText = safe((root && (root.innerText || root.textContent)) ||
+      (document.body && (document.body.innerText || document.body.textContent)) || '');
+
+    function detailField(pattern) {
+      const match = detailText.match(pattern);
+      return match ? safe(match[1]) : '';
+    }
+
+    const detailCourse = detailField(/\\bCourse\\s*:\\s*(.*?)(?=\\s+Course Code\\s*:|\\s+Number of classes Conducted\\s*:|\\s+Number of classes Attended\\s*:|\\s+Attendance Percentage\\s*:|$)/i);
+    const detailCode = detailField(/\\bCourse Code\\s*:\\s*(.*?)(?=\\s+Number of classes Conducted\\s*:|\\s+Number of classes Attended\\s*:|\\s+Attendance Percentage\\s*:|$)/i);
+    const conductedMatch = detailText.match(/Number of classes Conducted\\s*:\\s*(\\d+)/i);
+    const attendedMatch = detailText.match(/Number of classes Attended\\s*:\\s*(\\d+)/i);
+    const percentageMatch = detailText.match(/Attendance Percentage\\s*:\\s*(\\d{1,3}(?:\\.\\d+)?)\\s*%?/i);
+
+    const sessionTable = tables.find(function(table) {
+      return table.headers.some(function(h) { return /date/i.test(h); }) &&
+        table.headers.some(function(h) { return /status/i.test(h); });
+    });
+    let sessions = [];
+    if (sessionTable) {
+      const dateIndex = sessionTable.headers.findIndex(function(h) { return /date/i.test(h); });
+      const statusIndex = sessionTable.headers.findIndex(function(h) { return /status/i.test(h); });
+      sessions = sessionTable.rows.map(function(row) {
+        return {
+          date: clean(row[dateIndex] || ''),
+          status: clean(row[statusIndex] || '').toUpperCase()
+        };
+      }).filter(function(row) { return row.date || row.status; });
+    }
+
+    const conducted = conductedMatch ? parseInt(conductedMatch[1], 10) : null;
+    const attended = attendedMatch ? parseInt(attendedMatch[1], 10) : null;
+    const percentage = percentageMatch ? parseFloat(percentageMatch[1]) : null;
+    if (detailCourse || conducted !== null || attended !== null || percentage !== null) {
+      attendanceDetail = {
+        course: detailCourse,
+        code: detailCode,
+        conducted: conducted,
+        attended: attended,
+        percentage: percentage,
+        sessions: sessions.slice(0, 150)
+      };
+    }
+  }
+
+  // On the attendance summary page, collect direct links to subject detail
+  // records. The app opens a link only after the student taps that subject.
+  const attendanceDetailLinks = [];
+  if (!isAttendanceDetail) {
+    const seenAttendanceUrls = new Set();
+    Array.from(clone.querySelectorAll('a[href]')).forEach(function(anchor) {
+      let parsed;
+      try {
+        parsed = new URL(anchor.getAttribute('href') || '', location.href);
+      } catch (_) {
+        return;
+      }
+      if (!/\\/student\\/attendancedetail(?:\\/|$)/i.test(parsed.pathname)) return;
+      if (parsed.hostname.toLowerCase() !== location.hostname.toLowerCase()) return;
+      if (seenAttendanceUrls.has(parsed.href)) return;
+      seenAttendanceUrls.add(parsed.href);
+
+      const context = anchor.closest('tr,li,.o_data_row,.o_kanban_record,.list-group-item,.row,.card') ||
+        anchor.parentElement || anchor;
+      const contextText = safe(textOf(context));
+      const anchorText = safe(textOf(anchor) || anchor.getAttribute('title') || anchor.getAttribute('aria-label') || '');
+      const code = (contextText.match(/\\b[A-Z]{2,8}\\d{4,}[A-Z0-9-]*\\b/i) || [])[0] || '';
+      const percentMatch = contextText.match(/(\\d{1,3}(?:\\.\\d+)?)\\s*%/);
+      const genericAnchor = /^(view|details|attendance|open|show|\\d+|›|→)?$/i.test(anchorText);
+      const label = !genericAnchor && anchorText.length >= 3 ? anchorText : contextText;
+      attendanceDetailLinks.push({
+        course: label.slice(0, 180),
+        code: code,
+        url: parsed.href,
+        percentage: percentMatch ? parseFloat(percentMatch[1]) : null
+      });
+    });
+  }
+
   return JSON.stringify({
     cards:unique(cards).slice(0,8),
     tables:unique(tables).slice(0,12),
     lines:unique(lines).slice(0,60),
     records:unique(records).slice(0,160),
-    overallAttendance:overallAttendance
+    overallAttendance:overallAttendance,
+    attendanceDetail:attendanceDetail,
+    attendanceDetailLinks:unique(attendanceDetailLinks).slice(0,80)
   });
 })();
