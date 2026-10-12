@@ -1724,7 +1724,8 @@ class MainActivity : AppCompatActivity() {
 
     /** Subtle press animation applied to tappable cards. */
     private fun attachPressFeedback(view: View) {
-        view.setOnClickListener { /* ensures clickable ripple on API 21+ */ }
+        // Do not assign a click listener here: callers already wire navigation
+        // actions, and replacing those listeners makes dashboard buttons inert.
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN,
