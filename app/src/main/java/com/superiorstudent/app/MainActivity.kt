@@ -115,6 +115,10 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             if (!ensureWebView()) return@setOnClickListener
+            (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
+                ?.hideSoftInputFromWindow(binding.passwordInput.windowToken, 0)
+            binding.usernameInput.clearFocus()
+            binding.passwordInput.clearFocus()
             loginInProgress = true
             loginSubmitted = false
             restoringSession = false
