@@ -863,6 +863,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderFee(data: ModuleData) {
+        feeRenderer.render(binding.moduleContent, data)
+    }
+
     private fun addModuleIntro(module: Module) {
         val title = when (module) {
             Module.ATTENDANCE -> "Attendance overview"

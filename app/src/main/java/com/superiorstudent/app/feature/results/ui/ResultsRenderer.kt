@@ -288,10 +288,6 @@ class ResultsRenderer(
         }
     }
 
-    private fun renderFee(data: ModuleData) {
-        feeRenderer.render(container, data)
-    }
-
     private fun roundedBackground(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable =
         android.graphics.drawable.GradientDrawable().apply {
             setColor(color)
