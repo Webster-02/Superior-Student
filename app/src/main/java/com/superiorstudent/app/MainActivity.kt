@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private val cachedModuleData = mutableMapOf<Module, String>()
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
+    private var activeAttendanceDetailUrl: String? = null
     private var lastPausedAt = 0L
     /** Brand display font (Roboto Medium) used across programmatic views. */
     private val typeface: android.graphics.Typeface
@@ -545,6 +546,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadModule(module: Module) {
         if (!loggedIn) return
+        if (module == Module.ATTENDANCE) activeAttendanceDetailUrl = null
         closeSideMenu()
 
         preloadingModule = null
@@ -599,6 +601,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshActiveModule() {
         val module = activeModule ?: return
+        val detailUrl = activeAttendanceDetailUrl
+        if (module == Module.ATTENDANCE && detailUrl != null) {
+            openAttendanceDetail(detailUrl)
+            return
+        }
+        if (module == Module.ATTENDANCE) activeAttendanceDetailUrl = null
         cachedModuleData.remove(module)
         moduleFetchInProgress = false
         moduleReadAttempts = 0
@@ -626,13 +634,15 @@ class MainActivity : AppCompatActivity() {
         val lines: List<String>,
         val records: List<ModuleRecord>,
         val overallAttendance: Double?,
-        val semesterOptions: List<String> = emptyList()
+        val semesterOptions: List<String> = emptyList(),
+        val attendanceDetail: AttendanceDetailData? = null,
+        val attendanceDetailLinks: List<AttendanceDetailLink> = emptyList()
     )
 
 
     private fun renderModuleData(module: Module, data: ModuleData) {
         binding.moduleContent.removeAllViews()
-        addModuleIntro(module)
+        if (module != Module.ATTENDANCE || data.attendanceDetail == null) addModuleIntro(module)
         when (module) {
             Module.ATTENDANCE -> renderAttendance(data)
             Module.TIMETABLE -> renderTimetable(data)
@@ -644,39 +654,368 @@ class MainActivity : AppCompatActivity() {
         binding.moduleInfo.text = "Updated from your student account"
     }
 
+    private data class AttendanceDetailLink(
+        val course: String,
+        val code: String,
+        val url: String,
+        val percentage: Double?
+    )
+
+    private data class AttendanceSession(val date: String, val status: String)
+
+    private data class AttendanceDetailData(
+        val course: String,
+        val code: String,
+        val conducted: Int?,
+        val attended: Int?,
+        val percentage: Double?,
+        val sessions: List<AttendanceSession>
+    )
+
     private data class AttendanceRow(
         val course: String,
         val code: String,
         val percent: Double?,
         val present: String,
-        val total: String
+        val total: String,
+        val detailUrl: String = ""
     )
 
     private fun renderAttendance(data: ModuleData) {
-        val rows = data.records.mapNotNull(::toAttendanceRow)
+        if (data.attendanceDetail != null) {
+            renderAttendanceDetail(data.attendanceDetail)
+            return
+        }
+
+        val parsedRows = data.records.mapNotNull(::toAttendanceRow)
             .distinctBy { it.course + "|" + it.code }
             .take(20)
+        val rows = parsedRows.map { row ->
+            val link = data.attendanceDetailLinks.firstOrNull { candidate ->
+                row.code.isNotBlank() && candidate.code.isNotBlank() &&
+                    (row.code.equals(candidate.code, true) ||
+                        row.code.contains(candidate.code, true) ||
+                        candidate.code.contains(row.code, true))
+            } ?: data.attendanceDetailLinks.firstOrNull { candidate ->
+                val course = normalizeAttendanceMatch(row.course)
+                val label = normalizeAttendanceMatch(candidate.course)
+                course.length >= 5 && label.length >= 5 &&
+                    (course.contains(label) || label.contains(course))
+            }
+            row.copy(detailUrl = link?.url.orEmpty())
+        }
 
         if (rows.isNotEmpty()) {
             val percentages = rows.mapNotNull { it.percent }
-            binding.moduleContent.addView(
-                createAttendanceSummary(data.overallAttendance, percentages, rows.size)
-            )
-            rows.forEachIndexed { index, row ->
-                binding.moduleContent.addView(createAttendanceCard(row, index + 1))
+            binding.moduleContent.addView(createAttendanceSummary(data.overallAttendance, percentages, rows.size))
+            rows.forEachIndexed { index, row -> binding.moduleContent.addView(createAttendanceCard(row, index + 1)) }
+        } else if (data.attendanceDetailLinks.isNotEmpty()) {
+            binding.moduleContent.addView(createSectionHeading(
+                "Your subjects", "Open a subject to see class-by-class attendance and the 75% planner"
+            ))
+            data.attendanceDetailLinks.forEachIndexed { index, link ->
+                binding.moduleContent.addView(createAttendanceLinkCard(link, index + 1))
             }
         } else {
             data.tables.forEachIndexed { index, table ->
-                binding.moduleContent.addView(
-                    createTableSection(
-                        table.title.ifBlank { if (index == 0) "Attendance records" else "Attendance details" },
-                        table
-                    )
-                )
+                binding.moduleContent.addView(createTableSection(
+                    table.title.ifBlank { if (index == 0) "Attendance records" else "Attendance details" }, table
+                ))
             }
-            if (data.tables.isEmpty()) binding.moduleContent.addView(
-                createEmptyState("Attendance data is unavailable", "Refresh to sync your latest subject attendance.")
-            )
+            if (data.tables.isEmpty()) binding.moduleContent.addView(createEmptyState(
+                "Attendance data is unavailable",
+                "The ERP summary did not expose subject detail links or readable attendance records. Refresh and try again."
+            ))
+        }
+    }
+
+    private fun normalizeAttendanceMatch(value: String): String =
+        value.lowercase(java.util.Locale.US).replace(Regex("[^a-z0-9]+"), "")
+
+    private fun openAttendanceDetail(url: String) {
+        if (!loggedIn) return
+        if (!ErpConfig.belongsToErp(url) || !url.contains("/student/attendancedetail", ignoreCase = true)) {
+            Toast.makeText(this, "This subject's ERP detail link is unavailable.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        activeModule = Module.ATTENDANCE
+        activeAttendanceDetailUrl = url
+        preloadingModule = null
+        preloadQueue.clear()
+        moduleReadAttempts = 0
+        moduleReadRequestId++
+        moduleFetchInProgress = true
+        binding.loginScroll.visibility = View.GONE
+        binding.dashboardScroll.visibility = View.GONE
+        binding.moduleScreen.visibility = View.VISIBLE
+        binding.moduleTitle.text = "Attendance Planner"
+        binding.moduleSubtitle.text = "Subject attendance and 75% target"
+        binding.moduleContent.removeAllViews()
+        binding.moduleProgress.visibility = View.VISIBLE
+        binding.moduleInfo.text = "Loading the subject's attendance detail from ERP…"
+        webView.visibility = View.INVISIBLE
+        webView.loadUrl(url)
+    }
+
+    private fun showAttendanceSummary() {
+        activeAttendanceDetailUrl = null
+        moduleFetchInProgress = false
+        moduleReadAttempts = 0
+        moduleReadRequestId++
+        val summary = cachedModuleData[Module.ATTENDANCE]?.let(::parseModuleData)
+        if (summary != null && summary.attendanceDetail == null) {
+            activeModule = Module.ATTENDANCE
+            binding.moduleScreen.visibility = View.VISIBLE
+            binding.loginScroll.visibility = View.GONE
+            binding.dashboardScroll.visibility = View.GONE
+            webView.visibility = View.INVISIBLE
+            renderModuleData(Module.ATTENDANCE, summary)
+        } else {
+            loadModule(Module.ATTENDANCE)
+        }
+    }
+
+    private fun createAttendanceLinkCard(link: AttendanceDetailLink, position: Int): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
+            elevation = dp(2).toFloat()
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { openAttendanceDetail(link.url) }
+            addView(TextView(this@MainActivity).apply {
+                text = link.course.ifBlank { "Subject " + position }
+                setTextColor(Palette.ink900(this@MainActivity))
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            if (link.code.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                text = link.code
+                setTextColor(Palette.ink500(this@MainActivity))
+                textSize = 10f
+                setPadding(0, dp(3), 0, 0)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Open class records and 75% planner  ›"
+                setTextColor(Palette.primary(this@MainActivity))
+                textSize = 11f
+                setPadding(0, dp(8), 0, 0)
+            })
+        }
+
+    private fun renderAttendanceDetail(detail: AttendanceDetailData) {
+        val a = detail.attended
+        val c = detail.conducted
+        val countsValid = a != null && c != null && c > 0 && a >= 0 && a <= c
+        val present = a ?: 0
+        val conducted = c ?: 0
+        val calculatedPercent = if (countsValid) present.toDouble() * 100.0 / conducted else null
+        val percent = calculatedPercent ?: detail.percentage
+        val needed = if (countsValid) maxOf(0, 3 * conducted - 4 * present) else null
+        val reached = countsValid && present * 4 >= conducted * 3
+        val safeLeaves = if (countsValid && reached) maxOf(0, (4 * present - 3 * conducted) / 3) else if (countsValid) 0 else null
+
+        val back = TextView(this).apply {
+            text = "‹  All subjects"
+            setTextColor(Palette.primary(this@MainActivity))
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(14), dp(10), dp(12), dp(10))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { showAttendanceSummary() }
+        }
+        binding.moduleContent.addView(back)
+
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = gradientBackground(Palette.primaryDark(this@MainActivity), Palette.primary(this@MainActivity), 22f)
+            elevation = dp(3).toFloat()
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(4), dp(12), dp(10)) }
+            addView(TextView(this@MainActivity).apply {
+                text = detail.course.ifBlank { "Subject attendance" }
+                setTextColor(Color.WHITE)
+                textSize = 19f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            if (detail.code.isNotBlank()) addView(TextView(this@MainActivity).apply {
+                text = detail.code
+                setTextColor(Color.argb(215, 255, 255, 255))
+                textSize = 10f
+                setPadding(0, dp(4), 0, 0)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = percent?.let { String.format(java.util.Locale.US, "%.1f%% attendance", it) }
+                    ?: "Attendance percentage unavailable"
+                setTextColor(Color.WHITE)
+                textSize = 25f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, dp(12), 0, dp(3))
+            })
+            if (countsValid) addView(TextView(this@MainActivity).apply {
+                text = present.toString() + " of " + conducted + " classes attended"
+                setTextColor(Color.argb(225, 255, 255, 255))
+                textSize = 12f
+            })
+        }
+        binding.moduleContent.addView(hero)
+
+        if (countsValid) {
+            val stats = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(dp(8), 0, dp(8), dp(8)) }
+            }
+            stats.addView(createAttendancePlannerMetric("Conducted", conducted.toString(), "Classes held", Palette.primary(this@MainActivity)))
+            stats.addView(createAttendancePlannerMetric("Attended", present.toString(), "Present classes", Palette.success(this@MainActivity)))
+            stats.addView(createAttendancePlannerMetric("Missed", (conducted - present).toString(), "Conducted − attended", Palette.danger(this@MainActivity)))
+            binding.moduleContent.addView(stats)
+
+            val nextPercent = if (needed!! > 0) {
+                (present + needed).toDouble() * 100.0 / (conducted + needed)
+            } else calculatedPercent!!
+            val targetMessage = if (reached) {
+                "Your current attendance is at or above 75%. Keep attending to protect your margin."
+            } else {
+                "Attend " + needed + " more consecutive classes without missing any. Your attendance will become " +
+                    String.format(java.util.Locale.US, "%.1f%%", nextPercent) + "."
+            }
+            binding.moduleContent.addView(createAttendancePlannerNotice(
+                if (reached) "75% target reached" else "Classes needed to reach 75%",
+                targetMessage,
+                if (reached) Palette.success(this@MainActivity) else Palette.primary(this@MainActivity),
+                if (reached) Palette.successBg(this@MainActivity) else Palette.infoBg(this@MainActivity)
+            ))
+
+            val leaveText = if (reached && safeLeaves!! > 0) {
+                "You can miss up to " + safeLeaves + " more " +
+                    (if (safeLeaves == 1) "class" else "classes") + " and stay at or above 75%."
+            } else if (reached) {
+                "There is no spare leave available if you want to maintain at least 75%."
+            } else {
+                "No additional leaves are safe right now. Attend the required classes first."
+            }
+            binding.moduleContent.addView(createAttendancePlannerNotice(
+                if (reached) "Safe future leaves" else "Leaves available right now",
+                leaveText,
+                if (reached && safeLeaves!! > 0) Palette.success(this@MainActivity) else Palette.danger(this@MainActivity),
+                if (reached && safeLeaves!! > 0) Palette.successBg(this@MainActivity) else Palette.dangerBg(this@MainActivity)
+            ))
+        } else {
+            binding.moduleContent.addView(createEmptyState(
+                "Attendance planner needs class counts",
+                "This ERP page did not return both 'Number of classes Conducted' and 'Number of classes Attended'. The ERP percentage is shown above, but class predictions are withheld to avoid guessing."
+            ))
+        }
+
+        binding.moduleContent.addView(createSectionHeading(
+            "Class-by-class history", "Dates and statuses copied from the ERP detail page"
+        ))
+        if (detail.sessions.isNotEmpty()) {
+            detail.sessions.forEachIndexed { index, session ->
+                binding.moduleContent.addView(createAttendanceSessionCard(session, index + 1))
+            }
+        } else {
+            binding.moduleContent.addView(createEmptyState(
+                "Class history unavailable",
+                "The class totals were read, but the individual date/status rows could not be extracted."
+            ))
+        }
+    }
+
+    private fun createAttendancePlannerMetric(label: String, value: String, subtitle: String, accent: Int): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Palette.surface(this@MainActivity), 16f)
+            elevation = dp(1).toFloat()
+            setPadding(dp(12), dp(12), dp(10), dp(12))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+            addView(TextView(this@MainActivity).apply {
+                text = label.uppercase(java.util.Locale.US)
+                setTextColor(Palette.ink500(this@MainActivity))
+                textSize = 9f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = value
+                setTextColor(accent)
+                textSize = 22f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, dp(3), 0, 0)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = subtitle
+                setTextColor(Palette.ink500(this@MainActivity))
+                textSize = 9f
+                setPadding(0, dp(3), 0, 0)
+            })
+        }
+
+    private fun createAttendancePlannerNotice(title: String, message: String, accent: Int, fill: Int): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(fill, 16f)
+            setPadding(dp(15), dp(13), dp(15), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                setTextColor(accent)
+                textSize = 13f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = message
+                setTextColor(Palette.ink900(this@MainActivity))
+                textSize = 11f
+                setPadding(0, dp(5), 0, 0)
+            })
+        }
+
+    private fun createAttendanceSessionCard(session: AttendanceSession, position: Int): View {
+        val status = session.status.trim().uppercase(java.util.Locale.US)
+        val isPresent = status == "P" || status == "PRESENT"
+        val isAbsent = status == "A" || status == "AB" || status.contains("ABSENT")
+        val color = when {
+            isPresent -> Palette.success(this@MainActivity)
+            isAbsent -> Palette.danger(this@MainActivity)
+            else -> Palette.ink500(this@MainActivity)
+        }
+        val statusLabel = when {
+            isPresent -> "Present (" + status + ")"
+            isAbsent -> "Absent (" + status + ")"
+            else -> if (status.isBlank()) "Unknown" else status
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBackground(Palette.surface(this@MainActivity), 13f)
+            setPadding(dp(14), dp(11), dp(14), dp(11))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(3), dp(12), dp(3)) }
+            addView(TextView(this@MainActivity).apply {
+                text = position.toString() + ".  " + session.date
+                setTextColor(Palette.ink900(this@MainActivity))
+                textSize = 12f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = statusLabel
+                setTextColor(color)
+                textSize = 11f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
         }
     }
 
@@ -895,6 +1234,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             if (stats.childCount > 0) addView(stats)
+            if (row.detailUrl.isNotBlank()) {
+                addView(TextView(this@MainActivity).apply {
+                    text = "Tap to view class history and 75% planner  ›"
+                    setTextColor(Palette.primary(this@MainActivity))
+                    textSize = 11f
+                    setPadding(0, dp(9), 0, 0)
+                })
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { openAttendanceDetail(row.detailUrl) }
+            }
         }
     }
 
@@ -2261,13 +2611,59 @@ class MainActivity : AppCompatActivity() {
                 .takeUnless { it.isNaN() }
                 ?.takeIf { it in 0.0..100.0 }
 
+            val attendanceDetail = json.optJSONObject("attendanceDetail")?.let { detail ->
+                fun intOrNull(key: String): Int? =
+                    if (detail.has(key) && !detail.isNull(key)) detail.optInt(key) else null
+                val percentage = detail.optDouble("percentage", Double.NaN)
+                    .takeUnless { it.isNaN() }
+                    ?.takeIf { it in 0.0..100.0 }
+                val sessions = mutableListOf<AttendanceSession>()
+                detail.optJSONArray("sessions")?.let { items ->
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        sessions.add(AttendanceSession(
+                            ParsingUtils.cleanDisplayText(item.optString("date", "")),
+                            ParsingUtils.cleanDisplayText(item.optString("status", "")).uppercase(java.util.Locale.US)
+                        ))
+                    }
+                }
+                AttendanceDetailData(
+                    ParsingUtils.cleanDisplayText(detail.optString("course", "")),
+                    ParsingUtils.cleanDisplayText(detail.optString("code", "")),
+                    intOrNull("conducted"),
+                    intOrNull("attended"),
+                    percentage,
+                    sessions
+                )
+            }
+
+            val attendanceDetailLinks = mutableListOf<AttendanceDetailLink>()
+            json.optJSONArray("attendanceDetailLinks")?.let { items ->
+                for (i in 0 until items.length()) {
+                    val item = items.optJSONObject(i) ?: continue
+                    val url = item.optString("url", "")
+                    if (!ErpConfig.belongsToErp(url) || !url.contains("/student/attendancedetail", ignoreCase = true)) continue
+                    val percentage = item.optDouble("percentage", Double.NaN)
+                        .takeUnless { it.isNaN() }
+                        ?.takeIf { it in 0.0..100.0 }
+                    attendanceDetailLinks.add(AttendanceDetailLink(
+                        ParsingUtils.cleanDisplayText(item.optString("course", "")),
+                        ParsingUtils.cleanDisplayText(item.optString("code", "")),
+                        url,
+                        percentage
+                    ))
+                }
+            }
+
             ModuleData(
                 cards.distinct(),
                 tables,
                 lines.distinct(),
                 records.distinctBy { it.headers to it.values },
                 overall,
-                semesterOptions
+                semesterOptions,
+                attendanceDetail,
+                attendanceDetailLinks.distinctBy { it.url }
             )
         } catch (_: Exception) {
             null
@@ -2276,7 +2672,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun hasUsableModuleData(module: Module, data: ModuleData): Boolean {
         return when (module) {
-            Module.ATTENDANCE -> data.overallAttendance != null ||
+            Module.ATTENDANCE -> data.attendanceDetail != null ||
+                data.overallAttendance != null ||
                 data.records.any { it.values.size >= 2 } ||
                 data.tables.any { it.rows.isNotEmpty() } ||
                 data.lines.any { it.contains("%") }
@@ -2320,7 +2717,9 @@ class MainActivity : AppCompatActivity() {
 
                 val usable = data != null && hasUsableModuleData(module, data)
                 if (usable && data != null) {
-                    cachedModuleData[module] = payload
+                    if (module != Module.ATTENDANCE || data.attendanceDetail == null) {
+                        cachedModuleData[module] = payload
+                    }
                     if (displayWhenReady && activeModule == module) renderModuleData(module, data)
                 } else if (displayWhenReady && activeModule == module) {
                     if (moduleReadAttempts < MAX_MODULE_READ_ATTEMPTS) {
@@ -2463,6 +2862,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDashboardInternal() {
+        activeAttendanceDetailUrl = null
         activeModule = null
         webView.stopLoading()
         webView.visibility = View.GONE
@@ -2485,6 +2885,7 @@ class MainActivity : AppCompatActivity() {
     private fun showLogin() {
         closeSideMenu()
         stopSessionHeartbeat()
+        activeAttendanceDetailUrl = null
         activeModule = null
         loggedIn = false
         loginInProgress = false
