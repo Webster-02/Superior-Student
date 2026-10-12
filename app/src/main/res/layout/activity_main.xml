@@ -88,13 +88,15 @@
                     android:drawableStart="@drawable/ic_user"
                     android:drawablePadding="9dp"
                     android:hint="University username or email"
-                    android:inputType="textEmailAddress"
+                    android:inputType="textEmailAddress|textNoSuggestions"
+                    android:imeOptions="actionNext"
+                    android:autofillHints="username"
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
                     android:singleLine="true"
                     android:textColor="@color/ink_900"
                     android:textColorHint="@color/ink_400"
-                    android:textSize="13sp" />
+                    android:textSize="16sp" />
 
                 <EditText
                     android:id="@+id/passwordInput"
@@ -106,6 +108,8 @@
                     android:drawablePadding="9dp"
                     android:hint="University password"
                     android:inputType="textPassword"
+                    android:imeOptions="actionDone"
+                    android:autofillHints="password"
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
                     android:singleLine="true"
