@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.method.HideReturnsTransformationMethod
+import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -204,6 +206,37 @@ class MainActivity : AppCompatActivity() {
                     }
                 }, 260L)
             }
+        }
+
+        // Force a strong text/hint contrast independently of device-specific theme defaults.
+        binding.usernameInput.apply {
+            setTextColor(Color.rgb(23, 32, 51))
+            setHintTextColor(Color.rgb(102, 112, 133))
+            alpha = 1f
+            isEnabled = true
+        }
+        binding.passwordInput.apply {
+            setTextColor(Color.rgb(23, 32, 51))
+            setHintTextColor(Color.rgb(102, 112, 133))
+            alpha = 1f
+            isEnabled = true
+        }
+
+        var passwordVisible = false
+        binding.passwordVisibilityToggle.setOnClickListener {
+            val edit = binding.passwordInput
+            val cursor = edit.selectionStart.coerceAtLeast(0)
+            passwordVisible = !passwordVisible
+            edit.transformationMethod = if (passwordVisible) {
+                HideReturnsTransformationMethod.getInstance()
+            } else {
+                PasswordTransformationMethod.getInstance()
+            }
+            binding.passwordVisibilityToggle.text = if (passwordVisible) "Hide" else "Show"
+            binding.passwordVisibilityToggle.contentDescription =
+                if (passwordVisible) "Hide password" else "Show password"
+            edit.setSelection(cursor.coerceAtMost(edit.text?.length ?: 0))
+            edit.requestFocus()
         }
 
         binding.usernameInput.onFocusChangeListener = keepFocusedFieldVisible

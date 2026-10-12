@@ -84,38 +84,62 @@
                     android:id="@+id/usernameInput"
                     android:layout_width="match_parent"
                     android:layout_height="47dp"
-                    android:background="@drawable/bg_login_field"
+                    android:background="@drawable/bg_login_field_selector"
                     android:drawableStart="@drawable/ic_user"
                     android:drawablePadding="9dp"
-                    android:hint="University username or email"
-                    android:inputType="textEmailAddress|textNoSuggestions"
+                    android:hint="University roll number / username"
+                    android:inputType="text|textNoSuggestions"
                     android:imeOptions="actionNext"
                     android:autofillHints="username"
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
                     android:singleLine="true"
-                    android:textColor="@color/ink_900"
-                    android:textColorHint="@color/ink_400"
+                    android:textColor="#172033"
+                    android:textColorHint="#667085"
+                    android:fontFamily="sans"
+                    android:gravity="center_vertical"
                     android:textSize="16sp" />
 
-                <EditText
-                    android:id="@+id/passwordInput"
+                <FrameLayout
                     android:layout_width="match_parent"
                     android:layout_height="47dp"
-                    android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_login_field"
-                    android:drawableStart="@drawable/ic_note"
-                    android:drawablePadding="9dp"
-                    android:hint="University password"
-                    android:inputType="textPassword"
-                    android:imeOptions="actionDone"
-                    android:autofillHints="password"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:singleLine="true"
-                    android:textColor="@color/ink_900"
-                    android:textColorHint="@color/ink_400"
-                    android:textSize="16sp" />
+                    android:layout_marginTop="8dp">
+
+                    <EditText
+                        android:id="@+id/passwordInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_login_field_selector"
+                        android:drawableStart="@drawable/ic_lock"
+                        android:drawablePadding="9dp"
+                        android:hint="University password"
+                        android:inputType="textPassword"
+                        android:imeOptions="actionDone"
+                        android:autofillHints="password"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="64dp"
+                        android:singleLine="true"
+                        android:textColor="#172033"
+                        android:textColorHint="#667085"
+                        android:fontFamily="sans"
+                        android:gravity="center_vertical"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:id="@+id/passwordVisibilityToggle"
+                        android:layout_width="56dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="end|center_vertical"
+                        android:background="@android:color/transparent"
+                        android:clickable="true"
+                        android:focusable="false"
+                        android:gravity="center"
+                        android:text="Show"
+                        android:textColor="@color/brand_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:contentDescription="Show password" />
+                </FrameLayout>
 
                 <Button
                     android:id="@+id/loginButton"
