@@ -879,13 +879,14 @@ class MainActivity : AppCompatActivity() {
             stats.addView(createAttendancePlannerMetric("Missed", (conducted - present).toString(), "Conducted − attended", Palette.danger(this@MainActivity)))
             binding.moduleContent.addView(stats)
 
-            val nextPercent = if (needed!! > 0) {
-                (present + needed).toDouble() * 100.0 / (conducted + needed)
+            val neededCount = needed ?: 0
+            val nextPercent = if (neededCount > 0) {
+                (present + neededCount).toDouble() * 100.0 / (conducted + neededCount)
             } else calculatedPercent!!
             val targetMessage = if (reached) {
                 "Your current attendance is at or above 75%. Keep attending to protect your margin."
             } else {
-                "Attend " + needed + " more consecutive classes without missing any. Your attendance will become " +
+                "Attend " + neededCount + " more consecutive classes without missing any. Your attendance will become " +
                     String.format(java.util.Locale.US, "%.1f%%", nextPercent) + "."
             }
             binding.moduleContent.addView(createAttendancePlannerNotice(
