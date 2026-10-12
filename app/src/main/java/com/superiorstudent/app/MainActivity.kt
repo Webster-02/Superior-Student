@@ -43,6 +43,7 @@ import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
 import com.superiorstudent.app.feature.attendance.ui.AttendanceRenderer
 import com.superiorstudent.app.feature.timetable.ui.TimetableRenderer
 import com.superiorstudent.app.feature.profile.ui.ProfileRenderer
+import com.superiorstudent.app.feature.fees.ui.FeeRenderer
 import com.superiorstudent.app.feature.timetable.domain.NextClassSelector
 import org.json.JSONObject
 
@@ -57,6 +58,9 @@ class MainActivity : AppCompatActivity() {
     private val timetableRenderer by lazy { TimetableRenderer(this) }
     private val profileRenderer by lazy {
         ProfileRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState)
+    }
+    private val feeRenderer by lazy {
+        FeeRenderer(this, ::createSectionHeading, ::createMetricCard, ::createEmptyState)
     }
 
     private var loginInProgress = false
@@ -1109,134 +1113,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderFee(data: ModuleData) {
-        val invoices = data.tables.flatMap { table ->
-            table.rows.map { row -> table.headers.zip(row).toMap() }
-        }.filter { it.isNotEmpty() }
-
-        if (invoices.isNotEmpty()) {
-            binding.moduleContent.addView(createFeeSummary(invoices.size))
-            binding.moduleContent.addView(createSectionHeading("Invoice history", "Recent fee records from your student account"))
-            invoices.take(30).forEach { invoice -> binding.moduleContent.addView(createInvoiceCard(invoice)) }
-        } else {
-            data.cards.take(4).forEach { (label, value) -> binding.moduleContent.addView(createMetricCard(label, value)) }
-            if (data.cards.isEmpty()) binding.moduleContent.addView(
-                createEmptyState("Fee information is unavailable", "Refresh to sync your latest fee records.")
-            )
-        }
-    }
-
-    private fun createFeeSummary(count: Int): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
-            elevation = dp(2).toFloat()
-            setPadding(dp(16), dp(15), dp(16), dp(15))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(dp(12), dp(6), dp(12), dp(7)) }
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(this@MainActivity).apply {
-                    text = "Fee records"
-                    setTextColor(Palette.ink900(this@MainActivity))
-                    textSize = 16f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                })
-                addView(TextView(this@MainActivity).apply {
-                    text = "Your latest invoices"
-                    setTextColor(Palette.ink500(this@MainActivity))
-                    textSize = 11f
-                    setPadding(0, dp(3), 0, 0)
-                })
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = count.toString()
-                gravity = Gravity.CENTER
-                setTextColor(Palette.primary(this@MainActivity))
-                textSize = 20f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Palette.infoBg(this@MainActivity), 12f)
-                minWidth = dp(44)
-                minHeight = dp(38)
-            })
-        }
-
-    private fun findMapValue(map: Map<String, String>, vararg keys: String): String {
-        val normalized = map.mapKeys { it.key.trim().lowercase() }
-        for (key in keys) {
-            val exact = normalized.entries.firstOrNull { it.key == key.lowercase() }
-            if (exact != null) return exact.value
-        }
-        for (key in keys) {
-            val partial = normalized.entries.firstOrNull { it.key.contains(key.lowercase()) }
-            if (partial != null) return partial.value
-        }
-        return ""
-    }
-
-    private fun createInvoiceCard(invoice: Map<String, String>): View {
-        val no = findMapValue(invoice, "invoice no", "invoice number", "number", "no").ifBlank { "Invoice" }
-        val date = findMapValue(invoice, "invoice date", "date")
-        val due = findMapValue(invoice, "due date", "due")
-        val amount = findMapValue(invoice, "amount", "total", "balance")
-        val status = findMapValue(invoice, "status", "state")
-
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Palette.surface(this@MainActivity), 18f)
-            elevation = dp(2).toFloat()
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(TextView(this@MainActivity).apply {
-                    text = no
-                    setTextColor(Palette.ink900(this@MainActivity))
-                    textSize = 13f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                })
-                if (status.isNotBlank()) addView(TextView(this@MainActivity).apply {
-                    text = status
-                    setTextColor(Palette.success(this@MainActivity))
-                    textSize = 10f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBackground(Palette.successBg(this@MainActivity), 10f)
-                    setPadding(dp(8), dp(5), dp(8), dp(5))
-                })
-            })
-            val details = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(12), 0, 0)
-            }
-            addInvoiceDetail(details, "Invoice date", date)
-            addInvoiceDetail(details, "Due date", due)
-            if (amount.isNotBlank()) addInvoiceDetail(details, "Amount", amount)
-            addView(details)
-        }
-    }
-
-    private fun addInvoiceDetail(container: LinearLayout, label: String, value: String) {
-        if (value.isBlank()) return
-        container.addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            addView(TextView(this@MainActivity).apply {
-                text = label
-                setTextColor(Palette.ink500(this@MainActivity))
-                textSize = 9f
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = value
-                setTextColor(Palette.ink900(this@MainActivity))
-                textSize = 11f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(0, dp(3), 0, 0)
-            })
-        })
+        feeRenderer.render(binding.moduleContent, data)
     }
 
     private fun addModuleIntro(module: Module) {
