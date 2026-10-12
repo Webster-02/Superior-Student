@@ -34,11 +34,12 @@ import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession
 import com.superiorstudent.app.data.model.ModuleData
+import com.superiorstudent.app.data.model.StudentModule
 import com.superiorstudent.app.data.model.ModuleRecord
 import com.superiorstudent.app.data.model.TableData
 import com.superiorstudent.app.data.model.TimetableRow
 import com.superiorstudent.app.data.parser.TimetableParser
-import com.superiorstudent.app.data.parser.ErpPageParser
+import com.superiorstudent.app.data.repository.ErpRepository
 import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
 import com.superiorstudent.app.feature.attendance.ui.AttendanceRenderer
 import com.superiorstudent.app.feature.timetable.ui.TimetableRenderer
@@ -55,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
     private val profileCache by lazy { ProfileCache(this) }
+    private val erpRepository by lazy { ErpRepository() }
     private val attendanceRenderer by lazy { AttendanceRenderer(this, ::openAttendanceDetail, ::showAttendanceSummary) }
     private val timetableRenderer by lazy { TimetableRenderer(this) }
     private val profileRenderer by lazy {
@@ -75,13 +77,12 @@ class MainActivity : AppCompatActivity() {
     private var profileReadAttempts = 0
     private var profileFetchGeneration = 0L
     private var moduleReadAttempts = 0
-    private var activeModule: Module? = null
+    private var activeModule: StudentModule? = null
     private var username = ""
     private var password = ""
     private var loginAttempt = 0
-    private var preloadingModule: Module? = null
-    private val preloadQueue = mutableListOf<Module>()
-    private val cachedModuleData = mutableMapOf<Module, String>()
+    private var preloadingModule: StudentModule? = null
+    private val preloadQueue = mutableListOf<StudentModule>()
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
     private var activeAttendanceDetailUrl: String? = null
@@ -97,14 +98,6 @@ class MainActivity : AppCompatActivity() {
             pingSession()
             handler.postDelayed(this, SESSION_HEARTBEAT_INTERVAL_MS)
         }
-    }
-
-    private enum class Module(val path: String) {
-        ATTENDANCE("student/attendance"),
-        TIMETABLE("student/class/schedule"),
-        FEE("student/invoices"),
-        PROFILE("student/profile"),
-        RESULTS("student/results")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -155,7 +148,7 @@ class MainActivity : AppCompatActivity() {
             loggedIn = false
             loginAttempt = 0
             profileReadAttempts = 0
-            cachedModuleData.clear()
+            erpRepository.clearCache()
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Palette.ink500(this@MainActivity))
             binding.loginStatus.text = "Signing in securely…"
@@ -163,16 +156,16 @@ class MainActivity : AppCompatActivity() {
             webView.loadUrl(ErpConfig.LOGIN_URL)
         }
 
-        binding.attendanceButton.setOnClickListener { loadModule(Module.ATTENDANCE) }
-        binding.timetableButton.setOnClickListener { loadModule(Module.TIMETABLE) }
-        binding.feeButton.setOnClickListener { loadModule(Module.FEE) }
+        binding.attendanceButton.setOnClickListener { loadModule(StudentModule.ATTENDANCE) }
+        binding.timetableButton.setOnClickListener { loadModule(StudentModule.TIMETABLE) }
+        binding.feeButton.setOnClickListener { loadModule(StudentModule.FEE) }
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.menuButton.setOnClickListener { openSideMenu() }
         binding.closeMenuButton.setOnClickListener { closeSideMenu() }
         binding.menuScrim.setOnClickListener { closeSideMenu() }
-        binding.menuProfileButton.setOnClickListener { closeSideMenu(); loadModule(Module.PROFILE) }
-        binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(Module.RESULTS) }
+        binding.menuProfileButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.PROFILE) }
+        binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.RESULTS) }
         binding.menuLogoutButton.setOnClickListener { closeSideMenu(); logout() }
 
         // Design-system touches: press-scale feedback on dashboard action cards.
@@ -502,8 +495,8 @@ class MainActivity : AppCompatActivity() {
             // Keep the last known good presentation visible during reconnects.
             // This prevents the blank-screen flash reported after the app sits
             // idle in the background for several minutes.
-            cachedModuleData[module]?.let { payload ->
-                parseModuleData(payload)?.takeIf { hasUsableModuleData(module, it) }?.let { cached ->
+            erpRepository.cachedPayload(module)?.let { payload ->
+                parseModuleData(payload)?.takeIf { erpRepository.hasUsableData(module, it) }?.let { cached ->
                     binding.moduleContent.removeAllViews()
                     renderModuleData(module, cached)
                     binding.moduleInfo.text = "Last synced data • Updating from ERP…"
@@ -661,7 +654,7 @@ class MainActivity : AppCompatActivity() {
     private fun preloadAllModules() {
         if (!loggedIn || profileFetchInProgress || preloadingModule != null) return
         preloadQueue.clear()
-        preloadQueue.addAll(Module.values())
+        preloadQueue.addAll(StudentModule.values())
         preloadNextModule()
     }
 
@@ -678,9 +671,9 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl(ErpConfig.moduleUrl(preloadingModule!!.path))
     }
 
-    private fun loadModule(module: Module) {
+    private fun loadModule(module: StudentModule) {
         if (!loggedIn) return
-        if (module == Module.ATTENDANCE) activeAttendanceDetailUrl = null
+        if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
         closeSideMenu()
 
         preloadingModule = null
@@ -699,30 +692,30 @@ class MainActivity : AppCompatActivity() {
         binding.moduleInfo.text = "Syncing your latest information…"
 
         when (module) {
-            Module.ATTENDANCE -> {
+            StudentModule.ATTENDANCE -> {
                 binding.moduleTitle.text = "Attendance"
                 binding.moduleSubtitle.text = "Your attendance"
             }
-            Module.TIMETABLE -> {
+            StudentModule.TIMETABLE -> {
                 binding.moduleTitle.text = "Timetable"
                 binding.moduleSubtitle.text = "Your class schedule"
             }
-            Module.FEE -> {
+            StudentModule.FEE -> {
                 binding.moduleTitle.text = "Fee Details"
                 binding.moduleSubtitle.text = "Your fee information"
             }
-            Module.PROFILE -> {
+            StudentModule.PROFILE -> {
                 binding.moduleTitle.text = "My Profile"
                 binding.moduleSubtitle.text = "Your student information"
             }
-            Module.RESULTS -> {
+            StudentModule.RESULTS -> {
                 binding.moduleTitle.text = "Results"
                 binding.moduleSubtitle.text = "Your academic results"
             }
         }
 
-        val forceLive = module == Module.TIMETABLE || module == Module.PROFILE || module == Module.RESULTS
-        val payload = if (forceLive) null else cachedModuleData[module]
+        val forceLive = module == StudentModule.TIMETABLE || module == StudentModule.PROFILE || module == StudentModule.RESULTS
+        val payload = if (forceLive) null else erpRepository.cachedPayload(module)
         val data = payload?.let { parseModuleData(it) }
         if (data != null) {
             renderModuleData(module, data)
@@ -736,12 +729,12 @@ class MainActivity : AppCompatActivity() {
     private fun refreshActiveModule() {
         val module = activeModule ?: return
         val detailUrl = activeAttendanceDetailUrl
-        if (module == Module.ATTENDANCE && detailUrl != null) {
+        if (module == StudentModule.ATTENDANCE && detailUrl != null) {
             openAttendanceDetail(detailUrl)
             return
         }
-        if (module == Module.ATTENDANCE) activeAttendanceDetailUrl = null
-        cachedModuleData.remove(module)
+        if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
+        erpRepository.clearCachedPayload(module)
         moduleFetchInProgress = false
         moduleReadAttempts = 0
         moduleReadRequestId++
@@ -754,15 +747,15 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    private fun renderModuleData(module: Module, data: ModuleData) {
+    private fun renderModuleData(module: StudentModule, data: ModuleData) {
         binding.moduleContent.removeAllViews()
-        if (module != Module.ATTENDANCE || data.attendanceDetail == null) addModuleIntro(module)
+        if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) addModuleIntro(module)
         when (module) {
-            Module.ATTENDANCE -> renderAttendance(data)
-            Module.TIMETABLE -> renderTimetable(data)
-            Module.FEE -> renderFee(data)
-            Module.PROFILE -> renderProfile(data)
-            Module.RESULTS -> renderResults(data)
+            StudentModule.ATTENDANCE -> renderAttendance(data)
+            StudentModule.TIMETABLE -> renderTimetable(data)
+            StudentModule.FEE -> renderFee(data)
+            StudentModule.PROFILE -> renderProfile(data)
+            StudentModule.RESULTS -> renderResults(data)
         }
         binding.moduleProgress.visibility = View.GONE
         binding.moduleInfo.text = "Updated from your student account"
@@ -778,7 +771,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "This subject's ERP detail link is unavailable.", Toast.LENGTH_SHORT).show()
             return
         }
-        activeModule = Module.ATTENDANCE
+        activeModule = StudentModule.ATTENDANCE
         activeAttendanceDetailUrl = url
         preloadingModule = null
         preloadQueue.clear()
@@ -802,16 +795,16 @@ class MainActivity : AppCompatActivity() {
         moduleFetchInProgress = false
         moduleReadAttempts = 0
         moduleReadRequestId++
-        val summary = cachedModuleData[Module.ATTENDANCE]?.let(::parseModuleData)
+        val summary = erpRepository.cachedPayload(StudentModule.ATTENDANCE)?.let(::parseModuleData)
         if (summary != null && summary.attendanceDetail == null) {
-            activeModule = Module.ATTENDANCE
+            activeModule = StudentModule.ATTENDANCE
             binding.moduleScreen.visibility = View.VISIBLE
             binding.loginScroll.visibility = View.GONE
             binding.dashboardScroll.visibility = View.GONE
             webView.visibility = View.INVISIBLE
-            renderModuleData(Module.ATTENDANCE, summary)
+            renderModuleData(StudentModule.ATTENDANCE, summary)
         } else {
-            loadModule(Module.ATTENDANCE)
+            loadModule(StudentModule.ATTENDANCE)
         }
     }
 
@@ -856,8 +849,8 @@ class MainActivity : AppCompatActivity() {
         binding.moduleInfo.text = "Loading $label…"
         webView.evaluateJavascript(script) {
             handler.postDelayed({
-                if (activeModule == Module.RESULTS) {
-                    readModuleData(webView, Module.RESULTS, true)
+                if (activeModule == StudentModule.RESULTS) {
+                    readModuleData(webView, StudentModule.RESULTS, true)
                 }
             }, 900L)
         }
@@ -867,20 +860,20 @@ class MainActivity : AppCompatActivity() {
         feeRenderer.render(binding.moduleContent, data)
     }
 
-    private fun addModuleIntro(module: Module) {
+    private fun addModuleIntro(module: StudentModule) {
         val title = when (module) {
-            Module.ATTENDANCE -> "Attendance overview"
-            Module.TIMETABLE -> "Class schedule"
-            Module.FEE -> "Fee overview"
-            Module.PROFILE -> "Student profile"
-            Module.RESULTS -> "Academic results"
+            StudentModule.ATTENDANCE -> "Attendance overview"
+            StudentModule.TIMETABLE -> "Class schedule"
+            StudentModule.FEE -> "Fee overview"
+            StudentModule.PROFILE -> "Student profile"
+            StudentModule.RESULTS -> "Academic results"
         }
         val subtitle = when (module) {
-            Module.ATTENDANCE -> "Subject wise attendance and current percentage"
-            Module.TIMETABLE -> "Your classes, timings and rooms"
-            Module.FEE -> "Invoices, due dates and payment information"
-            Module.PROFILE -> "Live student information from your ERP account"
-            Module.RESULTS -> "Live academic results from your ERP account"
+            StudentModule.ATTENDANCE -> "Subject wise attendance and current percentage"
+            StudentModule.TIMETABLE -> "Your classes, timings and rooms"
+            StudentModule.FEE -> "Invoices, due dates and payment information"
+            StudentModule.PROFILE -> "Live student information from your ERP account"
+            StudentModule.RESULTS -> "Live academic results from your ERP account"
         }
 
         val card = LinearLayout(this).apply {
@@ -1146,53 +1139,20 @@ class MainActivity : AppCompatActivity() {
 
     
     
-    private fun moduleDefaultTableTitle(module: Module, index: Int): String {
+    private fun moduleDefaultTableTitle(module: StudentModule, index: Int): String {
         return when (module) {
-            Module.ATTENDANCE -> if (index == 0) "Attendance records" else "Attendance details"
-            Module.TIMETABLE -> if (index == 0) "Class schedule" else "Schedule details"
-            Module.FEE -> if (index == 0) "Fee records" else "Fee details"
-            Module.PROFILE -> if (index == 0) "Profile details" else "Additional profile information"
-            Module.RESULTS -> if (index == 0) "Academic results" else "Result details"
+            StudentModule.ATTENDANCE -> if (index == 0) "Attendance records" else "Attendance details"
+            StudentModule.TIMETABLE -> if (index == 0) "Class schedule" else "Schedule details"
+            StudentModule.FEE -> if (index == 0) "Fee records" else "Fee details"
+            StudentModule.PROFILE -> if (index == 0) "Profile details" else "Additional profile information"
+            StudentModule.RESULTS -> if (index == 0) "Academic results" else "Result details"
         }
     }
 
 
-    private fun parseModuleData(payload: String): ModuleData? = ErpPageParser.parse(payload)
+    private fun parseModuleData(payload: String): ModuleData? = erpRepository.parse(payload)
 
-    private fun hasUsableModuleData(module: Module, data: ModuleData): Boolean {
-        return when (module) {
-            Module.ATTENDANCE -> data.attendanceDetail != null ||
-                data.overallAttendance != null ||
-                data.records.any { it.values.size >= 2 } ||
-                data.tables.any { it.rows.isNotEmpty() } ||
-                data.lines.any { it.contains("%") }
-            Module.TIMETABLE -> data.records.any(::looksLikeScheduleRecord) ||
-                data.records.any { record ->
-                    record.headers.any { h -> h.contains("time", true) || h.contains("day", true) || h.contains("course", true) } &&
-                        record.values.any { v -> Regex("""\b\d{1,2}:\d{2}\b""").containsMatchIn(v) }
-                } ||
-                data.lines.any { Regex("""\b\d{1,2}:\d{2}\b""").containsMatchIn(it) }
-            Module.FEE -> data.tables.any { it.rows.isNotEmpty() } ||
-                data.cards.isNotEmpty() ||
-                data.records.any { it.values.size >= 2 }
-            Module.PROFILE -> data.cards.isNotEmpty() ||
-                data.records.any { it.headers.any { h -> h.equals("Field", true) } } ||
-                data.tables.any { it.rows.isNotEmpty() }
-            Module.RESULTS -> data.semesterOptions.isNotEmpty() ||
-                data.tables.any { it.rows.isNotEmpty() } ||
-                data.records.any { it.values.size >= 2 } ||
-                data.lines.any { it.contains("result", true) || it.contains("grade", true) }
-        }
-    }
-
-    private fun looksLikeScheduleRecord(record: ModuleRecord): Boolean {
-        val joined = record.values.joinToString(" ")
-        return Regex("""\b(?:[01]?\d|2[0-3]):[0-5]\d\b""").containsMatchIn(joined) ||
-            Regex("""\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b""", RegexOption.IGNORE_CASE)
-                .containsMatchIn(joined)
-    }
-
-    private fun readModuleData(view: WebView, module: Module, displayWhenReady: Boolean) {
+    private fun readModuleData(view: WebView, module: StudentModule, displayWhenReady: Boolean) {
         if (!loggedIn) return
         val requestId = moduleReadRequestId
 
@@ -1204,10 +1164,10 @@ class MainActivity : AppCompatActivity() {
                 val payload = ParsingUtils.decodeJavascriptString(result)
                 val data = parseModuleData(payload)
 
-                val usable = data != null && hasUsableModuleData(module, data)
+                val usable = data != null && erpRepository.hasUsableData(module, data)
                 if (usable && data != null) {
-                    if (module != Module.ATTENDANCE || data.attendanceDetail == null) {
-                        cachedModuleData[module] = payload
+                    if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) {
+                        erpRepository.cachedPayload(module) = payload
                     }
                     if (displayWhenReady && activeModule == module) renderModuleData(module, data)
                 } else if (displayWhenReady && activeModule == module) {
@@ -1247,7 +1207,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateNextClassPreview() {
         val label = binding.nextClassLabel
-        val payload = cachedModuleData[Module.TIMETABLE]
+        val payload = erpRepository.cachedPayload(StudentModule.TIMETABLE)
         val data = payload?.let { parseModuleData(it) }
         val rows = data?.records?.mapNotNull(TimetableParser::toRow)
             ?.filter { it.time.isNotBlank() }
@@ -1375,7 +1335,7 @@ class MainActivity : AppCompatActivity() {
         loginAttempt = 0
         preloadingModule = null
         preloadQueue.clear()
-        cachedModuleData.clear()
+        erpRepository.clearCache()
         webView.stopLoading()
         webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
@@ -1396,7 +1356,7 @@ class MainActivity : AppCompatActivity() {
         webView.clearHistory()
         webView.clearCache(true)
         webView.clearFormData()
-        cachedModuleData.clear()
+        erpRepository.clearCache()
         showLogin()
     }
 
