@@ -1167,7 +1167,7 @@ class MainActivity : AppCompatActivity() {
                 val usable = data != null && erpRepository.hasUsableData(module, data)
                 if (usable && data != null) {
                     if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) {
-                        erpRepository.cachedPayload(module) = payload
+                        erpRepository.cachePayload(module, payload)
                     }
                     if (displayWhenReady && activeModule == module) renderModuleData(module, data)
                 } else if (displayWhenReady && activeModule == module) {
