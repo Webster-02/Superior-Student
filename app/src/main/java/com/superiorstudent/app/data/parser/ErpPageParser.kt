@@ -143,7 +143,9 @@ object ErpPageParser {
                     attendanceDetail,
                     attendanceDetailLinks.distinctBy { it.url }
                 )
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                // Deliberately exclude the ERP payload because it may contain student data.
+                System.err.println("ErpPageParser failed: ${error.javaClass.name}: ${error.message}")
                 null
             }
         }
