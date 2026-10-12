@@ -63,17 +63,11 @@ class AttendanceRenderer(
             .distinctBy { it.course + "|" + it.code }
             .take(20)
         val rows = parsedRows.map { row ->
-            val link = data.attendanceDetailLinks.firstOrNull { candidate ->
-                row.code.isNotBlank() && candidate.code.isNotBlank() &&
-                    (row.code.equals(candidate.code, true) ||
-                        row.code.contains(candidate.code, true) ||
-                        candidate.code.contains(row.code, true))
-            } ?: data.attendanceDetailLinks.firstOrNull { candidate ->
-                val course = normalizeAttendanceMatch(row.course)
-                val label = normalizeAttendanceMatch(candidate.course)
-                course.length >= 5 && label.length >= 5 &&
-                    (course.contains(label) || label.contains(course))
-            }
+            val link = AttendanceSubjectMatcher.findMatchingLink(
+                row.course,
+                row.code,
+                data.attendanceDetailLinks
+            )
             row.copy(detailUrl = link?.url.orEmpty())
         }
 
@@ -379,7 +373,13 @@ class AttendanceRenderer(
         val present = presentFromHeader.ifBlank { ParsingUtils.extractCountNearLabel(joined, "present", "attended", "attendance") }
         val total = totalFromHeader.ifBlank { ParsingUtils.extractCountNearLabel(joined, "total", "classes") }
 
+        val meaningfulCourse = course
+            .replace(Regex("""(?i)\b(?:attendance|present|absent|percentage|overall|summary|classes|class)\b"""), " ")
+            .replace(Regex("""\d+(?:\.\d+)?%?"""), " ")
+            .trim()
+
         if (course.length < 3 || (percent == null && code.isBlank())) return null
+        if (code.isBlank() && meaningfulCourse.length < 4) return null
         return AttendanceRow(course, code, percent, present, total)
     }
 

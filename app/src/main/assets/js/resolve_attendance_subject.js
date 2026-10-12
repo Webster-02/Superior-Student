@@ -12,26 +12,35 @@
   }
   function clean(value) { return String(value || '').replace(/\s+/g, ' ').trim(); }
   function normalize(value) { return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+  function courseCodeTokens(value) {
+    const text = String(value || '');
+    const regex = /\b([A-Z]{2,8})[- ]?(\d{3,})\b/gi;
+    const tokens = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) tokens.push((match[1] + match[2]).toUpperCase());
+    return Array.from(new Set(tokens));
+  }
   function simplifyCourse(value) {
     return normalize(clean(value)
       .replace(/\b(?:FALL|SPRING|SUMMER|WINTER)\s+20\d{2}\b/ig, ' ')
       .replace(/\b20\d{2}\s*-\s*20\d{2}\s*-\s*[A-Z0-9-]+\b/ig, ' ')
-      .replace(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/ig, ' ')
+      .replace(/\b[A-Z]{2,8}[- ]?\d{3,}[A-Z0-9-]*\b/ig, ' ')
       .replace(/\battendance\b/ig, ' '));
   }
   const targetCourse = decode('%COURSE_B64%');
   const targetCode = decode('%CODE_B64%');
-  const targetCodeNorm = normalize(targetCode);
+  const targetCodeTokens = courseCodeTokens(targetCode);
   const targetCourseNorm = simplifyCourse(targetCourse);
+  const targetCodeCanonical = targetCodeTokens[0] || '';
+  const hasTargetCode = targetCodeCanonical.length > 0;
 
   function matchesTarget(node) {
     const text = clean(node && (node.innerText || node.textContent));
-    if (!text || text.length > 1600) return false;
-    const normalized = normalize(text);
-    if (targetCodeNorm.length >= 5 && normalized.indexOf(targetCodeNorm) !== -1) return true;
-    const simple = simplifyCourse(text);
-    return targetCourseNorm.length >= 5 && simple.length >= 5 &&
-      (simple.indexOf(targetCourseNorm) !== -1 || targetCourseNorm.indexOf(simple) !== -1);
+    if (!text || text.length > 1400) return false;
+    if (hasTargetCode) return courseCodeTokens(text).includes(targetCodeCanonical);
+    const normalizedText = simplifyCourse(text);
+    return targetCourseNorm.length >= 8 && normalizedText.length >= 8 &&
+      normalizedText.includes(targetCourseNorm);
   }
 
   function detailUrlFrom(value) {
@@ -48,42 +57,42 @@
     }
   }
 
-  const selectors = 'tr,li,.o_data_row,.o_kanban_record,.list-group-item,.row,.card,[role="row"],button,[role="button"]';
+  const selectors = 'tr,li,.o_data_row,.o_kanban_record,.list-group-item,[role="row"],.row,.card,button,[role="button"]';
   const rows = Array.from(document.querySelectorAll(selectors))
     .filter(matchesTarget)
     .sort(function(a,b) {
-      const aLength = clean(a.innerText || a.textContent).length;
-      const bLength = clean(b.innerText || b.textContent).length;
-      return aLength - bLength;
+      const aText = clean(a.innerText || a.textContent);
+      const bText = clean(b.innerText || b.textContent);
+      const aCodes = courseCodeTokens(aText).length;
+      const bCodes = courseCodeTokens(bText).length;
+      return (aCodes - bCodes) || (aText.length - bText.length);
     });
 
   for (const row of rows) {
-    const nodes = [row].concat(Array.from(row.querySelectorAll('a[href],[data-href],[data-url],[onclick]')));
-    for (const node of nodes) {
-      const raw = [
-        node.getAttribute && node.getAttribute('href'),
-        node.getAttribute && node.getAttribute('data-href'),
-        node.getAttribute && node.getAttribute('data-url'),
-        node.getAttribute && node.getAttribute('onclick')
-      ].filter(Boolean).join(' ');
-      const url = detailUrlFrom(raw);
-      if (url) return JSON.stringify({found:true, url:url, clicked:false});
-    }
+    const raw = [
+      row.getAttribute && row.getAttribute('href'),
+      row.getAttribute && row.getAttribute('data-href'),
+      row.getAttribute && row.getAttribute('data-url'),
+      row.getAttribute && row.getAttribute('onclick'),
+      ...Array.from(row.querySelectorAll('a[href],[data-href],[data-url],[onclick]')).map(function(node) {
+        return [
+          node.getAttribute('href') || '',
+          node.getAttribute('data-href') || '',
+          node.getAttribute('data-url') || '',
+          node.getAttribute('onclick') || ''
+        ].filter(Boolean).join(' ');
+      })
+    ].filter(Boolean).join(' ');
+    const url = detailUrlFrom(raw);
+    if (url) return JSON.stringify({found:true, url:url, clicked:false});
   }
 
-  // If the ERP has no exposed URL, activate the existing event handler for
-  // the smallest row matching this student's subject, rather than guessing an ID.
-  for (const row of rows) {
-    const action = row.matches('a,button,[role="button"],[onclick],[data-href],[data-url]') ? row :
-      row.querySelector('a,button,[role="button"],[onclick],[data-href],[data-url]');
-    if (action) {
-      action.click();
-      return JSON.stringify({found:true, url:'', clicked:true});
-    }
-    if (row.getAttribute('onclick')) {
-      row.click();
-      return JSON.stringify({found:true, url:'', clicked:true});
-    }
+  // If the matched ERP row has no explicit URL, click that exact row so
+  // delegated ERP handlers can open its own record. Never click a child action
+  // from a fuzzy ancestor, which can open another subject's detail by mistake.
+  if (rows.length > 0) {
+    rows[0].click();
+    return JSON.stringify({found:true, url:'', clicked:true});
   }
 
   return JSON.stringify({found:false, url:'', clicked:false});
