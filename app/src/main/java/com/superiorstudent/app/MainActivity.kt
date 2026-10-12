@@ -9,6 +9,9 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -101,6 +104,7 @@ class MainActivity : AppCompatActivity() {
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
         binding.sideMenuOverlay.visibility = View.GONE
+        configureLoginLayoutAndKeyboard()
 
         binding.loginButton.setOnClickListener {
             username = binding.usernameInput.text.toString().trim()
@@ -157,6 +161,71 @@ class MainActivity : AppCompatActivity() {
                 webView.visibility = View.GONE
                 showDashboard()
                 webView.loadUrl(ErpConfig.DASHBOARD_URL)
+            }
+        }
+    }
+
+    /**
+     * Keeps the login card below the baked-in campus tagline on launch.
+     * The form lives in a ScrollView so the focused field can be brought above
+     * the soft keyboard on short screens and when the keyboard is open.
+     */
+    private fun configureLoginLayoutAndKeyboard() {
+        val screenHeightDp = resources.configuration.screenHeightDp
+        val topSpacerDp = (screenHeightDp * 0.39f).roundToInt().coerceIn(270, 365)
+        binding.loginTopSpacer.layoutParams = binding.loginTopSpacer.layoutParams.apply {
+            height = dp(topSpacerDp)
+        }
+
+        val loginViewport = binding.loginContentScroll
+        loginViewport.isSmoothScrollingEnabled = true
+        loginViewport.post { loginViewport.scrollTo(0, 0) }
+
+        val keepFocusedFieldVisible = View.OnFocusChangeListener { view, hasFocus ->
+            if (hasFocus) {
+                // Wait for adjustResize to report the keyboard-reduced viewport height.
+                loginViewport.postDelayed({
+                    if (!view.isFocused || binding.loginScroll.visibility != View.VISIBLE) return@postDelayed
+                    val rect = android.graphics.Rect()
+                    view.getDrawingRect(rect)
+                    loginViewport.offsetDescendantRectToMyCoords(view, rect)
+
+                    val visibleTop = loginViewport.scrollY + dp(14)
+                    val visibleBottom = loginViewport.scrollY + loginViewport.height - dp(24)
+                    when {
+                        rect.bottom > visibleBottom ->
+                            loginViewport.smoothScrollBy(0, rect.bottom - visibleBottom)
+                        rect.top < visibleTop ->
+                            loginViewport.smoothScrollTo(0, (rect.top - dp(14)).coerceAtLeast(0))
+                    }
+                }, 260L)
+            }
+        }
+
+        binding.usernameInput.onFocusChangeListener = keepFocusedFieldVisible
+        binding.passwordInput.onFocusChangeListener = keepFocusedFieldVisible
+        binding.usernameInput.imeOptions = EditorInfo.IME_ACTION_NEXT
+        binding.passwordInput.imeOptions = EditorInfo.IME_ACTION_DONE
+
+        binding.usernameInput.setOnEditorActionListener { _, actionId, event ->
+            val enterPressed = event?.keyCode == KeyEvent.KEYCODE_ENTER &&
+                event.action == KeyEvent.ACTION_DOWN
+            if (actionId == EditorInfo.IME_ACTION_NEXT || enterPressed) {
+                binding.passwordInput.requestFocus()
+                true
+            } else {
+                false
+            }
+        }
+
+        binding.passwordInput.setOnEditorActionListener { _, actionId, event ->
+            val enterPressed = event?.keyCode == KeyEvent.KEYCODE_ENTER &&
+                event.action == KeyEvent.ACTION_DOWN
+            if (actionId == EditorInfo.IME_ACTION_DONE || enterPressed) {
+                binding.loginButton.performClick()
+                true
+            } else {
+                false
             }
         }
     }
