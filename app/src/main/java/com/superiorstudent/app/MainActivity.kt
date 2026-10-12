@@ -2035,7 +2035,24 @@ class MainActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (::webView.isInitialized && webView.visibility == View.VISIBLE) showDashboard() else super.onBackPressed()
+        if (!::binding.isInitialized) {
+            super.onBackPressed()
+            return
+        }
+
+        when {
+            binding.sideMenuOverlay.visibility == View.VISIBLE -> closeSideMenu()
+            binding.moduleScreen.visibility == View.VISIBLE -> {
+                // Returning from a subject detail should restore the attendance summary.
+                // Other native feature screens return to the dashboard.
+                if (activeAttendanceDetailUrl != null) {
+                    showAttendanceSummary()
+                } else {
+                    showDashboard()
+                }
+            }
+            else -> super.onBackPressed()
+        }
     }
 
     companion object {
