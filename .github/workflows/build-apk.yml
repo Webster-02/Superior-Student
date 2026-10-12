@@ -36,6 +36,9 @@ jobs:
       - name: Clean project
         run: gradle clean --no-daemon
 
+      - name: Run unit tests
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 

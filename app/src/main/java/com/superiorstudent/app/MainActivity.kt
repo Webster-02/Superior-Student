@@ -29,6 +29,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.superiorstudent.app.databinding.ActivityMainBinding
 import com.superiorstudent.app.ui.Palette
+import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
@@ -919,11 +920,12 @@ class MainActivity : AppCompatActivity() {
         val countsValid = a != null && c != null && c > 0 && a >= 0 && a <= c
         val present = a ?: 0
         val conducted = c ?: 0
-        val calculatedPercent = if (countsValid) present.toDouble() * 100.0 / conducted else null
+        val forecast = if (countsValid) AttendanceCalculator.calculate(present, conducted) else null
+        val calculatedPercent = forecast?.currentPercentage
         val percent = calculatedPercent ?: detail.percentage
-        val needed = if (countsValid) maxOf(0, 3 * conducted - 4 * present) else null
-        val reached = countsValid && present * 4 >= conducted * 3
-        val safeLeaves = if (countsValid && reached) maxOf(0, (4 * present - 3 * conducted) / 3) else if (countsValid) 0 else null
+        val needed = forecast?.classesNeededToReachTarget
+        val reached = forecast?.targetAlreadyReached == true
+        val safeLeaves = forecast?.safeFutureLeaves
 
         val back = TextView(this).apply {
             text = "‹  All subjects"
