@@ -1,4 +1,4 @@
-package com.superiorstudent.app
+package com.superiorstudent.app.core.parsing
 
 import java.util.Locale
 

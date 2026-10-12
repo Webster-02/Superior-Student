@@ -1,4 +1,4 @@
-package com.superiorstudent.app
+package com.superiorstudent.app.core.webview
 
 import android.content.Context
 import android.util.Base64

@@ -1,6 +1,7 @@
-package com.superiorstudent.app
+package com.superiorstudent.app.feature.profile.data
 
 import android.content.Context
+import com.superiorstudent.app.core.parsing.ParsingUtils
 
 /**
  * Lightweight cache for the student's display profile (name + GPA summary).

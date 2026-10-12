@@ -1,6 +1,6 @@
 package com.superiorstudent.app.feature.timetable.domain
 
-import com.superiorstudent.app.ParsingUtils
+import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.TimetableRow
 
 /**

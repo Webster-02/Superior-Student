@@ -1,7 +1,7 @@
 package com.superiorstudent.app.data.parser
 
-import com.superiorstudent.app.ErpConfig
-import com.superiorstudent.app.ParsingUtils
+import com.superiorstudent.app.core.config.ErpConfig
+import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession

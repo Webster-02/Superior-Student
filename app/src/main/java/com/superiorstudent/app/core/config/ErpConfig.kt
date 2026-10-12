@@ -1,4 +1,4 @@
-package com.superiorstudent.app
+package com.superiorstudent.app.core.config
 
 /** Centralised ERP endpoints and session rules (single source of truth). */
 object ErpConfig {

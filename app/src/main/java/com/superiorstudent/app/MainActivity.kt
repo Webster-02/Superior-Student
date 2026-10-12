@@ -27,6 +27,11 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.superiorstudent.app.core.config.ErpConfig
+import com.superiorstudent.app.core.parsing.ParsingUtils
+import com.superiorstudent.app.core.session.SessionStore
+import com.superiorstudent.app.core.webview.Scripts
+import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.databinding.ActivityMainBinding
 import com.superiorstudent.app.ui.Palette
 

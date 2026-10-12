@@ -13,8 +13,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import com.superiorstudent.app.ErpConfig
-import com.superiorstudent.app.ParsingUtils
+import com.superiorstudent.app.core.config.ErpConfig
+import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession

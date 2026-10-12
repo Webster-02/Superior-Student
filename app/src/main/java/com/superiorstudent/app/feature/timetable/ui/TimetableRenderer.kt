@@ -8,7 +8,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.superiorstudent.app.ParsingUtils
+import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.TableData
 import com.superiorstudent.app.data.model.TimetableRow
