@@ -46,6 +46,8 @@ import com.superiorstudent.app.data.model.TimetableRow
 import com.superiorstudent.app.data.parser.TimetableParser
 import com.superiorstudent.app.data.repository.ErpRepository
 import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
+import com.superiorstudent.app.feature.attendance.presentation.AttendanceViewModel
+import androidx.lifecycle.ViewModelProvider
 import com.superiorstudent.app.feature.attendance.ui.AttendanceRenderer
 import com.superiorstudent.app.feature.timetable.ui.TimetableRenderer
 import com.superiorstudent.app.feature.profile.ui.ProfileRenderer
@@ -62,7 +64,10 @@ class MainActivity : AppCompatActivity() {
     private val sessionStore by lazy { SessionStore(this) }
     private val profileCache by lazy { ProfileCache(this) }
     private val erpRepository by lazy { ErpRepository() }
-    private val attendanceRenderer by lazy { AttendanceRenderer(this, ::openAttendanceDetail, ::showAttendanceSummary) }
+    private val attendanceViewModel by lazy { ViewModelProvider(this)[AttendanceViewModel::class.java] }
+    private val attendanceRenderer by lazy {
+        AttendanceRenderer(this, attendanceViewModel, ::openAttendanceDetail, ::showAttendanceSummary)
+    }
     private val timetableRenderer by lazy { TimetableRenderer(this) }
     private val profileRenderer by lazy {
         ProfileRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState)

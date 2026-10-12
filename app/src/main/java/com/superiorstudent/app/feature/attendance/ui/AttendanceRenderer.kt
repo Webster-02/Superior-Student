@@ -16,12 +16,12 @@ import android.widget.TextView
 import com.superiorstudent.app.core.config.ErpConfig
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
+import com.superiorstudent.app.feature.attendance.presentation.AttendanceViewModel
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession
 import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.ModuleRecord
 import com.superiorstudent.app.data.model.TableData
-import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
 import com.superiorstudent.app.ui.Palette
 import kotlin.math.roundToInt
 
@@ -31,6 +31,7 @@ import kotlin.math.roundToInt
  */
 class AttendanceRenderer(
     private val activity: Context,
+    private val viewModel: AttendanceViewModel,
     private val onOpenDetail: (String) -> Unit,
     private val onShowSummary: () -> Unit
 ) {
@@ -136,17 +137,15 @@ class AttendanceRenderer(
         }
 
     private fun renderAttendanceDetail(detail: AttendanceDetailData) {
-        val a = detail.attended
-        val c = detail.conducted
-        val countsValid = a != null && c != null && c > 0 && a >= 0 && a <= c
-        val present = a ?: 0
-        val conducted = c ?: 0
-        val forecast = if (countsValid) AttendanceCalculator.calculate(present, conducted) else null
-        val calculatedPercent = forecast?.currentPercentage
-        val percent = calculatedPercent ?: detail.percentage
-        val needed = forecast?.classesNeededToReachTarget
-        val reached = forecast?.targetAlreadyReached == true
-        val safeLeaves = forecast?.safeFutureLeaves
+        val state = viewModel.detailUiState(detail)
+        val countsValid = state.countsValid
+        val present = state.attended
+        val conducted = state.conducted
+        val calculatedPercent = state.calculatedPercentage
+        val percent = state.displayPercentage
+        val needed = state.classesNeededToReachTarget
+        val reached = state.targetReached
+        val safeLeaves = state.safeFutureLeaves
 
         val back = TextView(activity).apply {
             text = "‹  All subjects"
@@ -209,9 +208,7 @@ class AttendanceRenderer(
             content.addView(stats)
 
             val neededCount = needed ?: 0
-            val nextPercent = if (neededCount > 0) {
-                (present + neededCount).toDouble() * 100.0 / (conducted + neededCount)
-            } else calculatedPercent!!
+            val nextPercent = state.projectedPercentage ?: calculatedPercent ?: 0.0
             val targetMessage = if (reached) {
                 "Your current attendance is at or above 75%. Keep attending to protect your margin."
             } else {
