@@ -21,6 +21,7 @@ object Scripts {
         private set
     var studentProfileText: String = ""
         private set
+    private var attendanceSubjectResolverTemplate: String = ""
 
     private var loginTemplate: String = ""
     private var semesterSelectTemplate: String = ""
@@ -31,6 +32,7 @@ object Scripts {
         loginErrorCheck = assets.read("js/login_error_check.js")
         moduleData = assets.read("js/module_data.js")
         studentProfileText = assets.read("js/student_profile_text.js")
+        attendanceSubjectResolverTemplate = assets.read("js/resolve_attendance_subject.js")
         loginTemplate = assets.read("js/login.js")
         semesterSelectTemplate = assets.read("js/semester_select.js")
     }
@@ -42,6 +44,11 @@ object Scripts {
 
     fun semesterSelectScript(label: String): String =
         semesterSelectTemplate.replace("%SEMESTER_B64%", b64JsonString(label))
+
+    fun attendanceSubjectResolverScript(course: String, code: String): String =
+        attendanceSubjectResolverTemplate
+            .replace("%COURSE_B64%", b64JsonString(course))
+            .replace("%CODE_B64%", b64JsonString(code))
 
     /**
      * Encodes [value] as Base64 of its JSON string representation so arbitrary

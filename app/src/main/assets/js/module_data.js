@@ -37,7 +37,8 @@
   const tables=[];
   clone.querySelectorAll('table').forEach(function(table){
     const rows=Array.from(table.querySelectorAll('tr')).map(function(tr){
-      return Array.from(tr.querySelectorAll('th,td')).map(function(cell){return safe(textOf(cell));}).filter(function(v){return v!=='';});
+      // Preserve empty cells so header indexes still align with row values.
+      return Array.from(tr.querySelectorAll('th,td')).map(function(cell){return safe(textOf(cell));});
     }).filter(function(row){return row.length>0;});
     if(!rows.length) return;
 
@@ -598,7 +599,33 @@
           date: clean(row[dateIndex] || ''),
           status: clean(row[statusIndex] || '').toUpperCase()
         };
-      }).filter(function(row) { return row.date || row.status; });
+      }).filter(function(row) { return row.date && row.status; });
+    }
+
+    // ERP builds may render class history with generic rows and no semantic THEAD.
+    // Fall back to live DOM rows and identify date/status by the values themselves.
+    if (!sessions.length) {
+      const datePattern = /^(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})$/;
+      const statusPattern = /^(?:P|A|Present|Absent|Late|Leave|Excused|Medical|Holiday)$/i;
+      Array.from(clone.querySelectorAll('table tr,[role="row"],.o_data_row,.list-group-item')).forEach(function(row) {
+        let cells = Array.from(row.children || []).filter(function(cell) {
+          const tag = (cell.tagName || '').toUpperCase();
+          const role = (cell.getAttribute && cell.getAttribute('role')) || '';
+          return tag === 'TD' || tag === 'TH' || role === 'cell' || role === 'gridcell';
+        }).map(function(cell) { return clean(textOf(cell)); });
+
+        if (cells.length < 2) {
+          cells = Array.from(row.querySelectorAll('td,th,[role="cell"],[role="gridcell"]'))
+            .map(function(cell) { return clean(textOf(cell)); });
+        }
+        if (cells.length < 2 || cells.some(function(v) { return /^(date|status)$/i.test(v); })) return;
+
+        const date = cells.find(function(value) { return datePattern.test(value); }) || '';
+        const status = cells.find(function(value) { return statusPattern.test(value); }) || '';
+        if (date && status && !sessions.some(function(item) { return item.date === date && item.status === status.toUpperCase(); })) {
+          sessions.push({date: date, status: status.toUpperCase()});
+        }
+      });
     }
 
     const conducted = conductedMatch ? parseInt(conductedMatch[1], 10) : null;
@@ -616,15 +643,16 @@
     }
   }
 
-  // On the attendance summary page, collect direct links to subject detail
-  // records. The app opens a link only after the student taps that subject.
+  // Collect subject-detail URLs from anchors and event/data attributes.
+  // Some ERP versions use JavaScript row handlers instead of an <a href>.
   const attendanceDetailLinks = [];
   if (!isAttendanceDetail) {
     const seenAttendanceUrls = new Set();
-    Array.from(clone.querySelectorAll('a[href]')).forEach(function(anchor) {
+
+    function pushAttendanceDetailLink(node, rawUrl) {
       let parsed;
       try {
-        parsed = new URL(anchor.getAttribute('href') || '', location.href);
+        parsed = new URL(rawUrl || '', location.href);
       } catch (_) {
         return;
       }
@@ -633,11 +661,11 @@
       if (seenAttendanceUrls.has(parsed.href)) return;
       seenAttendanceUrls.add(parsed.href);
 
-      const context = anchor.closest('tr,li,.o_data_row,.o_kanban_record,.list-group-item,.row,.card') ||
-        anchor.parentElement || anchor;
+      const context = (node.closest && node.closest('tr,li,.o_data_row,.o_kanban_record,.list-group-item,.row,.card,[role="row"]')) ||
+        node.parentElement || node;
       const contextText = safe(textOf(context));
-      const anchorText = safe(textOf(anchor) || anchor.getAttribute('title') || anchor.getAttribute('aria-label') || '');
-      const code = (contextText.match(/\b[A-Z]{2,8}\d{4,}[A-Z0-9-]*\b/i) || [])[0] || '';
+      const anchorText = safe(textOf(node) || node.getAttribute('title') || node.getAttribute('aria-label') || '');
+      const code = (contextText.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/i) || [])[0] || '';
       const percentMatch = contextText.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
       const genericAnchor = /^(view|details|attendance|open|show|\d+|›|→)?$/i.test(anchorText);
       const label = !genericAnchor && anchorText.length >= 3 ? anchorText : contextText;
@@ -646,6 +674,27 @@
         code: code,
         url: parsed.href,
         percentage: percentMatch ? parseFloat(percentMatch[1]) : null
+      });
+    }
+
+    function detailPathFromAttribute(value) {
+      const raw = String(value || '');
+      const match = raw.match(/(?:https?:\/\/[^'"\s)]+)?\/student\/attendancedetail(?:\/id)?\/[A-Za-z0-9_-]+(?:\?[^'"\s)]*)?/i);
+      return match ? match[0] : '';
+    }
+
+    Array.from(clone.querySelectorAll('a[href]')).forEach(function(anchor) {
+      pushAttendanceDetailLink(anchor, anchor.getAttribute('href') || '');
+    });
+
+    Array.from(clone.querySelectorAll('[data-href],[data-url],[onclick]')).forEach(function(node) {
+      [
+        node.getAttribute('data-href') || '',
+        node.getAttribute('data-url') || '',
+        node.getAttribute('onclick') || ''
+      ].forEach(function(value) {
+        const detailPath = detailPathFromAttribute(value);
+        if (detailPath) pushAttendanceDetailLink(node, detailPath);
       });
     });
   }

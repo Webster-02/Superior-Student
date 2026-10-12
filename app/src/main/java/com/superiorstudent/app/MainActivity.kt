@@ -383,6 +383,12 @@ class MainActivity : AppCompatActivity() {
         
                     override fun onPageFinished(view: WebView, url: String) {
                         super.onPageFinished(view, url)
+
+                        if (loggedIn && activeModule == StudentModule.ATTENDANCE &&
+                            ErpConfig.belongsToErp(url) &&
+                            url.contains("/student/attendancedetail", ignoreCase = true)) {
+                            activeAttendanceDetailUrl = url
+                        }
         
                         if (!loginInProgress && !profileFetchInProgress && ErpConfig.isLoginUrl(url)) {
                             restoringSession = false
@@ -775,12 +781,67 @@ class MainActivity : AppCompatActivity() {
         attendanceRenderer.render(binding.moduleContent, data)
     }
 
-    private fun openAttendanceDetail(url: String) {
+    private fun openAttendanceDetail(url: String, course: String = "", code: String = "") {
         if (!loggedIn) return
-        if (!ErpConfig.belongsToErp(url) || !url.contains("/student/attendancedetail", ignoreCase = true)) {
-            Toast.makeText(this, "This subject's ERP detail link is unavailable.", Toast.LENGTH_SHORT).show()
+
+        if (url.isNotBlank()) {
+            if (!ErpConfig.belongsToErp(url) || !url.contains("/student/attendancedetail", ignoreCase = true)) {
+                Toast.makeText(this, "This subject's ERP detail link is unavailable.", Toast.LENGTH_SHORT).show()
+                return
+            }
+            beginAttendanceDetailNavigation(url)
             return
         }
+
+        if (course.isBlank() && code.isBlank()) {
+            Toast.makeText(this, "The subject could not be identified. Refresh attendance and try again.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // Ask the authenticated ERP DOM for this subject's actual link; never hard-code record IDs.
+        beginAttendanceDetailNavigation(null)
+        webView.evaluateJavascript(Scripts.attendanceSubjectResolverScript(course, code)) { result ->
+            if (!loggedIn || activeModule != StudentModule.ATTENDANCE) return@evaluateJavascript
+
+            val payload = ParsingUtils.decodeJavascriptString(result)
+            val resolution = try {
+                JSONObject(payload)
+            } catch (_: Exception) {
+                null
+            }
+            val resolvedUrl = resolution?.optString("url", "").orEmpty()
+            val clicked = resolution?.optBoolean("clicked", false) == true
+
+            when {
+                resolvedUrl.isNotBlank() -> {
+                    if (!ErpConfig.belongsToErp(resolvedUrl) ||
+                        !resolvedUrl.contains("/student/attendancedetail", ignoreCase = true)) {
+                        failAttendanceDetailResolution()
+                    } else {
+                        activeAttendanceDetailUrl = resolvedUrl
+                        webView.loadUrl(resolvedUrl)
+                    }
+                }
+                clicked -> handler.postDelayed({
+                    if (!loggedIn || activeModule != StudentModule.ATTENDANCE) return@postDelayed
+                    val currentUrl = webView.url.orEmpty()
+                    if (ErpConfig.belongsToErp(currentUrl) &&
+                        currentUrl.contains("/student/attendancedetail", ignoreCase = true)) {
+                        if (activeAttendanceDetailUrl.isNullOrBlank()) {
+                            activeAttendanceDetailUrl = currentUrl
+                            moduleFetchInProgress = false
+                            readModuleData(webView, StudentModule.ATTENDANCE, true)
+                        }
+                    } else if (activeAttendanceDetailUrl.isNullOrBlank()) {
+                        failAttendanceDetailResolution()
+                    }
+                }, 1400L)
+                else -> failAttendanceDetailResolution()
+            }
+        }
+    }
+
+    private fun beginAttendanceDetailNavigation(url: String?) {
         activeModule = StudentModule.ATTENDANCE
         activeAttendanceDetailUrl = url
         preloadingModule = null
@@ -795,9 +856,25 @@ class MainActivity : AppCompatActivity() {
         binding.moduleSubtitle.text = "Subject attendance and 75% target"
         binding.moduleContent.removeAllViews()
         binding.moduleProgress.visibility = View.VISIBLE
-        binding.moduleInfo.text = "Loading the subject's attendance detail from ERP…"
+        binding.moduleInfo.text = "Finding this subject's attendance detail in ERP…"
         webView.visibility = View.INVISIBLE
-        webView.loadUrl(url)
+        if (!url.isNullOrBlank()) webView.loadUrl(url)
+    }
+
+    private fun failAttendanceDetailResolution() {
+        moduleFetchInProgress = false
+        moduleReadAttempts = 0
+        moduleReadRequestId++
+        binding.moduleProgress.visibility = View.GONE
+        binding.moduleInfo.text = "Subject detail unavailable"
+        binding.moduleContent.removeAllViews()
+        binding.moduleContent.addView(
+            createEmptyState(
+                "Could not open this subject's records",
+                "The ERP did not expose a detail link or click action for this subject. Return to Attendance and refresh to retry."
+            )
+        )
+        Toast.makeText(this, "Could not find this subject's ERP detail action. Please refresh attendance and try again.", Toast.LENGTH_LONG).show()
     }
 
     private fun showAttendanceSummary() {

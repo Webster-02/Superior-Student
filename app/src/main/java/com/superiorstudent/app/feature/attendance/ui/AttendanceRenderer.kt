@@ -32,7 +32,7 @@ import kotlin.math.roundToInt
 class AttendanceRenderer(
     private val activity: Context,
     private val viewModel: AttendanceViewModel,
-    private val onOpenDetail: (String) -> Unit,
+    private val onOpenDetail: (String, String, String) -> Unit,
     private val onShowSummary: () -> Unit
 ) {
     private lateinit var content: LinearLayout
@@ -115,7 +115,7 @@ class AttendanceRenderer(
             ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
             isClickable = true
             isFocusable = true
-            setOnClickListener { onOpenDetail(link.url) }
+            setOnClickListener { onOpenDetail(link.url, link.course, link.code) }
             addView(TextView(activity).apply {
                 text = link.course.ifBlank { "Subject " + position }
                 setTextColor(Palette.ink900(activity))
@@ -561,17 +561,19 @@ class AttendanceRenderer(
                 }
             }
             if (stats.childCount > 0) addView(stats)
-            if (row.detailUrl.isNotBlank()) {
-                addView(TextView(activity).apply {
-                    text = "Tap to view class history and 75% planner  ›"
-                    setTextColor(Palette.primary(activity))
-                    textSize = 11f
-                    setPadding(0, dp(9), 0, 0)
-                })
-                isClickable = true
-                isFocusable = true
-                setOnClickListener { onOpenDetail(row.detailUrl) }
-            }
+            addView(TextView(activity).apply {
+                text = if (row.detailUrl.isNotBlank()) {
+                    "Tap to view class history and 75% planner  ›"
+                } else {
+                    "Tap to find this subject's class history and 75% planner  ›"
+                }
+                setTextColor(Palette.primary(activity))
+                textSize = 11f
+                setPadding(0, dp(9), 0, 0)
+            })
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onOpenDetail(row.detailUrl, row.course, row.code) }
         }
     }
 
