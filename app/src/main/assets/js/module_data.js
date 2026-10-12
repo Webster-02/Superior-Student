@@ -251,7 +251,7 @@
     if(!raw || raw.length>320) return;
     const percent=raw.match(percentPattern);
     if(!percent) return;
-    if(!codePattern.test(raw) && !/\\battendance\\b/i.test(raw)) return;
+    if(!codePattern.test(raw) && !/\battendance\b/i.test(raw)) return;
 
     let subject=raw.replace(percent[0],'').trim();
     const codeMatch=subject.match(codePattern);
@@ -551,7 +551,7 @@
     if(!raw || raw.length>320) return;
     const attrs=safe(attrText(el));
     const combined=safe([raw,attrs].filter(Boolean).join(' | '));
-    if(!codePattern.test(combined) && !/\\battendance\\b/i.test(combined)) return;
+    if(!codePattern.test(combined) && !/\battendance\b/i.test(combined)) return;
 
     const codeMatch=combined.match(codePattern);
     const code=codeMatch ? codeMatch[0] : '';
