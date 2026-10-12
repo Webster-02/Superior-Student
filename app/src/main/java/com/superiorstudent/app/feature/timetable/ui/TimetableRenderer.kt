@@ -324,12 +324,12 @@ class TimetableRenderer(private val activity: Context) {
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             })
             table.rows.take(80).forEach { row ->
-                val text = row.mapIndexed { index, value ->
+                val lineText = row.mapIndexed { index, value ->
                     val label = table.headers.getOrNull(index).orEmpty()
                     if (label.isBlank()) value else "$label: $value"
                 }.filter(String::isNotBlank).joinToString(" • ")
-                if (text.isNotBlank()) addView(TextView(activity).apply {
-                    text = text
+                if (lineText.isNotBlank()) addView(TextView(activity).apply {
+                    text = lineText
                     setTextColor(Palette.ink700(activity))
                     textSize = 11f
                     setPadding(0, dp(8), 0, 0)
