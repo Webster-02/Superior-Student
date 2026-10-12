@@ -17,6 +17,7 @@ import com.superiorstudent.app.core.config.ErpConfig
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.feature.attendance.presentation.AttendanceViewModel
+import com.superiorstudent.app.feature.attendance.domain.AttendanceSubjectMatcher
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession
 import com.superiorstudent.app.data.model.ModuleData
