@@ -1069,7 +1069,7 @@ class MainActivity : AppCompatActivity() {
         }
         val subtitle = when (module) {
             StudentModule.ATTENDANCE -> "Subject wise attendance and current percentage"
-            StudentModule.TIMETABLE -> "Your classes, timings and rooms"
+            StudentModule.TIMETABLE -> "Your weekly classes and timings"
             StudentModule.FEE -> "Invoices, due dates and payment information"
             StudentModule.PROFILE -> "Live student information from your ERP account"
             StudentModule.RESULTS -> "Live academic results from your ERP account"
@@ -1408,9 +1408,9 @@ class MainActivity : AppCompatActivity() {
         val label = binding.nextClassLabel
         val payload = erpRepository.cachedPayload(StudentModule.TIMETABLE)
         val data = payload?.let { parseModuleData(it) }
-        val rows = data?.records?.mapNotNull(TimetableParser::toRow)
+        val rows = data?.let { TimetableParser.toRows(it.records) }
             ?.filter { it.time.isNotBlank() }
-            ?.distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.room }
+            ?.distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.code }
             .orEmpty()
 
         if (rows.isEmpty()) {
@@ -1431,7 +1431,7 @@ class MainActivity : AppCompatActivity() {
         val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
         val next = NextClassSelector.selectNext(rows, currentDay, currentMinutes)
 
-        label.text = next?.let { "Next: " + it.time + " • " + it.course } ?: "Schedule synced"
+        label.text = next?.let { "Next: " + ParsingUtils.formatScheduleTime(it.time).replace("\n–\n", " – ").replace("\n", " ") + " • " + it.course } ?: "Schedule synced"
     }
 
     private fun startSessionHeartbeat() {

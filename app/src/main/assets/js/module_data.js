@@ -271,15 +271,15 @@
   const scheduleStructured=[];
   const scheduleSeen={};
 
-  function addScheduleRecord(time, day, title, code, room){
-    time=safe(time); day=safe(day); title=safe(title); code=safe(code); room=safe(room);
+  function addScheduleRecord(time, day, title, code){
+    time=safe(time); day=safe(day); title=safe(title); code=safe(code);
     if(title.length<3 || (!time && !day)) return;
-    const key=time+'|'+day+'|'+title+'|'+code+'|'+room;
+    const key=time+'|'+day+'|'+title+'|'+code;
     if(scheduleSeen[key]) return;
     scheduleSeen[key]=true;
     scheduleStructured.push({
-      headers:['Day','Time','Class','Course Code','Room'],
-      values:[day,time,title,code,room]
+      headers:['Day','Time','Class','Course Code'],
+      values:[day,time,title,code]
     });
   }
 
@@ -312,6 +312,10 @@
     return '';
   }
 
+  function endTimeFromDate(value){
+    return timeFromDate(value);
+  }
+
   function dayFromDate(value){
     const raw=safe(value);
     const iso=raw.match(/(\d{4})-(\d{2})-(\d{2})/);
@@ -340,13 +344,21 @@
   function cleanScheduleTitle(value, code, time, day){
     let title=safe(value);
     if(!title) return '';
-    title=title.replace(code,'').trim();
-    if(time) title=title.replace(time,'').trim();
-    if(day) title=title.replace(new RegExp('\\b'+day+'\\b','ig'),'').trim();
-    title=title.replace(/\b(?:Lecture|Lab|Practical|Theory)\b/ig,' ').trim();
-    title=title.replace(/\b[A-Z]{1,3}-\d{1,3}\b/ig,' ').trim();
-    title=title.replace(/(?:^|[|•])\s*(?:Room\s*)?[A-Z]{1,3}\d{1,3}\s*(?:\|)?/ig,' ').trim();
-    title=title.replace(/\s+/g,' ').replace(/^[-•:|]+|[-•:|]+$/g,'').trim();
+    if(code) title=title.replace(code,' ');
+    if(time) title=title.replace(time,' ');
+    if(day) title=title.replace(new RegExp('\\b'+day+'\\b','ig'),' ');
+    title=title
+      .replace(/\b20\d{2}\s*[-–]\s*20\d{2}\s*[-–]\s*[A-Z0-9-]+\b/ig,' ')
+      .replace(/\b[A-Z]{2,8}[- ]?\d{3,}[A-Z0-9-]*\b/ig,' ')
+      .replace(/\b\d+\s*\.{1,3}(?:\s*\(\s*\)\s*)+/g,' ')
+      .replace(/\b\d+\s*\.{1,3}\b/g,' ')
+      .replace(/\(\s*\)/g,' ')
+      .replace(/\b\d{1,2}\s*[-–]\s*\d{1,2}\s*\[?\s*(?:Lecture|Lab|Tutorial|Practical|Theory)\s*\]?/ig,' ')
+      .replace(/\b(?:Lecture|Lab|Tutorial|Practical|Theory)\b/ig,' ')
+      .replace(/(?:^|[|•])\s*(?:Room\s*)?[A-Z]{1,3}\d{1,3}\s*(?:\|)?/ig,' ')
+      .replace(/\s+/g,' ')
+      .replace(/^[-•:|]+|[-•:|]+$/g,' ')
+      .trim();
     return title;
   }
 
@@ -402,32 +414,21 @@
   const timeLabels=collectTimeLabels();
   const dayLabels=collectDayLabels();
 
-  function inferTimeFromPosition(el){
-    if(!el || !timeLabels.length || !el.getBoundingClientRect) return '';
-    const rect=el.getBoundingClientRect();
-    if(rect.width<=0 || rect.height<=0) return '';
-
-    // FullCalendar time-grid events are positioned vertically by their
-    // start time. Use the event's TOP, not its center, to avoid shifting
-    // a 08:00 class into the next slot.
-    const eventTop=rect.top;
+  function inferTimeAtPosition(position){
+    if(!timeLabels.length || !Number.isFinite(position)) return '';
+    const ordered=timeLabels.slice().sort(function(a,b){return a.top-b.top;});
     let best=null;
     let bestDistance=Infinity;
-    timeLabels.forEach(function(label){
-      const d=Math.abs(eventTop-label.top);
+    ordered.forEach(function(label){
+      const d=Math.abs(position-label.top);
       if(d<bestDistance){bestDistance=d;best=label;}
     });
-
     if(!best) return '';
 
-    // If labels are evenly spaced, interpolate between adjacent labels
-    // so 08:30/09:00/etc are recovered even when the event does not sit
-    // exactly on the label pixel.
-    const ordered=timeLabels.slice().sort(function(a,b){return a.top-b.top;});
     for(let i=0;i<ordered.length-1;i++){
       const a=ordered[i], b=ordered[i+1];
-      if(eventTop>=a.top && eventTop<=b.top && b.top>a.top){
-        const ratio=(eventTop-a.top)/(b.top-a.top);
+      if(position>=a.top && position<=b.top && b.top>a.top){
+        const ratio=(position-a.top)/(b.top-a.top);
         const minutes=Math.round(a.minutes+(b.minutes-a.minutes)*ratio);
         const snapped=Math.max(0,Math.min(1439,minutes));
         const hh=String(Math.floor(snapped/60)).padStart(2,'0');
@@ -435,8 +436,21 @@
         return hh+':'+mm;
       }
     }
-
     return bestDistance<=140 ? best.time : '';
+  }
+
+  function inferTimeFromPosition(el){
+    if(!el || !el.getBoundingClientRect) return '';
+    const rect=el.getBoundingClientRect();
+    if(rect.width<=0 || rect.height<=0) return '';
+    return inferTimeAtPosition(rect.top);
+  }
+
+  function inferEndTimeFromPosition(el){
+    if(!el || !el.getBoundingClientRect) return '';
+    const rect=el.getBoundingClientRect();
+    if(rect.width<=0 || rect.height<=0) return '';
+    return inferTimeAtPosition(rect.bottom);
   }
 
   function inferDayFromPosition(el){
@@ -476,6 +490,19 @@
     });
   });
 
+  // Keep one root per calendar event. Nested .fc-event-main elements contain
+  // only part of a card and can produce duplicate/mixed titles.
+  const eventRootPattern=/fc-timegrid-event|fc-event|fc-daygrid-event|o_calendar_event|calendar-event|schedule-event|timetable-event/i;
+  const rootEventNodes=eventNodes.filter(function(el){
+    return !eventNodes.some(function(parent){
+      if(parent===el || !parent.contains || !parent.contains(el)) return false;
+      return eventRootPattern.test(String(parent.className||'')) ||
+        (parent.hasAttribute && parent.hasAttribute('data-start') && parent.hasAttribute('data-end'));
+    });
+  });
+  eventNodes.splice(0,eventNodes.length);
+  rootEventNodes.forEach(function(el){eventNodes.push(el);});
+
   eventNodes.forEach(function(el){
     const raw=safe(textOf(el));
     const attrs=safe(attrText(el));
@@ -492,22 +519,32 @@
 
     let time=findTime(attrs) || findTime(raw) || findTime(titleCandidate);
     let day=findDay(attrs) || findDay(raw) || findDay(titleCandidate);
+    const startDateValue=el.getAttribute && (
+      el.getAttribute('data-start') ||
+      el.getAttribute('data-datetime') ||
+      el.getAttribute('data-date-time') || ''
+    );
+    const endDateValue=el.getAttribute && (
+      el.getAttribute('data-end') ||
+      el.getAttribute('data-end-time') ||
+      el.getAttribute('data-endtime') || ''
+    );
+    const explicitStart=timeFromDate(startDateValue);
+    const explicitEnd=endTimeFromDate(endDateValue);
 
-    if(!time){
-      time=timeFromDate(el.getAttribute && (
-        el.getAttribute('data-start') ||
-        el.getAttribute('data-datetime') ||
-        el.getAttribute('data-date-time') ||
-        ''
-      ));
-    }
     if(!day){
-      day=dayFromDate(el.getAttribute && (
-        el.getAttribute('data-start') ||
-        el.getAttribute('data-datetime') ||
-        el.getAttribute('data-date-time') ||
-        ''
-      ));
+      day=dayFromDate(startDateValue);
+    }
+    if(!time || !/(?:[01]?\d|2[0-3]):[0-5]\d\s*[-–—]\s*(?:[01]?\d|2[0-3]):[0-5]\d/.test(time)){
+      const start=explicitStart || findTime(time);
+      const end=explicitEnd || inferEndTimeFromPosition(el);
+      if(start && end && start!==end){
+        time=start+' - '+end;
+      } else if(start){
+        time=start;
+      } else {
+        time=inferTimeFromPosition(el);
+      }
     }
 
     if(!time || !day){
@@ -538,7 +575,7 @@
 
     if(title.length<3 && code) title=code;
     if(title.length<3) return;
-    addScheduleRecord(time,day,title,code,'');
+    addScheduleRecord(time,day,title,code);
   });
 
   // Non-calendar fallback: only use explicit time/day values from the
@@ -559,10 +596,7 @@
     const day=findDay(attrs) || findDay(raw);
     const title=cleanScheduleTitle(raw,code,time,day);
     if(title.length<3 || (!time && !day)) return;
-    let room='';
-    const roomMatch=combined.match(/(?:room|venue|location)\s*[:#-]?\s*([A-Z0-9-]+)/i);
-    if(roomMatch) room=roomMatch[1];
-    addScheduleRecord(time,day,title,code,room);
+    addScheduleRecord(time,day,title,code);
   });
 
   scheduleStructured.forEach(function(record){records.push(record);});

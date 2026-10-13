@@ -2,71 +2,170 @@ package com.superiorstudent.app.feature.timetable.ui
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.ModuleData
-import com.superiorstudent.app.data.model.TableData
 import com.superiorstudent.app.data.model.TimetableRow
 import com.superiorstudent.app.data.parser.TimetableParser
+import com.superiorstudent.app.feature.timetable.domain.NextClassSelector
 import com.superiorstudent.app.ui.Palette
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Timetable-specific UI. Parsing is in TimetableParser, while Activity keeps
- * navigation and ERP session/WebView management.
+ * Mobile-first timetable agenda. Calendar event records are preferred over
+ * surrounding ERP text, and room/location is intentionally not shown because
+ * the ERP data supplied for these students does not reliably include it.
  */
 class TimetableRenderer(private val activity: Context) {
 
-    private val typeface: android.graphics.Typeface
-        get() = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+    private val typeface: Typeface
+        get() = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+
+    private val dayOrder = linkedMapOf(
+        "Monday" to 1,
+        "Tuesday" to 2,
+        "Wednesday" to 3,
+        "Thursday" to 4,
+        "Friday" to 5,
+        "Saturday" to 6,
+        "Sunday" to 7
+    )
 
     fun render(container: LinearLayout, data: ModuleData) {
         container.removeAllViews()
-        val rows = data.records.mapNotNull(TimetableParser::toRow)
-            .distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.room + "|" + it.code }
+        val rows = TimetableParser.toRows(data.records)
+            .distinctBy { it.day + "|" + it.time + "|" + normalizeCourse(it.course) + "|" + it.code }
             .take(60)
+            .sortedWith(
+                compareBy<TimetableRow> { dayOrder[it.day] ?: 99 }
+                    .thenBy { ParsingUtils.timeSortKey(it.time) }
+                    .thenBy { it.course.lowercase(Locale.US) }
+            )
 
         container.addView(createTimetableToolbar(rows.size))
         if (rows.isEmpty()) {
-            data.tables.forEachIndexed { index, table ->
-                container.addView(
-                    createTableSection(
-                        table.title.ifBlank { if (index == 0) "Class schedule" else "Schedule details" },
-                        table
-                    )
-                )
-            }
             container.addView(
                 createEmptyState(
-                    "Timetable is still syncing",
-                    "The ERP timetable is loaded dynamically. Tap Refresh and the app will retry the live schedule."
+                    "Timetable details unavailable",
+                    "The ERP page loaded, but the app could not identify separate class events with a day and time. Tap Refresh to retry the live schedule."
                 )
             )
+            container.addView(createTimetableInfoCard())
             return
         }
 
-        val dayOrder = mapOf(
-            "Monday" to 1, "Tuesday" to 2, "Wednesday" to 3,
-            "Thursday" to 4, "Friday" to 5, "Saturday" to 6, "Sunday" to 7
-        )
-        val sortedRows = rows.sortedWith(
-            compareBy<TimetableRow> { row ->
-                dayOrder.entries.firstOrNull { entry -> row.day.equals(entry.key, true) }?.value ?: 99
-            }.thenBy { row -> ParsingUtils.timeSortKey(row.time) }
+        val now = Calendar.getInstance()
+        val currentDay = dayOrder.entries.firstOrNull {
+            it.value == if (now.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7
+            else now.get(Calendar.DAY_OF_WEEK) - 1
+        }?.key ?: "Monday"
+        val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val nextClass = NextClassSelector.selectNext(rows, currentDay, currentMinutes)
+        container.addView(
+            nextClass?.let(::createNextClassCard)
+                ?: createNextClassUnavailableCard()
         )
 
-        sortedRows.groupBy { it.day.ifBlank { "Scheduled classes" } }
-            .toSortedMap(compareBy { dayOrder[it] ?: 99 })
-            .forEach { (day, items) ->
-                container.addView(createDayHeader(day, items.size))
-                items.forEach { row -> container.addView(createScheduleCard(row)) }
+        val populatedDays = rows.map { it.day }.filter(String::isNotBlank).toSet()
+        val visibleDays = dayOrder.keys.filter { day ->
+            dayOrder[day]!! <= 5 || day in populatedDays
+        }.toMutableList()
+        if (rows.any { it.day.isBlank() }) visibleDays.add("Schedule details")
+
+        val counts = rows.groupingBy { it.day.ifBlank { "Schedule details" } }.eachCount()
+        var selectedDay = when {
+            currentDay in visibleDays -> currentDay
+            visibleDays.any { counts.getOrDefault(it, 0) > 0 } ->
+                visibleDays.first { counts.getOrDefault(it, 0) > 0 }
+            else -> visibleDays.first()
+        }
+
+        container.addView(
+            createSectionHeading(
+                "YOUR WEEK",
+                "Choose a day to see its classes"
+            )
+        )
+
+        val dayChips = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val dayScroll = HorizontalScrollView(activity).apply {
+            isHorizontalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            addView(
+                dayChips,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        container.addView(dayScroll)
+
+        val agenda = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        container.addView(agenda)
+
+        fun renderSelectedDay() {
+            dayChips.removeAllViews()
+            visibleDays.forEach { day ->
+                val dayRows = rows.filter {
+                    if (day == "Schedule details") it.day.isBlank() else it.day.equals(day, true)
+                }
+                dayChips.addView(
+                    createDayChip(
+                        day = day,
+                        count = dayRows.size,
+                        selected = day == selectedDay
+                    ) {
+                        selectedDay = day
+                        renderSelectedDay()
+                    }
+                )
             }
 
+            agenda.removeAllViews()
+            val selectedRows = rows.filter {
+                if (selectedDay == "Schedule details") it.day.isBlank()
+                else it.day.equals(selectedDay, true)
+            }.sortedBy { ParsingUtils.timeSortKey(it.time) }
+
+            agenda.addView(createAgendaHeader(selectedDay, selectedRows.size))
+            if (selectedRows.isEmpty()) {
+                agenda.addView(
+                    createEmptyState(
+                        "No classes listed",
+                        "The ERP has no classes recorded for $selectedDay."
+                    )
+                )
+            } else {
+                selectedRows.forEachIndexed { index, row ->
+                    agenda.addView(createScheduleCard(row, index))
+                }
+            }
+        }
+        renderSelectedDay()
         container.addView(createTimetableInfoCard())
     }
 
@@ -75,7 +174,7 @@ class TimetableRenderer(private val activity: Context) {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = gradientBackground(Palette.primary(activity), Palette.violet(activity), 24f)
-            elevation = dp(5).toFloat()
+            elevation = dp(4).toFloat()
             setPadding(dp(18), dp(16), dp(18), dp(16))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -84,15 +183,12 @@ class TimetableRenderer(private val activity: Context) {
             addView(TextView(activity).apply {
                 text = "🗓"
                 gravity = Gravity.CENTER
-                textSize = 19f
-                background = roundedBackground(Color.argb(60, 255, 255, 255), 14f)
-                minWidth = dp(46)
-                minHeight = dp(46)
-                layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply {
+                textSize = 21f
+                background = roundedBackground(Color.argb(60, 255, 255, 255), 15f)
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
                     setMargins(0, 0, dp(13), 0)
                 }
             })
-
             addView(LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -100,171 +196,236 @@ class TimetableRenderer(private val activity: Context) {
                     text = "THIS WEEK"
                     setTextColor(Palette.primaryLight(activity))
                     textSize = 9f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
                     letterSpacing = 0.12f
+                    setTypeface(typeface, Typeface.BOLD)
                 })
                 addView(TextView(activity).apply {
                     text = "Your Class Schedule"
                     setTextColor(Color.WHITE)
                     textSize = 20f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTypeface(typeface, Typeface.BOLD)
                     setPadding(0, dp(2), 0, dp(1))
                 })
                 addView(TextView(activity).apply {
                     text = if (count == 1) "1 class synced from ERP" else "$count classes synced from ERP"
-                    setTextColor(Color.argb(210, 255, 255, 255))
+                    setTextColor(Color.argb(220, 255, 255, 255))
                     textSize = 11f
                 })
             })
-
             addView(TextView(activity).apply {
                 text = "LIVE"
                 setTextColor(Color.WHITE)
                 textSize = 9f
-                letterSpacing = 0.14f
+                letterSpacing = 0.12f
                 gravity = Gravity.CENTER
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTypeface(typeface, Typeface.BOLD)
                 background = roundedBackground(Color.argb(60, 255, 255, 255), 20f)
-                setPadding(dp(11), dp(6), dp(11), dp(6))
+                setPadding(dp(11), dp(7), dp(11), dp(7))
             })
         }
 
-    private fun createTimetableInfoCard(): View =
+    private fun createNextClassCard(row: TimetableRow): View =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = gradientBackground(Palette.primary(activity), Palette.violet(activity), 22f)
+            elevation = dp(4).toFloat()
+            setPadding(dp(17), dp(16), dp(17), dp(16))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
+
+            addView(TextView(activity).apply {
+                text = "NEXT CLASS"
+                setTextColor(Palette.primaryLight(activity))
+                textSize = 10f
+                letterSpacing = 0.15f
+                setTypeface(typeface, Typeface.BOLD)
+            })
+            addView(TextView(activity).apply {
+                text = row.course
+                setTextColor(Color.WHITE)
+                textSize = 19f
+                setTypeface(typeface, Typeface.BOLD)
+                maxLines = 3
+                setPadding(0, dp(5), 0, dp(8))
+            })
+            addView(TextView(activity).apply {
+                text = "▦  ${row.day}    ◷  ${compactTime(row.time)}"
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                setPadding(0, 0, 0, dp(6))
+            })
+            compactCourseCode(row.code).takeIf(String::isNotBlank)?.let { code ->
+                addView(TextView(activity).apply {
+                    text = code
+                    setTextColor(Color.WHITE)
+                    textSize = 10f
+                    setTypeface(typeface, Typeface.BOLD)
+                    background = roundedBackground(Color.argb(55, 255, 255, 255), 10f)
+                    setPadding(dp(9), dp(5), dp(9), dp(5))
+                })
+            }
+        }
+
+    private fun createNextClassUnavailableCard(): View =
         LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = roundedBackground(Palette.infoBg(activity), 18f)
-            setPadding(dp(15), dp(14), dp(15), dp(14))
+            setPadding(dp(15), dp(13), dp(15), dp(13))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(12), dp(12), dp(18)) }
-
+            ).apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
             addView(TextView(activity).apply {
-                text = "ⓘ"
+                text = "◷"
+                textSize = 24f
                 setTextColor(Palette.primary(activity))
-                textSize = 22f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(dp(32), ViewGroup.LayoutParams.WRAP_CONTENT)
+                layoutParams = LinearLayout.LayoutParams(dp(38), ViewGroup.LayoutParams.WRAP_CONTENT)
             })
             addView(LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 addView(TextView(activity).apply {
-                    text = "Timetable Information"
+                    text = "Next class unavailable"
                     setTextColor(Palette.primaryDark(activity))
-                    textSize = 12f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.BOLD)
                 })
                 addView(TextView(activity).apply {
-                    text = "Timings, courses, codes and rooms are read from your ERP account."
+                    text = "ERP has not provided a reliable weekday and start time for an upcoming class."
                     setTextColor(Palette.ink700(activity))
-                    textSize = 10f
+                    textSize = 11f
                     setPadding(0, dp(3), 0, 0)
                 })
             })
         }
 
-    private fun createDayHeader(day: String, count: Int): View =
+    private fun createSectionHeading(title: String, subtitle: String): View =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(16), dp(13), dp(16), dp(6)) }
+            addView(TextView(activity).apply {
+                text = title
+                setTextColor(Palette.ink900(activity))
+                textSize = 14f
+                setTypeface(typeface, Typeface.BOLD)
+            })
+            addView(TextView(activity).apply {
+                text = subtitle
+                setTextColor(Palette.ink500(activity))
+                textSize = 10f
+                setPadding(0, dp(2), 0, 0)
+            })
+        }
+
+    private fun createDayChip(
+        day: String,
+        count: Int,
+        selected: Boolean,
+        onClick: () -> Unit
+    ): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        background = roundedBackground(
+            if (selected) Palette.primary(activity) else Palette.surfaceAlt(activity),
+            15f
+        )
+        elevation = if (selected) dp(2).toFloat() else 0f
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        minWidth = dp(91)
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+        isClickable = true
+        isFocusable = true
+        addView(TextView(activity).apply {
+            text = if (day == "Schedule details") "OTHER" else day.take(3).uppercase(Locale.US)
+            gravity = Gravity.CENTER
+            setTextColor(if (selected) Color.WHITE else Palette.ink900(activity))
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        addView(TextView(activity).apply {
+            text = when {
+                count == 0 -> "No classes"
+                count == 1 -> "1 class"
+                else -> "$count classes"
+            }
+            gravity = Gravity.CENTER
+            setTextColor(if (selected) Color.argb(225, 255, 255, 255) else Palette.ink500(activity))
+            textSize = 10f
+            setPadding(0, dp(4), 0, 0)
+        })
+        setOnClickListener { onClick() }
+    }
+
+    private fun createAgendaHeader(day: String, count: Int): View =
         LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(14), dp(14), dp(14), dp(4)) }
-
-            addView(View(activity).apply {
-                background = gradientBackground(Palette.primary(activity), Palette.accent(activity), 4f)
-                layoutParams = LinearLayout.LayoutParams(dp(4), dp(20)).apply {
-                    setMargins(0, 0, dp(9), 0)
-                }
-            })
+            ).apply { setMargins(dp(16), dp(13), dp(16), dp(5)) }
             addView(TextView(activity).apply {
-                text = day.uppercase(java.util.Locale.US)
+                text = day + " · " + count + if (count == 1) " class" else " classes"
                 setTextColor(Palette.ink900(activity))
-                textSize = 13f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                letterSpacing = 0.08f
+                textSize = 17f
+                setTypeface(typeface, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(TextView(activity).apply {
-                text = "$count"
+                text = "ERP"
                 setTextColor(Palette.primaryDark(activity))
-                textSize = 10f
-                gravity = Gravity.CENTER
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Palette.infoBg(activity), 16f)
-                minWidth = dp(26)
-                setPadding(dp(8), dp(4), dp(8), dp(4))
-            })
-            addView(TextView(activity).apply {
-                text = if (count == 1) "class" else "classes"
-                setTextColor(Palette.ink500(activity))
-                textSize = 10f
-                setPadding(dp(6), 0, 0, 0)
+                textSize = 9f
+                letterSpacing = 0.1f
+                setTypeface(typeface, Typeface.BOLD)
+                background = roundedBackground(Palette.infoBg(activity), 10f)
+                setPadding(dp(9), dp(5), dp(9), dp(5))
             })
         }
 
-    private fun createScheduleCard(row: TimetableRow): View =
+    private fun createScheduleCard(row: TimetableRow, index: Int): View =
         LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = roundedBackground(Palette.surface(activity), 20f)
-            elevation = dp(3).toFloat()
-            setPadding(dp(12), dp(12), dp(14), dp(12))
+            elevation = dp(2).toFloat()
+            setPadding(dp(10), dp(10), dp(13), dp(10))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
 
-            val accent = when (ParsingUtils.timeSortKey(row.time) % 5) {
-                0 -> Palette.primary(activity)
-                1 -> Palette.success(activity)
-                2 -> Palette.warning(activity)
-                3 -> Palette.violet(activity)
-                else -> Palette.danger(activity)
+            val accent = when (index % 4) {
+                0 -> Palette.accent(activity)
+                1 -> Palette.violet(activity)
+                2 -> Palette.success(activity)
+                else -> Palette.warning(activity)
             }
 
-            addView(FrameLayout(activity).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(86), dp(76)).apply {
-                    setMargins(0, 0, dp(11), 0)
+            addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                background = roundedBackground(tintAlpha(accent, 24), 16f)
+                setPadding(dp(7), dp(12), dp(7), dp(12))
+                minimumHeight = dp(82)
+                layoutParams = LinearLayout.LayoutParams(dp(104), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    setMargins(0, 0, dp(12), 0)
                 }
                 addView(View(activity).apply {
-                    background = gradientBackground(
-                        tintAlpha(accent, 26),
-                        tintAlpha(Palette.ink900(activity), 26),
-                        18f
-                    )
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                })
-                addView(View(activity).apply {
                     background = roundedBackground(accent, 3f)
-                    layoutParams = FrameLayout.LayoutParams(dp(34), dp(4)).apply {
-                        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(dp(38), dp(4)).apply {
+                        setMargins(0, 0, 0, dp(7))
                     }
                 })
-                addView(LinearLayout(activity).apply {
-                    orientation = LinearLayout.VERTICAL
+                val formatted = ParsingUtils.formatScheduleTime(row.time)
+                addView(TextView(activity).apply {
+                    text = if (row.time.isBlank()) "Time unavailable" else formatted
                     gravity = Gravity.CENTER
-                    layoutParams = FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    setPadding(dp(4), dp(9), dp(4), dp(4))
-                    addView(TextView(activity).apply {
-                        text = ParsingUtils.formatScheduleTime(row.time).ifBlank { "—" }
-                        gravity = Gravity.CENTER
-                        setTextColor(Palette.ink900(activity))
-                        textSize = 12f
-                        setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    })
-                    addView(TextView(activity).apply {
-                        text = row.day.take(3).uppercase(java.util.Locale.US).ifBlank { "TBD" }
-                        gravity = Gravity.CENTER
-                        setTextColor(Palette.ink500(activity))
-                        textSize = 9f
-                        letterSpacing = 0.12f
-                        setPadding(0, dp(4), 0, 0)
-                    })
+                    setTextColor(Palette.ink900(activity))
+                    textSize = if (row.time.contains("-") || row.time.contains("–")) 12f else 13f
+                    setTypeface(typeface, Typeface.BOLD)
+                    maxLines = 3
                 })
             })
 
@@ -275,66 +436,58 @@ class TimetableRenderer(private val activity: Context) {
                     text = row.course
                     setTextColor(Palette.ink900(activity))
                     textSize = 14f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    maxLines = 2
+                    setTypeface(typeface, Typeface.BOLD)
+                    maxLines = 3
                 })
-                val metaRow = LinearLayout(activity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, dp(7), 0, 0) }
+                compactCourseCode(row.code).takeIf(String::isNotBlank)?.let { code ->
+                    addView(TextView(activity).apply {
+                        text = code
+                        setTextColor(Palette.primaryDark(activity))
+                        textSize = 10f
+                        setTypeface(typeface, Typeface.BOLD)
+                        background = roundedBackground(Palette.infoBg(activity), 10f)
+                        setPadding(dp(8), dp(5), dp(8), dp(5))
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { setMargins(0, dp(7), 0, 0) }
+                    })
                 }
-                if (row.code.isNotBlank()) metaRow.addView(TextView(activity).apply {
-                    text = row.code
-                    setTextColor(Palette.primaryDark(activity))
-                    textSize = 9f
-                    letterSpacing = 0.05f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    background = roundedBackground(Palette.infoBg(activity), 9f)
-                    setPadding(dp(8), dp(4), dp(8), dp(4))
-                })
-                metaRow.addView(TextView(activity).apply {
-                    text = if (row.room.isNotBlank()) "📍 ${row.room}" else "📍 Room TBA"
-                    setTextColor(if (row.room.isNotBlank()) Palette.success(activity) else Palette.ink400(activity))
-                    textSize = 10f
-                    typeface = android.graphics.Typeface.create(
-                        "sans-serif-medium",
-                        if (row.room.isNotBlank()) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
-                    )
-                    setPadding(if (row.code.isNotBlank()) dp(9) else 0, 0, 0, 0)
-                })
-                addView(metaRow)
             })
         }
 
-    private fun createTableSection(title: String, table: TableData): View =
+    private fun createTimetableInfoCard(): View =
         LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Palette.surface(activity), 16f)
-            elevation = dp(1).toFloat()
-            setPadding(dp(14), dp(13), dp(14), dp(13))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundedBackground(Palette.infoBg(activity), 18f)
+            setPadding(dp(15), dp(13), dp(15), dp(13))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(7), dp(12), dp(7)) }
+            ).apply { setMargins(dp(12), dp(13), dp(12), dp(18)) }
             addView(TextView(activity).apply {
-                text = title
-                setTextColor(Palette.ink900(activity))
-                textSize = 15f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                text = "ⓘ"
+                setTextColor(Palette.primary(activity))
+                textSize = 22f
+                setTypeface(typeface, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(dp(32), ViewGroup.LayoutParams.WRAP_CONTENT)
             })
-            table.rows.take(80).forEach { row ->
-                val lineText = row.mapIndexed { index, value ->
-                    val label = table.headers.getOrNull(index).orEmpty()
-                    if (label.isBlank()) value else "$label: $value"
-                }.filter(String::isNotBlank).joinToString(" • ")
-                if (lineText.isNotBlank()) addView(TextView(activity).apply {
-                    text = lineText
-                    setTextColor(Palette.ink700(activity))
-                    textSize = 11f
-                    setPadding(0, dp(8), 0, 0)
+            addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(activity).apply {
+                    text = "Timetable information"
+                    setTextColor(Palette.primaryDark(activity))
+                    textSize = 12f
+                    setTypeface(typeface, Typeface.BOLD)
                 })
-            }
+                addView(TextView(activity).apply {
+                    text = "Class names, days and timings are read from your ERP account. Unavailable details are not guessed."
+                    setTextColor(Palette.ink700(activity))
+                    textSize = 10f
+                    setPadding(0, dp(3), 0, 0)
+                })
+            })
         }
 
     private fun createEmptyState(title: String, message: String): View =
@@ -343,7 +496,7 @@ class TimetableRenderer(private val activity: Context) {
             gravity = Gravity.CENTER
             background = roundedBackground(Palette.surface(activity), 18f)
             elevation = dp(1).toFloat()
-            setPadding(dp(24), dp(30), dp(24), dp(30))
+            setPadding(dp(24), dp(28), dp(24), dp(28))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) }
@@ -351,7 +504,7 @@ class TimetableRenderer(private val activity: Context) {
                 text = title
                 setTextColor(Palette.primaryDark(activity))
                 textSize = 16f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTypeface(typeface, Typeface.BOLD)
                 gravity = Gravity.CENTER
             })
             addView(TextView(activity).apply {
@@ -363,15 +516,27 @@ class TimetableRenderer(private val activity: Context) {
             })
         }
 
-    private fun roundedBackground(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable =
-        android.graphics.drawable.GradientDrawable().apply {
+    private fun compactCourseCode(value: String): String {
+        val prefix = Regex("""\b[A-Z]{2,8}[- ]?\d{3,}""", RegexOption.IGNORE_CASE)
+            .find(value)?.value.orEmpty().replace(" ", "")
+        return prefix.ifBlank { value.trim().take(30) }
+    }
+
+    private fun compactTime(value: String): String =
+        ParsingUtils.formatScheduleTime(value).replace("\n–\n", " – ").replace("\n", " ")
+
+    private fun normalizeCourse(value: String): String =
+        value.lowercase(Locale.US).replace(Regex("""[^a-z0-9]+"""), "")
+
+    private fun roundedBackground(color: Int, radiusDp: Float): GradientDrawable =
+        GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(radiusDp.toInt()).toFloat()
         }
 
-    private fun gradientBackground(startColor: Int, endColor: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable =
-        android.graphics.drawable.GradientDrawable().apply {
-            orientation = android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+    private fun gradientBackground(startColor: Int, endColor: Int, radiusDp: Float): GradientDrawable =
+        GradientDrawable().apply {
+            orientation = GradientDrawable.Orientation.TL_BR
             colors = intArrayOf(startColor, endColor)
             cornerRadius = dp(radiusDp.toInt()).toFloat()
         }
@@ -379,5 +544,6 @@ class TimetableRenderer(private val activity: Context) {
     private fun tintAlpha(color: Int, alpha: Int): Int =
         Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
-    private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).roundToInt()
+    private fun dp(value: Int): Int =
+        (value * activity.resources.displayMetrics.density).roundToInt()
 }
