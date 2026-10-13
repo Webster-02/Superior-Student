@@ -56,6 +56,57 @@ class ErpPageParserTest {
     }
 
     @Test
+    fun parsesPaidAndUnpaidInvoicesAndOnlyKeepsTrustedPdfRoutes() {
+        val payload = """
+            {
+              "cards": [], "tables": [], "records": [], "lines": [],
+              "overallAttendance": null,
+              "invoices": [
+                {
+                  "number": "INV/2026/001",
+                  "invoiceDate": "2026-09-24",
+                  "dueDate": "2026-10-01",
+                  "term": "FALL 2026",
+                  "semester": "2nd",
+                  "receiptFor": "Tuition Fee",
+                  "barcode": "12345678",
+                  "totalAmount": "35000.0",
+                  "payable": "0.0",
+                  "status": "paid",
+                  "downloadUrl": "https://erp.superior.edu.pk/student/invoices/download/123"
+                },
+                {
+                  "number": "INV/2026/002",
+                  "invoiceDate": "2026-09-25",
+                  "dueDate": "2026-10-02",
+                  "term": "FALL 2026",
+                  "semester": "2nd",
+                  "receiptFor": "Tuition Fee",
+                  "barcode": "12345679",
+                  "totalAmount": "2000.0",
+                  "payable": "2000.0",
+                  "status": "unpaid",
+                  "downloadUrl": "https://example.com/student/invoices/download/124"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val result = ErpPageParser.parse(payload)
+
+        assertNotNull(result)
+        assertEquals(2, result!!.invoices.size)
+        assertEquals("paid", result.invoices[0].status)
+        assertEquals("35000.0", result.invoices[0].totalAmount)
+        assertEquals(
+            "https://erp.superior.edu.pk/student/invoices/download/123",
+            result.invoices[0].downloadUrl
+        )
+        assertEquals("unpaid", result.invoices[1].status)
+        assertEquals("", result.invoices[1].downloadUrl)
+    }
+
+    @Test
     fun malformedJsonIsRejectedSafely() {
         assertNull(ErpPageParser.parse("{ not-json"))
     }

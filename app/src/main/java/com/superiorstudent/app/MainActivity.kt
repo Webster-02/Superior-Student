@@ -1,6 +1,10 @@
 package com.superiorstudent.app
 
 import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
@@ -73,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         ProfileRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState)
     }
     private val feeRenderer by lazy {
-        FeeRenderer(this, ::createSectionHeading, ::createMetricCard, ::createEmptyState)
+        FeeRenderer(this, ::createSectionHeading, ::createMetricCard, ::createEmptyState, ::downloadInvoicePdf)
     }
     private val resultsRenderer by lazy {
         ResultsRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::selectResultsSemester)
@@ -807,8 +811,8 @@ class MainActivity : AppCompatActivity() {
                 binding.moduleSubtitle.text = "Your class schedule"
             }
             StudentModule.FEE -> {
-                binding.moduleTitle.text = "Fee Details"
-                binding.moduleSubtitle.text = "Your fee information"
+                binding.moduleTitle.text = "Invoices"
+                binding.moduleSubtitle.text = "Your invoice history"
             }
             StudentModule.PROFILE -> {
                 binding.moduleTitle.text = "My Profile"
@@ -830,6 +834,7 @@ class MainActivity : AppCompatActivity() {
 
         moduleFetchInProgress = true
         webView.loadUrl(ErpConfig.moduleUrl(module.path))
+        if (module == StudentModule.FEE) scheduleInvoiceLoadFallback()
     }
 
     private fun refreshActiveModule() {
@@ -848,10 +853,71 @@ class MainActivity : AppCompatActivity() {
         binding.moduleContent.removeAllViews()
         binding.moduleInfo.text = "Syncing the latest information…"
         webView.visibility = View.INVISIBLE
-        webView.loadUrl(ErpConfig.moduleUrl(module.path))
         moduleFetchInProgress = true
+        webView.loadUrl(ErpConfig.moduleUrl(module.path))
+        if (module == StudentModule.FEE) scheduleInvoiceLoadFallback()
     }
 
+    private fun scheduleInvoiceLoadFallback() {
+        val requestId = moduleReadRequestId
+        handler.postDelayed({
+            if (!loggedIn || activeModule != StudentModule.FEE ||
+                !moduleFetchInProgress || requestId != moduleReadRequestId) return@postDelayed
+            val currentUrl = webView.url.orEmpty()
+            val isInvoicePage = try {
+                ErpConfig.belongsToErp(currentUrl) &&
+                    java.net.URI(currentUrl).path.orEmpty().matches(Regex("^/student/invoices/?$"))
+            } catch (_: Exception) { false }
+
+            if (isInvoicePage) {
+                moduleFetchInProgress = false
+                readModuleData(webView, StudentModule.FEE, true)
+            } else {
+                moduleFetchInProgress = false
+                binding.moduleProgress.visibility = View.GONE
+                binding.moduleInfo.text = "Invoice sync needs retry"
+                binding.moduleContent.removeAllViews()
+                binding.moduleContent.addView(createEmptyState(
+                    "Couldn't load invoices",
+                    "The ERP took too long to respond. Check your connection and tap Refresh to try again."
+                ))
+            }
+        }, INVOICE_LOAD_FALLBACK_MS)
+    }
+
+    private fun downloadInvoicePdf(url: String, invoiceNumber: String) {
+        val uri = try { Uri.parse(url) } catch (_: Exception) { null }
+        val path = uri?.path.orEmpty()
+        if (!loggedIn || !ErpConfig.belongsToErp(url) ||
+            !Regex("^/student/invoices/download/[0-9]+/?$").matches(path)) {
+            Toast.makeText(this, "This invoice PDF link is unavailable.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val cookie = CookieManager.getInstance().getCookie(url).orEmpty()
+        if (cookie.isBlank()) {
+            Toast.makeText(this, "Your ERP session needs refreshing. Refresh invoices and try again.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val safeNumber = invoiceNumber.replace(Regex("[^A-Za-z0-9_-]+"), "_")
+            .trim('_').take(60).ifBlank { "invoice" }
+        val filename = "Superior_Invoice_${safeNumber}_${System.currentTimeMillis()}.pdf"
+        try {
+            val request = DownloadManager.Request(uri!!)
+                .setTitle("Invoice $invoiceNumber")
+                .setDescription("Downloading invoice PDF")
+                .setMimeType("application/pdf")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+            request.addRequestHeader("Cookie", cookie)
+            request.addRequestHeader("User-Agent", webView.settings.userAgentString.orEmpty())
+            request.addRequestHeader("Referer", ErpConfig.moduleUrl(StudentModule.FEE.path))
+            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            Toast.makeText(this, "Invoice PDF is downloading to Downloads.", Toast.LENGTH_LONG).show()
+        } catch (error: Exception) {
+            android.util.Log.w("MainActivity", "Could not start invoice PDF download", error)
+            Toast.makeText(this, "Could not start the PDF download. Please try again.", Toast.LENGTH_LONG).show()
+        }
+    }
 
     private fun renderModuleData(module: StudentModule, data: ModuleData) {
         binding.moduleContent.removeAllViews()
@@ -1063,14 +1129,14 @@ class MainActivity : AppCompatActivity() {
         val title = when (module) {
             StudentModule.ATTENDANCE -> "Attendance overview"
             StudentModule.TIMETABLE -> "Class schedule"
-            StudentModule.FEE -> "Fee overview"
+            StudentModule.FEE -> "Invoices overview"
             StudentModule.PROFILE -> "Student profile"
             StudentModule.RESULTS -> "Academic results"
         }
         val subtitle = when (module) {
             StudentModule.ATTENDANCE -> "Subject wise attendance and current percentage"
             StudentModule.TIMETABLE -> "Your weekly classes and timings"
-            StudentModule.FEE -> "Invoices, due dates and payment information"
+            StudentModule.FEE -> "Paid and unpaid vouchers, due dates and PDF downloads"
             StudentModule.PROFILE -> "Live student information from your ERP account"
             StudentModule.RESULTS -> "Live academic results from your ERP account"
         }
@@ -1635,6 +1701,7 @@ class MainActivity : AppCompatActivity() {
         private const val MODULE_VISUAL_DELAY_MS = 900L
         private const val MODULE_RETRY_DELAY_MS = 1200L
         private const val MAX_MODULE_READ_ATTEMPTS = 12
+        private const val INVOICE_LOAD_FALLBACK_MS = 10000L
         private const val SESSION_HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000L
 
     }

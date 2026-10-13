@@ -6,6 +6,7 @@ import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession
 import com.superiorstudent.app.data.model.ModuleData
+import com.superiorstudent.app.data.model.InvoiceData
 import com.superiorstudent.app.data.model.ModuleRecord
 import com.superiorstudent.app.data.model.TableData
 import org.json.JSONObject
@@ -102,6 +103,37 @@ object ErpPageParser {
             .distinct()
             .take(12)
 
+        val invoices = mutableListOf<InvoiceData>()
+        json.optJSONArray("invoices")?.let { items ->
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val number = ParsingUtils.cleanDisplayText(item.optString("number", ""))
+                if (number.isBlank()) continue
+                val rawUrl = item.optString("downloadUrl", "")
+                val safeUrl = try {
+                    val uri = java.net.URI(rawUrl)
+                    if (ErpConfig.belongsToErp(rawUrl) &&
+                        uri.path.matches(Regex("^/student/invoices/download/[0-9]+/?$"))) rawUrl else ""
+                } catch (_: Exception) { "" }
+
+                invoices.add(
+                    InvoiceData(
+                        number = number,
+                        invoiceDate = ParsingUtils.cleanDisplayText(item.optString("invoiceDate", "")),
+                        dueDate = ParsingUtils.cleanDisplayText(item.optString("dueDate", "")),
+                        term = ParsingUtils.cleanDisplayText(item.optString("term", "")),
+                        semester = ParsingUtils.cleanDisplayText(item.optString("semester", "")),
+                        receiptFor = ParsingUtils.cleanDisplayText(item.optString("receiptFor", "")),
+                        barcode = ParsingUtils.cleanDisplayText(item.optString("barcode", "")),
+                        totalAmount = ParsingUtils.cleanDisplayText(item.optString("totalAmount", "")),
+                        payable = ParsingUtils.cleanDisplayText(item.optString("payable", "")),
+                        status = ParsingUtils.cleanDisplayText(item.optString("status", "")).lowercase(java.util.Locale.US),
+                        downloadUrl = safeUrl
+                    )
+                )
+            }
+        }
+
         val overall = json.optPercent("overallAttendance")
 
         val attendanceDetail = json.optJSONObject("attendanceDetail")?.let { detail ->
@@ -152,7 +184,8 @@ object ErpPageParser {
             overall,
             semesterOptions,
             attendanceDetail,
-            attendanceDetailLinks.distinctBy { it.url }
+            attendanceDetailLinks.distinctBy { it.url },
+            invoices.distinctBy { it.number }
         )
 
     }
