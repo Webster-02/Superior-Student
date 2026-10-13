@@ -48,6 +48,36 @@ class AttendanceCalculatorTest {
     }
 
     @Test
+    fun projectsNextClassAttendAndMissScenariosExactly() {
+        val attend = AttendanceCalculator.project(attended = 4, conducted = 5, futureClasses = 1)!!
+
+        assertEquals(5, attend.attendedIfAttendAll)
+        assertEquals(6, attend.totalAfterFutureClasses)
+        assertEquals(83.333, attend.percentageIfAttendAll, 0.01)
+        assertEquals(4, attend.attendedIfMissAll)
+        assertEquals(66.667, attend.percentageIfMissAll, 0.01)
+        assertTrue(attend.targetMetIfAttendAll)
+        assertFalse(attend.targetMetIfMissAll)
+    }
+
+    @Test
+    fun projectsSeveralFutureClassesWithoutChangingTheRecordedCounts() {
+        val projection = AttendanceCalculator.project(attended = 4, conducted = 5, futureClasses = 3)!!
+
+        assertEquals(8, projection.totalAfterFutureClasses)
+        assertEquals(7, projection.attendedIfAttendAll)
+        assertEquals(87.5, projection.percentageIfAttendAll, 0.01)
+        assertEquals(4, projection.attendedIfMissAll)
+        assertEquals(50.0, projection.percentageIfMissAll, 0.01)
+    }
+
+    @Test
+    fun rejectsInvalidProjectionInputs() {
+        assertNull(AttendanceCalculator.project(attended = 4, conducted = 5, futureClasses = 0))
+        assertNull(AttendanceCalculator.project(attended = 6, conducted = 5, futureClasses = 1))
+    }
+
+    @Test
     fun rejectsMissingOrInconsistentCounts() {
         assertNull(AttendanceCalculator.calculate(attended = 0, conducted = 0))
         assertNull(AttendanceCalculator.calculate(attended = -1, conducted = 5))

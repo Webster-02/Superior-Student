@@ -3,6 +3,7 @@ package com.superiorstudent.app.feature.attendance.presentation
 import androidx.lifecycle.ViewModel
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
+import com.superiorstudent.app.feature.attendance.domain.AttendanceProjection
 
 /**
  * Owns attendance-specific display state and forecasting decisions for the UI.
@@ -17,7 +18,8 @@ data class AttendanceDetailUiState(
     val classesNeededToReachTarget: Int?,
     val targetReached: Boolean,
     val safeFutureLeaves: Int?,
-    val projectedPercentage: Double?
+    val projectedPercentage: Double?,
+    val projections: List<AttendanceProjection>
 )
 
 class AttendanceViewModel : ViewModel() {
@@ -47,6 +49,13 @@ class AttendanceViewModel : ViewModel() {
                 it.currentPercentage
             }
         }
+        val projections = if (countsValid) {
+            (1..4).mapNotNull { futureCount ->
+                AttendanceCalculator.project(presentCount, conductedCount, futureCount)
+            }
+        } else {
+            emptyList()
+        }
 
         return AttendanceDetailUiState(
             countsValid = countsValid,
@@ -57,7 +66,8 @@ class AttendanceViewModel : ViewModel() {
             classesNeededToReachTarget = forecast?.classesNeededToReachTarget,
             targetReached = forecast?.targetAlreadyReached == true,
             safeFutureLeaves = forecast?.safeFutureLeaves,
-            projectedPercentage = projected
+            projectedPercentage = projected,
+            projections = projections
         )
     }
 }

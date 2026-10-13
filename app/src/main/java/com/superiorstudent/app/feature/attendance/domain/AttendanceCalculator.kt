@@ -17,6 +17,18 @@ data class AttendanceForecast(
     val projectedPercentageAfterRequiredAttendance: Double
 )
 
+data class AttendanceProjection(
+    val futureClasses: Int,
+    val attendedIfAttendAll: Int,
+    val attendedIfMissAll: Int,
+    val totalAfterFutureClasses: Int,
+    val percentageIfAttendAll: Double,
+    val percentageIfMissAll: Double,
+    val targetPercentage: Double,
+    val targetMetIfAttendAll: Boolean,
+    val targetMetIfMissAll: Boolean
+)
+
 object AttendanceCalculator {
     const val TARGET_PERCENTAGE = 75.0
 
@@ -71,4 +83,35 @@ object AttendanceCalculator {
             projectedPercentageAfterRequiredAttendance = projected
         )
     }
+    /**
+     * Simulates future classes under two scenarios: attend every class or miss every class.
+     * This is a forecast only and does not assume that a class is scheduled or held.
+     */
+    fun project(
+        attended: Int,
+        conducted: Int,
+        futureClasses: Int,
+        targetPercentage: Double = TARGET_PERCENTAGE
+    ): AttendanceProjection? {
+        if (conducted <= 0 || attended < 0 || attended > conducted || futureClasses <= 0) return null
+        if (!targetPercentage.isFinite() || targetPercentage <= 0.0 || targetPercentage >= 100.0) return null
+
+        val futureTotal = conducted + futureClasses
+        val attendCount = attended + futureClasses
+        val attendPercent = attendCount.toDouble() * 100.0 / futureTotal
+        val missPercent = attended.toDouble() * 100.0 / futureTotal
+
+        return AttendanceProjection(
+            futureClasses = futureClasses,
+            attendedIfAttendAll = attendCount,
+            attendedIfMissAll = attended,
+            totalAfterFutureClasses = futureTotal,
+            percentageIfAttendAll = attendPercent,
+            percentageIfMissAll = missPercent,
+            targetPercentage = targetPercentage,
+            targetMetIfAttendAll = attendPercent + 1e-9 >= targetPercentage,
+            targetMetIfMissAll = missPercent + 1e-9 >= targetPercentage
+        )
+    }
+
 }

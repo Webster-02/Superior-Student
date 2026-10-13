@@ -69,6 +69,27 @@ class AttendanceViewModelTest {
     }
 
     @Test
+    fun exposesFourFutureClassProjectionsForValidErpCounts() {
+        val state = viewModel.detailUiState(
+            AttendanceDetailData("Quantitative Reasoning - I", "HOQ601230", 5, 4, null, emptyList())
+        )
+
+        assertEquals(4, state.projections.size)
+        assertEquals(83.333, state.projections.first().percentageIfAttendAll, 0.01)
+        assertEquals(66.667, state.projections.first().percentageIfMissAll, 0.01)
+        assertTrue(state.projections.first().targetMetIfAttendAll)
+        assertFalse(state.projections.first().targetMetIfMissAll)
+    }
+
+    @Test
+    fun hidesForecastScenariosWhenErpCountsAreInvalid() {
+        val state = viewModel.detailUiState(
+            AttendanceDetailData("Subject", "CODE1234", 6, 5, 90.0, emptyList())
+        )
+        assertTrue(state.projections.isEmpty())
+    }
+
+    @Test
     fun inconsistentErpCountsDoNotCreatePredictions() {
         val state = viewModel.detailUiState(
             AttendanceDetailData("Functional English", "", 5, 6, 99.0, emptyList())

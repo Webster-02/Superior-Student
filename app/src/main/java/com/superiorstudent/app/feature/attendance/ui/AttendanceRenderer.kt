@@ -18,6 +18,8 @@ import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.feature.attendance.presentation.AttendanceViewModel
 import com.superiorstudent.app.feature.attendance.domain.AttendanceSubjectMatcher
+import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
+import com.superiorstudent.app.feature.attendance.domain.AttendanceProjection
 import com.superiorstudent.app.feature.attendance.domain.AttendanceSubjectRowMapper
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession
@@ -46,8 +48,12 @@ class AttendanceRenderer(
         renderAttendance(data)
     }
 
+    private enum class HistoryFilter(val label: String) {
+        ALL("All"), PRESENT("Present"), ABSENT("Absent")
+    }
+
     private data class AttendanceRow(
-        val course: String,
+         val course: String,
         val code: String,
         val percent: Double?,
         val present: String,
@@ -96,6 +102,17 @@ class AttendanceRenderer(
         if (rows.isNotEmpty()) {
             val percentages = rows.mapNotNull { it.percent }
             content.addView(createAttendanceSummary(data.overallAttendance, percentages, rows.size))
+            val belowTarget = rows.filter { it.percent != null && it.percent < AttendanceCalculator.TARGET_PERCENTAGE }
+            if (belowTarget.isNotEmpty()) {
+                val names = belowTarget.take(3).joinToString(", ") { it.course }
+                val suffix = if (belowTarget.size > 3) " and " + (belowTarget.size - 3) + " more" else ""
+                content.addView(createAttendancePlannerNotice(
+                    "${belowTarget.size} subject(s) need attention",
+                    names + suffix + " are below the 75% target. Open a subject to see the exact recovery plan.",
+                    Palette.danger(activity),
+                    Palette.dangerBg(activity)
+                ))
+            }
             rows.forEachIndexed { index, row -> content.addView(createAttendanceCard(row, index + 1)) }
         } else if (data.attendanceDetailLinks.isNotEmpty()) {
             content.addView(createSectionHeading(
@@ -223,6 +240,47 @@ class AttendanceRenderer(
             stats.addView(createAttendancePlannerMetric("Missed", (conducted - present).toString(), "Conducted − attended", Palette.danger(activity)))
             content.addView(stats)
 
+            state.projections.firstOrNull()?.let { next ->
+                content.addView(createSectionHeading(
+                    "Next class impact",
+                    "See the result if your next scheduled class is attended or missed"
+                ))
+                val impactRow = LinearLayout(activity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(dp(8), 0, dp(8), dp(4)) }
+                }
+                impactRow.addView(createAttendanceProjectionCard(
+                    title = "If you attend",
+                    percentage = next.percentageIfAttendAll,
+                    attended = next.attendedIfAttendAll,
+                    total = next.totalAfterFutureClasses,
+                    targetMet = next.targetMetIfAttendAll
+                ))
+                impactRow.addView(createAttendanceProjectionCard(
+                    title = "If you miss",
+                    percentage = next.percentageIfMissAll,
+                    attended = next.attendedIfMissAll,
+                    total = next.totalAfterFutureClasses,
+                    targetMet = next.targetMetIfMissAll
+                ))
+                content.addView(impactRow)
+                content.addView(createSectionHeading(
+                    "Plan the next 4 classes",
+                    "Compare attending every class with missing every class"
+                ))
+                state.projections.forEach { projection ->
+                    content.addView(createProjectionComparisonRow(projection))
+                }
+                content.addView(TextView(activity).apply {
+                    text = "Forecasts assume each future class is conducted. They are calculations, not confirmed class dates."
+                    setTextColor(Palette.ink500(activity))
+                    textSize = 10f
+                    setPadding(dp(14), dp(3), dp(14), dp(8))
+                })
+            }
+
             val neededCount = needed ?: 0
             val nextPercent = state.projectedPercentage ?: calculatedPercent ?: 0.0
             val targetMessage = if (reached) {
@@ -259,19 +317,239 @@ class AttendanceRenderer(
             ))
         }
 
+        if (detail.sessions.isNotEmpty()) {
+            val presentSessions = detail.sessions.count(::isPresentSession)
+            val absentSessions = detail.sessions.count(::isAbsentSession)
+            val historyStats = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(dp(8), 0, dp(8), dp(6)) }
+            }
+            historyStats.addView(createAttendancePlannerMetric(
+                "Present", presentSessions.toString(), "Recorded sessions", Palette.success(activity)
+            ))
+            historyStats.addView(createAttendancePlannerMetric(
+                "Absent", absentSessions.toString(), "Recorded sessions", Palette.danger(activity)
+            ))
+            historyStats.addView(createAttendancePlannerMetric(
+                "Records", detail.sessions.size.toString(), "From ERP", Palette.primary(activity)
+            ))
+            content.addView(createSectionHeading(
+                "History snapshot", "Recorded class outcomes from your ERP account"
+            ))
+            content.addView(historyStats)
+        }
+
         content.addView(createSectionHeading(
-            "Class-by-class history", "Dates and statuses copied from the ERP detail page"
+            "Class-by-class history", "Filter recorded dates by attendance status"
         ))
         if (detail.sessions.isNotEmpty()) {
-            detail.sessions.forEachIndexed { index, session ->
-                content.addView(createAttendanceSessionCard(session, index + 1))
+            val filterRow = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(dp(10), dp(2), dp(10), dp(4)) }
             }
+            val historyContainer = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            content.addView(filterRow)
+            content.addView(historyContainer)
+
+            fun renderHistory(filter: HistoryFilter) {
+                filterRow.removeAllViews()
+                HistoryFilter.values().forEach { option ->
+                    filterRow.addView(createHistoryFilterChip(option.label, option == filter) {
+                        renderHistory(option)
+                    })
+                }
+                historyContainer.removeAllViews()
+                val filtered = detail.sessions.filter { session ->
+                    when (filter) {
+                        HistoryFilter.ALL -> true
+                        HistoryFilter.PRESENT -> isPresentSession(session)
+                        HistoryFilter.ABSENT -> isAbsentSession(session)
+                    }
+                }
+                historyContainer.addView(TextView(activity).apply {
+                    text = "Showing " + filtered.size + " of " + detail.sessions.size + " recorded sessions"
+                    setTextColor(Palette.ink500(activity))
+                    textSize = 10f
+                    setPadding(dp(14), dp(4), dp(14), dp(4))
+                })
+                if (filtered.isEmpty()) {
+                    historyContainer.addView(createEmptyState(
+                        "No " + filter.label.lowercase(java.util.Locale.US) + " records",
+                        "The ERP detail page does not contain any sessions in this category."
+                    ))
+                } else {
+                    filtered.forEachIndexed { index, session ->
+                        historyContainer.addView(createAttendanceSessionCard(session, index + 1))
+                    }
+                }
+            }
+            renderHistory(HistoryFilter.ALL)
         } else {
             content.addView(createEmptyState(
                 "Class history unavailable",
                 "The class totals were read, but the individual date/status rows could not be extracted."
             ))
         }
+    }
+
+    private fun createAttendanceProjectionCard(
+        title: String,
+        percentage: Double,
+        attended: Int,
+        total: Int,
+        targetMet: Boolean
+    ): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        background = roundedBackground(
+            if (targetMet) Palette.successBg(activity) else Palette.dangerBg(activity), 16f
+        )
+        setPadding(dp(12), dp(13), dp(10), dp(12))
+        layoutParams = LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        ).apply { setMargins(dp(4), dp(3), dp(4), dp(3)) }
+
+        addView(TextView(activity).apply {
+            text = title
+            setTextColor(if (targetMet) Palette.success(activity) else Palette.danger(activity))
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        addView(TextView(activity).apply {
+            text = String.format(java.util.Locale.US, "%.1f%%", percentage)
+            setTextColor(if (targetMet) Palette.success(activity) else Palette.danger(activity))
+            textSize = 23f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(4), 0, dp(2))
+        })
+        addView(TextView(activity).apply {
+            text = "$attended of $total classes"
+            setTextColor(Palette.ink700(activity))
+            textSize = 10f
+        })
+        addView(TextView(activity).apply {
+            text = if (targetMet) "75% target maintained" else "Below 75% target"
+            setTextColor(if (targetMet) Palette.success(activity) else Palette.danger(activity))
+            textSize = 9f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(5), 0, 0)
+        })
+    }
+
+    private fun createProjectionComparisonRow(projection: AttendanceProjection): View =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Palette.surface(activity), 15f)
+            elevation = dp(1).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(3), dp(12), dp(4)) }
+            setPadding(dp(10), dp(9), dp(10), dp(8))
+
+            addView(TextView(activity).apply {
+                text = "Next " + projection.futureClasses +
+                    (if (projection.futureClasses == 1) " class" else " classes")
+                setTextColor(Palette.ink900(activity))
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(3), 0, 0, dp(4))
+            })
+            val scenarios = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+            scenarios.addView(createProjectionCompactCell(
+                "Attend all",
+                projection.percentageIfAttendAll,
+                projection.attendedIfAttendAll,
+                projection.totalAfterFutureClasses,
+                projection.targetMetIfAttendAll
+            ))
+            scenarios.addView(createProjectionCompactCell(
+                "Miss all",
+                projection.percentageIfMissAll,
+                projection.attendedIfMissAll,
+                projection.totalAfterFutureClasses,
+                projection.targetMetIfMissAll
+            ))
+            addView(scenarios)
+        }
+
+    private fun createProjectionCompactCell(
+        title: String,
+        percentage: Double,
+        attended: Int,
+        total: Int,
+        targetMet: Boolean
+    ): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        ).apply { setMargins(dp(3), 0, dp(3), 0) }
+        background = roundedBackground(
+            if (targetMet) Palette.successBg(activity) else Palette.dangerBg(activity), 10f
+        )
+        setPadding(dp(9), dp(8), dp(7), dp(8))
+        addView(TextView(activity).apply {
+            text = title
+            setTextColor(Palette.ink700(activity))
+            textSize = 10f
+        })
+        addView(TextView(activity).apply {
+            text = String.format(java.util.Locale.US, "%.1f%%", percentage)
+            setTextColor(if (targetMet) Palette.success(activity) else Palette.danger(activity))
+            textSize = 17f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(2), 0, 0)
+        })
+        addView(TextView(activity).apply {
+            text = "$attended / $total attended"
+            setTextColor(Palette.ink500(activity))
+            textSize = 9f
+        })
+        addView(TextView(activity).apply {
+            text = if (targetMet) "Target safe" else "Below 75%"
+            setTextColor(if (targetMet) Palette.success(activity) else Palette.danger(activity))
+            textSize = 9f
+            setPadding(0, dp(3), 0, 0)
+        })
+    }
+
+    private fun createHistoryFilterChip(
+        label: String,
+        selected: Boolean,
+        onClick: () -> Unit
+    ): View = TextView(activity).apply {
+        text = label
+        gravity = Gravity.CENTER
+        setTextColor(if (selected) Color.WHITE else Palette.ink700(activity))
+        textSize = 11f
+        setTypeface(typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
+        setPadding(dp(6), dp(9), dp(6), dp(9))
+        background = roundedBackground(
+            if (selected) Palette.primary(activity) else Palette.surfaceAlt(activity), 18f
+        )
+        layoutParams = LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        ).apply { setMargins(dp(3), dp(2), dp(3), dp(2)) }
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { onClick() }
+    }
+
+    private fun isPresentSession(session: AttendanceSession): Boolean {
+        val status = session.status.trim().uppercase(java.util.Locale.US)
+        return status == "P" || status == "PRESENT"
+    }
+
+    private fun isAbsentSession(session: AttendanceSession): Boolean {
+        val status = session.status.trim().uppercase(java.util.Locale.US)
+        return status == "A" || status == "AB" || status == "ABSENT" || status.contains("ABSENT")
     }
 
     private fun createAttendancePlannerMetric(label: String, value: String, subtitle: String, accent: Int): View =
@@ -452,13 +730,19 @@ class AttendanceRenderer(
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(6), dp(12), dp(12)) }
 
-            val display = overall
+            val validPercentages = percentages.filter { it.isFinite() && it in 0.0..100.0 }
+            val display = overall?.takeIf { it.isFinite() && it in 0.0..100.0 }
+                ?: validPercentages.takeIf { it.isNotEmpty() }?.average()
             addView(LinearLayout(activityContext).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
 
                 addView(TextView(activityContext).apply {
-                    text = if (overall != null) "OVERALL ATTENDANCE" else "ATTENDANCE SUMMARY"
+                    text = when {
+                        overall != null && display != null -> "OVERALL ATTENDANCE"
+                        display != null -> "SUBJECT AVERAGE"
+                        else -> "ATTENDANCE SUMMARY"
+                    }
                     setTextColor(Color.argb(230, 255, 255, 255))
                     textSize = 10f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -472,10 +756,10 @@ class AttendanceRenderer(
                     setPadding(0, dp(4), 0, 0)
                 })
                 addView(TextView(activityContext).apply {
-                    text = if (overall != null) {
-                        "$count subjects • official overall percentage"
-                    } else {
-                        "$count subjects • percentage shown per subject"
+                    text = when {
+                        overall != null && display != null -> "$count subjects • official overall percentage"
+                        display != null -> "$count subjects • simple average of listed subjects; not weighted by class counts"
+                        else -> "$count subjects • percentage shown per subject"
                     }
                     setTextColor(Color.argb(210, 255, 255, 255))
                     textSize = 11f
