@@ -84,7 +84,7 @@ class AttendanceViewModelTest {
     @Test
     fun hidesForecastScenariosWhenErpCountsAreInvalid() {
         val state = viewModel.detailUiState(
-            AttendanceDetailData("Subject", "CODE1234", 6, 5, 90.0, emptyList())
+            AttendanceDetailData("Subject", "CODE1234", 6, 7, 90.0, emptyList())
         )
         assertTrue(state.projections.isEmpty())
     }
