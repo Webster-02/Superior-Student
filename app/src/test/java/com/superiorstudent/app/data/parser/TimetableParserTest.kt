@@ -101,6 +101,28 @@ class TimetableParserTest {
     }
 
     @Test
+    fun keepsCoursesFromDifferentDepartmentsAsSeparateRows() {
+        val records = listOf(
+            ModuleRecord(
+                headers = listOf("Day", "Time", "Class", "Course Code"),
+                values = listOf("Monday", "08:00 - 10:00", "Introduction to Programming", "CSC101")
+            ),
+            ModuleRecord(
+                headers = listOf("Day", "Time", "Class", "Course Code"),
+                values = listOf("Tuesday", "10:00 - 11:30", "Financial Accounting", "ACC201")
+            )
+        )
+
+        val rows = TimetableParser.toRows(records)
+
+        assertEquals(2, rows.size)
+        assertEquals("Introduction to Programming", rows[0].course)
+        assertEquals("CSC101", rows[0].code)
+        assertEquals("Financial Accounting", rows[1].course)
+        assertEquals("ACC201", rows[1].code)
+    }
+
+    @Test
     fun skipsNonScheduleSessionNoise() {
         assertNull(TimetableParser.toRow(ModuleRecord(emptyList(), listOf("Session inactive stay online"))))
     }

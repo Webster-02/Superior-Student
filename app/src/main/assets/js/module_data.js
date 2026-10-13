@@ -364,10 +364,14 @@
 
   function collectTimeLabels(){
     const labels=[];
-    const nodes=Array.from(document.querySelectorAll('.fc-timegrid-slot-label,.fc-timegrid-slot-label-cushion,.fc-timegrid-axis-cushion,[class*="timegrid-slot-label"],div,span,td,th'));
+    const nodes=Array.from(document.querySelectorAll('.cd-schedule__timeline li,.fc-timegrid-slot-label,.fc-timegrid-slot-label-cushion,.fc-timegrid-axis-cushion,[class*="timegrid-slot-label"],div,span,td,th'));
     nodes.forEach(function(el){
       const value=safe(textOf(el));
       if(!/^\d{1,2}:\d{2}$/.test(value)) return;
+      const customTimeline = el.closest ? el.closest('.cd-schedule__timeline') : null;
+      // For the custom ERP calendar, each LI marks the real time-slot boundary;
+      // its nested SPAN is label text and may be offset by CSS padding.
+      if(customTimeline && String(el.tagName).toLowerCase() !== 'li') return;
       const rect=el.getBoundingClientRect ? el.getBoundingClientRect() : null;
       if(!rect || rect.width<=0 || rect.height<=0) return;
       const minutes=parseInt(value.slice(0,2),10)*60+parseInt(value.slice(3),10);
@@ -453,6 +457,25 @@
     return inferTimeAtPosition(rect.bottom);
   }
 
+  function clockMinutes(value){
+    const match=String(value||'').match(/^(\d{1,2}):(\d{2})$/);
+    if(!match) return null;
+    const hour=Number(match[1]), minute=Number(match[2]);
+    if(hour<0 || hour>23 || minute<0 || minute>59) return null;
+    return hour*60+minute;
+  }
+
+  function inferRangeFromPosition(el){
+    const start=inferTimeFromPosition(el);
+    const end=inferEndTimeFromPosition(el);
+    const startMinutes=clockMinutes(start);
+    const endMinutes=clockMinutes(end);
+    if(startMinutes!==null && endMinutes!==null && endMinutes>startMinutes){
+      return start+' - '+end;
+    }
+    return start;
+  }
+
   function inferDayFromPosition(el){
     if(!el || !el.getBoundingClientRect) return '';
 
@@ -477,6 +500,7 @@
   }
 
   const eventSelectors=[
+    '.cd-schedule__event',
     '.fc-timegrid-event','.fc-event','.fc-daygrid-event','.fc-event-main',
     '.o_calendar_event','.calendar_event','[class*="calendar-event"]',
     '[class*="schedule-event"]','[class*="timetable-event"]',
@@ -492,7 +516,7 @@
 
   // Keep one root per calendar event. Nested .fc-event-main elements contain
   // only part of a card and can produce duplicate/mixed titles.
-  const eventRootPattern=/fc-timegrid-event|fc-event|fc-daygrid-event|o_calendar_event|calendar-event|schedule-event|timetable-event/i;
+  const eventRootPattern=/cd-schedule__event|fc-timegrid-event|fc-event|fc-daygrid-event|o_calendar_event|calendar-event|schedule-event|timetable-event/i;
   const rootEventNodes=eventNodes.filter(function(el){
     return !eventNodes.some(function(parent){
       if(parent===el || !parent.contains || !parent.contains(el)) return false;
@@ -504,6 +528,34 @@
   rootEventNodes.forEach(function(el){eventNodes.push(el);});
 
   eventNodes.forEach(function(el){
+    const eventClass=String(el.className||'');
+    const isSuperiorCalendarEvent=/(?:^|\s)cd-schedule__event(?:\s|$)/.test(eventClass);
+    if(isSuperiorCalendarEvent && el.closest){
+      const group=el.closest('.cd-schedule__group');
+      if(group){
+        // Use the event's own title/code and its nearest weekday group. Do not read
+        // the parent group's full text, because it includes sibling subjects too.
+        const day=findDay(textOf(group.querySelector('.cd-schedule__top-info'))) || findDay(textOf(group));
+        const names=Array.from(el.querySelectorAll('.cd-schedule__name')).map(function(node){
+          return safe(textOf(node));
+        }).filter(Boolean);
+        const titleSource=names[0] || titleFromElement(el);
+        const codeMatch=names.map(function(value){return value.match(codePattern);}).find(Boolean) ||
+          safe(textOf(el)).match(codePattern);
+        const code=codeMatch ? codeMatch[0] : '';
+        const title=cleanScheduleTitle(titleSource,code,'',day);
+
+        const link=el.querySelector('a');
+        let time=inferRangeFromPosition(el);
+        const linkTime=link ? inferRangeFromPosition(link) : '';
+        if(linkTime && linkTime.indexOf(' - ')>=0) time=linkTime;
+        else if((!time || time.indexOf(' - ')<0) && linkTime) time=linkTime;
+
+        if(day && title.length>=3) addScheduleRecord(time,day,title,code);
+        return;
+      }
+    }
+
     const raw=safe(textOf(el));
     const attrs=safe(attrText(el));
     const titleCandidate=titleFromElement(el);
@@ -583,7 +635,9 @@
   // becoming the time for every subject.
   const fallbackNodes=Array.from(clone.querySelectorAll('li,td,tr,.card,.item,.row'));
   fallbackNodes.forEach(function(el){
-    if(eventNodes.indexOf(el)>=0) return;
+    // Never parse an aggregate calendar/week container as a class: it contains
+    // several sibling subjects and caused multiple classes to merge into one card.
+    if(el.closest && el.closest('.cd-schedule__event, .cd-schedule__group, .cd-schedule, .fc-event, .o_calendar_event, [class*="calendar-event"], [class*="schedule-event"], [class*="timetable-event"]')) return;
     const raw=safe(textOf(el));
     if(!raw || raw.length>320) return;
     const attrs=safe(attrText(el));

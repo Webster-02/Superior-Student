@@ -173,7 +173,7 @@ class TimetableRenderer(private val activity: Context) {
         LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = gradientBackground(Palette.primary(activity), Palette.violet(activity), 24f)
+            background = gradientBackground(Color.rgb(49, 46, 129), Color.rgb(109, 40, 217), 24f)
             elevation = dp(4).toFloat()
             setPadding(dp(18), dp(16), dp(18), dp(16))
             layoutParams = LinearLayout.LayoutParams(
@@ -194,7 +194,7 @@ class TimetableRenderer(private val activity: Context) {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 addView(TextView(activity).apply {
                     text = "THIS WEEK"
-                    setTextColor(Palette.primaryLight(activity))
+                    setTextColor(Color.rgb(224, 231, 255))
                     textSize = 9f
                     letterSpacing = 0.12f
                     setTypeface(typeface, Typeface.BOLD)
@@ -213,7 +213,7 @@ class TimetableRenderer(private val activity: Context) {
                 })
             })
             addView(TextView(activity).apply {
-                text = "LIVE"
+                text = "ERP"
                 setTextColor(Color.WHITE)
                 textSize = 9f
                 letterSpacing = 0.12f
@@ -227,7 +227,7 @@ class TimetableRenderer(private val activity: Context) {
     private fun createNextClassCard(row: TimetableRow): View =
         LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            background = gradientBackground(Palette.primary(activity), Palette.violet(activity), 22f)
+            background = gradientBackground(Color.rgb(67, 56, 202), Color.rgb(109, 40, 217), 22f)
             elevation = dp(4).toFloat()
             setPadding(dp(17), dp(16), dp(17), dp(16))
             layoutParams = LinearLayout.LayoutParams(
@@ -236,7 +236,7 @@ class TimetableRenderer(private val activity: Context) {
 
             addView(TextView(activity).apply {
                 text = "NEXT CLASS"
-                setTextColor(Palette.primaryLight(activity))
+                setTextColor(Color.rgb(224, 231, 255))
                 textSize = 10f
                 letterSpacing = 0.15f
                 setTypeface(typeface, Typeface.BOLD)
@@ -286,7 +286,7 @@ class TimetableRenderer(private val activity: Context) {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(activity).apply {
                     text = "Next class unavailable"
-                    setTextColor(Palette.primaryDark(activity))
+                    setTextColor(Palette.ink900(activity))
                     textSize = 14f
                     setTypeface(typeface, Typeface.BOLD)
                 })
@@ -328,7 +328,7 @@ class TimetableRenderer(private val activity: Context) {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
         background = roundedBackground(
-            if (selected) Palette.primary(activity) else Palette.surfaceAlt(activity),
+            if (selected) Color.rgb(79, 70, 229) else Palette.surfaceAlt(activity),
             15f
         )
         elevation = if (selected) dp(2).toFloat() else 0f
@@ -376,7 +376,7 @@ class TimetableRenderer(private val activity: Context) {
             })
             addView(TextView(activity).apply {
                 text = "ERP"
-                setTextColor(Palette.primaryDark(activity))
+                setTextColor(Palette.ink900(activity))
                 textSize = 9f
                 letterSpacing = 0.1f
                 setTypeface(typeface, Typeface.BOLD)
@@ -442,7 +442,7 @@ class TimetableRenderer(private val activity: Context) {
                 compactCourseCode(row.code).takeIf(String::isNotBlank)?.let { code ->
                     addView(TextView(activity).apply {
                         text = code
-                        setTextColor(Palette.primaryDark(activity))
+                        setTextColor(Palette.ink900(activity))
                         textSize = 10f
                         setTypeface(typeface, Typeface.BOLD)
                         background = roundedBackground(Palette.infoBg(activity), 10f)
@@ -477,7 +477,7 @@ class TimetableRenderer(private val activity: Context) {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 addView(TextView(activity).apply {
                     text = "Timetable information"
-                    setTextColor(Palette.primaryDark(activity))
+                    setTextColor(Palette.ink900(activity))
                     textSize = 12f
                     setTypeface(typeface, Typeface.BOLD)
                 })
@@ -502,7 +502,7 @@ class TimetableRenderer(private val activity: Context) {
             ).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) }
             addView(TextView(activity).apply {
                 text = title
-                setTextColor(Palette.primaryDark(activity))
+                setTextColor(Palette.ink900(activity))
                 textSize = 16f
                 setTypeface(typeface, Typeface.BOLD)
                 gravity = Gravity.CENTER
