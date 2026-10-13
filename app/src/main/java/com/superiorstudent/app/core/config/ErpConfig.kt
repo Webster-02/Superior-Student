@@ -21,8 +21,21 @@ object ErpConfig {
         }
     }
 
-    fun isLoginUrl(url: String): Boolean =
-        belongsToErp(url) && url.contains("/web/login", ignoreCase = true)
+    /**
+     * The university login can be served by either the standard Odoo route or
+     * the legacy TSG route. Use the parsed path so query strings are harmless.
+     */
+    fun isLoginUrl(url: String): Boolean {
+        if (!belongsToErp(url)) return false
+        val path = try {
+            java.net.URI(url).path.orEmpty().lowercase(java.util.Locale.US)
+        } catch (_: Exception) {
+            return false
+        }
+        return path == "/web/login" || path.startsWith("/web/login/") ||
+            path == "/tsg/login" || path.startsWith("/tsg/login/") ||
+            path == "/student/login" || path.startsWith("/student/login/")
+    }
 
     fun isAuthenticatedUrl(url: String): Boolean =
         belongsToErp(url) &&

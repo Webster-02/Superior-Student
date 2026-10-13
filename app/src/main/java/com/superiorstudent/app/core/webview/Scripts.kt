@@ -17,6 +17,8 @@ object Scripts {
         private set
     var loginErrorCheck: String = ""
         private set
+    var loginPageProbe: String = ""
+        private set
     var moduleData: String = ""
         private set
     var studentProfileText: String = ""
@@ -30,6 +32,7 @@ object Scripts {
         val assets = context.applicationContext.assets
         sessionHeartbeat = assets.read("js/session_heartbeat.js")
         loginErrorCheck = assets.read("js/login_error_check.js")
+        loginPageProbe = assets.read("js/login_page_probe.js")
         moduleData = assets.read("js/module_data.js")
         studentProfileText = assets.read("js/student_profile_text.js")
         attendanceSubjectResolverTemplate = assets.read("js/resolve_attendance_subject.js")

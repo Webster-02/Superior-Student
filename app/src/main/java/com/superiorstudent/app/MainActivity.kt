@@ -91,6 +91,8 @@ class MainActivity : AppCompatActivity() {
     private var username = ""
     private var password = ""
     private var loginAttempt = 0
+    private var loginProbeInProgress = false
+    private var loginProbeAttempts = 0
     private var preloadingModule: StudentModule? = null
     private val preloadQueue = mutableListOf<StudentModule>()
     private var moduleFetchInProgress = false
@@ -160,6 +162,8 @@ class MainActivity : AppCompatActivity() {
             restoringSession = false
             loggedIn = false
             loginAttempt = 0
+            loginProbeInProgress = false
+            loginProbeAttempts = 0
             profileReadAttempts = 0
             erpRepository.clearCache()
             binding.loginButton.isEnabled = false
@@ -368,19 +372,49 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         // Strict TLS: refuse to load content when certificate validation fails.
                         handler.cancel()
-                        if (activeModule != null) {
+                        if (loginInProgress) {
+                            failLogin("Secure connection to the university sign-in failed. Check your network and try again.")
+                        } else if (restoringSession) {
+                            restoringSession = false
+                            sessionStore.sessionActive = false
+                            showLogin()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Secure connection failed. Please sign in again.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else if (activeModule != null) {
                             binding.moduleProgress.visibility = View.GONE
                             binding.moduleInfo.text = "Secure connection failed. Check your network and tap Refresh."
-                        } else if (loginInProgress || restoringSession) {
-                            failLogin("Secure connection to the university portal failed. Please try again.")
                         }
                     }
         
                     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                         super.onReceivedError(view, request, error)
-                        if (request.isForMainFrame && activeModule != null) {
-                            binding.moduleProgress.visibility = View.GONE
-                            Toast.makeText(this@MainActivity, "Unable to load your information. Check internet and try Refresh.", Toast.LENGTH_LONG).show()
+                        if (!request.isForMainFrame) return
+
+                        when {
+                            loginInProgress -> failLogin(
+                                "Could not load the university sign-in page. Check your internet connection and try again."
+                            )
+                            restoringSession -> {
+                                restoringSession = false
+                                sessionStore.sessionActive = false
+                                showLogin()
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Could not restore your university session. Please sign in again.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            activeModule != null -> {
+                                binding.moduleProgress.visibility = View.GONE
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    "Unable to load your information. Check internet and try Refresh.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                     }
         
@@ -423,9 +457,16 @@ class MainActivity : AppCompatActivity() {
                                     scheduleLoginInjection(view)
                                 } else {
                                     view.evaluateJavascript(Scripts.loginErrorCheck) { result ->
-                                        if (result == "true") failLogin("Login failed. Check your ERP username or password.")
+                                        if (!loginInProgress) return@evaluateJavascript
+                                        if (result == "true") {
+                                            failLogin("Login failed. Check your university username and password.")
+                                        } else {
+                                            probeLoginPage(view)
+                                        }
                                     }
                                 }
+                            } else {
+                                probeLoginPage(view)
                             }
                             return
                         }
@@ -544,6 +585,39 @@ class MainActivity : AppCompatActivity() {
         startSessionHeartbeat()
     }
 
+    /**
+     * Fallback for portal redirects whose URL doesn't identify the login route.
+     * It checks the visible ERP DOM instead of assuming one fixed login pathname.
+     */
+    private fun probeLoginPage(view: WebView) {
+        if (!loginInProgress || loginProbeInProgress) return
+        if (loginProbeAttempts >= MAX_LOGIN_PROBE_ATTEMPTS) {
+            failLogin("The university portal did not finish signing in. Check your credentials or verification prompt and try again.")
+            return
+        }
+        loginProbeAttempts++
+        loginProbeInProgress = true
+        view.evaluateJavascript(Scripts.loginPageProbe) { result ->
+            loginProbeInProgress = false
+            if (!loginInProgress) return@evaluateJavascript
+
+            when (ParsingUtils.decodeJavascriptString(result)) {
+                "LOGIN_FORM" -> {
+                    if (loginSubmitted) {
+                        failLogin("The university portal is still showing the sign-in form. Check your username, password, or any verification prompt.")
+                    } else {
+                        scheduleLoginInjection(view)
+                    }
+                }
+                "LOGIN_ERROR" -> failLogin("Login failed. Check your university username and password.")
+                "AUTHENTICATED" -> completeLogin()
+                else -> handler.postDelayed({
+                    if (loginInProgress) probeLoginPage(view)
+                }, LOGIN_INJECTION_DELAY_MS)
+            }
+        }
+    }
+
     private fun scheduleLoginInjection(view: WebView) {
         if (!loginInProgress || loginSubmitted) return
         if (loginAttempt >= MAX_LOGIN_INJECTION_ATTEMPTS) {
@@ -571,6 +645,8 @@ class MainActivity : AppCompatActivity() {
     private fun completeLogin() {
         loginInProgress = false
         loginSubmitted = false
+        loginProbeInProgress = false
+        loginProbeAttempts = 0
         restoringSession = false
         loggedIn = true
         profileReadAttempts = 0
@@ -581,6 +657,7 @@ class MainActivity : AppCompatActivity() {
         binding.loginStatus.text = ""
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
+        password = ""
         showDashboard()
         fetchStudentProfile()
     }
@@ -1487,7 +1564,12 @@ class MainActivity : AppCompatActivity() {
     private fun failLogin(message: String) {
         loginInProgress = false
         loginSubmitted = false
+        loginProbeInProgress = false
+        loginProbeAttempts = 0
+        loginAttempt = 0
+        password = ""
         binding.loginButton.isEnabled = true
+        binding.passwordInput.text?.clear()
         binding.loginStatus.setTextColor(Palette.danger(this@MainActivity))
         binding.loginStatus.text = message
     }
@@ -1544,6 +1626,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
                                 private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
+        private const val MAX_LOGIN_PROBE_ATTEMPTS = 20
         private const val PROFILE_READ_DELAY_MS = 1200L
         private const val PROFILE_VISUAL_DELAY_MS = 500L
         private const val PROFILE_RETRY_DELAY_MS = 1000L

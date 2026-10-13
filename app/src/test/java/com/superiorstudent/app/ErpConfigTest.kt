@@ -29,11 +29,20 @@ class ErpConfigTest {
     }
 
     @Test
-    fun distinguishesLoginFromAuthenticatedStudentPages() {
+    fun detectsBothStandardAndLegacyLoginRoutes() {
         assertTrue(ErpConfig.isLoginUrl("https://erp.superior.edu.pk/web/login"))
-        assertFalse(ErpConfig.isLoginUrl("https://example.com/web/login"))
+        assertTrue(ErpConfig.isLoginUrl("https://erp.superior.edu.pk/tsg/login"))
+        assertTrue(ErpConfig.isLoginUrl("https://erp.superior.edu.pk/tsg/login?next=/student/dashboard"))
+        assertTrue(ErpConfig.isLoginUrl("https://erp.superior.edu.pk/student/login"))
+        assertFalse(ErpConfig.isLoginUrl("https://example.com/tsg/login"))
+        assertFalse(ErpConfig.isLoginUrl("https://erp.superior.edu.pk/student/dashboard"))
+    }
+
+    @Test
+    fun distinguishesAuthenticatedStudentPagesFromLoginRoutes() {
         assertTrue(ErpConfig.isAuthenticatedUrl("https://erp.superior.edu.pk/student/dashboard"))
         assertFalse(ErpConfig.isAuthenticatedUrl("https://erp.superior.edu.pk/web/login"))
+        assertFalse(ErpConfig.isAuthenticatedUrl("https://erp.superior.edu.pk/tsg/login"))
         assertFalse(ErpConfig.isAuthenticatedUrl("https://example.com/student/dashboard"))
     }
 }
