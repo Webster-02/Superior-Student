@@ -668,9 +668,14 @@
       const context = (node.closest && node.closest('.md-card,tr,li,.o_data_row,.o_kanban_record,.list-group-item,.card,[role="row"]')) ||
         node.parentElement || node;
       const contextText = safe(textOf(context));
-      const titleNode = context.querySelector && context.querySelector('.md-list-heading');
+      const titleText = context.querySelectorAll
+        ? Array.from(context.querySelectorAll('.md-list-heading'))
+            .map(function(title) { return safe(textOf(title)); })
+            .filter(Boolean)
+            .sort(function(a, b) { return b.length - a.length; })[0] || ''
+        : '';
       const codeNode = context.querySelector && context.querySelector('.sub-heading');
-      const anchorText = safe((titleNode && textOf(titleNode)) || textOf(node) || node.getAttribute('title') || node.getAttribute('aria-label') || '');
+      const anchorText = safe(titleText || textOf(node) || node.getAttribute('title') || node.getAttribute('aria-label') || '');
       const codeSource = safe((codeNode && textOf(codeNode)) || contextText);
       const code = (codeSource.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/i) || [])[0] || '';
       const percentMatch = contextText.match(/(\d{1,3}(?:\.\d+)?)\s*%/);

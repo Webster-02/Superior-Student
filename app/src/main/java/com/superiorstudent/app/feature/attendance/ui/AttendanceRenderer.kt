@@ -18,6 +18,7 @@ import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.feature.attendance.presentation.AttendanceViewModel
 import com.superiorstudent.app.feature.attendance.domain.AttendanceSubjectMatcher
+import com.superiorstudent.app.feature.attendance.domain.AttendanceSubjectRowMapper
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession
 import com.superiorstudent.app.data.model.ModuleData
@@ -60,16 +61,36 @@ class AttendanceRenderer(
             return
         }
 
-        val parsedRows = data.records.mapNotNull(::toAttendanceRow)
-            .distinctBy { it.course + "|" + it.code }
-            .take(20)
-        val rows = parsedRows.map { row ->
-            val link = AttendanceSubjectMatcher.findMatchingLink(
-                row.course,
-                row.code,
-                data.attendanceDetailLinks
-            )
-            row.copy(detailUrl = link?.url.orEmpty())
+        // The ERP summary already provides a subject-specific href for each card.
+        // Use those links as the source of truth so a parsed summary row can never
+        // accidentally inherit another subject's URL. Use matcher-based parsing only
+        // for ERP variants which do not expose any direct detail links.
+        val linkedRows = AttendanceSubjectRowMapper.fromLinks(data.attendanceDetailLinks)
+            .map { link ->
+                AttendanceRow(
+                    course = link.course,
+                    code = link.code,
+                    percent = link.percentage,
+                    present = "",
+                    total = "",
+                    detailUrl = link.url
+                )
+            }
+
+        val rows = if (linkedRows.isNotEmpty()) {
+            linkedRows.take(20)
+        } else {
+            data.records.mapNotNull(::toAttendanceRow)
+                .distinctBy { it.course + "|" + it.code }
+                .take(20)
+                .map { row ->
+                    val link = AttendanceSubjectMatcher.findMatchingLink(
+                        row.course,
+                        row.code,
+                        data.attendanceDetailLinks
+                    )
+                    row.copy(detailUrl = link?.url.orEmpty())
+                }
         }
 
         if (rows.isNotEmpty()) {
