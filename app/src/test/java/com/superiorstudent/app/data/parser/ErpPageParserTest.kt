@@ -107,6 +107,34 @@ class ErpPageParserTest {
     }
 
     @Test
+    fun parsesGenericProfileFieldsForAnyProgramme() {
+        val payload = """
+            {
+              "cards": [],
+              "tables": [],
+              "lines": [],
+              "overallAttendance": null,
+              "records": [
+                {"headers":["Field","Value"],"values":["Student Name","Student Example"]},
+                {"headers":["Field","Value"],"values":["Registration No","REG-EXAMPLE"]},
+                {"headers":["Field","Value"],"values":["Faculty","Faculty Example"]},
+                {"headers":["Field","Value"],"values":["Program","Example Degree"]},
+                {"headers":["Field","Value"],"values":["Current Semester","2nd"]},
+                {"headers":["Field","Value"],"values":["Email","student@example.edu"]}
+              ]
+            }
+        """.trimIndent()
+
+        val result = ErpPageParser.parse(payload)
+
+        assertNotNull(result)
+        assertEquals(6, result!!.records.size)
+        assertEquals("Student Name", result.records[0].values[0])
+        assertEquals("Example Degree", result.records[3].values[1])
+        assertEquals("Email", result.records[5].values[0])
+    }
+
+    @Test
     fun malformedJsonIsRejectedSafely() {
         assertNull(ErpPageParser.parse("{ not-json"))
     }

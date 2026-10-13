@@ -18,7 +18,7 @@
     : path.indexOf('/student/class/schedule') !== -1
     ? ['.fc','.o_calendar_view','.o_calendar_renderer','main,[role="main"]','.o_portal_wrap','.container-fluid','.container']
     : path.indexOf('/student/profile') !== -1
-      ? ['.o_form_view','.o_form_sheet_bg','.o_portal_wrap','.o_portal_my_home','main,[role="main"]','.oe_structure','.container-fluid','.container']
+      ? ['#page_content_inner','#page_content','.user_profile','.user_content','.o_form_view','.o_form_sheet_bg','.o_portal_wrap','.o_portal_my_home','main,[role="main"]','.oe_structure','.container-fluid','.container']
       : path.indexOf('/student/results') !== -1
         ? ['.o_list_view','.o_kanban_view','.o_form_view','.o_action_manager','.o_portal_wrap','main,[role="main"]','.container-fluid','.container']
         : ['.o_portal_wrap','main,[role="main"]','.oe_structure','.container-fluid','.container'];
@@ -34,7 +34,15 @@
   if(!root) root=document.body;
 
   const clone=root.cloneNode(true);
-  clone.querySelectorAll('header,nav,footer,aside,script,style,noscript,form').forEach(function(el){el.remove();});
+  clone.querySelectorAll('header,nav,footer,aside,script,style,noscript').forEach(function(el){el.remove();});
+  if(/\/student\/profile/i.test(path)){
+    // This legacy ERP wraps the entire student profile in a form. Removing the
+    // form removes all profile data and causes the native app to spin forever.
+    // Keep its read-only content, but strip edit controls and hidden form inputs.
+    clone.querySelectorAll('form input,form button,form select,form textarea,form .profile_edit_fields').forEach(function(el){el.remove();});
+  }else{
+    clone.querySelectorAll('form').forEach(function(el){el.remove();});
+  }
 
   const tables=[];
   clone.querySelectorAll('table').forEach(function(table){
@@ -113,6 +121,49 @@
   // Profile pages often use label/value rows instead of tables. Capture
   // those pairs explicitly so the native presentation does not lose fields.
   if(/\/student\/profile/i.test(location.pathname)){
+    function addProfileRecord(label,value){
+      label=safe(label).replace(/[\s:]+$/,'').trim();
+      value=safe(value);
+      if(!label || !value || label.length>90 || value.length>260 || label.toLowerCase()===value.toLowerCase()) return;
+      if(/^(created on|updated on|last updated|notifications?)$/i.test(label)) return;
+      if(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(value)) return;
+      if(label.toLowerCase()==='nationlity') label='Nationality';
+      records.push({headers:['Field','Value'],values:[label,value]});
+    }
+
+    // Superior's student portal uses a custom legacy theme, not standard Odoo
+    // form labels. Capture its actual identity heading and academic summary.
+    const profileHeading=clone.querySelector('.user_heading .heading_b');
+    if(profileHeading){
+      const parts=Array.from(profileHeading.querySelectorAll('span')).map(function(node){return safe(textOf(node));}).filter(Boolean);
+      if(parts[0]) addProfileRecord('Student Name',parts[0]);
+      if(parts[1]) addProfileRecord('Registration No',parts[1]);
+      if(parts[2]) addProfileRecord('Faculty',parts[2]);
+    }
+    clone.querySelectorAll('.user_stats > li').forEach(function(item){
+      const label=safe(textOf(item.querySelector('.sub-heading')));
+      const value=safe(textOf(item.querySelector('h4')));
+      if(label && value) addProfileRecord(label,value);
+    });
+
+    // Contact Information, Personal Detail and Family Detail use .md-list-content.
+    // The value may be an md-list-heading span or a plain text node (for Gender).
+    clone.querySelectorAll('.user_content .md-list-content').forEach(function(item){
+      const labelNode=item.querySelector('.uk-text-small.uk-text-muted');
+      const label=safe(textOf(labelNode));
+      if(!label) return;
+      const valueNodes=Array.from(item.querySelectorAll('.md-list-heading'));
+      let value=unique(valueNodes.map(function(node){return safe(textOf(node));})
+        .filter(function(text){return text && text.toLowerCase()!==label.toLowerCase();})).join(' • ');
+      if(!value){
+        const raw=safe(textOf(item));
+        const lowerRaw=raw.toLowerCase(), lowerLabel=label.toLowerCase();
+        const at=lowerRaw.lastIndexOf(lowerLabel);
+        if(at>=0 && at+lowerLabel.length>=lowerRaw.length-2) value=raw.slice(0,at).trim();
+      }
+      if(value) addProfileRecord(label,value);
+    });
+
     const profileSelectors=[
       'dt','dd','label','.o_form_label','.o_field_widget','.form-group','.form-row','.profile-field','.profile-item',
       '.info-row','.info-item','.student-details .row','.o_form_sheet_bg .o_group',

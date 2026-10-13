@@ -29,6 +29,7 @@ class ProfileRenderer(
         get() = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
 
     private fun createProfileFieldCard(label: String, value: String): View {
+        val sensitive = ParsingUtils.isProfileLabel(label, "cnic", "national id", "national identity")
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             background = roundedBackground(Palette.surface(activity), 16f)
@@ -46,97 +47,120 @@ class ProfileRenderer(
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 letterSpacing = 0.07f
             })
-            addView(TextView(activity).apply {
-                text = value.trim()
+            val valueView = TextView(activity).apply {
+                text = if (sensitive) maskIdentityValue(value) else value.trim()
                 setTextColor(Palette.ink900(activity))
                 textSize = 13f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(0, dp(5), 0, 0)
-            })
+            }
+            addView(valueView)
+            if (sensitive) {
+                var revealed = false
+                contentDescription = "$label. Tap to show or hide this sensitive value."
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    revealed = !revealed
+                    valueView.text = if (revealed) value.trim() else maskIdentityValue(value)
+                }
+            }
         }
     }
 
     fun render(container: LinearLayout, data: ModuleData, cachedStudentName: String) {
+        container.removeAllViews()
         val fields = extractProfileFields(data)
-
         container.addView(
             sectionHeadingFactory(
                 "Student profile",
-                "Live personal and academic information from your ERP account"
+                "Your academic and personal information from the university ERP"
             )
         )
 
-        if (fields.isNotEmpty()) {
-            container.addView(createProfileHero(fields, cachedStudentName))
-
-            val priority = fields.filter { field ->
-                ParsingUtils.isProfileLabel(
-                    field.first,
-                    "student name", "full name", "name",
-                    "registration", "roll no", "student id", "student code",
-                    "program", "degree", "course of study",
-                    "department", "faculty", "semester", "session", "campus"
-                )
-            }.distinctBy { it.first.lowercase() + "|" + it.second.lowercase() }
-
-            if (priority.isNotEmpty()) {
-                container.addView(
-                    sectionHeadingFactory(
-                        "Academic & identity",
-                        "Key fields returned by the ERP"
-                    )
-                )
-                priority.take(12).chunked(2).forEach { pair ->
-                    val row = LinearLayout(activity).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        layoutParams = LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        )
-                    }
-                    pair.forEach { field ->
-                        row.addView(createProfileFieldCard(field.first, field.second).apply {
-                            layoutParams = LinearLayout.LayoutParams(
-                                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-                            ).apply { setMargins(dp(5), dp(4), dp(5), dp(4)) }
-                        })
-                    }
-                    container.addView(row)
-                }
-            }
-
-            val secondary = fields.filterNot { priority.contains(it) }
-            if (secondary.isNotEmpty()) {
-                container.addView(
-                    sectionHeadingFactory(
-                        "Additional details",
-                        "Other readable ERP fields"
-                    )
-                )
-                secondary.take(24).forEach { (label, value) ->
-                    container.addView(createProfileFieldCard(label, value))
-                }
-            }
-        } else {
-            data.cards.take(6).forEach { (label, value) ->
-                container.addView(createProfileFieldCard(label, value))
-            }
+        if (fields.isEmpty()) {
+            data.cards.take(6).forEach { (label, value) -> container.addView(createProfileFieldCard(label, value)) }
             data.tables.take(3).forEachIndexed { index, table ->
-                container.addView(
-                    tableSectionFactory(
-                        table.title.ifBlank { if (index == 0) "Profile details" else "Additional information" },
-                        table
-                    )
-                )
+                container.addView(tableSectionFactory(
+                    table.title.ifBlank { if (index == 0) "Profile details" else "Additional information" },
+                    table
+                ))
             }
             if (data.cards.isEmpty() && data.tables.isEmpty()) {
-                container.addView(
-                    emptyStateFactory(
-                        "Profile information unavailable",
-                        "The ERP profile page did not expose readable fields. Tap Refresh to sync again."
-                    )
-                )
+                container.addView(emptyStateFactory(
+                    "Profile information unavailable",
+                    "The ERP profile page did not return readable fields. Tap Refresh to try again."
+                ))
             }
+            return
+        }
+
+        container.addView(createProfileHero(fields, cachedStudentName))
+
+        val academic = fields.filter { isAcademicField(it.first) }
+        val contact = fields.filter { isContactField(it.first) && !isAcademicField(it.first) }
+        val family = fields.filter { isFamilyField(it.first) }
+        val personal = fields.filterNot {
+            academic.contains(it) || contact.contains(it) || family.contains(it)
+        }
+
+        addFieldSection(container, "Academic information", "Programme and enrolment details", academic)
+        addFieldSection(container, "Contact information", "Contact details available in your ERP", contact)
+        addFieldSection(container, "Personal details", "Personal information provided by your university", personal)
+        addFieldSection(container, "Family details", "Parent and guardian information", family)
+
+        val accounted = (academic + contact + personal + family).toSet()
+        val other = fields.filterNot { accounted.contains(it) }
+        addFieldSection(container, "Additional information", "Other fields returned by the ERP", other)
+        container.addView(
+            emptyStateFactory(
+                "Profile data is synced",
+                "Only fields available in your own ERP account are shown. Empty ERP fields are left out."
+            )
+        )
+    }
+
+    private fun isAcademicField(label: String): Boolean =
+        ParsingUtils.isProfileLabel(
+            label,
+            "student name", "full name", "registration", "roll no", "student id", "student code",
+            "program", "degree", "course of study", "department", "faculty", "semester",
+            "session", "campus", "career", "current semester"
+        )
+
+    private fun isContactField(label: String): Boolean =
+        ParsingUtils.isProfileLabel(
+            label, "email", "phone", "mobile", "emergency contact", "contact",
+            "present address", "permanent address", "address"
+        )
+
+    private fun isFamilyField(label: String): Boolean =
+        ParsingUtils.isProfileLabel(label, "father", "mother", "guardian", "parent", "family")
+
+    private fun addFieldSection(
+        container: LinearLayout,
+        title: String,
+        subtitle: String,
+        fields: List<Pair<String, String>>
+    ) {
+        if (fields.isEmpty()) return
+        container.addView(sectionHeadingFactory(title, subtitle))
+        fields.chunked(2).forEach { pair ->
+            val row = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(dp(5), 0, dp(5), 0) }
+            }
+            pair.forEach { field ->
+                row.addView(createProfileFieldCard(field.first, field.second).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                    ).apply { setMargins(dp(4), dp(3), dp(4), dp(3)) }
+                })
+            }
+            container.addView(row)
         }
     }
 
@@ -165,9 +189,11 @@ class ProfileRenderer(
             ?: cachedStudentName.takeIf(ParsingUtils::isValidStudentName)
             ?: "Student"
         val program = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "program", "degree", "course of study") }?.second.orEmpty()
+        val faculty = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "faculty", "department") }?.second.orEmpty()
         val reg = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "registration", "roll no", "student id", "student code") }?.second.orEmpty()
         val campus = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "campus") }?.second.orEmpty()
-        val session = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "session") }?.second.orEmpty()
+        val session = fields.firstOrNull { ParsingUtils.isProfileLabel(it.first, "session", "semester", "current semester", "term") }?.second.orEmpty()
+        val programLine = listOf(program, faculty).filter { it.isNotBlank() }.distinct().joinToString("  •  ")
         val initials = name.split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
             .joinToString("") { it.first().uppercaseChar().toString() }.ifBlank { "S" }
 
@@ -225,8 +251,8 @@ class ProfileRenderer(
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                     setPadding(0, dp(3), 0, 0)
                 })
-                if (program.isNotBlank()) addView(TextView(activity).apply {
-                    text = program
+                if (programLine.isNotBlank()) addView(TextView(activity).apply {
+                    text = programLine
                     setTextColor(Color.argb(225, 255, 255, 255))
                     textSize = 11f
                     setPadding(0, dp(4), 0, 0)
@@ -258,6 +284,12 @@ class ProfileRenderer(
                 }
             })
         }
+    }
+
+    private fun maskIdentityValue(value: String): String {
+        val digits = value.filter(Char::isDigit)
+        if (digits.length <= 4) return "••••"
+        return "••••••••" + digits.takeLast(4)
     }
 
     private fun roundedBackground(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable =
