@@ -57,7 +57,8 @@ class ErpRepository {
                 data.records.any { it.headers.any { header -> header.equals("Field", true) } } ||
                 data.tables.any { it.rows.isNotEmpty() }
 
-            StudentModule.RESULTS -> data.semesterOptions.isNotEmpty() ||
+            StudentModule.RESULTS -> data.academicResults.isNotEmpty() ||
+                data.semesterOptions.isNotEmpty() ||
                 data.tables.any { it.rows.isNotEmpty() } ||
                 data.records.any { it.values.size >= 2 } ||
                 data.lines.any { it.contains("result", true) || it.contains("grade", true) }

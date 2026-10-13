@@ -135,6 +135,81 @@ class ErpPageParserTest {
     }
 
     @Test
+    fun parsesNestedSemesterSummariesAndCourseGradesWithoutMixingHeaders() {
+        val payload = """
+            {
+              "cards": [],
+              "tables": [{
+                "title": "",
+                "headers": ["Term", "Grade Points", "Total Credits", "Earned Credits", "GPA", "CGPA"],
+                "rows": [
+                  ["SPRING 2026", "66.62", "20.0", "20.0", "", ""],
+                  ["Course", "Credits", "Marks Obtained", "Grade Pts", "Mid Grade", "Final Grade"],
+                  ["General Pathology (Theory)", "2.0", "62.0", "4.0", "", "C"]
+                ]
+              }],
+              "lines": [],
+              "overallAttendance": null,
+              "records": [],
+              "academicResults": [
+                {
+                  "term": "SPRING 2026",
+                  "gradePoints": "66.62",
+                  "totalCredits": "20.0",
+                  "earnedCredits": "20.0",
+                  "gpa": "",
+                  "cgpa": "",
+                  "courses": [{
+                    "course": "General Pathology (Theory)",
+                    "credits": "2.0",
+                    "marksObtained": "62.0",
+                    "gradePoints": "4.0",
+                    "midGrade": "",
+                    "finalGrade": "C"
+                  }]
+                },
+                {
+                  "term": "FALL 2026",
+                  "gradePoints": "0.0",
+                  "totalCredits": "18.0",
+                  "earnedCredits": "0",
+                  "gpa": "",
+                  "cgpa": "",
+                  "courses": [{
+                    "course": "Functional English",
+                    "credits": "3.0",
+                    "marksObtained": "0.0",
+                    "gradePoints": "0.0",
+                    "midGrade": "",
+                    "finalGrade": ""
+                  }]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val result = ErpPageParser.parse(payload)
+
+        assertNotNull(result)
+        assertEquals(2, result!!.academicResults.size)
+        val spring = result.academicResults[0]
+        assertEquals("SPRING 2026", spring.term)
+        assertEquals("66.62", spring.gradePoints)
+        assertEquals("20.0", spring.totalCredits)
+        assertEquals("", spring.gpa)
+        assertEquals(1, spring.courses.size)
+        assertEquals("General Pathology (Theory)", spring.courses[0].course)
+        assertEquals("62.0", spring.courses[0].marksObtained)
+        assertEquals("4.0", spring.courses[0].gradePoints)
+        assertEquals("C", spring.courses[0].finalGrade)
+
+        val fall = result.academicResults[1]
+        assertEquals("FALL 2026", fall.term)
+        assertEquals("", fall.cgpa)
+        assertEquals("", fall.courses[0].finalGrade)
+    }
+
+    @Test
     fun malformedJsonIsRejectedSafely() {
         assertNull(ErpPageParser.parse("{ not-json"))
     }

@@ -21,7 +21,8 @@ data class ModuleData(
         val semesterOptions: List<String> = emptyList(),
         val attendanceDetail: AttendanceDetailData? = null,
         val attendanceDetailLinks: List<AttendanceDetailLink> = emptyList(),
-        val invoices: List<InvoiceData> = emptyList()
+        val invoices: List<InvoiceData> = emptyList(),
+        val academicResults: List<AcademicTermResult> = emptyList()
     )
 
 
@@ -56,3 +57,22 @@ data class AttendanceDetailData(
         val percentage: Double?,
         val sessions: List<AttendanceSession>
     )
+
+data class AcademicTermResult(
+    val term: String,
+    val gradePoints: String,
+    val totalCredits: String,
+    val earnedCredits: String,
+    val gpa: String,
+    val cgpa: String,
+    val courses: List<AcademicCourseResult>
+)
+
+data class AcademicCourseResult(
+    val course: String,
+    val credits: String,
+    val marksObtained: String,
+    val gradePoints: String,
+    val midGrade: String,
+    val finalGrade: String
+)

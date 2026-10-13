@@ -5,6 +5,8 @@ import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.data.model.AttendanceDetailLink
 import com.superiorstudent.app.data.model.AttendanceSession
+import com.superiorstudent.app.data.model.AcademicCourseResult
+import com.superiorstudent.app.data.model.AcademicTermResult
 import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.InvoiceData
 import com.superiorstudent.app.data.model.ModuleRecord
@@ -134,6 +136,46 @@ object ErpPageParser {
             }
         }
 
+        val academicResults = mutableListOf<AcademicTermResult>()
+        json.optJSONArray("academicResults")?.let { terms ->
+            for (i in 0 until terms.length()) {
+                val termObject = terms.optJSONObject(i) ?: continue
+                val termName = ParsingUtils.cleanDisplayText(termObject.optString("term", ""))
+                if (termName.isBlank()) continue
+
+                val courses = mutableListOf<AcademicCourseResult>()
+                termObject.optJSONArray("courses")?.let { items ->
+                    for (j in 0 until items.length()) {
+                        val item = items.optJSONObject(j) ?: continue
+                        val courseName = ParsingUtils.cleanDisplayText(item.optString("course", ""))
+                        if (courseName.isBlank() || courseName.equals("course", true) ||
+                            courseName.equals("subject", true)) continue
+                        courses.add(
+                            AcademicCourseResult(
+                                course = courseName,
+                                credits = ParsingUtils.cleanDisplayText(item.optString("credits", "")),
+                                marksObtained = ParsingUtils.cleanDisplayText(item.optString("marksObtained", "")),
+                                gradePoints = ParsingUtils.cleanDisplayText(item.optString("gradePoints", "")),
+                                midGrade = ParsingUtils.cleanDisplayText(item.optString("midGrade", "")),
+                                finalGrade = ParsingUtils.cleanDisplayText(item.optString("finalGrade", ""))
+                            )
+                        )
+                    }
+                }
+                academicResults.add(
+                    AcademicTermResult(
+                        term = termName,
+                        gradePoints = ParsingUtils.cleanDisplayText(termObject.optString("gradePoints", "")),
+                        totalCredits = ParsingUtils.cleanDisplayText(termObject.optString("totalCredits", "")),
+                        earnedCredits = ParsingUtils.cleanDisplayText(termObject.optString("earnedCredits", "")),
+                        gpa = ParsingUtils.cleanDisplayText(termObject.optString("gpa", "")),
+                        cgpa = ParsingUtils.cleanDisplayText(termObject.optString("cgpa", "")),
+                        courses = courses.distinctBy { it.course.lowercase(java.util.Locale.US) }
+                    )
+                )
+            }
+        }
+
         val overall = json.optPercent("overallAttendance")
 
         val attendanceDetail = json.optJSONObject("attendanceDetail")?.let { detail ->
@@ -185,7 +227,8 @@ object ErpPageParser {
             semesterOptions,
             attendanceDetail,
             attendanceDetailLinks.distinctBy { it.url },
-            invoices.distinctBy { it.number }
+            invoices.distinctBy { it.number },
+            academicResults.distinctBy { it.term.lowercase(java.util.Locale.US) }
         )
 
     }
