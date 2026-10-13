@@ -296,8 +296,34 @@
   }
 
   function findTime(value){
-    const m=safe(value).match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*[-–]\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/);
-    return m ? m[0] : '';
+    const m=safe(value).match(/\b(?:[01]?\d|2[0-3]):[0-5]\d(?:\s*(?:[-–—]|to)\s*(?:[01]?\d|2[0-3]):[0-5]\d)?\b/i);
+    return m ? m[0].replace(/\s+/g,' ').trim() : '';
+  }
+
+  // Some ERP themes draw event times with CSS generated content instead of
+  // putting the time in innerText/textContent. Read generated content first.
+  function pseudoContent(el, pseudo){
+    if(!el || !window.getComputedStyle) return '';
+    try{
+      const value=window.getComputedStyle(el,pseudo).content || '';
+      if(!value || value==='none' || value==='normal' || value==='"' || value==="''") return '';
+      return value.replace(/^(['"])(.*)\1$/,'$2').trim();
+    }catch(_){return '';}
+  }
+
+  function timeFromEventDecorations(el){
+    if(!el) return '';
+    const nodes=[el].concat(Array.from(el.querySelectorAll ? el.querySelectorAll('*') : []));
+    const parts=[];
+    nodes.forEach(function(node){
+      const attrs=attrText(node);
+      if(attrs) parts.push(attrs);
+      ['::before','::after'].forEach(function(pseudo){
+        const generated=pseudoContent(node,pseudo);
+        if(generated) parts.push(generated);
+      });
+    });
+    return findTime(parts.join(' | '));
   }
 
   function findDay(value){
@@ -546,10 +572,20 @@
         const title=cleanScheduleTitle(titleSource,code,'',day);
 
         const link=el.querySelector('a');
-        let time=inferRangeFromPosition(el);
-        const linkTime=link ? inferRangeFromPosition(link) : '';
-        if(linkTime && linkTime.indexOf(' - ')>=0) time=linkTime;
-        else if((!time || time.indexOf(' - ')<0) && linkTime) time=linkTime;
+        // Prefer actual ERP-rendered time text, including CSS pseudo-elements.
+        // Retain geometric inference for themes that position events without a text label.
+        const decoratedTime=timeFromEventDecorations(el);
+        const decoratedLinkTime=link ? timeFromEventDecorations(link) : '';
+        let time=decoratedTime || decoratedLinkTime;
+        const inferredTime=inferRangeFromPosition(el);
+        const inferredLinkTime=link ? inferRangeFromPosition(link) : '';
+        const geometryTime=[inferredLinkTime,inferredTime].find(function(value){
+          return value && value.indexOf(' - ')>=0;
+        }) || inferredLinkTime || inferredTime;
+        if(!time || time.indexOf(' - ')<0){
+          if(geometryTime && geometryTime.indexOf(' - ')>=0) time=geometryTime;
+          else if(!time) time=geometryTime;
+        }
 
         if(day && title.length>=3) addScheduleRecord(time,day,title,code);
         return;
