@@ -6,6 +6,7 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.superiorstudent.app.core.parsing.ParsingUtils
@@ -35,7 +36,7 @@ class ResultsRenderer(
         container.removeAllViews()
 
         if (data.academicResults.isNotEmpty()) {
-            renderStructuredResults(container, data.academicResults)
+            renderStructuredResults(container, data.academicResults, data.academicResults.last().term)
             return
         }
 
@@ -118,33 +119,127 @@ class ResultsRenderer(
         }
     }
 
-    private fun renderStructuredResults(container: LinearLayout, terms: List<AcademicTermResult>) {
+    private fun renderStructuredResults(
+        container: LinearLayout,
+        terms: List<AcademicTermResult>,
+        selectedTerm: String
+    ) {
+        container.removeAllViews()
         container.addView(sectionHeadingFactory(
-            "Semester results",
-            "Marks, credits and grades exactly as shown in your ERP"
+            "Your academic results",
+            "Choose a semester to view only its summary and subject grades"
         ))
-        terms.forEach { term ->
-            val published = hasPublishedResults(term)
-            container.addView(createTermSummary(term, published))
-            container.addView(sectionHeadingFactory(
-                "${term.term} courses",
-                if (published) "${term.courses.size} course records" else
-                    "${term.courses.size} courses · marks and grades not shown by ERP yet"
+        container.addView(createTermSelector(terms, selectedTerm) { chosen ->
+            if (chosen != selectedTerm) renderStructuredResults(container, terms, chosen)
+        })
+
+        val term = terms.firstOrNull { it.term == selectedTerm } ?: terms.last()
+        val isCurrentTerm = terms.lastOrNull()?.term == term.term
+        val published = hasPublishedResults(term)
+        container.addView(createTermSummary(term, published, isCurrentTerm))
+        container.addView(sectionHeadingFactory(
+            "Subject results",
+            if (published) "${term.courses.size} courses · marks and grades from ERP"
+            else "${term.courses.size} courses · results not published yet"
+        ))
+
+        if (!published) {
+            container.addView(createNotice(
+                if (isCurrentTerm) "Current semester is in progress" else "Results not published",
+                "The ERP currently provides course credits for ${term.term}, but no published marks or grades. Zero placeholders are hidden so they are not mistaken for final results."
             ))
-            if (!published) {
-                container.addView(createNotice(
-                    "Results not published",
-                    "The ERP currently shows course credits, but no marks or grades for this term. Zero placeholders are hidden so they are not mistaken for final marks."
-                ))
-            }
+        }
+
+        if (term.courses.isEmpty()) {
+            container.addView(emptyStateFactory(
+                "No course rows available",
+                "The ERP did not return subject-level records for ${term.term}."
+            ))
+        } else {
             term.courses.forEachIndexed { index, course ->
                 container.addView(createCourseCard(course, index + 1, published))
             }
         }
     }
 
+    private fun createTermSelector(
+        terms: List<AcademicTermResult>,
+        selectedTerm: String,
+        onSelected: (String) -> Unit
+    ): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(Palette.surface(activity), 18f)
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(dp(12), dp(5), dp(12), dp(8)) }
+
+        addView(TextView(activity).apply {
+            text = "SELECT SEMESTER"
+            textSize = 10f
+            letterSpacing = 0.07f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Palette.ink500(activity))
+        })
+
+        val scroll = HorizontalScrollView(activity).apply {
+            isHorizontalScrollBarEnabled = false
+            clipToPadding = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, dp(9), 0, 0) }
+        }
+        val row = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+
+        terms.forEachIndexed { index, term ->
+            val selected = term.term == selectedTerm
+            val current = index == terms.lastIndex
+            val pill = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                background = rounded(
+                    if (selected) Palette.primaryDark(activity) else Palette.surfaceAlt(activity), 14f
+                )
+                setPadding(dp(13), dp(12), dp(13), dp(12))
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Show ${term.term}, ${if (current) "current" else "previous"} semester"
+                layoutParams = LinearLayout.LayoutParams(
+                    dp(178), ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 0, dp(8), 0) }
+
+                addView(TextView(activity).apply {
+                    text = if (current) "CURRENT SEMESTER" else "PREVIOUS SEMESTER"
+                    textSize = 9f
+                    letterSpacing = 0.02f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(if (selected) Color.WHITE else Palette.ink500(activity))
+                })
+                addView(TextView(activity).apply {
+                    text = term.term
+                    textSize = 15f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(if (selected) Color.WHITE else Palette.ink900(activity))
+                    setPadding(0, dp(4), 0, 0)
+                })
+                addView(TextView(activity).apply {
+                    text = if (hasPublishedResults(term)) "Results available" else "In progress"
+                    textSize = 10f
+                    setTextColor(
+                        if (selected) Color.WHITE else
+                            if (hasPublishedResults(term)) Palette.success(activity) else Palette.warning(activity)
+                    )
+                    setPadding(0, dp(3), 0, 0)
+                })
+                setOnClickListener { onSelected(term.term) }
+            }
+            row.addView(pill)
+        }
+        scroll.addView(row)
+        addView(scroll)
+    }
+
     private fun hasPublishedResults(term: AcademicTermResult): Boolean {
-        if (isPositive(term.gradePoints) || term.gpa.isNotBlank() || term.cgpa.isNotBlank()) return true
+        if (isPositive(term.gradePoints) || isPositive(term.gpa) || isPositive(term.cgpa)) return true
         return term.courses.any { course ->
             course.finalGrade.isNotBlank() || course.midGrade.isNotBlank() ||
                 isPositive(course.marksObtained) || isPositive(course.gradePoints)
@@ -154,7 +249,7 @@ class ResultsRenderer(
     private fun isPositive(value: String): Boolean =
         value.replace(",", "").trim().toDoubleOrNull()?.let { it > 0.0 } == true
 
-    private fun createTermSummary(term: AcademicTermResult, published: Boolean): View =
+    private fun createTermSummary(term: AcademicTermResult, published: Boolean, isCurrentTerm: Boolean): View =
         LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             background = rounded(Palette.surface(activity), 20f)
@@ -173,7 +268,7 @@ class ResultsRenderer(
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 addView(TextView(activity).apply {
-                    text = "SEMESTER"
+                    text = if (isCurrentTerm) "CURRENT SEMESTER" else "PREVIOUS SEMESTER"
                     textSize = 9f
                     letterSpacing = 0.08f
                     setTextColor(Palette.ink500(activity))
@@ -188,7 +283,11 @@ class ResultsRenderer(
                 })
             })
             header.addView(TextView(activity).apply {
-                text = if (published) "RESULTS AVAILABLE" else "NOT POSTED"
+                text = when {
+                    published -> "RESULTS AVAILABLE"
+                    isCurrentTerm -> "IN PROGRESS"
+                    else -> "NOT PUBLISHED"
+                }
                 textSize = 9f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(if (published) Palette.success(activity) else Palette.warning(activity))
