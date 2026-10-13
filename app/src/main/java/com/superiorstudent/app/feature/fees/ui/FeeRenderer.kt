@@ -272,7 +272,7 @@ class FeeRenderer(
             })
 
             val termLine = listOf(invoice.term, invoice.semester.takeIf { it.isNotBlank() }?.let { "$it semester" })
-                .filter { it.isNotBlank() }.joinToString(" · ")
+                .filterNotNull().filter { it.isNotBlank() }.joinToString(" · ")
             if (termLine.isNotBlank()) addView(TextView(activity).apply {
                 text = termLine
                 setTextColor(Palette.ink500(activity))
@@ -375,11 +375,15 @@ class FeeRenderer(
     private fun money(value: Double): String =
         "Rs. " + NumberFormat.getNumberInstance(Locale.US).format(value)
 
-    private fun date(value: String): String = try {
-        val input = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
-        val parsed = input.parse(value.trim()) ?: return value
-        SimpleDateFormat("dd MMM yyyy", Locale.US).format(parsed)
-    } catch (_: Exception) { value }
+    private fun date(value: String): String {
+        return try {
+            val input = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
+            val parsed = input.parse(value.trim())
+            if (parsed == null) value else SimpleDateFormat("dd MMM yyyy", Locale.US).format(parsed)
+        } catch (_: Exception) {
+            value
+        }
+    }
 
     private fun rounded(color: Int, radiusDp: Float): GradientDrawable =
         GradientDrawable().apply {
