@@ -824,7 +824,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val forceLive = module == StudentModule.TIMETABLE || module == StudentModule.PROFILE || module == StudentModule.RESULTS
+        val forceLive = module == StudentModule.FEE || module == StudentModule.TIMETABLE || module == StudentModule.PROFILE || module == StudentModule.RESULTS
         val payload = if (forceLive) null else erpRepository.cachedPayload(module)
         val data = payload?.let { parseModuleData(it) }
         if (data != null) {
