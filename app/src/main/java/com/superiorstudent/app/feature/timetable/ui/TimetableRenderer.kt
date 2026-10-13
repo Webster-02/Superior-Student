@@ -333,7 +333,7 @@ class TimetableRenderer(private val activity: Context) {
         )
         elevation = if (selected) dp(2).toFloat() else 0f
         setPadding(dp(12), dp(10), dp(12), dp(10))
-        minWidth = dp(91)
+        minimumWidth = dp(91)
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
