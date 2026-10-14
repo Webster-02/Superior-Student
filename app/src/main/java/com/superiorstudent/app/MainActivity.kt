@@ -673,6 +673,7 @@ class MainActivity : AppCompatActivity() {
             // Preload navigation has no user-visible value while app is backgrounded.
             if (loggedIn && activeModule == null && !profileFetchInProgress) {
                 webView.stopLoading()
+                moduleReadRequestId++
                 preloadingModule = null
                 preloadQueue.clear()
             }
@@ -909,6 +910,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun preloadNextModule() {
         if (!loggedIn || !activityResumed) return
+        // Each preloaded module owns a new generation; late JS callbacks from
+        // the prior URL must not write data under the next module's cache key.
+        moduleReadRequestId++
         if (preloadQueue.isEmpty()) {
             preloadingModule = null
             webView.visibility = View.GONE
@@ -926,6 +930,9 @@ class MainActivity : AppCompatActivity() {
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
         closeSideMenu()
 
+        // Cancel hidden preload before the tapped module becomes active.
+        // Incrementing the generation invalidates callbacks already in flight.
+        if (::webView.isInitialized) webView.stopLoading()
         preloadingModule = null
         preloadQueue.clear()
         moduleFetchInProgress = false
@@ -997,6 +1004,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
 
+        if (::webView.isInitialized) webView.stopLoading()
         moduleFetchInProgress = false
         moduleReadAttempts = 0
         moduleReadRequestId++
