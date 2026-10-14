@@ -69,6 +69,14 @@ class ModuleDataScriptSelectorTest {
     }
 
     @Test
+    fun attendanceDetailRouteRemainsAcceptedByTheModuleRouter() {
+        assertEquals(
+            true,
+            StudentModule.ATTENDANCE.acceptsPath("/student/attendancedetail/id/204263")
+        )
+    }
+
+    @Test
     fun resultsUseDedicatedExtractorWithLegacyFallbackAvailable() {
         val kind = ModuleDataScriptSelector.select(
             StudentModule.RESULTS,

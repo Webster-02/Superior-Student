@@ -16,6 +16,9 @@ enum class StudentModule(val path: String) {
         val candidate = candidatePath.trim('/').lowercase()
         val expected = path.trim('/').lowercase()
         if (candidate == expected || candidate.startsWith("$expected/")) return true
+        // Attendance detail is a legacy sibling route in the ERP, not a child
+        // of /student/attendance. Preserve the pre-existing attendance flow.
+        if (this == ATTENDANCE && candidate.startsWith("student/attendancedetail")) return true
         return this == ENROLLED_COURSES && candidate == "student/enroll/courses"
     }
 }
