@@ -646,8 +646,8 @@ class AttendanceRenderer(
         val headers = record.headers.map(ParsingUtils::cleanDisplayText)
         val joined = values.filter(String::isNotBlank).joinToString(" ")
         if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
-        val percentCount = Regex("""d{1,3}(?:.d+)?s*%""").findAll(joined).count()
-        val codeCount = Regex("""[A-Z]{2,8}[- ]?d{3,}[A-Z0-9-]*""", RegexOption.IGNORE_CASE)
+        val percentCount = Regex("""\d{1,3}(?:\.\d+)?\s*%""").findAll(joined).count()
+        val codeCount = Regex("""\b[A-Z]{2,8}[- ]?\d{3,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE)
             .findAll(joined).count()
         if (percentCount > 1 || codeCount > 1 ||
             joined.contains("Academic Progress", true) || joined.contains("Credits Completed", true)) return null

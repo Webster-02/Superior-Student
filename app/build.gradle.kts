@@ -11,8 +11,8 @@ android {
         applicationId = "com.superiorstudent.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 46
-        versionName = "1.27.2"
+        versionCode = 47
+        versionName = "1.27.3"
     }
 
     buildFeatures { viewBinding = true }

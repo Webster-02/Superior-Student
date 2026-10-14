@@ -28,8 +28,8 @@ object AttendanceSubjectRowMapper {
 
             val course = link.course.trim()
             val code = link.code.trim()
-            val percentCount = Regex("""d{1,3}(?:.d+)?s*%""").findAll(course).count()
-            val codeCount = Regex("""[A-Z]{2,8}[- ]?d{4,}[A-Z0-9-]*""", RegexOption.IGNORE_CASE)
+            val percentCount = Regex("""\d{1,3}(?:\.\d+)?\s*%""").findAll(course).count()
+            val codeCount = Regex("""\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE)
                 .findAll(course).count()
             val aggregate = percentCount > 1 || codeCount > 1 ||
                 Regex("""Academic Progress|Credits Completed""", RegexOption.IGNORE_CASE).containsMatchIn(course)

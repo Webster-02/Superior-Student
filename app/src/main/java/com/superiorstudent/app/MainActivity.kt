@@ -1609,7 +1609,14 @@ class MainActivity : AppCompatActivity() {
             if (!loggedIn || requestId != moduleReadRequestId ||
                 (!displayWhenReady && !activityResumed)) return
             moduleReadAttempts++
-            view.evaluateJavascript(Scripts.moduleData) { result ->
+            val isAttendanceDetailPage = view.url.orEmpty()
+                .contains("/student/attendancedetail", ignoreCase = true)
+            val extractionScript = if (module == StudentModule.ATTENDANCE && !isAttendanceDetailPage) {
+                Scripts.attendanceSummaryData
+            } else {
+                Scripts.moduleData
+            }
+            view.evaluateJavascript(extractionScript) { result ->
                 if (!loggedIn || requestId != moduleReadRequestId ||
                     (!displayWhenReady && !activityResumed)) return@evaluateJavascript
 

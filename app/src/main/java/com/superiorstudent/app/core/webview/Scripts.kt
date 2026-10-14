@@ -21,6 +21,8 @@ object Scripts {
         private set
     var moduleData: String = ""
         private set
+    var attendanceSummaryData: String = ""
+        private set
     var studentProfileText: String = ""
         private set
     private var attendanceSubjectResolverTemplate: String = ""
@@ -34,6 +36,7 @@ object Scripts {
         loginErrorCheck = assets.read("js/login_error_check.js")
         loginPageProbe = assets.read("js/login_page_probe.js")
         moduleData = assets.read("js/module_data.js")
+        attendanceSummaryData = assets.read("js/attendance_summary.js")
         studentProfileText = assets.read("js/student_profile_text.js")
         attendanceSubjectResolverTemplate = assets.read("js/resolve_attendance_subject.js")
         loginTemplate = assets.read("js/login.js")

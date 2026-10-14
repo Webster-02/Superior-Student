@@ -29,18 +29,19 @@ class AttendanceSubjectRowMapperTest {
 
         val rows = AttendanceSubjectRowMapper.fromLinks(links)
         val expected = mapOf(
-            "Functional English" to "204263",
-            "QUANTITATIVE REASONING - I" to "204264",
-            "Civics and Community Engagement" to "204265",
-            "Management of refractive errors" to "204266",
-            "VISUAL OPTICS AND IMAGE PROCESSING" to "204267",
-            "Redefining Success" to "204268"
+            "Functional English" to ("204263" to 100.0),
+            "QUANTITATIVE REASONING - I" to ("204264" to 80.0),
+            "Civics and Community Engagement" to ("204265" to 80.0),
+            "Management of refractive errors" to ("204266" to 83.0),
+            "VISUAL OPTICS AND IMAGE PROCESSING" to ("204267" to 67.0),
+            "Redefining Success" to ("204268" to 60.0)
         )
 
         assertEquals(expected.size, rows.size)
-        expected.forEach { (course, id) ->
+        expected.forEach { (course, expectedValues) ->
             val row = rows.single { it.course == course }
-            assertEquals(id, row.url.substringAfterLast('/'))
+            assertEquals(expectedValues.first, row.url.substringAfterLast('/'))
+            assertEquals(expectedValues.second, row.percentage!!, 0.001)
         }
     }
 
