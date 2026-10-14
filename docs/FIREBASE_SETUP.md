@@ -8,7 +8,8 @@ This guide covers the initial Firebase SDK wiring only. It does not change the u
 - Android application ID / package name: `com.superiorstudent.app`
 - Android module configuration file path: `app/google-services.json`
 - Google Services Gradle plugin: `4.5.0`
-- Firebase Android BoM: `34.19.0` (chosen to preserve the current `minSdk 23` while integrating Firebase Auth)
+- Firebase Android BoM: `34.19.0` (chosen to preserve the current `minSdk 23`)
+- Kotlin Gradle plugin: `2.3.21` (required to read the Kotlin 2.3 metadata shipped in Firebase Auth 24.2.0)
 
 ## Get the Android configuration file
 
