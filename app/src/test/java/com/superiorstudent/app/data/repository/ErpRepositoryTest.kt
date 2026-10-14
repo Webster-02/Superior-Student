@@ -1,5 +1,6 @@
 package com.superiorstudent.app.data.repository
 
+import com.superiorstudent.app.data.model.InvoiceData
 import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.ModuleRecord
 import com.superiorstudent.app.data.model.StudentModule
@@ -60,6 +61,35 @@ class ErpRepositoryTest {
         )
 
         assertFalse(repository.hasUsableData(StudentModule.ATTENDANCE, data))
+    }
+
+    @Test
+    fun typedInvoicePayloadCountsAsUsableEvenWithoutGenericRows() {
+        val repository = ErpRepository()
+        val data = ModuleData(
+            cards = emptyList(),
+            tables = emptyList(),
+            lines = emptyList(),
+            records = emptyList(),
+            overallAttendance = null,
+            invoices = listOf(
+                InvoiceData(
+                    number = "INV-001",
+                    invoiceDate = "2026-10-01",
+                    dueDate = "2026-10-15",
+                    term = "FALL 2026",
+                    semester = "2",
+                    receiptFor = "Tuition Fee",
+                    barcode = "123456",
+                    totalAmount = "35000",
+                    payable = "15000",
+                    status = "unpaid",
+                    downloadUrl = "https://erp.superior.edu.pk/student/invoices/download/123"
+                )
+            )
+        )
+
+        assertTrue(repository.hasUsableData(StudentModule.FEE, data))
     }
 
     @Test

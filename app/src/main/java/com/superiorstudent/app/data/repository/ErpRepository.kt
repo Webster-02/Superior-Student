@@ -62,7 +62,8 @@ class ErpRepository {
                 } ||
                 data.lines.any { Regex("""\b\d{1,2}:\d{2}\b""").containsMatchIn(it) }
 
-            StudentModule.FEE -> data.tables.any { it.rows.isNotEmpty() } ||
+            StudentModule.FEE -> data.invoices.isNotEmpty() ||
+                data.tables.any { it.rows.isNotEmpty() } ||
                 data.cards.isNotEmpty() ||
                 data.records.any { it.values.size >= 2 }
 
