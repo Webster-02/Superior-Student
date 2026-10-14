@@ -35,8 +35,9 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
 
     // Firebase services for the Student Connect feature.
+    // BoM 34.19.0 keeps Firebase Auth compatible with the app's existing minSdk 23.
     // Authentication strategy will be finalized before creating student profiles.
-    implementation(platform("com.google.firebase:firebase-bom:35.0.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
