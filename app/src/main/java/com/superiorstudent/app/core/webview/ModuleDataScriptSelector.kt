@@ -12,6 +12,7 @@ enum class ModuleDataScriptKind {
     ATTENDANCE_SUMMARY,
     TIMETABLE,
     INVOICES,
+    PROFILE,
     GENERAL
 }
 
@@ -28,10 +29,14 @@ object ModuleDataScriptSelector {
                 ModuleDataScriptKind.TIMETABLE
             module == StudentModule.FEE ->
                 ModuleDataScriptKind.INVOICES
+            module == StudentModule.PROFILE ->
+                ModuleDataScriptKind.PROFILE
             else -> ModuleDataScriptKind.GENERAL
         }
     }
 
     fun shouldFallbackToGeneral(kind: ModuleDataScriptKind): Boolean =
-        kind == ModuleDataScriptKind.TIMETABLE || kind == ModuleDataScriptKind.INVOICES
+        kind == ModuleDataScriptKind.TIMETABLE ||
+            kind == ModuleDataScriptKind.INVOICES ||
+            kind == ModuleDataScriptKind.PROFILE
 }
