@@ -998,6 +998,80 @@
   if (!isAttendanceDetail) {
     const seenAttendanceUrls = new Set();
 
+    function detailPathFromAttribute(value) {
+      const raw = String(value || '');
+      const match = raw.match(/(?:https?:\/\/[^'"\s)]+)?\/student\/attendancedetail(?:\/id)?\/[A-Za-z0-9_-]+(?:\?[^'"\s)]*)?/i);
+      return match ? match[0] : '';
+    }
+
+    function isAttendanceDetailTarget(node) {
+      if (!node || !node.getAttribute) return false;
+      const values = [
+        node.getAttribute('href') || '',
+        node.getAttribute('data-href') || '',
+        node.getAttribute('data-url') || '',
+        node.getAttribute('onclick') || ''
+      ];
+      return values.some(function(value) {
+        return /\/student\/attendancedetail(?:\/|$)/i.test(detailPathFromAttribute(value));
+      });
+    }
+
+    function detailTargetUrlsWithin(root) {
+      if (!root || !root.querySelectorAll) return [];
+      const selector = 'a[href*="/student/attendancedetail"],[data-href*="/student/attendancedetail"],[data-url*="/student/attendancedetail"],[onclick*="/student/attendancedetail"]';
+      const nodes = Array.from(root.querySelectorAll(selector));
+      if (isAttendanceDetailTarget(root)) nodes.unshift(root);
+      const urls = nodes.map(function(target) {
+        const raw = [
+          target.getAttribute('href') || '',
+          target.getAttribute('data-href') || '',
+          target.getAttribute('data-url') || '',
+          target.getAttribute('onclick') || ''
+        ].find(function(value) { return !!detailPathFromAttribute(value); }) || '';
+        const path = detailPathFromAttribute(raw);
+        if (!path) return '';
+        try { return new URL(path, location.href).href; } catch (_) { return ''; }
+      }).filter(Boolean);
+      return Array.from(new Set(urls));
+    }
+
+    function findAttendanceSubjectContext(node) {
+      let current = node && node.parentElement ? node.parentElement : node;
+      let best = node;
+      let bestScore = -1;
+
+      // Stop walking upward as soon as a container starts grouping multiple
+      // subject URLs/titles/percentages. Those ancestors are not a subject row.
+      for (let depth = 0; current && depth < 10; depth++, current = current.parentElement) {
+        const text = safe(textOf(current));
+        const urls = detailTargetUrlsWithin(current);
+        const percentages = text.match(/\b\d{1,3}(?:\.\d+)?\s*%/g) || [];
+        let headingNodes = Array.from(current.querySelectorAll ? current.querySelectorAll('.md-list-heading') : []);
+        if (current.matches && current.matches('.md-list-heading')) headingNodes.unshift(current);
+        const headings = unique(headingNodes.map(function(el) { return safe(textOf(el)); }).filter(Boolean));
+        const courseCodes = text.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/gi) || [];
+        const tooBroad = urls.length > 1 || percentages.length > 1 ||
+          headings.length > 1 || courseCodes.length > 1 ||
+          /Academic Progress|Credits Completed/i.test(text);
+        if (tooBroad) break;
+
+        if (urls.length === 1) {
+          let score = 0;
+          if (headings.length === 1) score += 4;
+          if (percentages.length === 1) score += 3;
+          if (courseCodes.length === 1) score += 2;
+          if (text.length >= 4 && text.length <= 240) score += 1;
+          if (score > bestScore) {
+            best = current;
+            bestScore = score;
+          }
+          if (headings.length === 1 && percentages.length <= 1) return current;
+        }
+      }
+      return best;
+    }
+
     function pushAttendanceDetailLink(node, rawUrl) {
       let parsed;
       try {
@@ -1010,37 +1084,42 @@
       if (seenAttendanceUrls.has(parsed.href)) return;
       seenAttendanceUrls.add(parsed.href);
 
-      /* The ERP renders each subject as a .md-card inside a shared .row.
-       * Match the nearest subject card first; a shared .row can contain every
-       * course and mistakenly assign the first course code to every link. */
-      const context = (node.closest && node.closest('.md-card,tr,li,.o_data_row,.o_kanban_record,.list-group-item,.card,[role="row"]')) ||
-        node.parentElement || node;
+      const context = findAttendanceSubjectContext(node);
       const contextText = safe(textOf(context));
-      const titleText = context.querySelectorAll
-        ? Array.from(context.querySelectorAll('.md-list-heading'))
-            .map(function(title) { return safe(textOf(title)); })
-            .filter(Boolean)
-            .sort(function(a, b) { return b.length - a.length; })[0] || ''
-        : '';
+      let titleNodes = Array.from(context.querySelectorAll ? context.querySelectorAll('.md-list-heading') : []);
+      if (context.matches && context.matches('.md-list-heading')) titleNodes.unshift(context);
+      const titleText = unique(titleNodes.map(function(title) { return safe(textOf(title)); })
+        .filter(Boolean)).find(function(value) { return value.length >= 3; }) || '';
       const codeNode = context.querySelector && context.querySelector('.sub-heading');
-      const anchorText = safe(titleText || textOf(node) || node.getAttribute('title') || node.getAttribute('aria-label') || '');
       const codeSource = safe((codeNode && textOf(codeNode)) || contextText);
-      const code = (codeSource.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/i) || [])[0] || '';
-      const percentMatch = contextText.match(/(\d{1,3}(?:\.\d+)?)\s*%/);
-      const genericAnchor = /^(view|details|attendance|open|show|\d+|›|→)?$/i.test(anchorText);
-      const label = !genericAnchor && anchorText.length >= 3 ? anchorText : contextText;
+      const codeMatches = codeSource.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/gi) || [];
+      const code = codeMatches.length === 1 ? codeMatches[0] : '';
+      const percentMatches = contextText.match(/\b\d{1,3}(?:\.\d+)?\s*%/g) || [];
+      const percentMatch = percentMatches.length === 1
+        ? percentMatches[0].match(/(\d{1,3}(?:\.\d+)?)/)
+        : null;
+      const anchorText = safe(titleText || node.textContent || node.getAttribute('title') ||
+        node.getAttribute('aria-label') || '');
+      const genericAnchor = /^(view|details|attendance|open|show|subject|history|\d+|›|→)?$/i.test(anchorText);
+      const contextLooksAggregated = percentMatches.length > 1 ||
+        /Academic Progress|Credits Completed/i.test(contextText) ||
+        (contextText.match(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/gi) || []).length > 1;
+      const cleanedContextLabel = contextText
+        .replace(/\b\d{1,3}(?:\.\d+)?\s*%/g, ' ')
+        .replace(/\b[A-Z]{2,8}[- ]?\d{4,}[A-Z0-9-]*\b/gi, ' ')
+        .replace(/\b(?:attendance|view details|details|open|history|present|absent)\b/gi, ' ')
+        .replace(/\s+/g, ' ').trim();
+      const label = !contextLooksAggregated && !genericAnchor && anchorText.length >= 3
+        ? anchorText
+        : (!contextLooksAggregated ? cleanedContextLabel : '');
+      if (!label && !code) return;
+
       attendanceDetailLinks.push({
-        course: label.slice(0, 180),
+        course: safe(label).slice(0, 140),
         code: code,
         url: parsed.href,
         percentage: percentMatch ? parseFloat(percentMatch[1]) : null
       });
-    }
-
-    function detailPathFromAttribute(value) {
-      const raw = String(value || '');
-      const match = raw.match(/(?:https?:\/\/[^'"\s)]+)?\/student\/attendancedetail(?:\/id)?\/[A-Za-z0-9_-]+(?:\?[^'"\s)]*)?/i);
-      return match ? match[0] : '';
     }
 
     Array.from(clone.querySelectorAll('a[href]')).forEach(function(anchor) {

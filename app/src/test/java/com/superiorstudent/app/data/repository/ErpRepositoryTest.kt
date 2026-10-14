@@ -41,6 +41,28 @@ class ErpRepositoryTest {
     }
 
     @Test
+    fun rejectsAttendancePayloadsContainingOnlyMergedSubjectLinks() {
+        val repository = ErpRepository()
+        val data = ModuleData(
+            cards = emptyList(),
+            tables = emptyList(),
+            lines = emptyList(),
+            records = emptyList(),
+            overallAttendance = null,
+            attendanceDetailLinks = listOf(
+                com.superiorstudent.app.data.model.AttendanceDetailLink(
+                    course = "Attendance Functional English 100.0% Quantitative Reasoning 80.0% Academic Progress 13 / 145 Credits Completed",
+                    code = "HOQ601140-F26-PB-UNI",
+                    url = "https://erp.superior.edu.pk/student/attendancedetail/id/204263",
+                    percentage = 100.0
+                )
+            )
+        )
+
+        assertFalse(repository.hasUsableData(StudentModule.ATTENDANCE, data))
+    }
+
+    @Test
     fun checksWhetherEachModuleHasUsefulData() {
         val repository = ErpRepository()
         val attendance = emptyData(overallAttendance = 88.5)

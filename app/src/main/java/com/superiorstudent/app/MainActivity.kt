@@ -71,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     private var statusBarScrim: View? = null
     private var navigationBarScrim: View? = null
     private var webViewReady = false
+    private var activityResumed = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
     private val profileCache by lazy { ProfileCache(this) }
@@ -120,7 +121,7 @@ class MainActivity : AppCompatActivity() {
     private val sessionResumeThresholdMs = 5 * 60 * 1000L
     private val sessionHeartbeatRunnable = object : Runnable {
         override fun run() {
-            if (!sessionHeartbeatRunning || !loggedIn) return
+            if (!sessionHeartbeatRunning || !loggedIn || !activityResumed) return
             pingSession()
             handler.postDelayed(this, SESSION_HEARTBEAT_INTERVAL_MS)
         }
@@ -610,12 +611,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        activityResumed = true
+        if (::webView.isInitialized) {
+            webView.onResume()
+            webView.resumeTimers()
+        }
+
         val pausedFor = if (lastPausedAt > 0L) System.currentTimeMillis() - lastPausedAt else 0L
         lastPausedAt = 0L
-        if (pausedFor >= sessionResumeThresholdMs && loggedIn) {
-            recoverSessionAfterBackground()
+        if (loggedIn) {
+            if (pausedFor >= sessionResumeThresholdMs) {
+                recoverSessionAfterBackground()
+            } else {
+                startSessionHeartbeat()
+                if (binding.dashboardScroll.visibility == View.VISIBLE &&
+                    !profileFetchInProgress && preloadingModule == null && preloadQueue.isEmpty()) {
+                    preloadAllModules()
+                }
+            }
         }
-        // Staggered entrance animation whenever the dashboard becomes visible.
+
         if (loggedIn && binding.dashboardScroll.visibility == View.VISIBLE) {
             animateDashboardEntrance()
         }
@@ -641,18 +656,32 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         lastPausedAt = System.currentTimeMillis()
+        activityResumed = false
+        stopSessionHeartbeat()
+
+        if (::webView.isInitialized) {
+            // Preload navigation has no user-visible value while app is backgrounded.
+            if (loggedIn && activeModule == null) {
+                webView.stopLoading()
+                preloadingModule = null
+                preloadQueue.clear()
+            }
+            webView.onPause()
+            webView.pauseTimers()
+        }
         super.onPause()
     }
 
     private fun recoverSessionAfterBackground() {
-        // Do not cancel the global Handler queue here. The session heartbeat and
-        // pending extraction retries are lifecycle-aware and should survive a
-        // normal background/foreground transition.
-        if (!loggedIn) return
+        if (!loggedIn || !activityResumed) return
 
         val module = activeModule
-        webView.stopLoading()
-        webView.visibility = View.INVISIBLE
+        if (::webView.isInitialized) {
+            webView.stopLoading()
+            webView.visibility = View.INVISIBLE
+        }
+        preloadingModule = null
+        preloadQueue.clear()
 
         if (module != null && binding.moduleScreen.visibility == View.VISIBLE) {
             moduleReadRequestId++
@@ -660,27 +689,27 @@ class MainActivity : AppCompatActivity() {
             binding.moduleInfo.text = "Reconnecting to your student account…"
             binding.moduleProgress.visibility = View.VISIBLE
 
-            // Keep the last known good presentation visible during reconnects.
-            // This prevents the blank-screen flash reported after the app sits
-            // idle in the background for several minutes.
             erpRepository.cachedPayload(module)?.let { payload ->
-                parseModuleData(payload)?.takeIf { erpRepository.hasUsableData(module, it) }?.let { cached ->
-                    binding.moduleContent.removeAllViews()
-                    renderModuleData(module, cached)
-                    binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-                    binding.moduleProgress.visibility = View.VISIBLE
-                }
+                parseModuleData(payload)
+                    ?.takeIf { erpRepository.hasUsableData(module, it) }
+                    ?.let { cached ->
+                        renderModuleData(module, cached)
+                        binding.moduleInfo.text = "Last synced data • Updating from ERP…"
+                        binding.moduleProgress.visibility = View.VISIBLE
+                    }
             }
 
             moduleFetchInProgress = true
             webView.loadUrl(ErpConfig.moduleUrl(module.path))
+            scheduleModuleLoadFallback(module, moduleReadRequestId)
         } else {
-            restoringSession = true
-            webView.loadUrl(ErpConfig.DASHBOARD_URL)
+            // The dashboard is native UI. Avoid reloading the ERP dashboard and
+            // refetching profile data simply because the user returned to the app.
+            webView.visibility = View.GONE
+            startSessionHeartbeat()
+            pingSession()
+            preloadAllModules()
         }
-
-        // Always restart the heartbeat after a long resume.
-        startSessionHeartbeat()
     }
 
     /**
@@ -856,14 +885,17 @@ class MainActivity : AppCompatActivity() {
     
 
     private fun preloadAllModules() {
-        if (!loggedIn || profileFetchInProgress || preloadingModule != null) return
+        if (!loggedIn || !activityResumed || profileFetchInProgress || preloadingModule != null) return
         preloadQueue.clear()
-        preloadQueue.addAll(StudentModule.values())
+        preloadQueue.addAll(StudentModule.values().filter { module ->
+            val cached = erpRepository.cachedPayload(module)?.let { parseModuleData(it) }
+            cached == null || !erpRepository.hasUsableData(module, cached)
+        })
         preloadNextModule()
     }
 
     private fun preloadNextModule() {
-        if (!loggedIn) return
+        if (!loggedIn || !activityResumed) return
         if (preloadQueue.isEmpty()) {
             preloadingModule = null
             webView.visibility = View.GONE
@@ -871,6 +903,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
+        moduleReadAttempts = 0
         webView.visibility = View.INVISIBLE
         webView.loadUrl(ErpConfig.moduleUrl(preloadingModule!!.path))
     }
@@ -924,17 +957,22 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val forceLive = module == StudentModule.FEE || module == StudentModule.TIMETABLE || module == StudentModule.PROFILE || module == StudentModule.RESULTS
-        val payload = if (forceLive) null else erpRepository.cachedPayload(module)
-        val data = payload?.let { parseModuleData(it) }
-        if (data != null) {
-            renderModuleData(module, data)
-            return
+        val cachedData = erpRepository.cachedPayload(module)
+            ?.let { parseModuleData(it) }
+            ?.takeIf { erpRepository.hasUsableData(module, it) }
+        if (cachedData != null) {
+            renderModuleData(module, cachedData)
+            binding.moduleInfo.text = "Last synced data • Updating from ERP…"
+            binding.moduleProgress.visibility = View.VISIBLE
+        } else {
+            binding.moduleContent.removeAllViews()
+            binding.moduleProgress.visibility = View.VISIBLE
+            binding.moduleInfo.text = "Syncing your latest information…"
         }
 
         moduleFetchInProgress = true
         webView.loadUrl(ErpConfig.moduleUrl(module.path))
-        if (module == StudentModule.FEE) scheduleInvoiceLoadFallback()
+        scheduleModuleLoadFallback(module, moduleReadRequestId)
     }
 
     private fun refreshActiveModule() {
@@ -945,44 +983,63 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
-        erpRepository.clearCachedPayload(module)
+
         moduleFetchInProgress = false
         moduleReadAttempts = 0
         moduleReadRequestId++
-        binding.moduleProgress.visibility = View.VISIBLE
-        binding.moduleContent.removeAllViews()
-        binding.moduleInfo.text = "Syncing the latest information…"
+        val cachedData = erpRepository.cachedPayload(module)
+            ?.let { parseModuleData(it) }
+            ?.takeIf { erpRepository.hasUsableData(module, it) }
+        if (cachedData != null) {
+            renderModuleData(module, cachedData)
+            binding.moduleInfo.text = "Last synced data • Updating from ERP…"
+            binding.moduleProgress.visibility = View.VISIBLE
+        } else {
+            binding.moduleContent.removeAllViews()
+            binding.moduleProgress.visibility = View.VISIBLE
+            binding.moduleInfo.text = "Syncing the latest information…"
+        }
+
         webView.visibility = View.INVISIBLE
         moduleFetchInProgress = true
         webView.loadUrl(ErpConfig.moduleUrl(module.path))
-        if (module == StudentModule.FEE) scheduleInvoiceLoadFallback()
+        scheduleModuleLoadFallback(module, moduleReadRequestId)
     }
 
-    private fun scheduleInvoiceLoadFallback() {
-        val requestId = moduleReadRequestId
+    private fun scheduleModuleLoadFallback(module: StudentModule, requestId: Int) {
         handler.postDelayed({
-            if (!loggedIn || activeModule != StudentModule.FEE ||
+            if (!loggedIn || !activityResumed || activeModule != module ||
                 !moduleFetchInProgress || requestId != moduleReadRequestId) return@postDelayed
+
             val currentUrl = webView.url.orEmpty()
-            val isInvoicePage = try {
+            val pageMatches = try {
                 ErpConfig.belongsToErp(currentUrl) &&
-                    java.net.URI(currentUrl).path.orEmpty().matches(Regex("^/student/invoices/?$"))
+                    java.net.URI(currentUrl).path.orEmpty().contains(module.path, ignoreCase = true)
             } catch (_: Exception) { false }
 
-            if (isInvoicePage) {
+            if (pageMatches) {
                 moduleFetchInProgress = false
-                readModuleData(webView, StudentModule.FEE, true)
+                moduleReadAttempts = 0
+                readModuleData(webView, module, true)
+                return@postDelayed
+            }
+
+            moduleFetchInProgress = false
+            binding.moduleProgress.visibility = View.GONE
+            val hasCachedContent = erpRepository.cachedPayload(module)
+                ?.let { parseModuleData(it) }
+                ?.let { erpRepository.hasUsableData(module, it) } == true
+            if (hasCachedContent) {
+                binding.moduleInfo.text = "Couldn't refresh • Showing last synced data"
             } else {
-                moduleFetchInProgress = false
-                binding.moduleProgress.visibility = View.GONE
-                binding.moduleInfo.text = "Invoice sync needs retry"
+                binding.moduleInfo.text = "Connection needs retry"
                 binding.moduleContent.removeAllViews()
                 binding.moduleContent.addView(createEmptyState(
-                    "Couldn't load invoices",
+                    "Couldn't load this page",
                     "The ERP took too long to respond. Check your connection and tap Refresh to try again."
                 ))
             }
-        }, INVOICE_LOAD_FALLBACK_MS)
+        }, MODULE_LOAD_FALLBACK_MS)
     }
 
     private fun downloadInvoicePdf(url: String, invoiceNumber: String) {
@@ -1524,41 +1581,56 @@ class MainActivity : AppCompatActivity() {
     private fun parseModuleData(payload: String): ModuleData? = erpRepository.parse(payload)
 
     private fun readModuleData(view: WebView, module: StudentModule, displayWhenReady: Boolean) {
-        if (!loggedIn) return
+        if (!loggedIn || (!displayWhenReady && !activityResumed)) return
         val requestId = moduleReadRequestId
 
         fun readNow() {
-            if (!loggedIn || requestId != moduleReadRequestId) return
+            if (!loggedIn || requestId != moduleReadRequestId ||
+                (!displayWhenReady && !activityResumed)) return
             moduleReadAttempts++
             view.evaluateJavascript(Scripts.moduleData) { result ->
-                if (!loggedIn || requestId != moduleReadRequestId) return@evaluateJavascript
+                if (!loggedIn || requestId != moduleReadRequestId ||
+                    (!displayWhenReady && !activityResumed)) return@evaluateJavascript
+
                 val payload = ParsingUtils.decodeJavascriptString(result)
                 val data = parseModuleData(payload)
-
                 val usable = data != null && erpRepository.hasUsableData(module, data)
+
                 if (usable && data != null) {
                     if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) {
                         erpRepository.cachePayload(module, payload)
                     }
-                    if (displayWhenReady && activeModule == module) renderModuleData(module, data)
+                    if (displayWhenReady && activeModule == module) {
+                        moduleFetchInProgress = false
+                        renderModuleData(module, data)
+                    }
                 } else if (displayWhenReady && activeModule == module) {
                     if (moduleReadAttempts < MAX_MODULE_READ_ATTEMPTS) {
                         binding.moduleInfo.text = "Waiting for the ERP data…"
                         handler.postDelayed({ readModuleData(view, module, true) }, MODULE_RETRY_DELAY_MS)
                         return@evaluateJavascript
                     }
+
+                    moduleFetchInProgress = false
                     binding.moduleProgress.visibility = View.GONE
-                    binding.moduleInfo.text = "No readable data returned"
-                    binding.moduleContent.removeAllViews()
-                    binding.moduleContent.addView(
-                        createEmptyState(
+                    val cachedData = erpRepository.cachedPayload(module)
+                        ?.let { parseModuleData(it) }
+                        ?.takeIf { erpRepository.hasUsableData(module, it) }
+                    if (cachedData != null) {
+                        binding.moduleInfo.text = "Couldn't refresh • Showing last synced data"
+                    } else {
+                        binding.moduleInfo.text = "No readable data returned"
+                        binding.moduleContent.removeAllViews()
+                        binding.moduleContent.addView(createEmptyState(
                             "No readable data returned",
                             "The ERP page loaded, but its data is not ready yet. Tap Refresh to try again."
-                        )
-                    )
-                }
-
-                if (!displayWhenReady && preloadingModule == module) {
+                        ))
+                    }
+                } else if (!displayWhenReady && preloadingModule == module) {
+                    if (moduleReadAttempts < PRELOAD_READ_ATTEMPTS) {
+                        handler.postDelayed({ readModuleData(view, module, false) }, MODULE_RETRY_DELAY_MS)
+                        return@evaluateJavascript
+                    }
                     preloadingModule = null
                     preloadNextModule()
                 }
@@ -1568,6 +1640,8 @@ class MainActivity : AppCompatActivity() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             view.postVisualStateCallback(requestId.toLong(), object : WebView.VisualStateCallback() {
                 override fun onComplete(requestIdFromWebView: Long) {
+                    if (!loggedIn || requestId != moduleReadRequestId ||
+                        (!displayWhenReady && !activityResumed)) return
                     handler.postDelayed({ readNow() }, MODULE_VISUAL_DELAY_MS)
                 }
             })
@@ -1607,7 +1681,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startSessionHeartbeat() {
-        if (sessionHeartbeatRunning) return
+        if (!activityResumed || !loggedIn || sessionHeartbeatRunning) return
         sessionHeartbeatRunning = true
         handler.removeCallbacks(sessionHeartbeatRunnable)
         handler.postDelayed(sessionHeartbeatRunnable, SESSION_HEARTBEAT_INTERVAL_MS)
@@ -1619,7 +1693,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun pingSession() {
-        if (!loggedIn) return
+        if (!loggedIn || !activityResumed || !::webView.isInitialized) return
         webView.evaluateJavascript(Scripts.sessionHeartbeat) { result ->
             if (!loggedIn) return@evaluateJavascript
             val state = ParsingUtils.decodeJavascriptString(result)
@@ -1815,11 +1889,12 @@ class MainActivity : AppCompatActivity() {
         private const val PROFILE_VISUAL_DELAY_MS = 500L
         private const val PROFILE_RETRY_DELAY_MS = 1000L
         private const val MAX_PROFILE_READ_ATTEMPTS = 8
-        private const val MODULE_READ_DELAY_MS = 1400L
-        private const val MODULE_VISUAL_DELAY_MS = 900L
-        private const val MODULE_RETRY_DELAY_MS = 1200L
-        private const val MAX_MODULE_READ_ATTEMPTS = 12
-        private const val INVOICE_LOAD_FALLBACK_MS = 10000L
+        private const val MODULE_READ_DELAY_MS = 650L
+        private const val MODULE_VISUAL_DELAY_MS = 220L
+        private const val MODULE_RETRY_DELAY_MS = 550L
+        private const val MAX_MODULE_READ_ATTEMPTS = 6
+        private const val PRELOAD_READ_ATTEMPTS = 3
+        private const val MODULE_LOAD_FALLBACK_MS = 10000L
         private const val SESSION_HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000L
 
     }

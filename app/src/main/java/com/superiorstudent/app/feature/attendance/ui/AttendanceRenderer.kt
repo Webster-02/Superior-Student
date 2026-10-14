@@ -83,7 +83,9 @@ class AttendanceRenderer(
                 )
             }
 
-        val rows = if (linkedRows.isNotEmpty()) {
+        val rows = if (data.attendanceDetailLinks.isNotEmpty()) {
+            // When direct links exist, they are authoritative. Do not silently
+            // replace contaminated per-subject links with one merged raw record.
             linkedRows.take(20)
         } else {
             data.records.mapNotNull(::toAttendanceRow)
@@ -115,12 +117,10 @@ class AttendanceRenderer(
             }
             rows.forEachIndexed { index, row -> content.addView(createAttendanceCard(row, index + 1)) }
         } else if (data.attendanceDetailLinks.isNotEmpty()) {
-            content.addView(createSectionHeading(
-                "Your subjects", "Open a subject to see class-by-class attendance and the 75% planner"
+            content.addView(createEmptyState(
+                "Attendance subjects need a refresh",
+                "The ERP returned subject links without separate course details. Refresh to fetch clean subject rows."
             ))
-            data.attendanceDetailLinks.forEachIndexed { index, link ->
-                content.addView(createAttendanceLinkCard(link, index + 1))
-            }
         } else {
             data.tables.forEachIndexed { index, table ->
                 content.addView(createTableSection(
@@ -646,6 +646,11 @@ class AttendanceRenderer(
         val headers = record.headers.map(ParsingUtils::cleanDisplayText)
         val joined = values.filter(String::isNotBlank).joinToString(" ")
         if (joined.contains("session", true) || joined.contains("inactive", true) || joined.contains("stay online", true)) return null
+        val percentCount = Regex("""d{1,3}(?:.d+)?s*%""").findAll(joined).count()
+        val codeCount = Regex("""[A-Z]{2,8}[- ]?d{3,}[A-Z0-9-]*""", RegexOption.IGNORE_CASE)
+            .findAll(joined).count()
+        if (percentCount > 1 || codeCount > 1 ||
+            joined.contains("Academic Progress", true) || joined.contains("Credits Completed", true)) return null
 
         fun valueFor(vararg keys: String): String {
             val index = headers.indexOfFirst { header -> keys.any { key -> header.contains(key, true) } }

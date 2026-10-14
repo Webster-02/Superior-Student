@@ -4,6 +4,7 @@ import com.superiorstudent.app.data.model.AttendanceDetailLink
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AttendanceSubjectRowMapperTest {
@@ -41,6 +42,18 @@ class AttendanceSubjectRowMapperTest {
             val row = rows.single { it.course == course }
             assertEquals(id, row.url.substringAfterLast('/'))
         }
+    }
+
+    @Test
+    fun rejectsMergedAggregateTextAsAFalseSubject() {
+        val merged = link(
+            "Attendance Functional English 100.0% QUANTITATIVE REASONING 80.0% Academic Progress 13 / 145 Credits Completed",
+            "HOQ601140-F26-PB-UNI-BSOPM",
+            "204263",
+            100.0
+        )
+
+        assertTrue(AttendanceSubjectRowMapper.fromLinks(listOf(merged)).isEmpty())
     }
 
     @Test

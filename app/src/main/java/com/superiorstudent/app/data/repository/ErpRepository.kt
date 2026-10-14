@@ -31,11 +31,24 @@ class ErpRepository {
 
     fun hasUsableData(module: StudentModule, data: ModuleData): Boolean =
         when (module) {
-            StudentModule.ATTENDANCE -> data.attendanceDetail != null ||
-                data.overallAttendance != null ||
-                data.records.any { it.values.size >= 2 } ||
-                data.tables.any { it.rows.isNotEmpty() } ||
-                data.lines.any { it.contains("%") }
+            StudentModule.ATTENDANCE -> {
+                if (data.attendanceDetail != null || data.overallAttendance != null) {
+                    true
+                } else if (data.attendanceDetailLinks.isNotEmpty()) {
+                    data.attendanceDetailLinks.any { link ->
+                        isCleanAttendanceLabel(link.course) && link.code.isNotBlank() &&
+                            link.url.contains("/student/attendancedetail", ignoreCase = true)
+                    }
+                } else {
+                    data.records.any { record ->
+                        val joined = record.values.joinToString(" ")
+                        record.values.size >= 2 && isCleanAttendanceLabel(joined) &&
+                            Regex("""d{1,3}(?:.d+)?s*%""").containsMatchIn(joined)
+                    } || data.tables.any { table ->
+                        table.rows.any { row -> row.size >= 2 && isCleanAttendanceLabel(row.joinToString(" ")) }
+                    } || data.lines.any { it.contains("%") && isCleanAttendanceLabel(it) }
+                }
+            }
 
             StudentModule.TIMETABLE -> data.records.any(::looksLikeScheduleRecord) ||
                 data.records.any { record ->
@@ -63,6 +76,16 @@ class ErpRepository {
                 data.records.any { it.values.size >= 2 } ||
                 data.lines.any { it.contains("result", true) || it.contains("grade", true) }
         }
+
+    private fun isCleanAttendanceLabel(value: String): Boolean {
+        val text = value.trim()
+        if (text.length < 3 || text.length > 220) return false
+        val percentCount = Regex("""d{1,3}(?:.d+)?s*%""").findAll(text).count()
+        val codeCount = Regex("""[A-Z]{2,8}[- ]?d{4,}[A-Z0-9-]*""", RegexOption.IGNORE_CASE)
+            .findAll(text).count()
+        return percentCount <= 1 && codeCount <= 1 &&
+            !Regex("""Academic Progress|Credits Completed""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+    }
 
     private fun looksLikeScheduleRecord(record: ModuleRecord): Boolean {
         val joined = record.values.joinToString(" ")
