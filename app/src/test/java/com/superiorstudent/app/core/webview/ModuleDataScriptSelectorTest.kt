@@ -40,7 +40,6 @@ class ModuleDataScriptSelectorTest {
     @Test
     fun otherFeaturesRemainOnLegacyExtractorUntilMigrated() {
         val urlByModule = mapOf(
-            StudentModule.TIMETABLE to "https://erp.superior.edu.pk/student/class/schedule",
             StudentModule.FEE to "https://erp.superior.edu.pk/student/invoices",
             StudentModule.PROFILE to "https://erp.superior.edu.pk/student/profile",
             StudentModule.RESULTS to "https://erp.superior.edu.pk/student/results"

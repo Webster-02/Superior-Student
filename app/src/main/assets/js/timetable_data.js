@@ -443,7 +443,6 @@
   });
 
   
-  scheduleStructured.forEach(function(record){});
   return JSON.stringify({
     cards:[],
     tables:[],
