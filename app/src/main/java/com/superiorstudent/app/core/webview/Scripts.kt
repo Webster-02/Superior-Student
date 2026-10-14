@@ -43,6 +43,12 @@ object Scripts {
         semesterSelectTemplate = assets.read("js/semester_select.js")
     }
 
+    fun moduleDataFor(module: com.superiorstudent.app.data.model.StudentModule, currentUrl: String): String =
+        when (ModuleDataScriptSelector.select(module, currentUrl)) {
+            ModuleDataScriptKind.ATTENDANCE_SUMMARY -> attendanceSummaryData
+            ModuleDataScriptKind.GENERAL -> moduleData
+        }
+
     fun loginScript(username: String, password: String): String =
         loginTemplate
             .replace("%USERNAME_B64%", b64JsonString(username))
