@@ -58,9 +58,18 @@ class ModuleDataScriptSelectorTest {
     }
 
     @Test
+    fun resultsUseDedicatedExtractorWithLegacyFallbackAvailable() {
+        val kind = ModuleDataScriptSelector.select(
+            StudentModule.RESULTS,
+            "https://erp.superior.edu.pk/student/results/"
+        )
+        assertEquals(ModuleDataScriptKind.RESULTS, kind)
+        org.junit.Assert.assertTrue(ModuleDataScriptSelector.shouldFallbackToGeneral(kind))
+    }
+
+    @Test
     fun otherFeaturesRemainOnLegacyExtractorUntilMigrated() {
         val urlByModule = mapOf(
-            StudentModule.RESULTS to "https://erp.superior.edu.pk/student/results"
         )
         urlByModule.forEach { (module, url) ->
             assertEquals(ModuleDataScriptKind.GENERAL, ModuleDataScriptSelector.select(module, url))
