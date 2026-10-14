@@ -13,6 +13,7 @@ import android.os.Looper
 import android.text.method.HideReturnsTransformationMethod
 import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
+import android.widget.FrameLayout
 import android.view.View
 import android.view.ViewGroup
 import android.view.KeyEvent
@@ -31,6 +32,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.superiorstudent.app.core.config.ErpConfig
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.core.session.SessionStore
@@ -63,6 +68,8 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var webView: WebView
+    private var statusBarScrim: View? = null
+    private var navigationBarScrim: View? = null
     private var webViewReady = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
@@ -138,6 +145,7 @@ class MainActivity : AppCompatActivity() {
     private fun safeOnCreate(savedInstanceState: Bundle?) {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        configureSystemBarInsets()
         try { sessionStore.migrateFromLegacy() } catch (t: Throwable) {
             android.util.Log.w("MainActivity", "Could not migrate saved session; showing login screen", t)
         }
@@ -146,6 +154,12 @@ class MainActivity : AppCompatActivity() {
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
         binding.sideMenuOverlay.visibility = View.GONE
+        applySystemBarStyle(
+            statusColor = Color.rgb(7, 20, 38),
+            navigationColor = Color.rgb(7, 20, 38),
+            lightStatusIcons = true,
+            lightNavigationIcons = true
+        )
         configureLoginLayoutAndKeyboard()
 
         binding.loginButton.setOnClickListener {
@@ -211,6 +225,86 @@ class MainActivity : AppCompatActivity() {
                 webView.loadUrl(ErpConfig.DASHBOARD_URL)
             }
         }
+    }
+
+    /**
+     * Edge-to-edge is explicitly handled so Android 15 and older devices use
+     * the same safe layout. App content begins below the status bar and above
+     * the navigation gesture area; dedicated scrims keep both system areas
+     * visually separate from page titles and controls.
+     */
+    private fun configureSystemBarInsets() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+
+        val root = binding.root as FrameLayout
+        root.clipToPadding = false
+        val statusScrim = View(this).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            isClickable = false
+        }
+        val navigationScrim = View(this).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            isClickable = false
+        }
+        root.addView(
+            statusScrim,
+            0,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.TOP
+            )
+        )
+        root.addView(
+            navigationScrim,
+            0,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, Gravity.BOTTOM
+            )
+        )
+        statusBarScrim = statusScrim
+        navigationBarScrim = navigationScrim
+
+        val baseLeft = root.paddingLeft
+        val baseTop = root.paddingTop
+        val baseRight = root.paddingRight
+        val baseBottom = root.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, windowInsets ->
+            val bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(baseLeft, bars.top.coerceAtLeast(baseTop), baseRight, bars.bottom.coerceAtLeast(baseBottom))
+
+            (statusBarScrim?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+                params.height = bars.top
+                params.topMargin = -bars.top
+                statusBarScrim?.layoutParams = params
+            }
+            (navigationBarScrim?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+                params.height = bars.bottom
+                params.bottomMargin = -bars.bottom
+                navigationBarScrim?.layoutParams = params
+            }
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    /**
+     * Keep status and navigation bars readable and coordinated with whichever
+     * native screen is active, while preserving the app's own safe-area padding.
+     */
+    private fun applySystemBarStyle(
+        statusColor: Int,
+        navigationColor: Int,
+        lightStatusIcons: Boolean,
+        lightNavigationIcons: Boolean
+    ) {
+        statusBarScrim?.setBackgroundColor(statusColor)
+        navigationBarScrim?.setBackgroundColor(navigationColor)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.isAppearanceLightStatusBars = !lightStatusIcons
+        controller.isAppearanceLightNavigationBars = !lightNavigationIcons
     }
 
     /**
@@ -796,6 +890,12 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
+        applySystemBarStyle(
+            statusColor = Color.WHITE,
+            navigationColor = Color.rgb(245, 247, 251),
+            lightStatusIcons = false,
+            lightNavigationIcons = false
+        )
         webView.visibility = View.INVISIBLE
         binding.moduleProgress.visibility = View.VISIBLE
         binding.moduleContent.removeAllViews()
@@ -1024,6 +1124,12 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
+        applySystemBarStyle(
+            statusColor = Color.WHITE,
+            navigationColor = Color.rgb(245, 247, 251),
+            lightStatusIcons = false,
+            lightNavigationIcons = false
+        )
         binding.moduleTitle.text = "Attendance Planner"
         binding.moduleSubtitle.text = "Subject attendance and 75% target"
         binding.moduleContent.removeAllViews()
@@ -1578,6 +1684,12 @@ class MainActivity : AppCompatActivity() {
         binding.dashboardScroll.visibility = View.VISIBLE
         binding.loginScroll.visibility = View.GONE
         binding.sideMenuOverlay.visibility = View.GONE
+        applySystemBarStyle(
+            statusColor = Color.rgb(8, 69, 190),
+            navigationColor = Color.rgb(245, 247, 251),
+            lightStatusIcons = true,
+            lightNavigationIcons = false
+        )
 
         binding.studentName.text =
             if (ParsingUtils.isValidStudentName(profileCache.studentName)) profileCache.studentName else "Student"
@@ -1608,6 +1720,12 @@ class MainActivity : AppCompatActivity() {
         binding.dashboardScroll.visibility = View.GONE
         binding.loginScroll.visibility = View.VISIBLE
         binding.sideMenuOverlay.visibility = View.GONE
+        applySystemBarStyle(
+            statusColor = Color.rgb(7, 20, 38),
+            navigationColor = Color.rgb(7, 20, 38),
+            lightStatusIcons = true,
+            lightNavigationIcons = true
+        )
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
         binding.loginStatus.text = ""
