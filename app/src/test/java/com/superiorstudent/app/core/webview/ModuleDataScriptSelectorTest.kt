@@ -17,6 +17,16 @@ class ModuleDataScriptSelectorTest {
     }
 
     @Test
+    fun timetableUsesDedicatedExtractorWithLegacyFallbackAvailable() {
+        val kind = ModuleDataScriptSelector.select(
+            StudentModule.TIMETABLE,
+            "https://erp.superior.edu.pk/student/class/schedule"
+        )
+        assertEquals(ModuleDataScriptKind.TIMETABLE, kind)
+        org.junit.Assert.assertTrue(ModuleDataScriptSelector.shouldFallbackToGeneral(kind))
+    }
+
+    @Test
     fun attendanceDetailKeepsGeneralExtractorForClassHistory() {
         assertEquals(
             ModuleDataScriptKind.GENERAL,

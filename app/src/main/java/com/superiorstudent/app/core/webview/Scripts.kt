@@ -23,6 +23,8 @@ object Scripts {
         private set
     var attendanceSummaryData: String = ""
         private set
+    var timetableData: String = ""
+        private set
     var studentProfileText: String = ""
         private set
     private var attendanceSubjectResolverTemplate: String = ""
@@ -37,6 +39,7 @@ object Scripts {
         loginPageProbe = assets.read("js/login_page_probe.js")
         moduleData = assets.read("js/module_data.js")
         attendanceSummaryData = assets.read("js/attendance_summary.js")
+        timetableData = assets.read("js/timetable_data.js")
         studentProfileText = assets.read("js/student_profile_text.js")
         attendanceSubjectResolverTemplate = assets.read("js/resolve_attendance_subject.js")
         loginTemplate = assets.read("js/login.js")
@@ -46,6 +49,7 @@ object Scripts {
     fun moduleDataFor(module: com.superiorstudent.app.data.model.StudentModule, currentUrl: String): String =
         when (ModuleDataScriptSelector.select(module, currentUrl)) {
             ModuleDataScriptKind.ATTENDANCE_SUMMARY -> attendanceSummaryData
+            ModuleDataScriptKind.TIMETABLE -> timetableData
             ModuleDataScriptKind.GENERAL -> moduleData
         }
 

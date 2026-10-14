@@ -1609,53 +1609,69 @@ class MainActivity : AppCompatActivity() {
             if (!loggedIn || requestId != moduleReadRequestId ||
                 (!displayWhenReady && !activityResumed)) return
             moduleReadAttempts++
+            val scriptKind = ModuleDataScriptSelector.select(module, view.url.orEmpty())
             val extractionScript = Scripts.moduleDataFor(module, view.url.orEmpty())
             view.evaluateJavascript(extractionScript) { result ->
                 if (!loggedIn || requestId != moduleReadRequestId ||
                     (!displayWhenReady && !activityResumed)) return@evaluateJavascript
 
-                val payload = ParsingUtils.decodeJavascriptString(result)
-                val data = parseModuleData(payload)
-                val usable = data != null && erpRepository.hasUsableData(module, data)
+                fun handleExtraction(rawResult: String, usedGeneralFallback: Boolean) {
+                    if (!loggedIn || requestId != moduleReadRequestId ||
+                        (!displayWhenReady && !activityResumed)) return
 
-                if (usable && data != null) {
-                    if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) {
-                        erpRepository.cachePayload(module, payload)
+                    val payload = ParsingUtils.decodeJavascriptString(rawResult)
+                    val data = parseModuleData(payload)
+                    val usable = data != null && erpRepository.hasUsableData(module, data)
+
+                    if (!usable && !usedGeneralFallback &&
+                        ModuleDataScriptSelector.shouldFallbackToGeneral(scriptKind)) {
+                        view.evaluateJavascript(Scripts.moduleData) { fallbackResult ->
+                            handleExtraction(fallbackResult, true)
+                        }
+                        return
                     }
-                    if (displayWhenReady && activeModule == module) {
+
+                    if (usable && data != null) {
+                        if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) {
+                            erpRepository.cachePayload(module, payload)
+                        }
+                        if (displayWhenReady && activeModule == module) {
+                            moduleFetchInProgress = false
+                            renderModuleData(module, data)
+                        }
+                    } else if (displayWhenReady && activeModule == module) {
+                        if (moduleReadAttempts < MAX_MODULE_READ_ATTEMPTS) {
+                            binding.moduleInfo.text = "Waiting for the ERP data…"
+                            handler.postDelayed({ readModuleData(view, module, true) }, MODULE_RETRY_DELAY_MS)
+                            return
+                        }
+
                         moduleFetchInProgress = false
-                        renderModuleData(module, data)
+                        binding.moduleProgress.visibility = View.GONE
+                        val cachedData = erpRepository.cachedPayload(module)
+                            ?.let { parseModuleData(it) }
+                            ?.takeIf { erpRepository.hasUsableData(module, it) }
+                        if (cachedData != null) {
+                            binding.moduleInfo.text = "Couldn't refresh • Showing last synced data"
+                        } else {
+                            binding.moduleInfo.text = "No readable data returned"
+                            binding.moduleContent.removeAllViews()
+                            binding.moduleContent.addView(createEmptyState(
+                                "No readable data returned",
+                                "The ERP page loaded, but its data is not ready yet. Tap Refresh to try again."
+                            ))
+                        }
+                    } else if (!displayWhenReady && preloadingModule == module) {
+                        if (moduleReadAttempts < PRELOAD_READ_ATTEMPTS) {
+                            handler.postDelayed({ readModuleData(view, module, false) }, MODULE_RETRY_DELAY_MS)
+                            return
+                        }
+                        preloadingModule = null
+                        preloadNextModule()
                     }
-                } else if (displayWhenReady && activeModule == module) {
-                    if (moduleReadAttempts < MAX_MODULE_READ_ATTEMPTS) {
-                        binding.moduleInfo.text = "Waiting for the ERP data…"
-                        handler.postDelayed({ readModuleData(view, module, true) }, MODULE_RETRY_DELAY_MS)
-                        return@evaluateJavascript
-                    }
-
-                    moduleFetchInProgress = false
-                    binding.moduleProgress.visibility = View.GONE
-                    val cachedData = erpRepository.cachedPayload(module)
-                        ?.let { parseModuleData(it) }
-                        ?.takeIf { erpRepository.hasUsableData(module, it) }
-                    if (cachedData != null) {
-                        binding.moduleInfo.text = "Couldn't refresh • Showing last synced data"
-                    } else {
-                        binding.moduleInfo.text = "No readable data returned"
-                        binding.moduleContent.removeAllViews()
-                        binding.moduleContent.addView(createEmptyState(
-                            "No readable data returned",
-                            "The ERP page loaded, but its data is not ready yet. Tap Refresh to try again."
-                        ))
-                    }
-                } else if (!displayWhenReady && preloadingModule == module) {
-                    if (moduleReadAttempts < PRELOAD_READ_ATTEMPTS) {
-                        handler.postDelayed({ readModuleData(view, module, false) }, MODULE_RETRY_DELAY_MS)
-                        return@evaluateJavascript
-                    }
-                    preloadingModule = null
-                    preloadNextModule()
                 }
+
+                handleExtraction(result, false)
             }
         }
 
