@@ -33,6 +33,8 @@ object Scripts {
         private set
     var resultsData: String = ""
         private set
+    var enrolledCoursesData: String = ""
+        private set
     var studentProfileText: String = ""
         private set
     private var attendanceSubjectResolverTemplate: String = ""
@@ -52,6 +54,7 @@ object Scripts {
         invoiceData = assets.read("js/invoice_data.js")
         profileData = assets.read("js/profile_data.js")
         resultsData = assets.read("js/results_data.js")
+        enrolledCoursesData = assets.read("js/enrolled_courses.js")
         studentProfileText = assets.read("js/student_profile_text.js")
         attendanceSubjectResolverTemplate = assets.read("js/resolve_attendance_subject.js")
         loginTemplate = assets.read("js/login.js")
@@ -66,6 +69,7 @@ object Scripts {
             ModuleDataScriptKind.INVOICES -> invoiceData
             ModuleDataScriptKind.PROFILE -> profileData
             ModuleDataScriptKind.RESULTS -> resultsData
+            ModuleDataScriptKind.ENROLLED_COURSES -> enrolledCoursesData
             ModuleDataScriptKind.GENERAL -> moduleData
         }
 

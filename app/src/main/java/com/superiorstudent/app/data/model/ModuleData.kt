@@ -22,9 +22,21 @@ data class ModuleData(
         val attendanceDetail: AttendanceDetailData? = null,
         val attendanceDetailLinks: List<AttendanceDetailLink> = emptyList(),
         val invoices: List<InvoiceData> = emptyList(),
-        val academicResults: List<AcademicTermResult> = emptyList()
+        val academicResults: List<AcademicTermResult> = emptyList(),
+        val enrolledCourses: List<EnrolledCourse> = emptyList()
     )
 
+
+data class EnrolledCourse(
+    val course: String,
+    val code: String,
+    val credits: String,
+    val courseType: String,
+    val term: String,
+    val faculty: String,
+    val department: String,
+    val detailUrl: String
+)
 
 data class InvoiceData(
     val number: String,

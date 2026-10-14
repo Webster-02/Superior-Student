@@ -277,6 +277,20 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/menuEnrolledCoursesButton"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:paddingStart="22dp"
+                android:text="Enrolled Courses"
+                android:textColor="#172033"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
                 android:id="@+id/menuResultsButton"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
@@ -601,6 +615,60 @@
                         android:textColor="#667085"
                         android:textSize="10sp" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/enrolledCoursesButton"
+                android:layout_width="match_parent"
+                android:layout_height="104dp"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginEnd="18dp"
+                android:background="@drawable/bg_action_blue"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp">
+
+                <ImageView
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:contentDescription="Enrolled Courses"
+                    android:src="@drawable/ic_courses" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Enrolled Courses"
+                        android:textColor="#123A70"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:text="View active subjects, course codes and credits"
+                        android:textColor="#667085"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="›"
+                    android:textColor="#1E63D8"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
             </LinearLayout>
 
             <LinearLayout

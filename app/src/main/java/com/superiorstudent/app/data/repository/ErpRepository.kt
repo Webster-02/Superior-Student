@@ -76,6 +76,15 @@ class ErpRepository {
                 data.tables.any { it.rows.isNotEmpty() } ||
                 data.records.any { it.values.size >= 2 } ||
                 data.lines.any { it.contains("result", true) || it.contains("grade", true) }
+
+            StudentModule.ENROLLED_COURSES -> data.enrolledCourses.any {
+                it.course.isNotBlank() && it.code.isNotBlank()
+            } || data.records.any { record ->
+                val values = record.values.joinToString(" ")
+                Regex("""\b[A-Z]{2,8}[- ]?\d{3,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(values) &&
+                    (values.contains("credit", true) || values.contains("compulsory", true))
+            }
         }
 
     private fun isCleanAttendanceLabel(value: String): Boolean {

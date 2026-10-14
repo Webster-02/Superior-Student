@@ -9,6 +9,7 @@ import com.superiorstudent.app.data.model.AcademicCourseResult
 import com.superiorstudent.app.data.model.AcademicTermResult
 import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.InvoiceData
+import com.superiorstudent.app.data.model.EnrolledCourse
 import com.superiorstudent.app.data.model.ModuleRecord
 import com.superiorstudent.app.data.model.TableData
 import org.json.JSONObject
@@ -136,6 +137,42 @@ object ErpPageParser {
             }
         }
 
+        val enrolledCourses = mutableListOf<EnrolledCourse>()
+        json.optJSONArray("enrolledCourses")?.let { items ->
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val course = ParsingUtils.cleanDisplayText(item.optString("course", ""))
+                val code = ParsingUtils.cleanDisplayText(item.optString("code", ""))
+                if (course.isBlank() || code.isBlank()) continue
+
+                val rawDetailUrl = item.optString("detailUrl", "")
+                val safeDetailUrl = try {
+                    val uri = java.net.URI(rawDetailUrl)
+                    if (ErpConfig.belongsToErp(rawDetailUrl) &&
+                        uri.path.matches(Regex("^/student/results/id/[0-9]+/?$"))) {
+                        rawDetailUrl
+                    } else {
+                        ""
+                    }
+                } catch (_: Exception) {
+                    ""
+                }
+
+                enrolledCourses.add(
+                    EnrolledCourse(
+                        course = course,
+                        code = code,
+                        credits = ParsingUtils.cleanDisplayText(item.optString("credits", "")),
+                        courseType = ParsingUtils.cleanDisplayText(item.optString("courseType", "")),
+                        term = ParsingUtils.cleanDisplayText(item.optString("term", "")),
+                        faculty = ParsingUtils.cleanDisplayText(item.optString("faculty", "")),
+                        department = ParsingUtils.cleanDisplayText(item.optString("department", "")),
+                        detailUrl = safeDetailUrl
+                    )
+                )
+            }
+        }
+
         val academicResults = mutableListOf<AcademicTermResult>()
         json.optJSONArray("academicResults")?.let { terms ->
             for (i in 0 until terms.length()) {
@@ -228,7 +265,10 @@ object ErpPageParser {
             attendanceDetail,
             attendanceDetailLinks.distinctBy { it.url },
             invoices.distinctBy { it.number },
-            academicResults.distinctBy { it.term.lowercase(java.util.Locale.US) }
+            academicResults.distinctBy { it.term.lowercase(java.util.Locale.US) },
+            enrolledCourses.distinctBy {
+                it.course.lowercase(java.util.Locale.US) + "|" + it.code.lowercase(java.util.Locale.US)
+            }
         )
 
     }

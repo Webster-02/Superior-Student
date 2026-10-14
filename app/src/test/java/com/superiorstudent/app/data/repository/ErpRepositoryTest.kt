@@ -1,5 +1,6 @@
 package com.superiorstudent.app.data.repository
 
+import com.superiorstudent.app.data.model.EnrolledCourse
 import com.superiorstudent.app.data.model.InvoiceData
 import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.ModuleRecord
@@ -93,6 +94,31 @@ class ErpRepositoryTest {
     }
 
     @Test
+    fun typedEnrolledCoursesCountAsUsableData() {
+        val repository = ErpRepository()
+        val data = ModuleData(
+            cards = emptyList(),
+            tables = emptyList(),
+            lines = emptyList(),
+            records = emptyList(),
+            overallAttendance = null,
+            enrolledCourses = listOf(
+                EnrolledCourse(
+                    course = "Functional English",
+                    code = "HOQ601140",
+                    credits = "3.0",
+                    courseType = "Compulsory",
+                    term = "FALL 2026",
+                    faculty = "Faculty of Allied Health Sciences-UNI",
+                    department = "UNI-FAHS",
+                    detailUrl = "https://erp.superior.edu.pk/student/results/id/4841905"
+                )
+            )
+        )
+        assertTrue(repository.hasUsableData(StudentModule.ENROLLED_COURSES, data))
+    }
+
+    @Test
     fun checksWhetherEachModuleHasUsefulData() {
         val repository = ErpRepository()
         val attendance = emptyData(overallAttendance = 88.5)
@@ -116,5 +142,6 @@ class ErpRepositoryTest {
         assertTrue(repository.hasUsableData(StudentModule.PROFILE, profile))
         assertTrue(repository.hasUsableData(StudentModule.RESULTS, results))
         assertFalse(repository.hasUsableData(StudentModule.ATTENDANCE, emptyData()))
+        assertFalse(repository.hasUsableData(StudentModule.ENROLLED_COURSES, emptyData()))
     }
 }

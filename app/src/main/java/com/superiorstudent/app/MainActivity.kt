@@ -63,6 +63,7 @@ import com.superiorstudent.app.feature.timetable.ui.TimetableRenderer
 import com.superiorstudent.app.feature.profile.ui.ProfileRenderer
 import com.superiorstudent.app.feature.fees.ui.FeeRenderer
 import com.superiorstudent.app.feature.results.ui.ResultsRenderer
+import com.superiorstudent.app.feature.enrolledcourses.ui.EnrolledCoursesRenderer
 import com.superiorstudent.app.feature.timetable.domain.NextClassSelector
 import org.json.JSONObject
 
@@ -92,6 +93,7 @@ class MainActivity : AppCompatActivity() {
     private val resultsRenderer by lazy {
         ResultsRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::selectResultsSemester)
     }
+    private val enrolledCoursesRenderer by lazy { EnrolledCoursesRenderer(this) }
 
     private var loginInProgress = false
     private var loginSubmitted = false
@@ -197,6 +199,7 @@ class MainActivity : AppCompatActivity() {
         binding.attendanceButton.setOnClickListener { loadModule(StudentModule.ATTENDANCE) }
         binding.timetableButton.setOnClickListener { loadModule(StudentModule.TIMETABLE) }
         binding.feeButton.setOnClickListener { loadModule(StudentModule.FEE) }
+        binding.enrolledCoursesButton.setOnClickListener { loadModule(StudentModule.ENROLLED_COURSES) }
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.menuButton.setOnClickListener { openSideMenu() }
@@ -204,12 +207,14 @@ class MainActivity : AppCompatActivity() {
         binding.menuScrim.setOnClickListener { closeSideMenu() }
         binding.menuProfileButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.PROFILE) }
         binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.RESULTS) }
+        binding.menuEnrolledCoursesButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.ENROLLED_COURSES) }
         binding.menuLogoutButton.setOnClickListener { closeSideMenu(); logout() }
 
         // Design-system touches: press-scale feedback on dashboard action cards.
         attachPressFeedback(binding.attendanceButton)
         attachPressFeedback(binding.timetableButton)
         attachPressFeedback(binding.feeButton)
+        attachPressFeedback(binding.enrolledCoursesButton)
 
         val hasSavedSession = try { sessionStore.sessionActive } catch (t: Throwable) {
             android.util.Log.w("MainActivity", "Ignoring unreadable saved session", t)
@@ -582,13 +587,15 @@ class MainActivity : AppCompatActivity() {
                         }
         
                         val preload = preloadingModule
-                        if (preload != null && url.contains(preload.path, true)) {
+                        if (preload != null && ErpConfig.belongsToErp(url) &&
+                            preload.acceptsPath(try { java.net.URI(url).path.orEmpty() } catch (_: Exception) { "" })) {
                             readModuleData(view, preload, false)
                             return
                         }
         
                         val active = activeModule
-                        if (moduleFetchInProgress && active != null && url.contains(active.path, true)) {
+                        if (moduleFetchInProgress && active != null && ErpConfig.belongsToErp(url) &&
+                            active.acceptsPath(try { java.net.URI(url).path.orEmpty() } catch (_: Exception) { "" })) {
                             moduleFetchInProgress = false
                             readModuleData(view, active, true)
                         }
@@ -976,6 +983,10 @@ class MainActivity : AppCompatActivity() {
                 binding.moduleTitle.text = "Results"
                 binding.moduleSubtitle.text = "Your academic results"
             }
+            StudentModule.ENROLLED_COURSES -> {
+                binding.moduleTitle.text = "Enrolled Courses"
+                binding.moduleSubtitle.text = "Your active subjects and credits"
+            }
         }
 
         val cachedData = erpRepository.cachedPayload(module)
@@ -1036,7 +1047,7 @@ class MainActivity : AppCompatActivity() {
             val currentUrl = webView.url.orEmpty()
             val pageMatches = try {
                 ErpConfig.belongsToErp(currentUrl) &&
-                    java.net.URI(currentUrl).path.orEmpty().contains(module.path, ignoreCase = true)
+                    module.acceptsPath(java.net.URI(currentUrl).path.orEmpty())
             } catch (_: Exception) { false }
 
             if (pageMatches) {
@@ -1100,13 +1111,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderModuleData(module: StudentModule, data: ModuleData) {
         binding.moduleContent.removeAllViews()
-        if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) addModuleIntro(module)
+        if (module != StudentModule.ENROLLED_COURSES &&
+            (module != StudentModule.ATTENDANCE || data.attendanceDetail == null)) addModuleIntro(module)
         when (module) {
             StudentModule.ATTENDANCE -> renderAttendance(data)
             StudentModule.TIMETABLE -> renderTimetable(data)
             StudentModule.FEE -> renderFee(data)
             StudentModule.PROFILE -> renderProfile(data)
             StudentModule.RESULTS -> renderResults(data)
+            StudentModule.ENROLLED_COURSES -> renderEnrolledCourses(data)
         }
         binding.moduleProgress.visibility = View.GONE
         binding.moduleInfo.text = "Updated from your student account"
@@ -1293,6 +1306,10 @@ class MainActivity : AppCompatActivity() {
         resultsRenderer.render(binding.moduleContent, data)
     }
 
+    private fun renderEnrolledCourses(data: ModuleData) {
+        enrolledCoursesRenderer.render(binding.moduleContent, data)
+    }
+
     private fun selectResultsSemester(label: String) {
         val script = Scripts.semesterSelectScript(label)
         binding.moduleProgress.visibility = View.VISIBLE
@@ -1317,6 +1334,7 @@ class MainActivity : AppCompatActivity() {
             StudentModule.FEE -> "Invoices overview"
             StudentModule.PROFILE -> "Student profile"
             StudentModule.RESULTS -> "Academic results"
+            StudentModule.ENROLLED_COURSES -> "Enrolled courses"
         }
         val subtitle = when (module) {
             StudentModule.ATTENDANCE -> "Subject wise attendance and current percentage"
@@ -1324,6 +1342,7 @@ class MainActivity : AppCompatActivity() {
             StudentModule.FEE -> "Paid and unpaid vouchers, due dates and PDF downloads"
             StudentModule.PROFILE -> "Live student information from your ERP account"
             StudentModule.RESULTS -> "Live academic results from your ERP account"
+            StudentModule.ENROLLED_COURSES -> "Your active courses, course codes, credits and semester from ERP"
         }
 
         val card = LinearLayout(this).apply {
@@ -1596,6 +1615,7 @@ class MainActivity : AppCompatActivity() {
             StudentModule.FEE -> if (index == 0) "Fee records" else "Fee details"
             StudentModule.PROFILE -> if (index == 0) "Profile details" else "Additional profile information"
             StudentModule.RESULTS -> if (index == 0) "Academic results" else "Result details"
+            StudentModule.ENROLLED_COURSES -> if (index == 0) "Enrolled courses" else "Course details"
         }
     }
 

@@ -7,7 +7,15 @@ package com.superiorstudent.app.data.model
 enum class StudentModule(val path: String) {
     ATTENDANCE("student/attendance"),
     TIMETABLE("student/class/schedule"),
+    ENROLLED_COURSES("student/enrolled/courses"),
     FEE("student/invoices"),
     PROFILE("student/profile"),
-    RESULTS("student/results")
+    RESULTS("student/results");
+
+    fun acceptsPath(candidatePath: String): Boolean {
+        val candidate = candidatePath.trim('/').lowercase()
+        val expected = path.trim('/').lowercase()
+        if (candidate == expected || candidate.startsWith("$expected/")) return true
+        return this == ENROLLED_COURSES && candidate == "student/enroll/courses"
+    }
 }

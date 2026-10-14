@@ -210,6 +210,51 @@ class ErpPageParserTest {
     }
 
     @Test
+    fun parsesEnrolledCourseCardsAndRejectsUntrustedDetailUrls() {
+        val payload = """
+            {
+              "cards": [], "tables": [], "lines": [], "records": [],
+              "overallAttendance": null,
+              "enrolledCourses": [
+                {
+                  "course": "Functional English",
+                  "code": "HOQ601140",
+                  "credits": "3.0",
+                  "courseType": "Compulsory",
+                  "term": "FALL 2026",
+                  "faculty": "Faculty of Allied Health Sciences-UNI",
+                  "department": "UNI-FAHS",
+                  "detailUrl": "https://erp.superior.edu.pk/student/results/id/4841905"
+                },
+                {
+                  "course": "External Example",
+                  "code": "EXT601140",
+                  "credits": "3.0",
+                  "courseType": "Compulsory",
+                  "term": "FALL 2026",
+                  "faculty": "Other",
+                  "department": "EXT",
+                  "detailUrl": "https://example.com/student/results/id/1"
+                }
+              ]
+            }
+        """.trimIndent()
+        val result = ErpPageParser.parse(payload)
+        assertNotNull(result)
+        assertEquals(2, result!!.enrolledCourses.size)
+        val first = result.enrolledCourses[0]
+        assertEquals("Functional English", first.course)
+        assertEquals("HOQ601140", first.code)
+        assertEquals("3.0", first.credits)
+        assertEquals("Compulsory", first.courseType)
+        assertEquals("FALL 2026", first.term)
+        assertEquals("Faculty of Allied Health Sciences-UNI", first.faculty)
+        assertEquals("UNI-FAHS", first.department)
+        assertEquals("https://erp.superior.edu.pk/student/results/id/4841905", first.detailUrl)
+        assertEquals("", result.enrolledCourses[1].detailUrl)
+    }
+
+    @Test
     fun malformedJsonIsRejectedSafely() {
         assertNull(ErpPageParser.parse("{ not-json"))
     }

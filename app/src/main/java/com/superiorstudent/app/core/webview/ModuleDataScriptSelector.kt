@@ -15,6 +15,7 @@ enum class ModuleDataScriptKind {
     INVOICES,
     PROFILE,
     RESULTS,
+    ENROLLED_COURSES,
     GENERAL
 }
 
@@ -37,6 +38,8 @@ object ModuleDataScriptSelector {
                 ModuleDataScriptKind.PROFILE
             module == StudentModule.RESULTS ->
                 ModuleDataScriptKind.RESULTS
+            module == StudentModule.ENROLLED_COURSES ->
+                ModuleDataScriptKind.ENROLLED_COURSES
             else -> ModuleDataScriptKind.GENERAL
         }
     }
@@ -46,5 +49,6 @@ object ModuleDataScriptSelector {
             kind == ModuleDataScriptKind.TIMETABLE ||
             kind == ModuleDataScriptKind.INVOICES ||
             kind == ModuleDataScriptKind.PROFILE ||
-            kind == ModuleDataScriptKind.RESULTS
+            kind == ModuleDataScriptKind.RESULTS ||
+            kind == ModuleDataScriptKind.ENROLLED_COURSES
 }

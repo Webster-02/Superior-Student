@@ -57,6 +57,18 @@ class ModuleDataScriptSelectorTest {
     }
 
     @Test
+    fun enrolledCoursesUseDedicatedExtractorWithLegacyFallbackAndSupportRouteAlias() {
+        val kind = ModuleDataScriptSelector.select(
+            StudentModule.ENROLLED_COURSES,
+            "https://erp.superior.edu.pk/student/enrolled/courses"
+        )
+        assertEquals(ModuleDataScriptKind.ENROLLED_COURSES, kind)
+        org.junit.Assert.assertTrue(ModuleDataScriptSelector.shouldFallbackToGeneral(kind))
+        org.junit.Assert.assertTrue(StudentModule.ENROLLED_COURSES.acceptsPath("/student/enroll/courses"))
+        org.junit.Assert.assertTrue(StudentModule.ENROLLED_COURSES.acceptsPath("/student/enrolled/courses"))
+    }
+
+    @Test
     fun resultsUseDedicatedExtractorWithLegacyFallbackAvailable() {
         val kind = ModuleDataScriptSelector.select(
             StudentModule.RESULTS,
