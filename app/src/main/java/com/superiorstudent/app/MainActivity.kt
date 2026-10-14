@@ -44,6 +44,8 @@ import com.superiorstudent.app.core.webview.Scripts
 import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.databinding.ActivityMainBinding
 import com.superiorstudent.app.ui.Palette
+import com.superiorstudent.app.ui.AppTheme
+import com.superiorstudent.app.ui.AppThemePreferences
 
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.data.model.AttendanceDetailLink
@@ -165,6 +167,7 @@ class MainActivity : AppCompatActivity() {
             lightStatusIcons = true,
             lightNavigationIcons = true
         )
+        applySelectedTheme()
         configureLoginLayoutAndKeyboard()
 
         binding.loginButton.setOnClickListener {
@@ -198,8 +201,15 @@ class MainActivity : AppCompatActivity() {
 
         binding.attendanceButton.setOnClickListener { loadModule(StudentModule.ATTENDANCE) }
         binding.timetableButton.setOnClickListener { loadModule(StudentModule.TIMETABLE) }
+        binding.resultsButton.setOnClickListener { loadModule(StudentModule.RESULTS) }
         binding.feeButton.setOnClickListener { loadModule(StudentModule.FEE) }
+        binding.profileButton.setOnClickListener { loadModule(StudentModule.PROFILE) }
         binding.enrolledCoursesButton.setOnClickListener { loadModule(StudentModule.ENROLLED_COURSES) }
+        binding.navHomeButton.setOnClickListener { showDashboard() }
+        binding.navTimetableButton.setOnClickListener { loadModule(StudentModule.TIMETABLE) }
+        binding.navAttendanceButton.setOnClickListener { loadModule(StudentModule.ATTENDANCE) }
+        binding.navResultsButton.setOnClickListener { loadModule(StudentModule.RESULTS) }
+        binding.navMoreButton.setOnClickListener { openSideMenu() }
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
         binding.homeButton.setOnClickListener { showDashboard() }
         binding.menuButton.setOnClickListener { openSideMenu() }
@@ -208,13 +218,21 @@ class MainActivity : AppCompatActivity() {
         binding.menuProfileButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.PROFILE) }
         binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.RESULTS) }
         binding.menuEnrolledCoursesButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.ENROLLED_COURSES) }
+        binding.menuSettingsButton.setOnClickListener { closeSideMenu(); showThemePicker() }
         binding.menuLogoutButton.setOnClickListener { closeSideMenu(); logout() }
 
         // Design-system touches: press-scale feedback on dashboard action cards.
         attachPressFeedback(binding.attendanceButton)
         attachPressFeedback(binding.timetableButton)
+        attachPressFeedback(binding.resultsButton)
         attachPressFeedback(binding.feeButton)
+        attachPressFeedback(binding.profileButton)
         attachPressFeedback(binding.enrolledCoursesButton)
+        attachPressFeedback(binding.navHomeButton)
+        attachPressFeedback(binding.navTimetableButton)
+        attachPressFeedback(binding.navAttendanceButton)
+        attachPressFeedback(binding.navResultsButton)
+        attachPressFeedback(binding.navMoreButton)
 
         val hasSavedSession = try { sessionStore.sessionActive } catch (t: Throwable) {
             android.util.Log.w("MainActivity", "Ignoring unreadable saved session", t)
@@ -950,12 +968,13 @@ class MainActivity : AppCompatActivity() {
         activeModule = module
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
+        binding.dashboardBottomNav.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
         applySystemBarStyle(
-            statusColor = Color.WHITE,
-            navigationColor = Color.rgb(245, 247, 251),
-            lightStatusIcons = false,
-            lightNavigationIcons = false
+            statusColor = Palette.surfaceAlt(this),
+            navigationColor = Palette.surfaceAlt(this),
+            lightStatusIcons = true,
+            lightNavigationIcons = true
         )
         webView.visibility = View.INVISIBLE
         binding.moduleProgress.visibility = View.VISIBLE
@@ -1216,11 +1235,12 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
+        binding.dashboardBottomNav.visibility = View.GONE
         applySystemBarStyle(
-            statusColor = Color.WHITE,
-            navigationColor = Color.rgb(245, 247, 251),
-            lightStatusIcons = false,
-            lightNavigationIcons = false
+            statusColor = Palette.surfaceAlt(this),
+            navigationColor = Palette.surfaceAlt(this),
+            lightStatusIcons = true,
+            lightNavigationIcons = true
         )
         binding.moduleTitle.text = "Attendance Planner"
         binding.moduleSubtitle.text = "Subject attendance and 75% target"
@@ -1799,6 +1819,265 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Your university session has expired. Please sign in again.", Toast.LENGTH_LONG).show()
     }
 
+    /**
+     * Applies the selected accent and dark surfaces to the existing native views.
+     * Data/rendering components still use the same Palette API, so ERP logic stays untouched.
+     */
+    private fun applySelectedTheme() {
+        if (!::binding.isInitialized) return
+
+        val background = Palette.surfaceAlt(this)
+        val surface = Palette.surface(this)
+        val primary = Palette.primary(this)
+        val stroke = Palette.stroke(this)
+
+        binding.root.setBackgroundColor(background)
+        binding.dashboardScroll.setBackgroundColor(background)
+        binding.dashboardScreen.setBackgroundColor(background)
+        binding.moduleScreen.setBackgroundColor(background)
+        binding.moduleScroll.setBackgroundColor(background)
+        binding.moduleContent.setBackgroundColor(background)
+
+        binding.dashboardHeader.background =
+            gradientBackground(background, tintAlpha(primary, 48), 0f)
+        binding.welcomeCard.background = themedCard(surface, 20f)
+        binding.cgpaCard.background = themedCard(surface, 18f)
+        binding.sgpaCard.background = themedCard(surface, 18f)
+        binding.studentAvatarInitial.background =
+            gradientBackground(primary, Palette.accent(this), 28f)
+
+        styleTextAndIcons(binding.dashboardHeader)
+        styleTextAndIcons(binding.cgpaCard)
+        styleTextAndIcons(binding.sgpaCard)
+
+        val quickTiles = listOf(
+            binding.timetableButton,
+            binding.attendanceButton,
+            binding.resultsButton,
+            binding.feeButton,
+            binding.profileButton,
+            binding.enrolledCoursesButton
+        )
+        quickTiles.forEach { tile ->
+            tile.background = themedCard(surface, 17f)
+            styleTextAndIcons(tile)
+        }
+
+        binding.dashboardBottomNav.background = themedCard(surface, 22f)
+        styleNavigationItem(binding.navHomeButton, true)
+        styleNavigationItem(binding.navTimetableButton, false)
+        styleNavigationItem(binding.navAttendanceButton, false)
+        styleNavigationItem(binding.navResultsButton, false)
+        styleNavigationItem(binding.navMoreButton, false)
+
+        binding.sideMenu.setBackgroundColor(surface)
+        styleTextAndIcons(binding.sideMenu)
+        val menuRowBackground = roundedBackground(background, 12f)
+        binding.menuProfileButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
+        binding.menuEnrolledCoursesButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
+        binding.menuResultsButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
+        binding.menuSettingsButton.background = themedCard(tintAlpha(primary, 22), 13f)
+        binding.menuLogoutButton.background = roundedBackground(tintAlpha(Palette.danger(this), 30), 13f)
+        binding.closeMenuButton.background = themedCard(tintAlpha(primary, 22), 15f)
+
+        binding.menuButton.background = themedCard(tintAlpha(primary, 30), 15f)
+        binding.menuButton.imageTintList = ColorStateList.valueOf(Palette.ink900(this))
+        binding.homeButton.background = themedCard(tintAlpha(primary, 22), 15f)
+        binding.homeButton.imageTintList = ColorStateList.valueOf(Palette.primaryLight(this))
+        binding.refreshButton.background = themedCard(tintAlpha(primary, 22), 15f)
+        binding.refreshButton.imageTintList = ColorStateList.valueOf(Palette.primaryLight(this))
+
+        val moduleToolbar = (binding.moduleTitle.parent as? View)?.parent as? View
+        moduleToolbar?.background = themedCard(surface, 0f)
+        binding.moduleTitle.setTextColor(Palette.ink900(this))
+        binding.moduleSubtitle.setTextColor(Palette.ink500(this))
+        binding.moduleInfo.background = themedCard(Palette.infoBg(this), 12f)
+        binding.moduleInfo.setTextColor(Palette.primaryLight(this))
+        binding.moduleProgress.indeterminateTintList = ColorStateList.valueOf(primary)
+
+        binding.loginButton.background =
+            gradientBackground(primary, Palette.accent(this), 14f)
+        binding.passwordVisibilityToggle.setTextColor(Palette.primaryLight(this))
+
+        if (binding.dashboardScroll.visibility == View.VISIBLE) {
+            applySystemBarStyle(
+                statusColor = background,
+                navigationColor = background,
+                lightStatusIcons = true,
+                lightNavigationIcons = true
+            )
+        } else if (binding.moduleScreen.visibility == View.VISIBLE) {
+            applySystemBarStyle(
+                statusColor = background,
+                navigationColor = background,
+                lightStatusIcons = true,
+                lightNavigationIcons = true
+            )
+        }
+    }
+
+    private fun themedCard(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable {
+        return roundedBackground(color, radiusDp).apply {
+            setStroke(dp(1), Palette.stroke(this@MainActivity))
+        }
+    }
+
+    private fun styleTextAndIcons(view: View) {
+        when (view) {
+            is TextView -> {
+                val label = view.text?.toString()?.trim()?.lowercase().orEmpty()
+                val textSp = view.textSize / resources.displayMetrics.scaledDensity
+                val color = when {
+                    label.contains("sign out") || label.contains("log out") -> Palette.danger(this)
+                    textSp <= 12.5f -> Palette.ink500(this)
+                    else -> Palette.ink900(this)
+                }
+                view.setTextColor(color)
+            }
+            is android.widget.ImageView -> {
+                view.imageTintList = ColorStateList.valueOf(Palette.primaryLight(this))
+            }
+        }
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) styleTextAndIcons(view.getChildAt(index))
+        }
+    }
+
+    private fun styleNavigationItem(view: View, selected: Boolean) {
+        val primary = Palette.primary(this)
+        view.background = if (selected) {
+            roundedBackground(tintAlpha(primary, 28), 14f).apply {
+                setStroke(dp(1), Palette.stroke(this@MainActivity))
+            }
+        } else {
+            roundedBackground(Color.TRANSPARENT, 14f)
+        }
+        for (index in 0 until (view as? ViewGroup)?.childCount.orZero()) {
+            val child = (view as ViewGroup).getChildAt(index)
+            when (child) {
+                is android.widget.ImageView -> {
+                    child.imageTintList = ColorStateList.valueOf(
+                        if (selected) Palette.primaryLight(this) else Palette.ink500(this)
+                    )
+                }
+                is TextView -> child.setTextColor(
+                    if (selected) Palette.primaryLight(this) else Palette.ink500(this)
+                )
+            }
+        }
+    }
+
+    private fun Int?.orZero(): Int = this ?: 0
+
+    private fun showThemePicker() {
+        val dialog = android.app.Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(22), dp(22), dp(18))
+            background = themedCard(Palette.surface(this@MainActivity), 24f)
+        }
+
+        fun label(textValue: String, sizeSp: Float, color: Int, bold: Boolean = false): TextView {
+            return TextView(this).apply {
+                text = textValue
+                textSize = sizeSp
+                setTextColor(color)
+                if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+            }
+        }
+
+        content.addView(label("Choose your look", 21f, Palette.ink900(this), true))
+        content.addView(label(
+            "Choose a colour style for your student dashboard.",
+            12f,
+            Palette.ink500(this)
+        ).apply {
+            setPadding(0, dp(5), 0, dp(12))
+        })
+
+        val current = AppThemePreferences.current(this)
+        AppTheme.values().forEach { theme ->
+            val selected = current == theme
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = roundedBackground(
+                    if (selected) tintAlpha(Palette.primary(this@MainActivity), 24)
+                    else Palette.surfaceAlt(this@MainActivity),
+                    16f
+                ).apply {
+                    setStroke(
+                        dp(1),
+                        if (selected) Palette.primary(this@MainActivity)
+                        else Palette.stroke(this@MainActivity)
+                    )
+                }
+                isClickable = true
+                isFocusable = true
+            }
+
+            val swatch = View(this).apply {
+                background = gradientBackground(
+                    Color.parseColor(theme.previewStartHex),
+                    Color.parseColor(theme.previewEndHex),
+                    12f
+                )
+            }
+            row.addView(swatch, LinearLayout.LayoutParams(dp(42), dp(42)))
+
+            val copy = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = dp(12) }
+            }
+            copy.addView(label(theme.title, 15f, Palette.ink900(this), true))
+            copy.addView(label(theme.description, 11f, Palette.ink500(this)).apply {
+                setPadding(0, dp(3), 0, 0)
+            })
+            row.addView(copy)
+
+            row.addView(label(
+                if (selected) "SELECTED" else "APPLY",
+                10f,
+                if (selected) Palette.primaryLight(this) else Palette.ink500(this),
+                true
+            ))
+
+            row.setOnClickListener {
+                val changed = AppThemePreferences.current(this) != theme
+                AppThemePreferences.save(this, theme)
+                applySelectedTheme()
+                dialog.dismiss()
+                if (changed) {
+                    Toast.makeText(this, theme.title + " theme applied", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            content.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) })
+        }
+
+        content.addView(label(
+            "Your choice is saved on this device, even after signing out.",
+            10f,
+            Palette.ink500(this)
+        ).apply { setPadding(0, dp(14), 0, 0) })
+
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        dialog.window?.setDimAmount(0.56f)
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+
     private fun openSideMenu() {
         if (!loggedIn || binding.dashboardScroll.visibility != View.VISIBLE) return
         try {
@@ -1838,11 +2117,13 @@ class MainActivity : AppCompatActivity() {
         binding.dashboardScroll.visibility = View.VISIBLE
         binding.loginScroll.visibility = View.GONE
         binding.sideMenuOverlay.visibility = View.GONE
+        applySelectedTheme()
+        binding.dashboardBottomNav.visibility = View.VISIBLE
         applySystemBarStyle(
-            statusColor = Color.rgb(8, 69, 190),
-            navigationColor = Color.rgb(245, 247, 251),
+            statusColor = Palette.surfaceAlt(this),
+            navigationColor = Palette.surfaceAlt(this),
             lightStatusIcons = true,
-            lightNavigationIcons = false
+            lightNavigationIcons = true
         )
 
         binding.studentName.text =
@@ -1871,6 +2152,7 @@ class MainActivity : AppCompatActivity() {
         webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
+        binding.dashboardBottomNav.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.loginScroll.visibility = View.VISIBLE
         binding.sideMenuOverlay.visibility = View.GONE

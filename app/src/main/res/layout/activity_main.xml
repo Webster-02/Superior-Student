@@ -304,6 +304,21 @@
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/menuSettingsButton"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:layout_marginTop="5dp"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:paddingStart="22dp"
+                android:text="Appearance &amp; Theme"
+                android:textColor="#172033"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
@@ -346,7 +361,9 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone"
-        android:fillViewport="true">
+        android:fillViewport="true"
+        android:clipToPadding="false"
+        android:paddingBottom="86dp">
 
         <LinearLayout
             android:id="@+id/dashboardScreen"
@@ -356,6 +373,7 @@
             android:paddingBottom="28dp">
 
             <FrameLayout
+                android:id="@+id/dashboardHeader"
                 android:layout_width="match_parent"
                 android:layout_height="250dp"
                 android:background="@drawable/bg_dashboard_header">
@@ -406,6 +424,7 @@
                     android:layout_marginStart="18dp"
                     android:layout_marginEnd="18dp"
                     android:layout_marginBottom="18dp"
+                    android:id="@+id/welcomeCard"
                     android:background="@drawable/bg_welcome_card"
                     android:elevation="6dp"
                     android:gravity="center_vertical"
@@ -445,6 +464,7 @@
                     </LinearLayout>
 
                     <TextView
+                        android:id="@+id/studentAvatarInitial"
                         android:layout_width="52dp"
                         android:layout_height="52dp"
                         android:background="@drawable/bg_avatar"
@@ -465,6 +485,7 @@
                 android:orientation="horizontal">
 
                 <LinearLayout
+                    android:id="@+id/cgpaCard"
                     android:layout_width="0dp"
                     android:layout_height="92dp"
                     android:layout_marginEnd="6dp"
@@ -494,6 +515,7 @@
                 </LinearLayout>
 
                 <LinearLayout
+                    android:id="@+id/sgpaCard"
                     android:layout_width="0dp"
                     android:layout_height="92dp"
                     android:layout_marginStart="6dp"
@@ -528,6 +550,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="20dp"
                 android:layout_marginTop="24dp"
+                android:id="@+id/quickAccessTitle"
                 android:text="Quick access"
                 android:textColor="#172033"
                 android:textSize="17sp"
@@ -536,193 +559,247 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="18dp"
+                android:layout_marginStart="16dp"
                 android:layout_marginTop="12dp"
-                android:layout_marginEnd="18dp"
+                android:layout_marginEnd="16dp"
                 android:orientation="horizontal">
 
                 <LinearLayout
-                    android:id="@+id/attendanceButton"
+                    android:id="@+id/timetableButton"
                     android:layout_width="0dp"
-                    android:layout_height="126dp"
-                    android:layout_marginEnd="6dp"
+                    android:layout_height="108dp"
+                    android:layout_marginEnd="5dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_action_blue"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="7dp">
 
                     <ImageView
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
-                        android:contentDescription="Attendance"
-                        android:src="@drawable/ic_attendance" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="9dp"
-                        android:text="Attendance"
-                        android:textColor="#123A70"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="View attendance"
-                        android:textColor="#667085"
-                        android:textSize="10sp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:id="@+id/timetableButton"
-                    android:layout_width="0dp"
-                    android:layout_height="126dp"
-                    android:layout_marginStart="6dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_action_green"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center"
-                    android:orientation="vertical"
-                    android:padding="14dp">
-
-                    <ImageView
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
+                        android:layout_width="29dp"
+                        android:layout_height="29dp"
                         android:contentDescription="Timetable"
                         android:src="@drawable/ic_timetable" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="9dp"
+                        android:layout_marginTop="7dp"
                         android:text="Timetable"
-                        android:textColor="#13795B"
-                        android:textSize="14sp"
+                        android:textColor="#123A70"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/nextClassLabel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:gravity="center"
+                        android:text="View schedule"
+                        android:textColor="#667085"
+                        android:textSize="9sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/attendanceButton"
+                    android:layout_width="0dp"
+                    android:layout_height="108dp"
+                    android:layout_marginStart="5dp"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_action_green"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="7dp">
+
+                    <ImageView
+                        android:layout_width="29dp"
+                        android:layout_height="29dp"
+                        android:contentDescription="Attendance"
+                        android:src="@drawable/ic_attendance" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        android:text="Attendance"
+                        android:textColor="#123A70"
+                        android:textSize="12sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:id="@+id/nextClassLabel"
-                        android:text="View schedule"
+                        android:text="Class record"
                         android:textColor="#667085"
-                        android:textSize="10sp" />
+                        android:textSize="9sp" />
                 </LinearLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/enrolledCoursesButton"
-                android:layout_width="match_parent"
-                android:layout_height="104dp"
-                android:layout_marginStart="18dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginEnd="18dp"
-                android:background="@drawable/bg_action_blue"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp">
-
-                <ImageView
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:contentDescription="Enrolled Courses"
-                    android:src="@drawable/ic_courses" />
 
                 <LinearLayout
+                    android:id="@+id/resultsButton"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
+                    android:layout_height="108dp"
+                    android:layout_marginStart="5dp"
                     android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:background="@drawable/bg_action_blue"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="7dp">
+
+                    <ImageView
+                        android:layout_width="29dp"
+                        android:layout_height="29dp"
+                        android:contentDescription="Results"
+                        android:src="@drawable/ic_chart" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        android:text="Results"
+                        android:textColor="#123A70"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Grades & GPA"
+                        android:textColor="#667085"
+                        android:textSize="9sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="10dp"
+                android:layout_marginEnd="16dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/feeButton"
+                    android:layout_width="0dp"
+                    android:layout_height="108dp"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_action_orange"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="7dp">
+
+                    <ImageView
+                        android:layout_width="29dp"
+                        android:layout_height="29dp"
+                        android:contentDescription="Invoices"
+                        android:src="@drawable/ic_fee" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        android:text="Invoices"
+                        android:textColor="#123A70"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Payments"
+                        android:textColor="#667085"
+                        android:textSize="9sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/profileButton"
+                    android:layout_width="0dp"
+                    android:layout_height="108dp"
+                    android:layout_marginStart="5dp"
+                    android:layout_marginEnd="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_action_blue"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="7dp">
+
+                    <ImageView
+                        android:layout_width="29dp"
+                        android:layout_height="29dp"
+                        android:contentDescription="Profile"
+                        android:src="@drawable/ic_user" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        android:text="Profile"
+                        android:textColor="#123A70"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Student info"
+                        android:textColor="#667085"
+                        android:textSize="9sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/enrolledCoursesButton"
+                    android:layout_width="0dp"
+                    android:layout_height="108dp"
+                    android:layout_marginStart="5dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_action_red"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="7dp">
+
+                    <ImageView
+                        android:layout_width="29dp"
+                        android:layout_height="29dp"
+                        android:contentDescription="Enrolled Courses"
+                        android:src="@drawable/ic_courses" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
                         android:text="Enrolled Courses"
                         android:textColor="#123A70"
-                        android:textSize="15sp"
+                        android:textSize="11sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:text="View active subjects, course codes and credits"
+                        android:layout_marginTop="2dp"
+                        android:text="My subjects"
                         android:textColor="#667085"
-                        android:textSize="11sp" />
+                        android:textSize="9sp" />
                 </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="›"
-                    android:textColor="#1E63D8"
-                    android:textSize="28sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/feeButton"
-                android:layout_width="match_parent"
-                android:layout_height="104dp"
-                android:layout_marginStart="18dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginEnd="18dp"
-                android:background="@drawable/bg_action_orange"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="20dp"
-                android:paddingEnd="20dp">
-
-                <ImageView
-                    android:layout_width="38dp"
-                    android:layout_height="38dp"
-                    android:contentDescription="Invoices"
-                    android:src="@drawable/ic_fee" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Invoices"
-                        android:textColor="#8A4E00"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:text="View invoices and payment information"
-                        android:textColor="#667085"
-                        android:textSize="11sp" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="›"
-                    android:textColor="#A65D00"
-                    android:textSize="28sp"
-                    android:textStyle="bold" />
             </LinearLayout>
 
             <TextView
@@ -749,6 +826,144 @@
 
         </LinearLayout>
     </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/dashboardBottomNav"
+        android:layout_width="match_parent"
+        android:layout_height="68dp"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="6dp"
+        android:background="@drawable/bg_glass_card"
+        android:elevation="22dp"
+        android:orientation="horizontal"
+        android:paddingStart="5dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="5dp"
+        android:paddingBottom="5dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/navHomeButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="3dp">
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Home"
+                android:src="@drawable/ic_brand_logo" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Home"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navTimetableButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="3dp">
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Timetable"
+                android:src="@drawable/ic_timetable" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Timetable"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navAttendanceButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="3dp">
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Attendance"
+                android:src="@drawable/ic_attendance" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Attendance"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navResultsButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="3dp">
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="Results"
+                android:src="@drawable/ic_chart" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Results"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/navMoreButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="3dp">
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:contentDescription="More options"
+                android:src="@drawable/ic_menu" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="More"
+                android:textSize="9sp" />
+        </LinearLayout>
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/moduleScreen"
