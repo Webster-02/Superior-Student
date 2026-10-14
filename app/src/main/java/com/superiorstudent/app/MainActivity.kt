@@ -1829,7 +1829,6 @@ class MainActivity : AppCompatActivity() {
         val background = Palette.surfaceAlt(this)
         val surface = Palette.surface(this)
         val primary = Palette.primary(this)
-        val stroke = Palette.stroke(this)
 
         binding.root.setBackgroundColor(background)
         binding.dashboardScroll.setBackgroundColor(background)
@@ -1837,6 +1836,7 @@ class MainActivity : AppCompatActivity() {
         binding.moduleScreen.setBackgroundColor(background)
         binding.moduleScroll.setBackgroundColor(background)
         binding.moduleContent.setBackgroundColor(background)
+        styleTextAndIcons(binding.dashboardScreen)
 
         binding.dashboardHeader.background =
             gradientBackground(background, tintAlpha(primary, 48), 0f)
@@ -1929,7 +1929,7 @@ class MainActivity : AppCompatActivity() {
                 val textSp = view.textSize / resources.displayMetrics.scaledDensity
                 val color = when {
                     label.contains("sign out") || label.contains("log out") -> Palette.danger(this)
-                    textSp <= 12.5f -> Palette.ink500(this)
+                    textSp <= 10.5f -> Palette.ink500(this)
                     else -> Palette.ink900(this)
                 }
                 view.setTextColor(color)
@@ -1952,8 +1952,9 @@ class MainActivity : AppCompatActivity() {
         } else {
             roundedBackground(Color.TRANSPARENT, 14f)
         }
-        for (index in 0 until (view as? ViewGroup)?.childCount.orZero()) {
-            val child = (view as ViewGroup).getChildAt(index)
+        val group = view as? ViewGroup ?: return
+        for (index in 0 until group.childCount) {
+            val child = group.getChildAt(index)
             when (child) {
                 is android.widget.ImageView -> {
                     child.imageTintList = ColorStateList.valueOf(
@@ -1966,8 +1967,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-    private fun Int?.orZero(): Int = this ?: 0
 
     private fun showThemePicker() {
         val dialog = android.app.Dialog(this)
