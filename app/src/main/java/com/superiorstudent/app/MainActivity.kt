@@ -39,6 +39,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.superiorstudent.app.core.config.ErpConfig
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.core.session.SessionStore
+import com.superiorstudent.app.core.webview.ModuleDataScriptSelector
 import com.superiorstudent.app.core.webview.Scripts
 import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.databinding.ActivityMainBinding
