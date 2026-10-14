@@ -72,6 +72,7 @@ class MainActivity : AppCompatActivity() {
     private var navigationBarScrim: View? = null
     private var webViewReady = false
     private var activityResumed = false
+    private var dashboardEntranceAnimated = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
     private val profileCache by lazy { ProfileCache(this) }
@@ -483,8 +484,7 @@ class MainActivity : AppCompatActivity() {
                                 Toast.LENGTH_LONG
                             ).show()
                         } else if (activeModule != null) {
-                            binding.moduleProgress.visibility = View.GONE
-                            binding.moduleInfo.text = "Secure connection failed. Check your network and tap Refresh."
+                            handleModuleLoadFailure("The secure connection to the university portal failed. Check your internet and try again.")
                         }
                     }
         
@@ -506,14 +506,9 @@ class MainActivity : AppCompatActivity() {
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
-                            activeModule != null -> {
-                                binding.moduleProgress.visibility = View.GONE
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "Unable to load your information. Check internet and try Refresh.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
+                            activeModule != null -> handleModuleLoadFailure(
+                                "Unable to reach the ERP. Check your internet connection and tap Refresh to try again."
+                            )
                         }
                     }
         
@@ -624,14 +619,29 @@ class MainActivity : AppCompatActivity() {
                 recoverSessionAfterBackground()
             } else {
                 startSessionHeartbeat()
-                if (binding.dashboardScroll.visibility == View.VISIBLE &&
+                val module = activeModule
+                if (module != null && binding.moduleScreen.visibility == View.VISIBLE && moduleFetchInProgress) {
+                    // If Android paused the WebView mid-navigation, restart only that
+                    // request. Keep cached content visible while the request completes.
+                    moduleReadRequestId++
+                    moduleReadAttempts = 0
+                    webView.stopLoading()
+                    val targetUrl = if (module == StudentModule.ATTENDANCE && !activeAttendanceDetailUrl.isNullOrBlank()) {
+                        activeAttendanceDetailUrl!!
+                    } else {
+                        ErpConfig.moduleUrl(module.path)
+                    }
+                    webView.loadUrl(targetUrl)
+                    scheduleModuleLoadFallback(module, moduleReadRequestId)
+                } else if (binding.dashboardScroll.visibility == View.VISIBLE &&
                     !profileFetchInProgress && preloadingModule == null && preloadQueue.isEmpty()) {
                     preloadAllModules()
                 }
             }
         }
 
-        if (loggedIn && binding.dashboardScroll.visibility == View.VISIBLE) {
+        if (loggedIn && binding.dashboardScroll.visibility == View.VISIBLE && !dashboardEntranceAnimated) {
+            dashboardEntranceAnimated = true
             animateDashboardEntrance()
         }
     }
@@ -661,7 +671,7 @@ class MainActivity : AppCompatActivity() {
 
         if (::webView.isInitialized) {
             // Preload navigation has no user-visible value while app is backgrounded.
-            if (loggedIn && activeModule == null) {
+            if (loggedIn && activeModule == null && !profileFetchInProgress) {
                 webView.stopLoading()
                 preloadingModule = null
                 preloadQueue.clear()
@@ -703,13 +713,16 @@ class MainActivity : AppCompatActivity() {
             webView.loadUrl(ErpConfig.moduleUrl(module.path))
             scheduleModuleLoadFallback(module, moduleReadRequestId)
         } else {
-            // The dashboard is native UI. Avoid reloading the ERP dashboard and
-            // refetching profile data simply because the user returned to the app.
+            // Dashboard/profile are native UI. Don't reload the full ERP dashboard
+            // after returning from background, and invalidate a profile read that
+            // may have been interrupted while the app was suspended.
+            profileFetchInProgress = false
+            profileFetchGeneration++
             webView.visibility = View.GONE
-            startSessionHeartbeat()
             pingSession()
             preloadAllModules()
         }
+        startSessionHeartbeat()
     }
 
     /**
@@ -1703,6 +1716,27 @@ class MainActivity : AppCompatActivity() {
                 // Keep the local app session intact. A transient network failure
                 // must not force the student back to the login screen.
             }
+        }
+    }
+
+    private fun handleModuleLoadFailure(message: String) {
+        val module = activeModule ?: return
+        moduleFetchInProgress = false
+        binding.moduleProgress.visibility = View.GONE
+        val cachedData = erpRepository.cachedPayload(module)
+            ?.let { parseModuleData(it) }
+            ?.takeIf { erpRepository.hasUsableData(module, it) }
+
+        if (cachedData != null) {
+            // Keep the current last-known-good content interactive during outages.
+            binding.moduleInfo.text = "Offline • Showing last synced data"
+        } else {
+            binding.moduleInfo.text = "Connection needs retry"
+            binding.moduleContent.removeAllViews()
+            binding.moduleContent.addView(createEmptyState(
+                "Couldn't connect to the ERP",
+                message
+            ))
         }
     }
 
