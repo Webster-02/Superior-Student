@@ -23,6 +23,8 @@ object Scripts {
         private set
     var attendanceSummaryData: String = ""
         private set
+    var attendanceDetailData: String = ""
+        private set
     var timetableData: String = ""
         private set
     var invoiceData: String = ""
@@ -45,6 +47,7 @@ object Scripts {
         loginPageProbe = assets.read("js/login_page_probe.js")
         moduleData = assets.read("js/module_data.js")
         attendanceSummaryData = assets.read("js/attendance_summary.js")
+        attendanceDetailData = assets.read("js/attendance_detail.js")
         timetableData = assets.read("js/timetable_data.js")
         invoiceData = assets.read("js/invoice_data.js")
         profileData = assets.read("js/profile_data.js")
@@ -58,6 +61,7 @@ object Scripts {
     fun moduleDataFor(module: com.superiorstudent.app.data.model.StudentModule, currentUrl: String): String =
         when (ModuleDataScriptSelector.select(module, currentUrl)) {
             ModuleDataScriptKind.ATTENDANCE_SUMMARY -> attendanceSummaryData
+            ModuleDataScriptKind.ATTENDANCE_DETAIL -> attendanceDetailData
             ModuleDataScriptKind.TIMETABLE -> timetableData
             ModuleDataScriptKind.INVOICES -> invoiceData
             ModuleDataScriptKind.PROFILE -> profileData

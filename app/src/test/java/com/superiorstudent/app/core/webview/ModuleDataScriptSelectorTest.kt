@@ -27,14 +27,13 @@ class ModuleDataScriptSelectorTest {
     }
 
     @Test
-    fun attendanceDetailKeepsGeneralExtractorForClassHistory() {
-        assertEquals(
-            ModuleDataScriptKind.GENERAL,
-            ModuleDataScriptSelector.select(
-                StudentModule.ATTENDANCE,
-                "https://erp.superior.edu.pk/student/attendancedetail/id/204263"
-            )
+    fun attendanceDetailUsesDedicatedExtractorAndKeepsLegacyFallback() {
+        val kind = ModuleDataScriptSelector.select(
+            StudentModule.ATTENDANCE,
+            "https://erp.superior.edu.pk/student/attendancedetail/id/204263"
         )
+        assertEquals(ModuleDataScriptKind.ATTENDANCE_DETAIL, kind)
+        org.junit.Assert.assertTrue(ModuleDataScriptSelector.shouldFallbackToGeneral(kind))
     }
 
     @Test

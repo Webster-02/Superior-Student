@@ -10,6 +10,7 @@ import com.superiorstudent.app.data.model.StudentModule
  */
 enum class ModuleDataScriptKind {
     ATTENDANCE_SUMMARY,
+    ATTENDANCE_DETAIL,
     TIMETABLE,
     INVOICES,
     PROFILE,
@@ -26,6 +27,8 @@ object ModuleDataScriptSelector {
         return when {
             module == StudentModule.ATTENDANCE && !isAttendanceDetail ->
                 ModuleDataScriptKind.ATTENDANCE_SUMMARY
+            module == StudentModule.ATTENDANCE && isAttendanceDetail ->
+                ModuleDataScriptKind.ATTENDANCE_DETAIL
             module == StudentModule.TIMETABLE ->
                 ModuleDataScriptKind.TIMETABLE
             module == StudentModule.FEE ->
@@ -39,7 +42,8 @@ object ModuleDataScriptSelector {
     }
 
     fun shouldFallbackToGeneral(kind: ModuleDataScriptKind): Boolean =
-        kind == ModuleDataScriptKind.TIMETABLE ||
+        kind == ModuleDataScriptKind.ATTENDANCE_DETAIL ||
+            kind == ModuleDataScriptKind.TIMETABLE ||
             kind == ModuleDataScriptKind.INVOICES ||
             kind == ModuleDataScriptKind.PROFILE ||
             kind == ModuleDataScriptKind.RESULTS
