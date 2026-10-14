@@ -67,12 +67,4 @@ class ModuleDataScriptSelectorTest {
         org.junit.Assert.assertTrue(ModuleDataScriptSelector.shouldFallbackToGeneral(kind))
     }
 
-    @Test
-    fun otherFeaturesRemainOnLegacyExtractorUntilMigrated() {
-        val urlByModule = mapOf(
-        )
-        urlByModule.forEach { (module, url) ->
-            assertEquals(ModuleDataScriptKind.GENERAL, ModuleDataScriptSelector.select(module, url))
-        }
-    }
 }
