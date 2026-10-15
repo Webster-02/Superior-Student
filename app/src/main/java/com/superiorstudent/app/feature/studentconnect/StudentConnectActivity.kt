@@ -101,6 +101,17 @@ class StudentConnectActivity : AppCompatActivity() {
         if (auth.currentUser != null) refreshVerificationStatus(silent = true)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!::auth.isInitialized) return
+
+        val user = auth.currentUser ?: return
+        if (user.isEmailVerified && currentStudentProfile?.uid == user.uid) {
+            // Refresh requests/connections when the user returns to this screen.
+            refreshFriendRequests(showLoadingMessage = false)
+        }
+    }
+
     private fun bindViews() {
         emailInput = findViewById(R.id.studentConnectEmailInput)
         passwordInput = findViewById(R.id.studentConnectPasswordInput)
