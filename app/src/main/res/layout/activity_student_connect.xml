@@ -331,6 +331,95 @@
                 app:cornerRadius="14dp" />
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/studentConnectSearchPanel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Find Students"
+                android:textColor="@color/ink_900"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="2dp"
+                android:text="Enter a classmate's complete public ID. Only their display name and public ID will be shown."
+                android:textColor="@color/ink_500"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/studentConnectSearchInput"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:layout_marginTop="12dp"
+                android:backgroundTint="@color/brand_primary"
+                android:hint="UNI-XXXXXXX"
+                android:inputType="textCapCharacters"
+                android:maxLength="11"
+                android:maxLines="1"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textColor="@color/ink_900"
+                android:textColorHint="@color/ink_400"
+                android:textSize="16sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectSearchButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="10dp"
+                android:text="Search by student ID"
+                android:textAllCaps="false"
+                android:textSize="14sp"
+                app:backgroundTint="@color/brand_primary"
+                app:cornerRadius="14dp" />
+
+            <LinearLayout
+                android:id="@+id/studentConnectSearchResultCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="@drawable/bg_brand_card"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Student found"
+                    android:textColor="@color/ink_500"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/studentConnectSearchResultName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textColor="@color/ink_900"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/studentConnectSearchResultId"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:letterSpacing="0.06"
+                    android:textColor="@color/brand_primary"
+                    android:textSize="15sp" />
+            </LinearLayout>
+        </LinearLayout>
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

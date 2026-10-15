@@ -1,6 +1,6 @@
 # Student Connect: student profile and unique ID
 
-This step adds a Firestore profile and a unique, shareable ID in the format \`UNI-XXXXXXX\`. Profile data is not searchable in this step; each profile document can only be read by its owner.
+This step adds a Firestore profile and a unique, shareable ID in the format \`UNI-XXXXXXX\`. Find Students searches only by the complete public ID. Results show display name and public ID only; bulk collection listing remains disabled.
 
 ## Before testing
 
@@ -28,6 +28,17 @@ GitHub does not automatically publish Firestore rules. The \`firestore.rules\` f
 
 ## Security boundary to understand
 
-The rules require a signed-in Firebase account with a verified email, prevent profile enumeration, keep profile reads owner-only, and reserve IDs atomically. The email address and ERP password are not stored in the profile. IDs are immutable and remain reserved.
+The rules require a signed-in Firebase account with a verified email, prevent profile enumeration, allow only single-document reads of profile data with an explicit public-field allowlist, and reserve IDs atomically. The email address and ERP password are not stored in the profile. IDs are immutable and remain reserved.
 
 However, a verified Gmail/Firebase account is **not proof of current Superior University enrollment**. The existing ERP session check runs inside the Android client and Firestore rules cannot independently prove it. Before treating the directory as student-only or exposing profiles to other users, a trusted enrollment verification design is needed. This step does not create chats, requests, contacts, or a student search directory.
+
+
+## Find Students step
+
+1. Publish the updated \`firestore.rules\` from the feature branch in Firebase Console → Firestore Database → Rules. The update is needed so a verified user may read an individual profile by the public ID index; it still denies collection listing and limits the profile to public fields.
+2. This is a rules-only update; it does not delete your existing \`profiles\` or \`studentIds\` documents. If you added unrelated collections or other rules, review/merge the file rather than replacing those rules blindly.
+3. The app searches by the full \`UNI-XXXXXXX\` ID only. It does not allow prefix or directory-wide searches.
+4. To test a positive result, use a second verified Firebase account with a separately created profile and search its ID from the first account (or ask another tester to share their ID). Only display name and public ID should appear.
+5. Search your own ID and a made-up ID too; the app should show a self-ID message and a helpful not-found message.
+
+A verified Firebase email is still not proof of current Superior University enrollment. Institutional verification must be designed before advertising the directory as a university-verified student directory.

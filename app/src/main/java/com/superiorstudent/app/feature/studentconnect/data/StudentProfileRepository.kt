@@ -43,6 +43,68 @@ class StudentProfileRepository(
             }
     }
 
+    fun findByPublicId(
+        rawPublicId: String,
+        requesterUid: String,
+        callback: (StudentProfile?, Exception?) -> Unit
+    ) {
+        val publicId = StudentPublicIdFormat.normalize(rawPublicId)
+        if (!StudentPublicIdFormat.isValid(publicId)) {
+            callback(null, IllegalArgumentException("Enter a valid student ID, for example UNI-ABCDEFG."))
+            return
+        }
+
+        firestore.collection(STUDENT_IDS).document(publicId)
+            .get()
+            .addOnCompleteListener { idTask ->
+                if (!idTask.isSuccessful) {
+                    callback(null, idTask.exception ?: IllegalStateException("Student ID lookup failed."))
+                    return@addOnCompleteListener
+                }
+
+                val idDocument = idTask.result
+                if (!idDocument.exists()) {
+                    callback(null, null)
+                    return@addOnCompleteListener
+                }
+
+                val targetUid = idDocument.getString("uid")
+                if (targetUid.isNullOrBlank()) {
+                    callback(null, IllegalStateException("The student ID reservation is incomplete."))
+                    return@addOnCompleteListener
+                }
+                if (targetUid == requesterUid) {
+                    callback(null, IllegalArgumentException("That is your own student ID."))
+                    return@addOnCompleteListener
+                }
+
+                firestore.collection(PROFILES).document(targetUid)
+                    .get()
+                    .addOnCompleteListener { profileTask ->
+                        if (!profileTask.isSuccessful) {
+                            callback(
+                                null,
+                                profileTask.exception ?: IllegalStateException("Could not load the student profile.")
+                            )
+                            return@addOnCompleteListener
+                        }
+
+                        val snapshot = profileTask.result
+                        if (!snapshot.exists()) {
+                            callback(null, null)
+                            return@addOnCompleteListener
+                        }
+
+                        val profile = snapshot.toStudentProfile()
+                        if (profile == null || profile.uid != targetUid || profile.publicId != publicId) {
+                            callback(null, IllegalStateException("The student profile did not match its public ID."))
+                        } else {
+                            callback(profile, null)
+                        }
+                    }
+            }
+    }
+
     fun createProfile(
         uid: String,
         displayName: String,
@@ -136,6 +198,14 @@ class StudentProfileRepository(
 }
 
 /** IDs are human-shareable; ambiguous characters are excluded to reduce typing errors. */
+internal object StudentPublicIdFormat {
+    private val pattern = Regex("""^UNI-[A-HJ-NP-Z2-9]{7}$""")
+
+    fun normalize(value: String): String = value.trim().uppercase(java.util.Locale.ROOT)
+
+    fun isValid(value: String): Boolean = pattern.matches(normalize(value))
+}
+
 internal object StudentPublicIdGenerator {
     private const val PREFIX = "UNI-"
     private const val SUFFIX_LENGTH = 7

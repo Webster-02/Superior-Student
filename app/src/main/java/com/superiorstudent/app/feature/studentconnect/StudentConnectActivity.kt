@@ -45,6 +45,12 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var profileDisplayName: TextView
     private lateinit var profilePublicId: TextView
     private lateinit var copyPublicIdButton: Button
+    private lateinit var studentSearchPanel: View
+    private lateinit var studentSearchInput: EditText
+    private lateinit var studentSearchButton: Button
+    private lateinit var studentSearchResultCard: View
+    private lateinit var studentSearchResultName: TextView
+    private lateinit var studentSearchResultId: TextView
 
     private val profileRepository by lazy { StudentProfileRepository() }
     private var profileLoadInProgressFor: String? = null
@@ -86,6 +92,12 @@ class StudentConnectActivity : AppCompatActivity() {
         profileDisplayName = findViewById(R.id.studentConnectProfileDisplayName)
         profilePublicId = findViewById(R.id.studentConnectProfilePublicId)
         copyPublicIdButton = findViewById(R.id.studentConnectCopyPublicIdButton)
+        studentSearchPanel = findViewById(R.id.studentConnectSearchPanel)
+        studentSearchInput = findViewById(R.id.studentConnectSearchInput)
+        studentSearchButton = findViewById(R.id.studentConnectSearchButton)
+        studentSearchResultCard = findViewById(R.id.studentConnectSearchResultCard)
+        studentSearchResultName = findViewById(R.id.studentConnectSearchResultName)
+        studentSearchResultId = findViewById(R.id.studentConnectSearchResultId)
 
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
         createAccountButton.setOnClickListener { createAccount() }
@@ -94,6 +106,7 @@ class StudentConnectActivity : AppCompatActivity() {
         checkVerificationButton.setOnClickListener { refreshVerificationStatus(silent = false) }
         createProfileButton.setOnClickListener { createStudentProfile() }
         copyPublicIdButton.setOnClickListener { copyPublicId() }
+        studentSearchButton.setOnClickListener { searchStudentByPublicId() }
         signOutButton.setOnClickListener {
             auth.signOut()
             passwordInput.text?.clear()
@@ -101,6 +114,8 @@ class StudentConnectActivity : AppCompatActivity() {
             profileLoadedFor = null
             profileSetupPanel.visibility = View.GONE
             profileCard.visibility = View.GONE
+            studentSearchPanel.visibility = View.GONE
+            studentSearchResultCard.visibility = View.GONE
             renderCurrentUser()
             statusText.text = "Signed out of Student Connect. Your university login is unchanged."
         }
@@ -238,6 +253,8 @@ class StudentConnectActivity : AppCompatActivity() {
         if (user == null) {
             profileSetupPanel.visibility = View.GONE
             profileCard.visibility = View.GONE
+            studentSearchPanel.visibility = View.GONE
+            studentSearchResultCard.visibility = View.GONE
             profileLoadInProgressFor = null
             profileLoadedFor = null
             statusText.text = "Create a separate account or sign in. Do not reuse your university ERP password."
@@ -292,12 +309,16 @@ class StudentConnectActivity : AppCompatActivity() {
                     profileLoadedFor = null
                     profileSetupPanel.visibility = View.GONE
                     profileCard.visibility = View.GONE
-                    statusText.text = "Could not load your profile. Create the Firestore database and publish the included rules, then reopen Student Connect."
+                    studentSearchPanel.visibility = View.GONE
+                    studentSearchResultCard.visibility = View.GONE
+                    statusText.text = "Could not load your profile. Check Firestore and its published security rules, then reopen Student Connect."
                     return@getOwnProfile
                 }
 
                 if (profile == null) {
                     profileCard.visibility = View.GONE
+                    studentSearchPanel.visibility = View.GONE
+                    studentSearchResultCard.visibility = View.GONE
                     profileSetupPanel.visibility = View.VISIBLE
                     if (profileNameInput.text.isNullOrBlank()) {
                         val cachedName = try { ProfileCache(this).studentName.trim() } catch (_: Exception) { "" }
@@ -376,9 +397,68 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun showProfile(profile: StudentProfile) {
         profileSetupPanel.visibility = View.GONE
         profileCard.visibility = View.VISIBLE
+        studentSearchPanel.visibility = View.VISIBLE
         profileDisplayName.text = profile.displayName
         profilePublicId.text = profile.publicId
     }
+
+    private fun searchStudentByPublicId() {
+        val currentUser = auth.currentUser
+        if (currentUser == null || !currentUser.isEmailVerified) {
+            statusText.text = "Sign in with your verified Student Connect account first."
+            return
+        }
+
+        val publicId = StudentPublicIdFormat.normalize(studentSearchInput.text?.toString().orEmpty())
+        if (!StudentPublicIdFormat.isValid(publicId)) {
+            studentSearchResultCard.visibility = View.GONE
+            statusText.text = "Enter the complete student ID, for example UNI-ABCDEFG."
+            studentSearchInput.requestFocus()
+            return
+        }
+
+        val ownId = StudentPublicIdFormat.normalize(profilePublicId.text?.toString().orEmpty())
+        if (publicId == ownId) {
+            studentSearchResultCard.visibility = View.GONE
+            statusText.text = "That is your own student ID. Try a classmate's ID."
+            return
+        }
+
+        studentSearchButton.isEnabled = false
+        studentSearchResultCard.visibility = View.GONE
+        statusText.text = "Searching for student…"
+
+        profileRepository.findByPublicId(publicId, currentUser.uid) { profile, error ->
+            if (auth.currentUser?.uid != currentUser.uid) return@findByPublicId
+            studentSearchButton.isEnabled = true
+
+            when {
+                error is IllegalArgumentException -> {
+                    studentSearchResultCard.visibility = View.GONE
+                    statusText.text = error.message.orEmpty()
+                }
+                error != null -> {
+                    studentSearchResultCard.visibility = View.GONE
+                    statusText.text = if (error.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
+                        "Firestore rules blocked this search. Publish the updated firestore.rules file and try again."
+                    } else {
+                        "Could not complete the student search. Check your internet and Firestore rules, then retry."
+                    }
+                }
+                profile == null -> {
+                    studentSearchResultCard.visibility = View.GONE
+                    statusText.text = "No student found with ID $publicId. Check the ID and try again."
+                }
+                else -> {
+                    studentSearchResultName.text = profile.displayName
+                    studentSearchResultId.text = profile.publicId
+                    studentSearchResultCard.visibility = View.VISIBLE
+                    statusText.text = "Student found. Only their public name and ID are shown."
+                }
+            }
+        }
+    }
+
 
     private fun copyPublicId() {
         val id = profilePublicId.text?.toString().orEmpty()
@@ -398,6 +478,8 @@ class StudentConnectActivity : AppCompatActivity() {
         signOutButton.isEnabled = !busy
         createProfileButton.isEnabled = !busy
         copyPublicIdButton.isEnabled = !busy
+        studentSearchInput.isEnabled = !busy
+        studentSearchButton.isEnabled = !busy
     }
 
     private fun showAuthError(error: Exception?, creatingAccount: Boolean) {
