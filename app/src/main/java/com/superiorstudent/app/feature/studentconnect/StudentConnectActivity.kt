@@ -3,21 +3,28 @@ package com.superiorstudent.app.feature.studentconnect
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
+import android.util.Log
 import android.util.Patterns
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
+import com.google.firebase.messaging.FirebaseMessaging
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.feature.profile.data.ProfileCache
@@ -27,7 +34,9 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTokenRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
+import com.superiorstudent.app.feature.studentconnect.notifications.StudentConnectNotificationHelper
 
 /**
  * Student Connect uses a separate, recoverable Firebase identity.
@@ -74,6 +83,14 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private val profileRepository by lazy { StudentProfileRepository() }
     private val friendRequestRepository by lazy { FriendRequestRepository() }
+    private val notificationTokenRepository by lazy { StudentNotificationTokenRepository() }
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted && ::statusText.isInitialized) {
+            statusText.text = "Notifications are disabled. Enable them in Android Settings to receive Student Connect alerts."
+        }
+    }
     private var currentStudentProfile: StudentProfile? = null
     private var searchedStudentProfile: StudentProfile? = null
     private var cachedFriendRequests: List<FriendRequest> = emptyList()
@@ -172,27 +189,108 @@ class StudentConnectActivity : AppCompatActivity() {
 
             override fun afterTextChanged(s: Editable?) = Unit
         })
-        signOutButton.setOnClickListener {
-            auth.signOut()
-            passwordInput.text?.clear()
-            profileLoadInProgressFor = null
-            profileLoadedFor = null
-            profileSetupPanel.visibility = View.GONE
-            profileCard.visibility = View.GONE
-            studentSearchPanel.visibility = View.GONE
-            studentSearchResultCard.visibility = View.GONE
-            currentStudentProfile = null
-            searchedStudentProfile = null
-            sendFriendRequestButton.visibility = View.GONE
-            friendRequestsPanel.visibility = View.GONE
-            clearFriendRequestLists()
-            friendRequestsLoadSequence++
-            friendRequestsLoadingFor = null
-            friendRequestsRefreshQueued = false
-            refreshFriendRequestsButton.isEnabled = true
-            renderCurrentUser()
-            statusText.text = "Signed out of Student Connect. Your university login is unchanged."
+        signOutButton.setOnClickListener { signOutStudentConnect() }
+    }
+
+    private fun signOutStudentConnect() {
+        val user = auth.currentUser
+        val preferences = getSharedPreferences(
+            StudentConnectNotificationHelper.PREFERENCES_NAME,
+            Context.MODE_PRIVATE
+        )
+        val registeredUid = preferences.getString(StudentConnectNotificationHelper.KEY_REGISTERED_UID, null)
+
+        if (user == null || !user.isEmailVerified || registeredUid != user.uid) {
+            finishStudentConnectSignOut()
+            return
         }
+
+        signOutButton.isEnabled = false
+        statusText.text = "Disabling notifications on this device…"
+        notificationTokenRepository.deleteToken(user.uid) { error ->
+            if (auth.currentUser?.uid != user.uid) return@deleteToken
+            if (error != null) {
+                signOutButton.isEnabled = true
+                statusText.text = "Could not unregister this device from notifications. Check your internet connection and try signing out again."
+                return@deleteToken
+            }
+
+            preferences.edit()
+                .remove(StudentConnectNotificationHelper.KEY_REGISTERED_UID)
+                .apply()
+            finishStudentConnectSignOut()
+        }
+    }
+
+    private fun finishStudentConnectSignOut() {
+        auth.signOut()
+        passwordInput.text?.clear()
+        profileLoadInProgressFor = null
+        profileLoadedFor = null
+        profileSetupPanel.visibility = View.GONE
+        profileCard.visibility = View.GONE
+        studentSearchPanel.visibility = View.GONE
+        studentSearchResultCard.visibility = View.GONE
+        currentStudentProfile = null
+        searchedStudentProfile = null
+        sendFriendRequestButton.visibility = View.GONE
+        friendRequestsPanel.visibility = View.GONE
+        clearFriendRequestLists()
+        friendRequestsLoadSequence++
+        friendRequestsLoadingFor = null
+        friendRequestsRefreshQueued = false
+        refreshFriendRequestsButton.isEnabled = true
+        signOutButton.isEnabled = true
+        renderCurrentUser()
+        statusText.text = "Signed out of Student Connect. Your university login is unchanged."
+    }
+
+    private fun requestStudentConnectNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+        val preferences = getSharedPreferences(
+            StudentConnectNotificationHelper.PREFERENCES_NAME,
+            Context.MODE_PRIVATE
+        )
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            preferences.edit()
+                .putBoolean(StudentConnectNotificationHelper.KEY_PERMISSION_REQUESTED, true)
+                .apply()
+            return
+        }
+        if (preferences.getBoolean(StudentConnectNotificationHelper.KEY_PERMISSION_REQUESTED, false)) return
+
+        preferences.edit()
+            .putBoolean(StudentConnectNotificationHelper.KEY_PERMISSION_REQUESTED, true)
+            .apply()
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun registerStudentNotificationToken(uid: String) {
+        FirebaseMessaging.getInstance().token
+            .addOnSuccessListener(this) { token ->
+                val user = auth.currentUser
+                if (user == null || user.uid != uid || !user.isEmailVerified) return@addOnSuccessListener
+
+                notificationTokenRepository.saveToken(uid, token) { error ->
+                    if (auth.currentUser?.uid != uid) return@saveToken
+                    if (error != null) {
+                        Log.w("StudentConnectPush", "Could not register this device for notifications.", error)
+                        return@saveToken
+                    }
+                    getSharedPreferences(
+                        StudentConnectNotificationHelper.PREFERENCES_NAME,
+                        Context.MODE_PRIVATE
+                    ).edit()
+                        .putString(StudentConnectNotificationHelper.KEY_REGISTERED_UID, uid)
+                        .apply()
+                }
+            }
+            .addOnFailureListener(this) { error ->
+                Log.w("StudentConnectPush", "Could not retrieve this device's notification token.", error)
+            }
     }
 
     private fun createAccount() {
@@ -485,6 +583,8 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private fun showProfile(profile: StudentProfile) {
         currentStudentProfile = profile
+        requestStudentConnectNotificationPermissionIfNeeded()
+        registerStudentNotificationToken(profile.uid)
         profileSetupPanel.visibility = View.GONE
         profileCard.visibility = View.VISIBLE
         studentSearchPanel.visibility = View.VISIBLE

@@ -134,6 +134,26 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // A student can register only their own FCM device token. Tokens are
+    // intentionally not readable by clients; trusted server code sends messages.
+    match /studentNotificationTokens/{uid} {
+      allow get, list: if false;
+
+      allow create, update: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid
+        && exists(/databases/$(database)/documents/profiles/$(uid))
+        && request.resource.data.keys().hasAll(['uid', 'token', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'token', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.token is string
+        && request.resource.data.token.size() >= 1
+        && request.resource.data.token.size() <= 4096
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid;
+    }
+
     match /studentIds/{publicId} {
       allow get: if signedInWithVerifiedEmail();
       allow list: if false;
