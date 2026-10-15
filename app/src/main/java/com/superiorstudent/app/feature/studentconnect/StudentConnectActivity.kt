@@ -18,6 +18,7 @@ import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
+import com.superiorstudent.app.feature.studentconnect.data.FriendRequestRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 
@@ -52,8 +53,12 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var studentSearchResultCard: View
     private lateinit var studentSearchResultName: TextView
     private lateinit var studentSearchResultId: TextView
+    private lateinit var sendFriendRequestButton: Button
 
     private val profileRepository by lazy { StudentProfileRepository() }
+    private val friendRequestRepository by lazy { FriendRequestRepository() }
+    private var currentStudentProfile: StudentProfile? = null
+    private var searchedStudentProfile: StudentProfile? = null
     private var profileLoadInProgressFor: String? = null
     private var profileLoadedFor: String? = null
 
@@ -99,6 +104,7 @@ class StudentConnectActivity : AppCompatActivity() {
         studentSearchResultCard = findViewById(R.id.studentConnectSearchResultCard)
         studentSearchResultName = findViewById(R.id.studentConnectSearchResultName)
         studentSearchResultId = findViewById(R.id.studentConnectSearchResultId)
+        sendFriendRequestButton = findViewById(R.id.studentConnectSendFriendRequestButton)
 
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
         createAccountButton.setOnClickListener { createAccount() }
@@ -108,6 +114,7 @@ class StudentConnectActivity : AppCompatActivity() {
         createProfileButton.setOnClickListener { createStudentProfile() }
         copyPublicIdButton.setOnClickListener { copyPublicId() }
         studentSearchButton.setOnClickListener { searchStudentByPublicId() }
+        sendFriendRequestButton.setOnClickListener { sendFriendRequest() }
         signOutButton.setOnClickListener {
             auth.signOut()
             passwordInput.text?.clear()
@@ -117,6 +124,9 @@ class StudentConnectActivity : AppCompatActivity() {
             profileCard.visibility = View.GONE
             studentSearchPanel.visibility = View.GONE
             studentSearchResultCard.visibility = View.GONE
+            currentStudentProfile = null
+            searchedStudentProfile = null
+            sendFriendRequestButton.visibility = View.GONE
             renderCurrentUser()
             statusText.text = "Signed out of Student Connect. Your university login is unchanged."
         }
@@ -258,6 +268,9 @@ class StudentConnectActivity : AppCompatActivity() {
             studentSearchResultCard.visibility = View.GONE
             profileLoadInProgressFor = null
             profileLoadedFor = null
+            currentStudentProfile = null
+            searchedStudentProfile = null
+            sendFriendRequestButton.visibility = View.GONE
             statusText.text = "Create a separate account or sign in. Do not reuse your university ERP password."
             resendVerificationButton.visibility = View.GONE
             checkVerificationButton.visibility = View.GONE
@@ -317,6 +330,9 @@ class StudentConnectActivity : AppCompatActivity() {
                 }
 
                 if (profile == null) {
+                    currentStudentProfile = null
+                    searchedStudentProfile = null
+                    sendFriendRequestButton.visibility = View.GONE
                     profileCard.visibility = View.GONE
                     studentSearchPanel.visibility = View.GONE
                     studentSearchResultCard.visibility = View.GONE
@@ -396,6 +412,7 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun showProfile(profile: StudentProfile) {
+        currentStudentProfile = profile
         profileSetupPanel.visibility = View.GONE
         profileCard.visibility = View.VISIBLE
         studentSearchPanel.visibility = View.VISIBLE
@@ -410,6 +427,10 @@ class StudentConnectActivity : AppCompatActivity() {
             return
         }
 
+        searchedStudentProfile = null
+        sendFriendRequestButton.visibility = View.GONE
+        sendFriendRequestButton.isEnabled = true
+        sendFriendRequestButton.text = "Send friend request"
         val publicId = StudentPublicIdFormat.normalize(studentSearchInput.text?.toString().orEmpty())
         if (!StudentPublicIdFormat.isValid(publicId)) {
             studentSearchResultCard.visibility = View.GONE
@@ -451,8 +472,12 @@ class StudentConnectActivity : AppCompatActivity() {
                     statusText.text = "No student found with ID $publicId. Check the ID and try again."
                 }
                 else -> {
+                    searchedStudentProfile = profile
                     studentSearchResultName.text = profile.displayName
                     studentSearchResultId.text = profile.publicId
+                    sendFriendRequestButton.text = "Send friend request"
+                    sendFriendRequestButton.isEnabled = true
+                    sendFriendRequestButton.visibility = View.VISIBLE
                     studentSearchResultCard.visibility = View.VISIBLE
                     statusText.text = "Student found. Only their public name and ID are shown."
                 }
@@ -460,6 +485,63 @@ class StudentConnectActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun sendFriendRequest() {
+        val sender = auth.currentUser
+        if (sender == null || !sender.isEmailVerified) {
+            statusText.text = "Sign in with your verified Student Connect account first."
+            return
+        }
+
+        val senderProfile = currentStudentProfile
+        val receiverProfile = searchedStudentProfile
+        if (senderProfile == null || senderProfile.uid != sender.uid || receiverProfile == null) {
+            statusText.text = "Search for a classmate again before sending a friend request."
+            sendFriendRequestButton.visibility = View.GONE
+            return
+        }
+
+        if (senderProfile.uid == receiverProfile.uid) {
+            statusText.text = "You cannot send a friend request to yourself."
+            sendFriendRequestButton.visibility = View.GONE
+            return
+        }
+
+        sendFriendRequestButton.isEnabled = false
+        statusText.text = "Sending friend request…"
+        friendRequestRepository.sendRequest(senderProfile, receiverProfile) { requestStatus, error ->
+            if (auth.currentUser?.uid != sender.uid) return@sendRequest
+
+            if (error != null) {
+                sendFriendRequestButton.isEnabled = true
+                statusText.text = if (
+                    error.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)
+                ) {
+                    "Firestore blocked this request. Confirm the latest firestore.rules are published in Firebase Console, then retry."
+                } else {
+                    "Could not send the friend request. Check your internet connection and try again."
+                }
+                return@sendRequest
+            }
+
+            when (requestStatus) {
+                "pending" -> {
+                    sendFriendRequestButton.text = "Request pending"
+                    sendFriendRequestButton.isEnabled = false
+                    statusText.text = "Friend request is pending. You can check its response when the Requests section is enabled."
+                }
+                "accepted" -> {
+                    sendFriendRequestButton.text = "Already connected"
+                    sendFriendRequestButton.isEnabled = false
+                    statusText.text = "You are already connected with this student."
+                }
+                else -> {
+                    sendFriendRequestButton.isEnabled = true
+                    statusText.text = "Could not confirm the friend request status. Please try again."
+                }
+            }
+        }
+    }
 
     private fun copyPublicId() {
         val id = profilePublicId.text?.toString().orEmpty()
