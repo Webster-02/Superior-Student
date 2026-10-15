@@ -434,7 +434,7 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Request lists stay hidden until Activity wiring and handlers are added and tested. -->
+        <!-- Request lists are revealed after a verified student profile loads. -->
         <LinearLayout
             android:id="@+id/studentConnectFriendRequestsPanel"
             android:layout_width="match_parent"
@@ -487,6 +487,15 @@
                 android:orientation="vertical" />
 
             <TextView
+                android:id="@+id/studentConnectIncomingRequestsEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="No incoming friend requests yet."
+                android:textColor="@color/ink_500"
+                android:textSize="13sp" />
+
+            <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
@@ -500,6 +509,15 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/studentConnectOutgoingRequestsEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="You haven't sent any friend requests yet."
+                android:textColor="@color/ink_500"
+                android:textSize="13sp" />
         </LinearLayout>
 
         <TextView

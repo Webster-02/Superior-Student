@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="10dp"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="0dp"
+    app:strokeColor="@color/surface_stroke"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="14dp">
+
+        <TextView
+            android:id="@+id/studentConnectFriendRequestName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/ink_900"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/studentConnectFriendRequestId"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:letterSpacing="0.04"
+            android:textColor="@color/brand_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/studentConnectFriendRequestStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/ink_500"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/studentConnectFriendRequestActions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectFriendRequestAcceptButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Accept"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:visibility="gone"
+                app:backgroundTint="@color/brand_primary"
+                app:cornerRadius="10dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectFriendRequestRejectButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Reject"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:visibility="gone"
+                android:textColor="@color/brand_primary"
+                app:backgroundTint="@color/surface"
+                app:cornerRadius="10dp"
+                app:strokeColor="@color/surface_stroke"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectFriendRequestCancelButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="Cancel request"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:visibility="gone"
+                android:textColor="@color/brand_primary"
+                app:backgroundTint="@color/surface"
+                app:cornerRadius="10dp"
+                app:strokeColor="@color/surface_stroke"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectFriendRequestResendButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="Resend request"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:visibility="gone"
+                app:backgroundTint="@color/brand_primary"
+                app:cornerRadius="10dp" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
