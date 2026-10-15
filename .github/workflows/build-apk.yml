@@ -34,6 +34,12 @@ jobs:
       - name: Validate embedded JavaScript
         run: find app/src/main/assets/js -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
 
+      - name: Validate notification Cloud Functions
+        run: |
+          node --check functions/index.js
+          node --check functions/src/notificationPayloads.js
+          node --test functions/test/*.test.js
+
       - name: Clean project
         run: gradle clean --no-daemon
 

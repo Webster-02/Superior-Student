@@ -1,0 +1,17 @@
+{
+  "name": "pachattarpercent-student-connect-functions",
+  "private": true,
+  "description": "Trusted push notification triggers for Student Connect.",
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check index.js && node --check src/notificationPayloads.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  }
+}
