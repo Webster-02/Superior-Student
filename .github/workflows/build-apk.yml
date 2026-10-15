@@ -31,14 +31,19 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Set up Node.js for Cloud Functions
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
       - name: Validate embedded JavaScript
         run: find app/src/main/assets/js -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
 
-      - name: Validate notification Cloud Functions
+      - name: Install and validate notification Cloud Functions
         run: |
-          node --check functions/index.js
-          node --check functions/src/notificationPayloads.js
-          node --test functions/test/*.test.js
+          npm install --prefix functions --no-audit --no-fund
+          npm run check --prefix functions
+          npm test --prefix functions
 
       - name: Clean project
         run: gradle clean --no-daemon
