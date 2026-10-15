@@ -42,3 +42,14 @@ However, a verified Gmail/Firebase account is **not proof of current Superior Un
 5. Search your own ID and a made-up ID too; the app should show a self-ID message and a helpful not-found message.
 
 A verified Firebase email is still not proof of current Superior University enrollment. Institutional verification must be designed before advertising the directory as a university-verified student directory.
+
+
+## Friend Requests step
+
+This build adds directional friend requests in friendRequests/{senderUid}_{receiverUid} documents.
+
+Before testing, publish the latest firestore.rules file in Firebase Console → Firestore Database → Rules. Preserve or merge rules for unrelated collections instead of blindly replacing them.
+
+Test using two verified accounts that each have a profile. From account A, search account B by public ID and send a friend request. From account B, refresh Friend Requests, accept or reject the incoming request, and confirm account A sees the updated status after refreshing. Also test cancellation and resend after a rejected or cancelled request. This step records request status only; contacts and chat are not enabled yet.
+
+The current Firebase email verification confirms access to an email address, not enrollment in Superior University. A trusted institutional verification flow is needed before presenting the directory as an enrollment-verified student directory.

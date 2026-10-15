@@ -49,6 +49,129 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /friendRequests/{requestId} {
+      // Only participants can read a request. Reads must be filtered by senderUid or receiverUid.
+      allow get, list: if signedInWithVerifiedEmail()
+        && (
+          resource.data.senderUid == request.auth.uid
+          || resource.data.receiverUid == request.auth.uid
+        );
+
+      allow create: if signedInWithVerifiedEmail()
+        && requestId == request.resource.data.senderUid + "_" + request.resource.data.receiverUid
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.receiverUid is string
+        && request.resource.data.receiverUid != request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() >= 2
+        && request.resource.data.senderName.size() <= 60
+        && request.resource.data.receiverName is string
+        && request.resource.data.receiverName.size() >= 2
+        && request.resource.data.receiverName.size() <= 60
+        && request.resource.data.senderPublicId is string
+        && request.resource.data.senderPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}      // A direct lookup is required for collision-free ID reservation.
+      // Collection enumeration remains blocked.
+      allow get: if signedInWithVerifiedEmail();
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.uid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.publicId == publicId;
+
+      // IDs stay reserved forever so they can never be reassigned.
+      allow update, delete: if false;
+    }
+  }
+}
+)
+        && request.resource.data.receiverPublicId is string
+        && request.resource.data.receiverPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}      // A direct lookup is required for collision-free ID reservation.
+      // Collection enumeration remains blocked.
+      allow get: if signedInWithVerifiedEmail();
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.uid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.publicId == publicId;
+
+      // IDs stay reserved forever so they can never be reassigned.
+      allow update, delete: if false;
+    }
+  }
+}
+)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid))
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.uid == request.resource.data.senderUid
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.displayName == request.resource.data.senderName
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.publicId == request.resource.data.senderPublicId
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid))
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.uid == request.resource.data.receiverUid
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.displayName == request.resource.data.receiverName
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.publicId == request.resource.data.receiverPublicId;
+
+      allow update: if signedInWithVerifiedEmail()
+        && request.resource.data.keys().hasAll([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && (
+          (
+            resource.data.receiverUid == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status in ['accepted', 'rejected']
+          )
+          || (
+            resource.data.senderUid == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'cancelled'
+          )
+          || (
+            resource.data.senderUid == request.auth.uid
+            && resource.data.status in ['rejected', 'cancelled']
+            && request.resource.data.status == 'pending'
+          )
+        );
+
+      allow delete: if false;
+    }
+
     match /studentIds/{publicId} {
       // A direct lookup is required for collision-free ID reservation.
       // Collection enumeration remains blocked.
