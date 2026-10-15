@@ -3,6 +3,7 @@ package com.superiorstudent.app
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.content.res.ColorStateList
@@ -216,6 +217,14 @@ class MainActivity : AppCompatActivity() {
         binding.closeMenuButton.setOnClickListener { closeSideMenu() }
         binding.menuScrim.setOnClickListener { closeSideMenu() }
         binding.menuProfileButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.PROFILE) }
+        binding.menuStudentConnectButton.setOnClickListener {
+            closeSideMenu()
+            if (!loggedIn) {
+                Toast.makeText(this, "Please sign in to your university account first.", Toast.LENGTH_LONG).show()
+            } else {
+                startActivity(Intent(this, com.superiorstudent.app.feature.studentconnect.StudentConnectActivity::class.java))
+            }
+        }
         binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.RESULTS) }
         binding.menuEnrolledCoursesButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.ENROLLED_COURSES) }
         binding.menuSettingsButton.setOnClickListener { closeSideMenu(); showThemePicker() }
@@ -233,6 +242,7 @@ class MainActivity : AppCompatActivity() {
         attachPressFeedback(binding.navAttendanceButton)
         attachPressFeedback(binding.navResultsButton)
         attachPressFeedback(binding.navMoreButton)
+        attachPressFeedback(binding.menuStudentConnectButton)
 
         val hasSavedSession = try { sessionStore.sessionActive } catch (t: Throwable) {
             android.util.Log.w("MainActivity", "Ignoring unreadable saved session", t)
@@ -1874,6 +1884,7 @@ class MainActivity : AppCompatActivity() {
         styleTextAndIcons(binding.sideMenu)
         val menuRowBackground = roundedBackground(background, 12f)
         binding.menuProfileButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
+        binding.menuStudentConnectButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
         binding.menuEnrolledCoursesButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
         binding.menuResultsButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
         binding.menuSettingsButton.background = themedCard(tintAlpha(primary, 22), 13f)
