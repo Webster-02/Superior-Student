@@ -19,6 +19,7 @@ import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 
 /**
  * Student Connect uses a separate, recoverable Firebase identity.
