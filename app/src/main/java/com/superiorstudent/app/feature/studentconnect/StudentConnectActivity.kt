@@ -3,33 +3,23 @@ package com.superiorstudent.app.feature.studentconnect
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.res.ColorStateList
 import android.os.Bundle
 import android.util.Patterns
-import android.graphics.Color
-import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
-import com.google.android.material.button.MaterialButton
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
-import com.superiorstudent.app.feature.studentconnect.data.FriendRequest
-import com.superiorstudent.app.feature.studentconnect.data.FriendRequestRepository
-import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
 
 /**
  * Student Connect uses a separate, recoverable Firebase identity.
@@ -62,16 +52,8 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var studentSearchResultCard: View
     private lateinit var studentSearchResultName: TextView
     private lateinit var studentSearchResultId: TextView
-    private lateinit var sendFriendRequestButton: Button
-    private lateinit var friendRequestsPanel: View
-    private lateinit var refreshFriendRequestsButton: Button
-    private lateinit var incomingRequestsContainer: LinearLayout
-    private lateinit var outgoingRequestsContainer: LinearLayout
 
     private val profileRepository by lazy { StudentProfileRepository() }
-    private val friendRequestRepository by lazy { FriendRequestRepository() }
-    private var myProfile: StudentProfile? = null
-    private var searchedProfile: StudentProfile? = null
     private var profileLoadInProgressFor: String? = null
     private var profileLoadedFor: String? = null
 
@@ -117,11 +99,6 @@ class StudentConnectActivity : AppCompatActivity() {
         studentSearchResultCard = findViewById(R.id.studentConnectSearchResultCard)
         studentSearchResultName = findViewById(R.id.studentConnectSearchResultName)
         studentSearchResultId = findViewById(R.id.studentConnectSearchResultId)
-        sendFriendRequestButton = findViewById(R.id.studentConnectSendFriendRequestButton)
-        friendRequestsPanel = findViewById(R.id.studentConnectFriendRequestsPanel)
-        refreshFriendRequestsButton = findViewById(R.id.studentConnectRefreshFriendRequestsButton)
-        incomingRequestsContainer = findViewById(R.id.studentConnectIncomingRequestsContainer)
-        outgoingRequestsContainer = findViewById(R.id.studentConnectOutgoingRequestsContainer)
 
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
         createAccountButton.setOnClickListener { createAccount() }
@@ -131,8 +108,6 @@ class StudentConnectActivity : AppCompatActivity() {
         createProfileButton.setOnClickListener { createStudentProfile() }
         copyPublicIdButton.setOnClickListener { copyPublicId() }
         studentSearchButton.setOnClickListener { searchStudentByPublicId() }
-        sendFriendRequestButton.setOnClickListener { sendFriendRequest() }
-        refreshFriendRequestsButton.setOnClickListener { refreshFriendRequests() }
         signOutButton.setOnClickListener {
             auth.signOut()
             passwordInput.text?.clear()
@@ -142,9 +117,6 @@ class StudentConnectActivity : AppCompatActivity() {
             profileCard.visibility = View.GONE
             studentSearchPanel.visibility = View.GONE
             studentSearchResultCard.visibility = View.GONE
-            friendRequestsPanel.visibility = View.GONE
-            searchedProfile = null
-            myProfile = null
             renderCurrentUser()
             statusText.text = "Signed out of Student Connect. Your university login is unchanged."
         }
@@ -284,9 +256,6 @@ class StudentConnectActivity : AppCompatActivity() {
             profileCard.visibility = View.GONE
             studentSearchPanel.visibility = View.GONE
             studentSearchResultCard.visibility = View.GONE
-            friendRequestsPanel.visibility = View.GONE
-            searchedProfile = null
-            myProfile = null
             profileLoadInProgressFor = null
             profileLoadedFor = null
             statusText.text = "Create a separate account or sign in. Do not reuse your university ERP password."
@@ -343,7 +312,6 @@ class StudentConnectActivity : AppCompatActivity() {
                     profileCard.visibility = View.GONE
                     studentSearchPanel.visibility = View.GONE
                     studentSearchResultCard.visibility = View.GONE
-                    friendRequestsPanel.visibility = View.GONE
                     statusText.text = "Could not load your profile. Check Firestore and its published security rules, then reopen Student Connect."
                     return@getOwnProfile
                 }
@@ -352,7 +320,6 @@ class StudentConnectActivity : AppCompatActivity() {
                     profileCard.visibility = View.GONE
                     studentSearchPanel.visibility = View.GONE
                     studentSearchResultCard.visibility = View.GONE
-                    friendRequestsPanel.visibility = View.GONE
                     profileSetupPanel.visibility = View.VISIBLE
                     if (profileNameInput.text.isNullOrBlank()) {
                         val cachedName = try { ProfileCache(this).studentName.trim() } catch (_: Exception) { "" }
@@ -429,14 +396,11 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun showProfile(profile: StudentProfile) {
-        myProfile = profile
         profileSetupPanel.visibility = View.GONE
         profileCard.visibility = View.VISIBLE
         studentSearchPanel.visibility = View.VISIBLE
-        friendRequestsPanel.visibility = View.VISIBLE
         profileDisplayName.text = profile.displayName
         profilePublicId.text = profile.publicId
-        refreshFriendRequests()
     }
 
     private fun searchStudentByPublicId() {
@@ -448,7 +412,6 @@ class StudentConnectActivity : AppCompatActivity() {
 
         val publicId = StudentPublicIdFormat.normalize(studentSearchInput.text?.toString().orEmpty())
         if (!StudentPublicIdFormat.isValid(publicId)) {
-            searchedProfile = null
             studentSearchResultCard.visibility = View.GONE
             statusText.text = "Enter the complete student ID, for example UNI-ABCDEFG."
             studentSearchInput.requestFocus()
@@ -457,17 +420,13 @@ class StudentConnectActivity : AppCompatActivity() {
 
         val ownId = StudentPublicIdFormat.normalize(profilePublicId.text?.toString().orEmpty())
         if (publicId == ownId) {
-            searchedProfile = null
             studentSearchResultCard.visibility = View.GONE
             statusText.text = "That is your own student ID. Try a classmate's ID."
             return
         }
 
         studentSearchButton.isEnabled = false
-        searchedProfile = null
         studentSearchResultCard.visibility = View.GONE
-        sendFriendRequestButton.isEnabled = false
-        sendFriendRequestButton.text = "Send friend request"
         statusText.text = "Searching for student…"
 
         profileRepository.findByPublicId(publicId, currentUser.uid) { profile, error ->
@@ -476,12 +435,10 @@ class StudentConnectActivity : AppCompatActivity() {
 
             when {
                 error is IllegalArgumentException -> {
-                    searchedProfile = null
                     studentSearchResultCard.visibility = View.GONE
                     statusText.text = error.message.orEmpty()
                 }
                 error != null -> {
-                    searchedProfile = null
                     studentSearchResultCard.visibility = View.GONE
                     statusText.text = if (error.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
                         "Firestore rules blocked this search. Publish the updated firestore.rules file and try again."
@@ -490,16 +447,12 @@ class StudentConnectActivity : AppCompatActivity() {
                     }
                 }
                 profile == null -> {
-                    searchedProfile = null
                     studentSearchResultCard.visibility = View.GONE
                     statusText.text = "No student found with ID $publicId. Check the ID and try again."
                 }
                 else -> {
-                    searchedProfile = profile
                     studentSearchResultName.text = profile.displayName
                     studentSearchResultId.text = profile.publicId
-                    sendFriendRequestButton.isEnabled = true
-                    sendFriendRequestButton.text = "Send friend request"
                     studentSearchResultCard.visibility = View.VISIBLE
                     statusText.text = "Student found. Only their public name and ID are shown."
                 }
@@ -507,239 +460,6 @@ class StudentConnectActivity : AppCompatActivity() {
         }
     }
 
-
-    private fun sendFriendRequest() {
-        val sender = myProfile
-        val receiver = searchedProfile
-        val user = auth.currentUser
-        if (sender == null || receiver == null || user == null || !user.isEmailVerified) {
-            statusText.text = "Create your profile and sign in with your verified account first."
-            return
-        }
-        if (sender.uid != user.uid) {
-            statusText.text = "Your profile session changed. Reopen Student Connect and try again."
-            return
-        }
-        if (sender.uid == receiver.uid) {
-            statusText.text = "You cannot send a friend request to yourself."
-            return
-        }
-
-        sendFriendRequestButton.isEnabled = false
-        statusText.text = "Sending friend request…"
-        friendRequestRepository.sendRequest(sender, receiver) { requestStatus, error ->
-            if (auth.currentUser?.uid != user.uid) return@sendRequest
-            sendFriendRequestButton.isEnabled = true
-
-            if (error != null || requestStatus == null) {
-                statusText.text = when {
-                    error is IllegalArgumentException -> error.message.orEmpty()
-                    error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true) ->
-                        "Firestore blocked the request. Publish the latest friendRequests rules and retry."
-                    else ->
-                        "Could not send the request. Check your connection and Firestore rules, then retry."
-                }
-                return@sendRequest
-            }
-
-            when (requestStatus) {
-                FriendRequestStatus.PENDING -> {
-                    sendFriendRequestButton.text = "Request pending"
-                    sendFriendRequestButton.isEnabled = false
-                    statusText.text = "Friend request sent. You can cancel it from Sent Requests."
-                }
-                FriendRequestStatus.ACCEPTED -> {
-                    sendFriendRequestButton.text = "Request accepted"
-                    sendFriendRequestButton.isEnabled = false
-                    statusText.text = "This friend request was already accepted."
-                }
-                else -> statusText.text = "Friend request status: $requestStatus"
-            }
-            refreshFriendRequests()
-        }
-    }
-
-    private fun refreshFriendRequests() {
-        val user = auth.currentUser
-        if (user == null || !user.isEmailVerified || myProfile?.uid != user.uid) {
-            friendRequestsPanel.visibility = View.GONE
-            return
-        }
-
-        refreshFriendRequestsButton.isEnabled = false
-        friendRequestRepository.loadRequests(user.uid) { requests, error ->
-            if (auth.currentUser?.uid != user.uid) return@loadRequests
-            refreshFriendRequestsButton.isEnabled = true
-
-            if (error != null || requests == null) {
-                statusText.text = if (error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
-                    "Firestore rules blocked friend request access. Publish the latest firestore.rules and retry."
-                } else {
-                    "Could not refresh friend requests. Check your connection and Firestore rules."
-                }
-                return@loadRequests
-            }
-            renderFriendRequests(requests, user.uid)
-        }
-    }
-
-    private fun renderFriendRequests(requests: List<FriendRequest>, uid: String) {
-        incomingRequestsContainer.removeAllViews()
-        outgoingRequestsContainer.removeAllViews()
-
-        val incoming = requests
-            .filter { it.receiverUid == uid && it.status == FriendRequestStatus.PENDING }
-            .sortedBy { it.senderName.lowercase() }
-        val outgoing = requests
-            .filter { it.senderUid == uid }
-            .sortedBy { it.receiverName.lowercase() }
-
-        if (incoming.isEmpty()) {
-            incomingRequestsContainer.addView(createHintText("No incoming requests yet."))
-        } else {
-            incoming.forEach { addIncomingRequestRow(it) }
-        }
-
-        if (outgoing.isEmpty()) {
-            outgoingRequestsContainer.addView(createHintText("No sent requests yet."))
-        } else {
-            outgoing.forEach { addOutgoingRequestRow(it) }
-        }
-    }
-
-    private fun addIncomingRequestRow(request: FriendRequest) {
-        val row = createRequestCard()
-        row.addView(createRequestTitle(request.senderName))
-        row.addView(createHintText(request.senderPublicId + " sent you a friend request."))
-
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-        }
-        val accept = createActionButton("Accept", R.color.brand_primary, R.color.on_brand)
-        val reject = createActionButton("Reject", R.color.danger_bg, R.color.danger)
-        accept.setOnClickListener { updateFriendRequest(request, FriendRequestStatus.ACCEPTED) }
-        reject.setOnClickListener { updateFriendRequest(request, FriendRequestStatus.REJECTED) }
-        actions.addView(accept, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
-            marginEnd = dp(8)
-        })
-        actions.addView(reject, LinearLayout.LayoutParams(0, dp(44), 1f))
-        row.addView(actions, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(10) })
-        addRequestCard(incomingRequestsContainer, row)
-    }
-
-    private fun addOutgoingRequestRow(request: FriendRequest) {
-        val row = createRequestCard()
-        row.addView(createRequestTitle(request.receiverName))
-        row.addView(createHintText(request.receiverPublicId + "  •  " + prettyStatus(request.status)))
-
-        when (request.status) {
-            FriendRequestStatus.PENDING -> {
-                val cancel = createActionButton("Cancel request", R.color.danger_bg, R.color.danger)
-                cancel.setOnClickListener { updateFriendRequest(request, FriendRequestStatus.CANCELLED) }
-                row.addView(cancel, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
-                ).apply { topMargin = dp(10) })
-            }
-            FriendRequestStatus.REJECTED, FriendRequestStatus.CANCELLED -> {
-                val resend = createActionButton("Send again", R.color.brand_primary, R.color.on_brand)
-                resend.setOnClickListener { updateFriendRequest(request, FriendRequestStatus.PENDING) }
-                row.addView(resend, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
-                ).apply { topMargin = dp(10) })
-            }
-        }
-        addRequestCard(outgoingRequestsContainer, row)
-    }
-
-    private fun updateFriendRequest(request: FriendRequest, nextStatus: String) {
-        val user = auth.currentUser
-        if (user == null || !user.isEmailVerified) {
-            statusText.text = "Sign in with your verified Student Connect account first."
-            return
-        }
-
-        friendRequestRepository.updateStatus(request, user.uid, nextStatus) { error ->
-            if (auth.currentUser?.uid != user.uid) return@updateStatus
-            if (error != null) {
-                statusText.text = if (error.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
-                    "Firestore rules blocked that action. Publish the latest friendRequests rules and retry."
-                } else {
-                    error.message ?: "Could not update the friend request. Refresh and try again."
-                }
-                return@updateStatus
-            }
-
-            statusText.text = when (nextStatus) {
-                FriendRequestStatus.ACCEPTED -> "Friend request accepted."
-                FriendRequestStatus.REJECTED -> "Friend request rejected."
-                FriendRequestStatus.CANCELLED -> "Friend request cancelled."
-                FriendRequestStatus.PENDING -> "Friend request sent again."
-                else -> "Friend request updated."
-            }
-            refreshFriendRequests()
-        }
-    }
-
-    private fun createRequestCard(): LinearLayout =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(13), dp(14), dp(13))
-            background = ContextCompat.getDrawable(this@StudentConnectActivity, R.drawable.bg_brand_card)
-        }
-
-    private fun createRequestTitle(value: String): TextView =
-        TextView(this).apply {
-            text = value
-            textSize = 15f
-            setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.ink_900))
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }
-
-    private fun createHintText(value: String): TextView =
-        TextView(this).apply {
-            text = value
-            textSize = 13f
-            setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.ink_500))
-        }
-
-    private fun addRequestCard(container: LinearLayout, row: View) {
-        container.addView(row, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(9) })
-    }
-
-    private fun createActionButton(
-        label: String,
-        backgroundColor: Int,
-        textColor: Int
-    ): MaterialButton = MaterialButton(this).apply {
-        text = label
-        isAllCaps = false
-        cornerRadius = dp(12)
-        minHeight = dp(44)
-        setTextColor(ContextCompat.getColor(this@StudentConnectActivity, textColor))
-        backgroundTintList = ColorStateList.valueOf(
-            ContextCompat.getColor(this@StudentConnectActivity, backgroundColor)
-        )
-        insetTop = 0
-        insetBottom = 0
-    }
-
-    private fun prettyStatus(status: String): String = when (status) {
-        FriendRequestStatus.PENDING -> "Pending"
-        FriendRequestStatus.ACCEPTED -> "Accepted"
-        FriendRequestStatus.REJECTED -> "Rejected"
-        FriendRequestStatus.CANCELLED -> "Cancelled"
-        else -> "Unknown"
-    }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
 
     private fun copyPublicId() {
         val id = profilePublicId.text?.toString().orEmpty()
@@ -761,8 +481,6 @@ class StudentConnectActivity : AppCompatActivity() {
         copyPublicIdButton.isEnabled = !busy
         studentSearchInput.isEnabled = !busy
         studentSearchButton.isEnabled = !busy
-        sendFriendRequestButton.isEnabled = !busy
-        refreshFriendRequestsButton.isEnabled = !busy
     }
 
     private fun showAuthError(error: Exception?, creatingAccount: Boolean) {
