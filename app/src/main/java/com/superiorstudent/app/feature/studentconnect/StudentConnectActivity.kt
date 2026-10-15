@@ -694,7 +694,7 @@ class StudentConnectActivity : AppCompatActivity() {
         }
     }
 
-    private fun formatNotificationTime(timestamp: com.google.firebase.firestore.Timestamp?): String {
+    private fun formatNotificationTime(timestamp: com.google.firebase.Timestamp?): String {
         if (timestamp == null) return "Just now"
         val elapsed = (System.currentTimeMillis() - timestamp.toDate().time).coerceAtLeast(0L)
         return when {
