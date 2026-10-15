@@ -212,6 +212,125 @@
                 app:cornerRadius="14dp" />
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/studentConnectProfileSetup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Create your student profile"
+                android:textColor="@color/ink_900"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="2dp"
+                android:text="Choose the name classmates will see. Your email and ERP username are not added to the public profile."
+                android:textColor="@color/ink_500"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/studentConnectDisplayNameInput"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:layout_marginTop="12dp"
+                android:autofillHints="name"
+                android:backgroundTint="@color/brand_primary"
+                android:hint="Your display name"
+                android:inputType="textPersonName|textCapWords"
+                android:maxLength="60"
+                android:maxLines="1"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textColor="@color/ink_900"
+                android:textColorHint="@color/ink_400"
+                android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectCreateProfileButton"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:layout_marginTop="14dp"
+                android:text="Create my student profile"
+                android:textAllCaps="false"
+                android:textSize="14sp"
+                app:backgroundTint="@color/brand_primary"
+                app:cornerRadius="14dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/studentConnectProfileCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical"
+            android:padding="18dp"
+            android:background="@drawable/bg_brand_card"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Your student profile"
+                android:textColor="@color/ink_900"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="Display name"
+                android:textColor="@color/ink_500"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/studentConnectProfileDisplayName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/ink_900"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Unique student ID"
+                android:textColor="@color/ink_500"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/studentConnectProfilePublicId"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:letterSpacing="0.08"
+                android:textColor="@color/brand_primary"
+                android:textSize="23sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectCopyPublicIdButton"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="12dp"
+                android:text="Copy student ID"
+                android:textAllCaps="false"
+                android:textSize="14sp"
+                app:backgroundTint="@color/brand_primary"
+                app:cornerRadius="14dp" />
+        </LinearLayout>
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

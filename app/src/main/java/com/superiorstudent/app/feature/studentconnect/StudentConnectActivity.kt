@@ -1,5 +1,8 @@
 package com.superiorstudent.app.feature.studentconnect
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.util.Patterns
 import android.view.View
@@ -13,6 +16,9 @@ import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
+import com.superiorstudent.app.feature.profile.data.ProfileCache
+import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
+import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
 
 /**
  * Student Connect uses a separate, recoverable Firebase identity.
@@ -32,6 +38,17 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var resendVerificationButton: Button
     private lateinit var checkVerificationButton: Button
     private lateinit var signOutButton: Button
+    private lateinit var profileSetupPanel: View
+    private lateinit var profileNameInput: EditText
+    private lateinit var createProfileButton: Button
+    private lateinit var profileCard: View
+    private lateinit var profileDisplayName: TextView
+    private lateinit var profilePublicId: TextView
+    private lateinit var copyPublicIdButton: Button
+
+    private val profileRepository by lazy { StudentProfileRepository() }
+    private var profileLoadInProgressFor: String? = null
+    private var profileLoadedFor: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,15 +79,28 @@ class StudentConnectActivity : AppCompatActivity() {
         resendVerificationButton = findViewById(R.id.studentConnectResendVerificationButton)
         checkVerificationButton = findViewById(R.id.studentConnectCheckVerificationButton)
         signOutButton = findViewById(R.id.studentConnectSignOutButton)
+        profileSetupPanel = findViewById(R.id.studentConnectProfileSetup)
+        profileNameInput = findViewById(R.id.studentConnectDisplayNameInput)
+        createProfileButton = findViewById(R.id.studentConnectCreateProfileButton)
+        profileCard = findViewById(R.id.studentConnectProfileCard)
+        profileDisplayName = findViewById(R.id.studentConnectProfileDisplayName)
+        profilePublicId = findViewById(R.id.studentConnectProfilePublicId)
+        copyPublicIdButton = findViewById(R.id.studentConnectCopyPublicIdButton)
 
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
         createAccountButton.setOnClickListener { createAccount() }
         signInButton.setOnClickListener { signIn() }
         resendVerificationButton.setOnClickListener { resendVerificationEmail() }
         checkVerificationButton.setOnClickListener { refreshVerificationStatus(silent = false) }
+        createProfileButton.setOnClickListener { createStudentProfile() }
+        copyPublicIdButton.setOnClickListener { copyPublicId() }
         signOutButton.setOnClickListener {
             auth.signOut()
             passwordInput.text?.clear()
+            profileLoadInProgressFor = null
+            profileLoadedFor = null
+            profileSetupPanel.visibility = View.GONE
+            profileCard.visibility = View.GONE
             renderCurrentUser()
             statusText.text = "Signed out of Student Connect. Your university login is unchanged."
         }
@@ -192,6 +222,10 @@ class StudentConnectActivity : AppCompatActivity() {
             } else {
                 "Email not verified yet. Open the email from Firebase, then check again."
             }
+            if (auth.currentUser?.isEmailVerified == true) {
+                profileLoadedFor = null
+                loadProfileIfNeeded(auth.currentUser!!.uid)
+            }
         }
     }
 
@@ -200,7 +234,12 @@ class StudentConnectActivity : AppCompatActivity() {
         val signedIn = user != null
         authForm.visibility = if (signedIn) View.GONE else View.VISIBLE
         signedInPanel.visibility = if (signedIn) View.VISIBLE else View.GONE
+
         if (user == null) {
+            profileSetupPanel.visibility = View.GONE
+            profileCard.visibility = View.GONE
+            profileLoadInProgressFor = null
+            profileLoadedFor = null
             statusText.text = "Create a separate account or sign in. Do not reuse your university ERP password."
             resendVerificationButton.visibility = View.GONE
             checkVerificationButton.visibility = View.GONE
@@ -211,11 +250,142 @@ class StudentConnectActivity : AppCompatActivity() {
         val verified = user.isEmailVerified
         resendVerificationButton.visibility = if (verified) View.GONE else View.VISIBLE
         checkVerificationButton.visibility = if (verified) View.GONE else View.VISIBLE
-        statusText.text = if (verified) {
-            "Email verified. Your Student Connect identity is ready."
+        if (verified) {
+            statusText.text = "Email verified. Checking your student profile…"
+            loadProfileIfNeeded(user.uid)
         } else {
-            "Email verification is required before a student profile can be created."
+            profileSetupPanel.visibility = View.GONE
+            profileCard.visibility = View.GONE
+            statusText.text = "Email verification is required before a student profile can be created."
         }
+    }
+
+    private fun loadProfileIfNeeded(uid: String) {
+        if (profileLoadInProgressFor == uid || profileLoadedFor == uid) return
+        profileLoadInProgressFor = uid
+        profileSetupPanel.visibility = View.GONE
+        profileCard.visibility = View.GONE
+        statusText.text = "Checking your student profile…"
+
+        val user = auth.currentUser
+        if (user == null || user.uid != uid) {
+            profileLoadInProgressFor = null
+            return
+        }
+
+        // Refresh the ID token so Firestore rules see the latest email_verified claim.
+        user.getIdToken(true).addOnCompleteListener(this) { tokenTask ->
+            if (auth.currentUser?.uid != uid) return@addOnCompleteListener
+            if (!tokenTask.isSuccessful) {
+                profileLoadInProgressFor = null
+                profileLoadedFor = uid
+                statusText.text = "Could not verify your Firebase session. Reopen Student Connect and try again."
+                return@addOnCompleteListener
+            }
+
+            profileRepository.getOwnProfile(uid) { profile, error ->
+                if (auth.currentUser?.uid != uid) return@getOwnProfile
+                profileLoadInProgressFor = null
+                profileLoadedFor = uid
+
+                if (error != null) {
+                    profileLoadedFor = null
+                    profileSetupPanel.visibility = View.GONE
+                    profileCard.visibility = View.GONE
+                    statusText.text = "Could not load your profile. Create the Firestore database and publish the included rules, then reopen Student Connect."
+                    return@getOwnProfile
+                }
+
+                if (profile == null) {
+                    profileCard.visibility = View.GONE
+                    profileSetupPanel.visibility = View.VISIBLE
+                    if (profileNameInput.text.isNullOrBlank()) {
+                        val cachedName = try { ProfileCache(this).studentName.trim() } catch (_: Exception) { "" }
+                        if (cachedName.length in 2..60) profileNameInput.setText(cachedName)
+                    }
+                    statusText.text = "Email verified. Create your student profile to reserve your unique ID."
+                } else {
+                    showProfile(profile)
+                    statusText.text = "Your student profile is ready. You can share your public ID with classmates."
+                }
+            }
+        }
+    }
+
+    private fun createStudentProfile() {
+        val user = auth.currentUser
+        if (user == null || !user.isEmailVerified) {
+            statusText.text = "Sign in and verify your email before creating a student profile."
+            return
+        }
+
+        val displayName = profileNameInput.text?.toString()?.trim().orEmpty()
+        if (displayName.replace(Regex("""\s+"""), " ").length !in 2..60) {
+            statusText.text = "Enter a display name between 2 and 60 characters."
+            profileNameInput.requestFocus()
+            return
+        }
+
+        setBusy(true)
+        statusText.text = "Confirming email verification and reserving your unique ID…"
+        user.reload().addOnCompleteListener(this) { reloadTask ->
+            if (auth.currentUser?.uid != user.uid) {
+                setBusy(false)
+                return@addOnCompleteListener
+            }
+            if (!reloadTask.isSuccessful || auth.currentUser?.isEmailVerified != true) {
+                setBusy(false)
+                statusText.text = "Firebase could not confirm the verified email. Please check verification and retry."
+                return@addOnCompleteListener
+            }
+
+            auth.currentUser?.getIdToken(true)?.addOnCompleteListener(this) { tokenTask ->
+                if (auth.currentUser?.uid != user.uid) {
+                    setBusy(false)
+                    return@addOnCompleteListener
+                }
+                if (!tokenTask.isSuccessful) {
+                    setBusy(false)
+                    statusText.text = "Could not refresh your secure Firebase session. Please retry."
+                    return@addOnCompleteListener
+                }
+
+                profileRepository.createProfile(user.uid, displayName) { profile, error ->
+                    setBusy(false)
+                    if (auth.currentUser?.uid != user.uid) return@createProfile
+                    if (error != null || profile == null) {
+                        profileLoadedFor = null
+                        statusText.text = when {
+                            error is IllegalArgumentException -> error.message.orEmpty()
+                            error?.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true ->
+                                "Firestore denied the request. Confirm the included security rules are published and your email is verified."
+                            else ->
+                                "Could not create your profile. Check internet access and the Firestore setup, then try again."
+                        }
+                        return@createProfile
+                    }
+
+                    profileLoadedFor = user.uid
+                    showProfile(profile)
+                    statusText.text = "Student profile created. Your unique public ID is ready to share."
+                }
+            }
+        }
+    }
+
+    private fun showProfile(profile: StudentProfile) {
+        profileSetupPanel.visibility = View.GONE
+        profileCard.visibility = View.VISIBLE
+        profileDisplayName.text = profile.displayName
+        profilePublicId.text = profile.publicId
+    }
+
+    private fun copyPublicId() {
+        val id = profilePublicId.text?.toString().orEmpty()
+        if (id.isBlank()) return
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Student public ID", id))
+        android.widget.Toast.makeText(this, "Student ID copied", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun setBusy(busy: Boolean) {
@@ -226,6 +396,8 @@ class StudentConnectActivity : AppCompatActivity() {
         resendVerificationButton.isEnabled = !busy
         checkVerificationButton.isEnabled = !busy
         signOutButton.isEnabled = !busy
+        createProfileButton.isEnabled = !busy
+        copyPublicIdButton.isEnabled = !busy
     }
 
     private fun showAuthError(error: Exception?, creatingAccount: Boolean) {
