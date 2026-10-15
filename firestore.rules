@@ -50,8 +50,17 @@ service cloud.firestore {
     }
 
     match /friendRequests/{requestId} {
-      // Only participants can read a request. Reads must be filtered by senderUid or receiverUid.
-      allow get, list: if signedInWithVerifiedEmail()
+      // A sender can read their own directional request path even before the document exists,
+      // which is required for the duplicate-safe create transaction.
+      allow get: if signedInWithVerifiedEmail()
+        && (
+          requestId.matches('^' + request.auth.uid + '_[^/]+$')
+          || resource.data.senderUid == request.auth.uid
+          || resource.data.receiverUid == request.auth.uid
+        );
+
+      // Queries must be explicitly filtered to requests in which the current user participates.
+      allow list: if signedInWithVerifiedEmail()
         && (
           resource.data.senderUid == request.auth.uid
           || resource.data.receiverUid == request.auth.uid
