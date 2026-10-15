@@ -6,6 +6,64 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
+    function validNotificationShape(uid, data) {
+      return data.keys().hasAll([
+          'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
+          'title', 'body', 'eventAt', 'createdAt', 'read', 'readAt'
+        ])
+        && data.keys().hasOnly([
+          'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
+          'title', 'body', 'eventAt', 'createdAt', 'read', 'readAt'
+        ])
+        && data.recipientUid == uid
+        && data.actorUid is string
+        && data.actorUid.size() > 0
+        && data.actorName is string
+        && data.actorName.size() >= 2
+        && data.actorName.size() <= 60
+        && data.type in ['friend_request', 'friend_request_accepted']
+        && data.requestId is string
+        && data.requestId.size() > 0
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 100
+        && data.body is string
+        && data.body.size() >= 1
+        && data.body.size() <= 300
+        && data.eventAt is timestamp
+        && data.createdAt is timestamp
+        && data.read is bool
+        && (data.readAt == null || data.readAt is timestamp);
+    }
+
+    function matchesPendingRequestNotification(uid, notificationId, data) {
+      let requestPath = /databases/$(database)/documents/friendRequests/$(data.requestId);
+      return data.type == 'friend_request'
+        && notificationId == data.requestId + '_request'
+        && exists(requestPath)
+        && get(requestPath).data.senderUid == request.auth.uid
+        && get(requestPath).data.receiverUid == uid
+        && get(requestPath).data.senderName == data.actorName
+        && get(requestPath).data.status == 'pending'
+        && get(requestPath).data.updatedAt == data.eventAt
+        && data.title == 'New friend request'
+        && data.body == get(requestPath).data.senderName + ' sent you a friend request.';
+    }
+
+    function matchesAcceptedRequestNotification(uid, notificationId, data) {
+      let requestPath = /databases/$(database)/documents/friendRequests/$(data.requestId);
+      return data.type == 'friend_request_accepted'
+        && notificationId == data.requestId + '_accepted'
+        && exists(requestPath)
+        && get(requestPath).data.senderUid == uid
+        && get(requestPath).data.receiverUid == request.auth.uid
+        && get(requestPath).data.receiverName == data.actorName
+        && get(requestPath).data.status == 'accepted'
+        && get(requestPath).data.updatedAt == data.eventAt
+        && data.title == 'Friend request accepted'
+        && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
+    }
+
     match /profiles/{uid} {
       allow get: if signedInWithVerifiedEmail()
         && resource.data.uid == uid
@@ -128,6 +186,51 @@ service cloud.firestore {
             resource.data.senderUid == request.auth.uid
             && resource.data.status in ['rejected', 'cancelled', 'removed']
             && request.resource.data.status == 'pending'
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    match /studentNotifications/{uid}/items/{notificationId} {
+      allow get, list: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid;
+
+      allow create: if signedInWithVerifiedEmail()
+        && validNotificationShape(uid, request.resource.data)
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.read == false
+        && request.resource.data.readAt == null
+        && (
+          matchesPendingRequestNotification(uid, notificationId, request.resource.data)
+          || matchesAcceptedRequestNotification(uid, notificationId, request.resource.data)
+        );
+
+      allow update: if signedInWithVerifiedEmail()
+        && validNotificationShape(uid, request.resource.data)
+        && (
+          (
+            request.auth.uid == uid
+            && resource.data.recipientUid == uid
+            && resource.data.read == false
+            && request.resource.data.read == true
+            && request.resource.data.readAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+          )
+          || (
+            request.auth.uid == resource.data.actorUid
+            && request.auth.uid != uid
+            && resource.data.type == 'friend_request'
+            && request.resource.data.type == 'friend_request'
+            && request.resource.data.eventAt != resource.data.eventAt
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.read == false
+            && request.resource.data.readAt == null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'eventAt', 'createdAt', 'read', 'readAt'
+            ])
+            && matchesPendingRequestNotification(uid, notificationId, request.resource.data)
           )
         );
 

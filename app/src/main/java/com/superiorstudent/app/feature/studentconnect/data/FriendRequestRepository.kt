@@ -1,7 +1,9 @@
 package com.superiorstudent.app.feature.studentconnect.data
 
+import android.util.Log
 import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.QuerySnapshot
 import java.util.concurrent.ConcurrentHashMap
@@ -66,6 +68,12 @@ internal object StudentConnectionFilter {
 class FriendRequestRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
+    private val notificationRepository by lazy { StudentNotificationRepository(firestore) }
+
+    private data class SubmissionResult(
+        val status: String,
+        val shouldNotifyReceiver: Boolean
+    )
     fun sendRequest(sender: StudentProfile, receiver: StudentProfile, callback: (String?, Exception?) -> Unit) {
         if (sender.uid.isBlank() || receiver.uid.isBlank() || sender.uid == receiver.uid) {
             callback(null, IllegalArgumentException("You cannot send a friend request to yourself."))
@@ -100,7 +108,7 @@ class FriendRequestRepository(
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )
-                FriendRequestStatus.PENDING
+                SubmissionResult(FriendRequestStatus.PENDING, true)
             } else {
                 if (existing.getString("senderUid") != sender.uid ||
                     existing.getString("receiverUid") != receiver.uid
@@ -108,8 +116,8 @@ class FriendRequestRepository(
                     throw IllegalStateException("This friend request ID belongs to a different pair of students.")
                 }
                 when (existing.getString("status")) {
-                    FriendRequestStatus.PENDING -> FriendRequestStatus.PENDING
-                    FriendRequestStatus.ACCEPTED -> FriendRequestStatus.ACCEPTED
+                    FriendRequestStatus.PENDING -> SubmissionResult(FriendRequestStatus.PENDING, false)
+                    FriendRequestStatus.ACCEPTED -> SubmissionResult(FriendRequestStatus.ACCEPTED, false)
                     FriendRequestStatus.REJECTED, FriendRequestStatus.CANCELLED, FriendRequestStatus.REMOVED -> {
                         transaction.update(
                             requestRef,
@@ -118,13 +126,15 @@ class FriendRequestRepository(
                                 "updatedAt" to FieldValue.serverTimestamp()
                             )
                         )
-                        FriendRequestStatus.PENDING
+                        SubmissionResult(FriendRequestStatus.PENDING, true)
                     }
                     else -> throw IllegalStateException("This friend request has an unknown status.")
                 }
             }
-        }.addOnSuccessListener { status -> callback(status, null) }
-            .addOnFailureListener { error -> callback(null, error) }
+        }.addOnSuccessListener { result ->
+            callback(result.status, null)
+            if (result.shouldNotifyReceiver) publishRequestReceivedNotification(requestRef, sender, receiver)
+        }.addOnFailureListener { error -> callback(null, error) }
     }
 
     fun loadRequests(uid: String, callback: (List<FriendRequest>?, Exception?) -> Unit) {
@@ -175,10 +185,65 @@ class FriendRequestRepository(
             callback(IllegalArgumentException("That friend request action is not allowed. Refresh and try again."))
             return
         }
-        firestore.collection(REQUESTS).document(request.id)
-            .update(mapOf("status" to nextStatus, "updatedAt" to FieldValue.serverTimestamp()))
-            .addOnSuccessListener { callback(null) }
+        val requestRef = firestore.collection(REQUESTS).document(request.id)
+        requestRef.update(mapOf("status" to nextStatus, "updatedAt" to FieldValue.serverTimestamp()))
+            .addOnSuccessListener {
+                callback(null)
+                when (nextStatus) {
+                    FriendRequestStatus.ACCEPTED -> publishRequestAcceptedNotification(requestRef, request)
+                    FriendRequestStatus.PENDING -> {
+                        if (request.status != FriendRequestStatus.PENDING) {
+                            publishRequestReceivedNotification(
+                                requestRef,
+                                StudentProfile(request.senderUid, request.senderPublicId, request.senderName),
+                                StudentProfile(request.receiverUid, request.receiverPublicId, request.receiverName)
+                            )
+                        }
+                    }
+                }
+            }
             .addOnFailureListener { error -> callback(error) }
+    }
+
+    private fun publishRequestReceivedNotification(
+        requestRef: com.google.firebase.firestore.DocumentReference,
+        sender: StudentProfile,
+        receiver: StudentProfile
+    ) {
+        requestRef.get().addOnSuccessListener { snapshot ->
+            if (!snapshot.exists() || snapshot.getString("status") != FriendRequestStatus.PENDING) return@addOnSuccessListener
+            val eventAt = snapshot.getTimestamp("updatedAt") ?: return@addOnSuccessListener
+            val request = FriendRequest(
+                id = requestRef.id,
+                senderUid = sender.uid,
+                receiverUid = receiver.uid,
+                senderName = sender.displayName,
+                senderPublicId = sender.publicId,
+                receiverName = receiver.displayName,
+                receiverPublicId = receiver.publicId,
+                status = FriendRequestStatus.PENDING
+            )
+            notificationRepository.createRequestReceived(request, eventAt) { error ->
+                if (error != null) Log.w(TAG, "Could not save the in-app friend request notification.", error)
+            }
+        }.addOnFailureListener { error ->
+            Log.w(TAG, "Could not load the committed friend request for its notification.", error)
+        }
+    }
+
+    private fun publishRequestAcceptedNotification(
+        requestRef: com.google.firebase.firestore.DocumentReference,
+        request: FriendRequest
+    ) {
+        requestRef.get().addOnSuccessListener { snapshot ->
+            if (!snapshot.exists() || snapshot.getString("status") != FriendRequestStatus.ACCEPTED) return@addOnSuccessListener
+            val eventAt = snapshot.getTimestamp("updatedAt") ?: return@addOnSuccessListener
+            notificationRepository.createRequestAccepted(request, eventAt) { error ->
+                if (error != null) Log.w(TAG, "Could not save the in-app request accepted notification.", error)
+            }
+        }.addOnFailureListener { error ->
+            Log.w(TAG, "Could not load the accepted request for its notification.", error)
+        }
     }
 
     private fun com.google.firebase.firestore.DocumentSnapshot.toFriendRequest(): FriendRequest? {
@@ -206,5 +271,6 @@ class FriendRequestRepository(
 
     private companion object {
         const val REQUESTS = "friendRequests"
+        const val TAG = "StudentConnectRequests"
     }
 }

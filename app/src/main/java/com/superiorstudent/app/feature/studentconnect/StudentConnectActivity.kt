@@ -11,6 +11,9 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
 import android.util.Patterns
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -25,6 +28,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.feature.profile.data.ProfileCache
@@ -35,6 +39,8 @@ import com.superiorstudent.app.feature.studentconnect.data.FriendRequestReposito
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTokenRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotification
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 import com.superiorstudent.app.feature.studentconnect.notifications.StudentConnectNotificationHelper
 
@@ -80,10 +86,19 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var outgoingRequestsContainer: LinearLayout
     private lateinit var incomingRequestsEmptyText: TextView
     private lateinit var outgoingRequestsEmptyText: TextView
+    private lateinit var notificationsPanel: LinearLayout
+    private lateinit var notificationsTitleText: TextView
+    private lateinit var notificationsContainer: LinearLayout
+    private lateinit var notificationsEmptyText: TextView
+    private lateinit var markAllNotificationsReadButton: Button
 
     private val profileRepository by lazy { StudentProfileRepository() }
     private val friendRequestRepository by lazy { FriendRequestRepository() }
     private val notificationTokenRepository by lazy { StudentNotificationTokenRepository() }
+    private val studentNotificationRepository by lazy { StudentNotificationRepository() }
+    private var notificationListener: ListenerRegistration? = null
+    private var notificationsListeningFor: String? = null
+    private var cachedStudentNotifications: List<StudentNotification> = emptyList()
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -116,6 +131,11 @@ class StudentConnectActivity : AppCompatActivity() {
         bindViews()
         renderCurrentUser()
         if (auth.currentUser != null) refreshVerificationStatus(silent = true)
+    }
+
+    override fun onDestroy() {
+        stopNotificationsListener()
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -165,6 +185,11 @@ class StudentConnectActivity : AppCompatActivity() {
         outgoingRequestsContainer = findViewById(R.id.studentConnectOutgoingRequestsContainer)
         incomingRequestsEmptyText = findViewById(R.id.studentConnectIncomingRequestsEmpty)
         outgoingRequestsEmptyText = findViewById(R.id.studentConnectOutgoingRequestsEmpty)
+        notificationsPanel = findViewById(R.id.studentConnectNotificationsPanel)
+        notificationsTitleText = findViewById(R.id.studentConnectNotificationsTitle)
+        notificationsContainer = findViewById(R.id.studentConnectNotificationsContainer)
+        notificationsEmptyText = findViewById(R.id.studentConnectNotificationsEmpty)
+        markAllNotificationsReadButton = findViewById(R.id.studentConnectMarkAllNotificationsReadButton)
 
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
         createAccountButton.setOnClickListener { createAccount() }
@@ -176,6 +201,7 @@ class StudentConnectActivity : AppCompatActivity() {
         studentSearchButton.setOnClickListener { searchStudentByPublicId() }
         sendFriendRequestButton.setOnClickListener { sendFriendRequest() }
         refreshFriendRequestsButton.setOnClickListener { refreshFriendRequests(showLoadingMessage = true) }
+        markAllNotificationsReadButton.setOnClickListener { markAllNotificationsRead() }
         connectionsSearchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
 
@@ -429,6 +455,10 @@ class StudentConnectActivity : AppCompatActivity() {
             studentSearchResultCard.visibility = View.GONE
             profileLoadInProgressFor = null
             profileLoadedFor = null
+            stopNotificationsListener()
+            notificationsPanel.visibility = View.GONE
+            notificationsContainer.removeAllViews()
+            cachedStudentNotifications = emptyList()
             currentStudentProfile = null
             searchedStudentProfile = null
             sendFriendRequestButton.visibility = View.GONE
@@ -583,6 +613,8 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private fun showProfile(profile: StudentProfile) {
         currentStudentProfile = profile
+        notificationsPanel.visibility = View.VISIBLE
+        startNotificationsListener(profile.uid)
         requestStudentConnectNotificationPermissionIfNeeded()
         registerStudentNotificationToken(profile.uid)
         profileSetupPanel.visibility = View.GONE
@@ -592,6 +624,100 @@ class StudentConnectActivity : AppCompatActivity() {
         profileDisplayName.text = profile.displayName
         profilePublicId.text = profile.publicId
         refreshFriendRequests(showLoadingMessage = false)
+    }
+
+    private fun startNotificationsListener(uid: String) {
+        if (notificationsListeningFor == uid && notificationListener != null) return
+        stopNotificationsListener()
+        notificationsPanel.visibility = View.VISIBLE
+        notificationsListeningFor = uid
+        notificationListener = studentNotificationRepository.listen(uid) { notifications, error ->
+            if (auth.currentUser?.uid != uid || currentStudentProfile?.uid != uid) return@listen
+            if (error != null || notifications == null) {
+                cachedStudentNotifications = emptyList()
+                notificationsContainer.removeAllViews()
+                notificationsTitleText.text = "Notifications"
+                notificationsEmptyText.text = if (error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
+                    "Publish the updated firestore.rules file to enable the notification inbox."
+                } else {
+                    "Could not load notifications. Check your connection and try again."
+                }
+                notificationsEmptyText.visibility = View.VISIBLE
+                markAllNotificationsReadButton.visibility = View.GONE
+                return@listen
+            }
+            cachedStudentNotifications = notifications
+            renderNotifications(notifications)
+        }
+    }
+
+    private fun stopNotificationsListener() {
+        notificationListener?.remove()
+        notificationListener = null
+        notificationsListeningFor = null
+    }
+
+    private fun renderNotifications(notifications: List<StudentNotification>) {
+        notificationsContainer.removeAllViews()
+        val unreadCount = notifications.count { !it.isRead }
+        notificationsTitleText.text = if (unreadCount == 0) "Notifications" else "Notifications ($unreadCount unread)"
+        notificationsEmptyText.text = "No notifications yet. Friend request updates will appear here."
+        notificationsEmptyText.visibility = if (notifications.isEmpty()) View.VISIBLE else View.GONE
+        markAllNotificationsReadButton.visibility = if (unreadCount > 0) View.VISIBLE else View.GONE
+        markAllNotificationsReadButton.isEnabled = true
+
+        notifications.forEach { notification ->
+            val row = layoutInflater.inflate(R.layout.item_student_connect_notification, notificationsContainer, false)
+            row.findViewById<TextView>(R.id.studentConnectNotificationItemTitle).text = notification.title
+            row.findViewById<TextView>(R.id.studentConnectNotificationItemBody).text = notification.body
+            val readState = row.findViewById<TextView>(R.id.studentConnectNotificationItemReadState)
+            readState.text = if (notification.isRead) "READ" else "UNREAD"
+            readState.setTextColor(androidx.core.content.ContextCompat.getColor(
+                this, if (notification.isRead) R.color.ink_500 else R.color.brand_primary
+            ))
+            row.findViewById<TextView>(R.id.studentConnectNotificationItemTime).text = formatNotificationTime(notification.createdAt)
+            val markReadButton = row.findViewById<Button>(R.id.studentConnectNotificationItemMarkReadButton)
+            markReadButton.visibility = if (notification.isRead) View.GONE else View.VISIBLE
+            markReadButton.setOnClickListener {
+                val user = auth.currentUser
+                if (user == null || user.uid != notification.recipientUid) return@setOnClickListener
+                markReadButton.isEnabled = false
+                studentNotificationRepository.markAsRead(user.uid, notification.id) { error ->
+                    if (auth.currentUser?.uid != user.uid) return@markAsRead
+                    if (error != null) {
+                        markReadButton.isEnabled = true
+                        statusText.text = "Could not mark notification as read. Check the latest firestore.rules."
+                    }
+                }
+            }
+            notificationsContainer.addView(row)
+        }
+    }
+
+    private fun formatNotificationTime(timestamp: com.google.firebase.firestore.Timestamp?): String {
+        if (timestamp == null) return "Just now"
+        val elapsed = (System.currentTimeMillis() - timestamp.toDate().time).coerceAtLeast(0L)
+        return when {
+            elapsed < 60_000L -> "Just now"
+            elapsed < 3_600_000L -> "${elapsed / 60_000L} min ago"
+            elapsed < 86_400_000L -> "${elapsed / 3_600_000L} hr ago"
+            else -> SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()).format(Date(timestamp.toDate().time))
+        }
+    }
+
+    private fun markAllNotificationsRead() {
+        val user = auth.currentUser
+        if (user == null || !user.isEmailVerified) return
+        markAllNotificationsReadButton.isEnabled = false
+        studentNotificationRepository.markAllAsRead(user.uid, cachedStudentNotifications) { error ->
+            if (auth.currentUser?.uid != user.uid) return@markAllAsRead
+            markAllNotificationsReadButton.isEnabled = true
+            if (error != null) {
+                statusText.text = "Could not mark notifications as read. Check the latest firestore.rules."
+            } else {
+                statusText.text = "All notifications marked as read."
+            }
+        }
     }
 
     private fun refreshFriendRequests(showLoadingMessage: Boolean = true) {

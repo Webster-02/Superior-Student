@@ -4,6 +4,7 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdGenera
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationIds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,6 +50,14 @@ class StudentPublicIdGeneratorTest {
         assertEquals("studentA_studentB", FriendRequestStatus.documentId("studentA", "studentB"))
         assertTrue(FriendRequestStatus.documentId("studentA", "studentB") !=
             FriendRequestStatus.documentId("studentB", "studentA"))
+    }
+
+    @Test
+    fun studentNotificationIdsAreDeterministicPerRequestEvent() {
+        assertEquals("studentA_studentB_request", StudentNotificationIds.requestReceived("studentA_studentB"))
+        assertEquals("studentA_studentB_accepted", StudentNotificationIds.requestAccepted("studentA_studentB"))
+        assertTrue(StudentNotificationIds.requestReceived("studentA_studentB") !=
+            StudentNotificationIds.requestAccepted("studentA_studentB"))
     }
 
     @Test
