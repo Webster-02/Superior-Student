@@ -7,8 +7,6 @@ service cloud.firestore {
     }
 
     match /profiles/{uid} {
-      // Public profile reads are single-document only and expose an explicit field allowlist.
-      // The reserved public ID links the profile document to its UID; collection listing stays blocked.
       allow get: if signedInWithVerifiedEmail()
         && resource.data.uid == uid
         && resource.data.keys().hasOnly([
@@ -45,13 +43,11 @@ service cloud.firestore {
           /databases/$(database)/documents/studentIds/$(request.resource.data.publicId)
         ).data.uid == uid;
 
-      // Profile updates/deletes will be added later with explicit rules.
       allow update, delete: if false;
     }
 
     match /friendRequests/{requestId} {
-      // A sender can read their own directional request path even before the document exists,
-      // which is required for the duplicate-safe create transaction.
+      // A sender can read their own directional request path before the document exists.
       allow get: if signedInWithVerifiedEmail()
         && (
           requestId.matches('^' + request.auth.uid + '_[^/]+$')
@@ -59,7 +55,6 @@ service cloud.firestore {
           || resource.data.receiverUid == request.auth.uid
         );
 
-      // Queries must be explicitly filtered to requests in which the current user participates.
       allow list: if signedInWithVerifiedEmail()
         && (
           resource.data.senderUid == request.auth.uid
@@ -86,57 +81,9 @@ service cloud.firestore {
         && request.resource.data.receiverName.size() >= 2
         && request.resource.data.receiverName.size() <= 60
         && request.resource.data.senderPublicId is string
-        && request.resource.data.senderPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}      // A direct lookup is required for collision-free ID reservation.
-      // Collection enumeration remains blocked.
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      // IDs stay reserved forever so they can never be reassigned.
-      allow update, delete: if false;
-    }
-  }
-}
-)
+        && request.resource.data.senderPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
         && request.resource.data.receiverPublicId is string
-        && request.resource.data.receiverPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}      // A direct lookup is required for collision-free ID reservation.
-      // Collection enumeration remains blocked.
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      // IDs stay reserved forever so they can never be reassigned.
-      allow update, delete: if false;
-    }
-  }
-}
-)
+        && request.resource.data.receiverPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
         && request.resource.data.status == 'pending'
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
@@ -182,8 +129,6 @@ service cloud.firestore {
     }
 
     match /studentIds/{publicId} {
-      // A direct lookup is required for collision-free ID reservation.
-      // Collection enumeration remains blocked.
       allow get: if signedInWithVerifiedEmail();
       allow list: if false;
 
@@ -201,7 +146,6 @@ service cloud.firestore {
           /databases/$(database)/documents/profiles/$(request.resource.data.uid)
         ).data.publicId == publicId;
 
-      // IDs stay reserved forever so they can never be reassigned.
       allow update, delete: if false;
     }
   }
