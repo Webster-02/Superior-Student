@@ -59,6 +59,9 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var sendFriendRequestButton: Button
     private lateinit var friendRequestsPanel: View
     private lateinit var refreshFriendRequestsButton: Button
+    private lateinit var connectionsContainer: LinearLayout
+    private lateinit var connectionsTitleText: TextView
+    private lateinit var connectionsEmptyText: TextView
     private lateinit var incomingRequestsContainer: LinearLayout
     private lateinit var outgoingRequestsContainer: LinearLayout
     private lateinit var incomingRequestsEmptyText: TextView
@@ -119,6 +122,9 @@ class StudentConnectActivity : AppCompatActivity() {
         sendFriendRequestButton = findViewById(R.id.studentConnectSendFriendRequestButton)
         friendRequestsPanel = findViewById(R.id.studentConnectFriendRequestsPanel)
         refreshFriendRequestsButton = findViewById(R.id.studentConnectRefreshFriendRequestsButton)
+        connectionsContainer = findViewById(R.id.studentConnectConnectionsContainer)
+        connectionsTitleText = findViewById(R.id.studentConnectConnectionsTitle)
+        connectionsEmptyText = findViewById(R.id.studentConnectConnectionsEmpty)
         incomingRequestsContainer = findViewById(R.id.studentConnectIncomingRequestsContainer)
         outgoingRequestsContainer = findViewById(R.id.studentConnectOutgoingRequestsContainer)
         incomingRequestsEmptyText = findViewById(R.id.studentConnectIncomingRequestsEmpty)
@@ -507,20 +513,36 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun renderFriendRequestLists(uid: String, requests: List<FriendRequest>) {
+        connectionsContainer.removeAllViews()
         incomingRequestsContainer.removeAllViews()
         outgoingRequestsContainer.removeAllViews()
 
+        val connections = requests
+            .filter { it.status == FriendRequestStatus.ACCEPTED }
+            .sortedBy {
+                if (it.senderUid == uid) it.receiverName.lowercase(java.util.Locale.ROOT)
+                else it.senderName.lowercase(java.util.Locale.ROOT)
+            }
+
         val incoming = requests
-            .filter { it.receiverUid == uid }
+            .filter { it.receiverUid == uid && it.status != FriendRequestStatus.ACCEPTED }
             .sortedWith(compareBy<FriendRequest> { if (it.status == FriendRequestStatus.PENDING) 0 else 1 }
                 .thenBy { it.senderName.lowercase(java.util.Locale.ROOT) })
         val outgoing = requests
-            .filter { it.senderUid == uid }
+            .filter { it.senderUid == uid && it.status != FriendRequestStatus.ACCEPTED }
             .sortedWith(compareBy<FriendRequest> { if (it.status == FriendRequestStatus.PENDING) 0 else 1 }
                 .thenBy { it.receiverName.lowercase(java.util.Locale.ROOT) })
 
+        connections.forEach {
+            val currentUserIsReceiver = it.receiverUid == uid
+            addFriendRequestRow(connectionsContainer, it, incomingRequest = currentUserIsReceiver)
+        }
         incoming.forEach { addFriendRequestRow(incomingRequestsContainer, it, incomingRequest = true) }
         outgoing.forEach { addFriendRequestRow(outgoingRequestsContainer, it, incomingRequest = false) }
+
+        connectionsTitleText.text = "My Connections (" + connections.size + ")"
+        connectionsEmptyText.text = "No connections yet. Accept a friend request to connect with classmates."
+        connectionsEmptyText.visibility = if (connections.isEmpty()) View.VISIBLE else View.GONE
 
         incomingRequestsEmptyText.text = "No incoming friend requests yet."
         outgoingRequestsEmptyText.text = "You haven't sent any friend requests yet."
@@ -631,8 +653,11 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun clearFriendRequestLists() {
+        connectionsContainer.removeAllViews()
         incomingRequestsContainer.removeAllViews()
         outgoingRequestsContainer.removeAllViews()
+        connectionsTitleText.text = "My Connections (0)"
+        connectionsEmptyText.visibility = View.GONE
         incomingRequestsEmptyText.visibility = View.GONE
         outgoingRequestsEmptyText.visibility = View.GONE
     }
