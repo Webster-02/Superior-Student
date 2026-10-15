@@ -15,58 +15,7 @@ service cloud.firestore {
           'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
         ])
         && resource.data.publicId is string
-        && resource.data.publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}
-      allow create: if signedInWithVerifiedEmail()
-        && request.auth.uid == uid
-        && !exists(/databases/$(database)/documents/profiles/$(uid))
-        && request.resource.data.keys().hasAll([
-          'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
-        ])
-        && request.resource.data.keys().hasOnly([
-          'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
-        ])
-        && request.resource.data.uid == uid
-        && request.resource.data.publicId is string
-        && request.resource.data.publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && request.resource.data.displayName is string
-        && request.resource.data.displayName.size() >= 2
-        && request.resource.data.displayName.size() <= 60
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && getAfter(
-          /databases/$(database)/documents/studentIds/$(request.resource.data.publicId)
-        ).data.uid == uid;
-
-      // Profile updates/deletes will be added separately with explicit rules.
-      allow update, delete: if false;
-    }
-
-    match /studentIds/{publicId} {
-      // A direct lookup is required for collision-free ID reservation.
-      // Collection enumeration remains blocked.
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      // IDs stay reserved forever so they can never be reassigned.
-      allow update, delete: if false;
-    }
-  }
-}
-)
+        && resource.data.publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
         && resource.data.displayName is string
         && resource.data.displayName.size() >= 2
         && resource.data.displayName.size() <= 60
@@ -96,7 +45,7 @@ service cloud.firestore {
           /databases/$(database)/documents/studentIds/$(request.resource.data.publicId)
         ).data.uid == uid;
 
-      // Profile updates/deletes will be added separately with explicit rules.
+      // Profile updates/deletes will be added later with explicit rules.
       allow update, delete: if false;
     }
 
