@@ -481,6 +481,22 @@
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
+            <EditText
+                android:id="@+id/studentConnectConnectionsSearchInput"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="8dp"
+                android:autofillHints="none"
+                android:backgroundTint="@color/brand_primary"
+                android:hint="Search connections by name or student ID"
+                android:inputType="text"
+                android:maxLines="1"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textColor="@color/ink_900"
+                android:textColorHint="@color/ink_400"
+                android:textSize="14sp" />
+
             <LinearLayout
                 android:id="@+id/studentConnectConnectionsContainer"
                 android:layout_width="match_parent"

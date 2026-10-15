@@ -49,6 +49,16 @@ internal object FriendRequestStatus {
     }
 }
 
+/** Case-insensitive local filter for the accepted-connections list. */
+internal object StudentConnectionFilter {
+    fun matches(query: String, displayName: String, publicId: String): Boolean {
+        val normalizedQuery = query.trim().lowercase(java.util.Locale.ROOT)
+        if (normalizedQuery.isEmpty()) return true
+        return displayName.lowercase(java.util.Locale.ROOT).contains(normalizedQuery) ||
+            StudentPublicIdFormat.normalize(publicId).lowercase(java.util.Locale.ROOT).contains(normalizedQuery)
+    }
+}
+
 /** One directional request has a stable document ID to prevent duplicate sends. */
 class FriendRequestRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()

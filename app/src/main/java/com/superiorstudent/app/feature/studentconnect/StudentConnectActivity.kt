@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Patterns
 import android.view.View
 import android.widget.Button
@@ -22,6 +24,7 @@ import com.superiorstudent.app.feature.studentconnect.data.FriendRequest
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 
@@ -60,6 +63,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var friendRequestsPanel: View
     private lateinit var refreshFriendRequestsButton: Button
     private lateinit var connectionsContainer: LinearLayout
+    private lateinit var connectionsSearchInput: EditText
     private lateinit var connectionsTitleText: TextView
     private lateinit var connectionsEmptyText: TextView
     private lateinit var incomingRequestsContainer: LinearLayout
@@ -71,6 +75,8 @@ class StudentConnectActivity : AppCompatActivity() {
     private val friendRequestRepository by lazy { FriendRequestRepository() }
     private var currentStudentProfile: StudentProfile? = null
     private var searchedStudentProfile: StudentProfile? = null
+    private var cachedFriendRequests: List<FriendRequest> = emptyList()
+    private var connectionsQuery: String = ""
     private var friendRequestsLoadingFor: String? = null
     private var friendRequestsLoadSequence = 0
     private var friendRequestsRefreshQueued = false
@@ -123,6 +129,7 @@ class StudentConnectActivity : AppCompatActivity() {
         friendRequestsPanel = findViewById(R.id.studentConnectFriendRequestsPanel)
         refreshFriendRequestsButton = findViewById(R.id.studentConnectRefreshFriendRequestsButton)
         connectionsContainer = findViewById(R.id.studentConnectConnectionsContainer)
+        connectionsSearchInput = findViewById(R.id.studentConnectConnectionsSearchInput)
         connectionsTitleText = findViewById(R.id.studentConnectConnectionsTitle)
         connectionsEmptyText = findViewById(R.id.studentConnectConnectionsEmpty)
         incomingRequestsContainer = findViewById(R.id.studentConnectIncomingRequestsContainer)
@@ -140,6 +147,19 @@ class StudentConnectActivity : AppCompatActivity() {
         studentSearchButton.setOnClickListener { searchStudentByPublicId() }
         sendFriendRequestButton.setOnClickListener { sendFriendRequest() }
         refreshFriendRequestsButton.setOnClickListener { refreshFriendRequests(showLoadingMessage = true) }
+        connectionsSearchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                connectionsQuery = s?.toString().orEmpty()
+                val user = auth.currentUser
+                if (user != null && user.isEmailVerified && currentStudentProfile?.uid == user.uid) {
+                    renderFriendRequestLists(user.uid, cachedFriendRequests)
+                }
+            }
+
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
         signOutButton.setOnClickListener {
             auth.signOut()
             passwordInput.text?.clear()
@@ -489,8 +509,10 @@ class StudentConnectActivity : AppCompatActivity() {
             if (auth.currentUser?.uid != user.uid) return@loadRequests
 
             if (error != null || requests == null) {
+                cachedFriendRequests = emptyList()
                 incomingRequestsContainer.removeAllViews()
                 outgoingRequestsContainer.removeAllViews()
+                connectionsContainer.removeAllViews()
                 incomingRequestsEmptyText.text = "Could not load requests. Tap Refresh to try again."
                 outgoingRequestsEmptyText.text = "Could not load requests. Tap Refresh to try again."
                 incomingRequestsEmptyText.visibility = View.VISIBLE
@@ -501,6 +523,7 @@ class StudentConnectActivity : AppCompatActivity() {
                     "Could not load friend requests. Check your internet connection and tap Refresh to retry."
                 }
             } else {
+                cachedFriendRequests = requests
                 renderFriendRequestLists(user.uid, requests)
                 if (showLoadingMessage) statusText.text = "Friend requests refreshed."
             }
@@ -517,12 +540,18 @@ class StudentConnectActivity : AppCompatActivity() {
         incomingRequestsContainer.removeAllViews()
         outgoingRequestsContainer.removeAllViews()
 
-        val connections = requests
+        val allConnections = requests
             .filter { it.status == FriendRequestStatus.ACCEPTED }
             .sortedBy {
                 if (it.senderUid == uid) it.receiverName.lowercase(java.util.Locale.ROOT)
                 else it.senderName.lowercase(java.util.Locale.ROOT)
             }
+        val connections = allConnections.filter { request ->
+            val isSender = request.senderUid == uid
+            val otherName = if (isSender) request.receiverName else request.senderName
+            val otherPublicId = if (isSender) request.receiverPublicId else request.senderPublicId
+            StudentConnectionFilter.matches(connectionsQuery, otherName, otherPublicId)
+        }
 
         val incoming = requests
             .filter { it.receiverUid == uid && it.status != FriendRequestStatus.ACCEPTED }
@@ -540,8 +569,12 @@ class StudentConnectActivity : AppCompatActivity() {
         incoming.forEach { addFriendRequestRow(incomingRequestsContainer, it, incomingRequest = true) }
         outgoing.forEach { addFriendRequestRow(outgoingRequestsContainer, it, incomingRequest = false) }
 
-        connectionsTitleText.text = "My Connections (" + connections.size + ")"
-        connectionsEmptyText.text = "No connections yet. Accept a friend request to connect with classmates."
+        connectionsTitleText.text = "My Connections (" + allConnections.size + ")"
+        connectionsEmptyText.text = when {
+            allConnections.isEmpty() -> "No connections yet. Accept a friend request to connect with classmates."
+            connections.isEmpty() -> "No connections match your search."
+            else -> ""
+        }
         connectionsEmptyText.visibility = if (connections.isEmpty()) View.VISIBLE else View.GONE
 
         incomingRequestsEmptyText.text = "No incoming friend requests yet."
@@ -563,7 +596,8 @@ class StudentConnectActivity : AppCompatActivity() {
         val rejectButton = row.findViewById<Button>(R.id.studentConnectFriendRequestRejectButton)
         val cancelButton = row.findViewById<Button>(R.id.studentConnectFriendRequestCancelButton)
         val resendButton = row.findViewById<Button>(R.id.studentConnectFriendRequestResendButton)
-        val actionButtons = listOf(acceptButton, rejectButton, cancelButton, resendButton)
+        val copyIdButton = row.findViewById<Button>(R.id.studentConnectFriendRequestCopyIdButton)
+        val actionButtons = listOf(acceptButton, rejectButton, cancelButton, resendButton, copyIdButton)
         actionButtons.forEach {
             it.visibility = View.GONE
             it.isEnabled = true
@@ -575,6 +609,10 @@ class StudentConnectActivity : AppCompatActivity() {
         } else {
             nameText.text = request.receiverName
             publicIdText.text = request.receiverPublicId
+        }
+        copyIdButton.visibility = View.VISIBLE
+        copyIdButton.setOnClickListener {
+            copyStudentId(publicIdText.text?.toString().orEmpty())
         }
 
         requestStatusText.text = when (request.status) {
@@ -656,6 +694,9 @@ class StudentConnectActivity : AppCompatActivity() {
         connectionsContainer.removeAllViews()
         incomingRequestsContainer.removeAllViews()
         outgoingRequestsContainer.removeAllViews()
+        cachedFriendRequests = emptyList()
+        connectionsQuery = ""
+        connectionsSearchInput.setText("")
         connectionsTitleText.text = "My Connections (0)"
         connectionsEmptyText.visibility = View.GONE
         incomingRequestsEmptyText.visibility = View.GONE
@@ -788,7 +829,10 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun copyPublicId() {
-        val id = profilePublicId.text?.toString().orEmpty()
+        copyStudentId(profilePublicId.text?.toString().orEmpty())
+    }
+
+    private fun copyStudentId(id: String) {
         if (id.isBlank()) return
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Student public ID", id))

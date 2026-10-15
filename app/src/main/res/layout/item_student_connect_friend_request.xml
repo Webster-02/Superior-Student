@@ -49,6 +49,22 @@
             android:orientation="horizontal">
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectFriendRequestCopyIdButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Copy ID"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:visibility="gone"
+                android:textColor="@color/brand_primary"
+                app:backgroundTint="@color/surface"
+                app:cornerRadius="10dp"
+                app:strokeColor="@color/surface_stroke"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectFriendRequestAcceptButton"
                 android:layout_width="0dp"
                 android:layout_height="44dp"

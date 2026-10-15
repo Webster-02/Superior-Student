@@ -3,6 +3,7 @@ package com.superiorstudent.app.feature.studentconnect
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdGenerator
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
+import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,6 +29,19 @@ class StudentPublicIdGeneratorTest {
         assertTrue(!StudentPublicIdFormat.isValid("UNI-123"))
         assertTrue(!StudentPublicIdFormat.isValid("UNI-IO01ABC"))
         assertTrue(!StudentPublicIdFormat.isValid("another-student"))
+    }
+
+    @Test
+    fun connectionFilterMatchesNameOrPublicIdIgnoringCase() {
+        assertTrue(StudentConnectionFilter.matches("awais", "Awais Khan", "UNI-ABC2345"))
+        assertTrue(StudentConnectionFilter.matches("uni-abc", "Awais Khan", "UNI-ABC2345"))
+        assertTrue(!StudentConnectionFilter.matches("fatima", "Awais Khan", "UNI-ABC2345"))
+    }
+
+    @Test
+    fun blankConnectionFilterMatchesEveryConnection() {
+        assertTrue(StudentConnectionFilter.matches("", "Awais Khan", "UNI-ABC2345"))
+        assertTrue(StudentConnectionFilter.matches("   ", "Awais Khan", "UNI-ABC2345"))
     }
 
     @Test
