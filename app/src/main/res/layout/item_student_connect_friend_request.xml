@@ -65,6 +65,22 @@
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/studentConnectFriendRequestRemoveButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Remove connection"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:visibility="gone"
+                android:textColor="@color/brand_primary"
+                app:backgroundTint="@color/surface"
+                app:cornerRadius="10dp"
+                app:strokeColor="@color/surface_stroke"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectFriendRequestAcceptButton"
                 android:layout_width="0dp"
                 android:layout_height="44dp"

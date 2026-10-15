@@ -12,6 +12,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
@@ -554,11 +555,11 @@ class StudentConnectActivity : AppCompatActivity() {
         }
 
         val incoming = requests
-            .filter { it.receiverUid == uid && it.status != FriendRequestStatus.ACCEPTED }
+            .filter { it.receiverUid == uid && it.status != FriendRequestStatus.ACCEPTED && it.status != FriendRequestStatus.REMOVED }
             .sortedWith(compareBy<FriendRequest> { if (it.status == FriendRequestStatus.PENDING) 0 else 1 }
                 .thenBy { it.senderName.lowercase(java.util.Locale.ROOT) })
         val outgoing = requests
-            .filter { it.senderUid == uid && it.status != FriendRequestStatus.ACCEPTED }
+            .filter { it.senderUid == uid && it.status != FriendRequestStatus.ACCEPTED && it.status != FriendRequestStatus.REMOVED }
             .sortedWith(compareBy<FriendRequest> { if (it.status == FriendRequestStatus.PENDING) 0 else 1 }
                 .thenBy { it.receiverName.lowercase(java.util.Locale.ROOT) })
 
@@ -597,7 +598,8 @@ class StudentConnectActivity : AppCompatActivity() {
         val cancelButton = row.findViewById<Button>(R.id.studentConnectFriendRequestCancelButton)
         val resendButton = row.findViewById<Button>(R.id.studentConnectFriendRequestResendButton)
         val copyIdButton = row.findViewById<Button>(R.id.studentConnectFriendRequestCopyIdButton)
-        val actionButtons = listOf(acceptButton, rejectButton, cancelButton, resendButton, copyIdButton)
+        val removeConnectionButton = row.findViewById<Button>(R.id.studentConnectFriendRequestRemoveButton)
+        val actionButtons = listOf(acceptButton, rejectButton, cancelButton, resendButton, copyIdButton, removeConnectionButton)
         actionButtons.forEach {
             it.visibility = View.GONE
             it.isEnabled = true
@@ -618,12 +620,31 @@ class StudentConnectActivity : AppCompatActivity() {
         requestStatusText.text = when (request.status) {
             FriendRequestStatus.PENDING -> if (incomingRequest) "Waiting for your response" else "Waiting for their response"
             FriendRequestStatus.ACCEPTED -> "Connected"
+            FriendRequestStatus.REMOVED -> "Connection removed"
             FriendRequestStatus.REJECTED -> if (incomingRequest) "You rejected this request" else "Request declined. You can resend it."
             FriendRequestStatus.CANCELLED -> if (incomingRequest) "Sender cancelled this request" else "You cancelled this request. You can send it again."
             else -> "Unknown request status"
         }
 
         when {
+            request.status == FriendRequestStatus.ACCEPTED -> {
+                removeConnectionButton.visibility = View.VISIBLE
+                removeConnectionButton.setOnClickListener {
+                    AlertDialog.Builder(this)
+                        .setTitle("Remove connection?")
+                        .setMessage("Remove ${nameText.text} from My Connections? You can send a new request later.")
+                        .setNegativeButton("Keep connection", null)
+                        .setPositiveButton("Remove") { _, _ ->
+                            updateFriendRequestStatus(
+                                request,
+                                FriendRequestStatus.REMOVED,
+                                "Remove connection",
+                                actionButtons
+                            )
+                        }
+                        .show()
+                }
+            }
             incomingRequest && request.status == FriendRequestStatus.PENDING -> {
                 acceptButton.visibility = View.VISIBLE
                 rejectButton.visibility = View.VISIBLE
@@ -665,7 +686,11 @@ class StudentConnectActivity : AppCompatActivity() {
         }
 
         actionButtons.forEach { it.isEnabled = false }
-        statusText.text = "$actionLabel friend request…"
+        statusText.text = if (nextStatus == FriendRequestStatus.REMOVED) {
+            "Removing connection…"
+        } else {
+            "$actionLabel friend request…"
+        }
         friendRequestRepository.updateStatus(request, user.uid, nextStatus) { error ->
             if (auth.currentUser?.uid != user.uid) return@updateStatus
 
@@ -674,7 +699,11 @@ class StudentConnectActivity : AppCompatActivity() {
                 statusText.text = if (error.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
                     "Firestore rules blocked this action. Confirm the published friendRequests update rules and try again."
                 } else {
-                    "Could not $actionLabel this friend request. Tap Refresh and try again."
+                    if (nextStatus == FriendRequestStatus.REMOVED) {
+                        "Could not remove this connection. Tap Refresh and try again."
+                    } else {
+                        "Could not $actionLabel this friend request. Tap Refresh and try again."
+                    }
                 }
                 return@updateStatus
             }
@@ -684,6 +713,7 @@ class StudentConnectActivity : AppCompatActivity() {
                 FriendRequestStatus.REJECTED -> "Friend request rejected."
                 FriendRequestStatus.CANCELLED -> "Sent friend request cancelled."
                 FriendRequestStatus.PENDING -> "Request sent again. It is now pending."
+                FriendRequestStatus.REMOVED -> "Connection removed. You can send a new request later."
                 else -> "Friend request updated."
             }
             refreshFriendRequests(showLoadingMessage = false)

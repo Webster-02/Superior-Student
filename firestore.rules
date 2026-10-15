@@ -119,8 +119,14 @@ service cloud.firestore {
             && request.resource.data.status == 'cancelled'
           )
           || (
+            (resource.data.senderUid == request.auth.uid
+              || resource.data.receiverUid == request.auth.uid)
+            && resource.data.status == 'accepted'
+            && request.resource.data.status == 'removed'
+          )
+          || (
             resource.data.senderUid == request.auth.uid
-            && resource.data.status in ['rejected', 'cancelled']
+            && resource.data.status in ['rejected', 'cancelled', 'removed']
             && request.resource.data.status == 'pending'
           )
         );

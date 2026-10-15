@@ -24,12 +24,13 @@ internal object FriendRequestStatus {
     const val ACCEPTED = "accepted"
     const val REJECTED = "rejected"
     const val CANCELLED = "cancelled"
+    const val REMOVED = "removed"
 
     fun documentId(senderUid: String, receiverUid: String): String =
         senderUid + "_" + receiverUid
 
     fun isKnown(value: String): Boolean =
-        value == PENDING || value == ACCEPTED || value == REJECTED || value == CANCELLED
+        value == PENDING || value == ACCEPTED || value == REJECTED || value == CANCELLED || value == REMOVED
 
     fun canTransition(
         actorUid: String,
@@ -38,6 +39,8 @@ internal object FriendRequestStatus {
         currentStatus: String,
         nextStatus: String
     ): Boolean = when {
+        (actorUid == senderUid || actorUid == receiverUid) &&
+            currentStatus == ACCEPTED && nextStatus == REMOVED -> true
         actorUid == receiverUid && currentStatus == PENDING &&
             (nextStatus == ACCEPTED || nextStatus == REJECTED) -> true
         actorUid == senderUid && currentStatus == PENDING &&
@@ -107,7 +110,7 @@ class FriendRequestRepository(
                 when (existing.getString("status")) {
                     FriendRequestStatus.PENDING -> FriendRequestStatus.PENDING
                     FriendRequestStatus.ACCEPTED -> FriendRequestStatus.ACCEPTED
-                    FriendRequestStatus.REJECTED, FriendRequestStatus.CANCELLED -> {
+                    FriendRequestStatus.REJECTED, FriendRequestStatus.CANCELLED, FriendRequestStatus.REMOVED -> {
                         transaction.update(
                             requestRef,
                             mapOf(

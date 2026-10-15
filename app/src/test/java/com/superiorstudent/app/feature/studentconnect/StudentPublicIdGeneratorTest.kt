@@ -69,6 +69,22 @@ class StudentPublicIdGeneratorTest {
             "studentA", "studentA", "studentB",
             FriendRequestStatus.REJECTED, FriendRequestStatus.PENDING
         ))
+        assertTrue(FriendRequestStatus.canTransition(
+            "studentA", "studentA", "studentB",
+            FriendRequestStatus.ACCEPTED, FriendRequestStatus.REMOVED
+        ))
+        assertTrue(FriendRequestStatus.canTransition(
+            "studentB", "studentA", "studentB",
+            FriendRequestStatus.ACCEPTED, FriendRequestStatus.REMOVED
+        ))
+        assertTrue(!FriendRequestStatus.canTransition(
+            "outsider", "studentA", "studentB",
+            FriendRequestStatus.ACCEPTED, FriendRequestStatus.REMOVED
+        ))
+        assertTrue(!FriendRequestStatus.canTransition(
+            "studentA", "studentA", "studentB",
+            FriendRequestStatus.PENDING, FriendRequestStatus.REMOVED
+        ))
         assertTrue(!FriendRequestStatus.canTransition(
             "studentA", "studentA", "studentB",
             FriendRequestStatus.PENDING, FriendRequestStatus.ACCEPTED
