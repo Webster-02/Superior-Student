@@ -326,6 +326,8 @@ class StudentChatActivity : AppCompatActivity() {
             messagesContainer.addView(bubble, bubbleParams)
         }
 
+        // Apply the latest read marker even when its listener fired before messages rendered.
+        updateMessageReceipts(uid)
         messagesScroll.post { messagesScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
