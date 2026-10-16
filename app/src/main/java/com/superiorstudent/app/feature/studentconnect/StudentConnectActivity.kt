@@ -257,6 +257,7 @@ class StudentConnectActivity : AppCompatActivity() {
         homeDashboard = findViewById(R.id.studentConnectHomeDashboard)
         homeGreetingText = findViewById(R.id.studentConnectHomeGreeting)
         homeHeroLogo = findViewById(R.id.studentConnectHeroLogo)
+        homeHeroLogo.cameraDistance = dp(9000).toFloat()
         homeHeroOrb = findViewById(R.id.studentConnectHeroOrb)
         chatSection = findViewById(R.id.studentConnectChatSection)
         connectionsSection = findViewById(R.id.studentConnectConnectionsSection)
