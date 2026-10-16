@@ -36,10 +36,7 @@ service cloud.firestore {
         && data.participantUids[1].size() > 0
         && data.participantUids[1].size() <= 128
         && data.participantUids[0] != data.participantUids[1]
-        && (
-          conversationId == data.participantUids[0] + '_' + data.participantUids[1]
-          || conversationId == data.participantUids[1] + '_' + data.participantUids[0]
-        )
+        && conversationId == data.participantUids[0] + '_' + data.participantUids[1]
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -87,10 +84,7 @@ service cloud.firestore {
           (data.senderUid == participantUids[0] && data.recipientUid == participantUids[1])
           || (data.senderUid == participantUids[1] && data.recipientUid == participantUids[0])
         )
-        && (
-          conversationId == data.senderUid + '_' + data.recipientUid
-          || conversationId == data.recipientUid + '_' + data.senderUid
-        )
+        && conversationId == data.participantUids[0] + '_' + data.participantUids[1]
         && data.senderName is string
         && data.senderName.size() >= 2
         && data.senderName.size() <= 60
@@ -415,8 +409,9 @@ service cloud.firestore {
           )
         );
 
+      // Querying the user's conversation list is authorized by membership.
+      // Documents are created with the stricter validChatConversation check below.
       allow list: if signedInWithVerifiedEmail()
-        && validChatConversation(conversationId, resource.data)
         && request.auth.uid in resource.data.participantUids;
 
       allow create: if signedInWithVerifiedEmail()
@@ -448,7 +443,11 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         // A chat becomes unreadable when the accepted connection is removed.
-        allow get, list: if signedInWithVerifiedEmail()
+        // Keep collection queries authorized by the fixed parent conversation and its pair.
+        allow list: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId);
+
+        allow get: if signedInWithVerifiedEmail()
           && activeChatConversationMember(conversationId)
           && validChatMessage(
             conversationId,

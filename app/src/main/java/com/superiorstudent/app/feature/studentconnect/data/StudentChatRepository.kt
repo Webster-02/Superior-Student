@@ -90,11 +90,10 @@ class StudentChatRepository(
                     }
 
                     val participants = StudentChatIds.participantUids(currentUid, otherUid)
-                    val now = FieldValue.serverTimestamp()
                     conversationRef.set(
                         mapOf(
                             "participantUids" to participants,
-                            "createdAt" to now,
+                            "createdAt" to FieldValue.serverTimestamp(),
                             "updatedAt" to FieldValue.serverTimestamp()
                         )
                     ).addOnSuccessListener {
@@ -237,9 +236,11 @@ class StudentChatRepository(
             participants[0] == participants[1] ||
             id != runCatching { StudentChatIds.conversationId(participants[0] as String, participants[1] as String) }.getOrNull()
         ) return null
+        val validParticipants = participants.filterIsInstance<String>()
+        if (validParticipants != StudentChatIds.participantUids(validParticipants[0], validParticipants[1])) return null
         return StudentChatConversation(
             id = id,
-            participantUids = participants.filterIsInstance<String>(),
+            participantUids = validParticipants,
             createdAt = getTimestamp("createdAt"),
             updatedAt = getTimestamp("updatedAt")
         )
