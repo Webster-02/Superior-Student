@@ -23,6 +23,31 @@ data class StudentChatMessage(
     val createdAt: Timestamp?
 )
 
+data class StudentChatSummary(
+    val conversationId: String,
+    val otherUid: String,
+    val otherDisplayName: String,
+    val lastMessageText: String?,
+    val lastMessageSenderUid: String?,
+    val lastMessageAt: Timestamp?,
+    val updatedAt: Timestamp?,
+    val unreadCount: Int
+)
+
+/** Derives an unread count from recent messages and the user's last-read timestamp. */
+internal object StudentChatUnreadCounter {
+    fun count(
+        messages: List<StudentChatMessage>,
+        currentUid: String,
+        lastReadAt: Timestamp?
+    ): Int = messages.count { message ->
+        message.senderUid != currentUid &&
+            message.recipientUid == currentUid &&
+            (lastReadAt == null ||
+                message.createdAt?.toDate()?.after(lastReadAt.toDate()) == true)
+    }
+}
+
 /** Stable IDs and message text validation shared by chat data code and unit tests. */
 internal object StudentChatIds {
     fun conversationId(firstUid: String, secondUid: String): String {
@@ -111,6 +136,203 @@ class StudentChatRepository(
                 }
                 .addOnFailureListener { error -> callback(null, error) }
         }
+    }
+
+    fun markConversationRead(
+        conversationId: String,
+        currentUid: String,
+        callback: (Exception?) -> Unit
+    ) {
+        if (currentUid.isBlank() || conversationId.isBlank()) {
+            callback(IllegalArgumentException("The chat and student account are required."))
+            return
+        }
+        firestore.collection(CONVERSATIONS)
+            .document(conversationId)
+            .collection(READ_STATES)
+            .document(currentUid)
+            .set(
+                mapOf(
+                    "uid" to currentUid,
+                    "lastReadAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ),
+                com.google.firebase.firestore.SetOptions.merge()
+            )
+            .addOnSuccessListener { callback(null) }
+            .addOnFailureListener { error -> callback(error) }
+    }
+
+    /**
+     * Listens for conversation changes and each conversation's read marker.
+     * Message documents remain immutable; each participant owns only their read marker.
+     */
+    fun listenConversationSummaries(
+        currentUid: String,
+        callback: (List<StudentChatSummary>?, Exception?) -> Unit
+    ): ListenerRegistration? {
+        if (currentUid.isBlank()) {
+            callback(null, IllegalArgumentException("Sign in to load recent chats."))
+            return null
+        }
+
+        val summaries = mutableMapOf<String, StudentChatSummary>()
+        val readStateListeners = mutableMapOf<String, ListenerRegistration>()
+        val refreshGenerations = mutableMapOf<String, Int>()
+        var visibleConversationIds: Set<String> = emptySet()
+        var stopped = false
+
+        fun publishSummaries() {
+            if (stopped) return
+            val ordered = summaries.values.sortedByDescending {
+                (it.lastMessageAt ?: it.updatedAt)?.toDate()?.time ?: 0L
+            }
+            callback(ordered, null)
+        }
+
+        fun refreshSummary(conversation: StudentChatConversation) {
+            if (stopped || conversation.id !in visibleConversationIds) return
+            val generation = (refreshGenerations[conversation.id] ?: 0) + 1
+            refreshGenerations[conversation.id] = generation
+            loadChatSummary(conversation, currentUid) { summary, error ->
+                if (stopped || conversation.id !in visibleConversationIds ||
+                    refreshGenerations[conversation.id] != generation
+                ) return@loadChatSummary
+
+                if (error != null || summary == null) {
+                    summaries.remove(conversation.id)
+                } else {
+                    summaries[conversation.id] = summary
+                }
+                publishSummaries()
+            }
+        }
+
+        val conversationsListener = firestore.collection(CONVERSATIONS)
+            .whereArrayContains("participantUids", currentUid)
+            .limit(MAX_CONVERSATIONS)
+            .addSnapshotListener { snapshot, error ->
+                if (stopped) return@addSnapshotListener
+                if (error != null || snapshot == null) {
+                    callback(
+                        null,
+                        error ?: IllegalStateException("Could not load recent chats.")
+                    )
+                    return@addSnapshotListener
+                }
+
+                val conversations = snapshot.documents.mapNotNull { document ->
+                    document.toStudentChatConversation()
+                        ?.takeIf { currentUid in it.participantUids }
+                }
+                visibleConversationIds = conversations.map { it.id }.toSet()
+
+                readStateListeners.keys.filter { it !in visibleConversationIds }.toList().forEach { id ->
+                    readStateListeners.remove(id)?.remove()
+                    summaries.remove(id)
+                    refreshGenerations.remove(id)
+                }
+
+                conversations.forEach { conversation ->
+                    if (readStateListeners.containsKey(conversation.id)) {
+                        refreshSummary(conversation)
+                    } else {
+                        val listener = firestore.collection(CONVERSATIONS)
+                            .document(conversation.id)
+                            .collection(READ_STATES)
+                            .document(currentUid)
+                            .addSnapshotListener { _, readError ->
+                                if (stopped || conversation.id !in visibleConversationIds) {
+                                    return@addSnapshotListener
+                                }
+                                if (readError != null) {
+                                    summaries.remove(conversation.id)
+                                    publishSummaries()
+                                } else {
+                                    refreshSummary(conversation)
+                                }
+                            }
+                        readStateListeners[conversation.id] = listener
+                    }
+                }
+
+                publishSummaries()
+            }
+
+        return object : ListenerRegistration {
+            override fun remove() {
+                stopped = true
+                conversationsListener.remove()
+                readStateListeners.values.forEach { it.remove() }
+                readStateListeners.clear()
+                summaries.clear()
+                refreshGenerations.clear()
+                visibleConversationIds = emptySet()
+            }
+        }
+    }
+
+    private fun loadChatSummary(
+        conversation: StudentChatConversation,
+        currentUid: String,
+        callback: (StudentChatSummary?, Exception?) -> Unit
+    ) {
+        val otherUid = conversation.participantUids.firstOrNull { it != currentUid }
+        if (otherUid.isNullOrBlank()) {
+            callback(null, IllegalStateException("The conversation has no other participant."))
+            return
+        }
+
+        firestore.collection(PROFILES).document(otherUid).get()
+            .addOnSuccessListener { profileSnapshot ->
+                val displayName = profileSnapshot.getString("displayName")
+                    ?.trim()
+                    ?.takeIf { it.length in 2..60 }
+                if (displayName.isNullOrBlank()) {
+                    callback(null, IllegalStateException("The other student's profile is unavailable."))
+                    return@addOnSuccessListener
+                }
+
+                firestore.collection(CONVERSATIONS)
+                    .document(conversation.id)
+                    .collection(MESSAGES)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(MAX_MESSAGES)
+                    .get()
+                    .addOnSuccessListener { messagesSnapshot ->
+                        val messages = messagesSnapshot.documents.mapNotNull { it.toStudentChatMessage() }
+                        if (messages.size != messagesSnapshot.documents.size) {
+                            callback(null, IllegalStateException("A chat message record is incomplete."))
+                            return@addOnSuccessListener
+                        }
+
+                        firestore.collection(CONVERSATIONS)
+                            .document(conversation.id)
+                            .collection(READ_STATES)
+                            .document(currentUid)
+                            .get()
+                            .addOnSuccessListener { readStateSnapshot ->
+                                val lastReadAt = readStateSnapshot.getTimestamp("lastReadAt")
+                                val latest = messages.firstOrNull()
+                                callback(
+                                    StudentChatSummary(
+                                        conversationId = conversation.id,
+                                        otherUid = otherUid,
+                                        otherDisplayName = displayName,
+                                        lastMessageText = latest?.text,
+                                        lastMessageSenderUid = latest?.senderUid,
+                                        lastMessageAt = latest?.createdAt,
+                                        updatedAt = conversation.updatedAt,
+                                        unreadCount = StudentChatUnreadCounter.count(messages, currentUid, lastReadAt)
+                                    ),
+                                    null
+                                )
+                            }
+                            .addOnFailureListener { error -> callback(null, error) }
+                    }
+                    .addOnFailureListener { error -> callback(null, error) }
+            }
+            .addOnFailureListener { error -> callback(null, error) }
     }
 
     fun sendMessage(
@@ -267,9 +489,12 @@ class StudentChatRepository(
     private companion object {
         const val CONVERSATIONS = "chatConversations"
         const val MESSAGES = "messages"
+        const val READ_STATES = "readStates"
+        const val PROFILES = "profiles"
         const val FRIEND_REQUESTS = "friendRequests"
         const val ACCEPTED = "accepted"
         const val MAX_MESSAGES = 100L
+        const val MAX_CONVERSATIONS = 50L
         val WHITESPACE = Regex("\\s+")
     }
 }

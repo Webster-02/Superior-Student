@@ -527,6 +527,31 @@
             </LinearLayout>
 
             <TextView
+                android:id="@+id/studentConnectChatListTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Recent chats"
+                android:textColor="@color/ink_900"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/studentConnectChatListEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Your recent conversations will appear here."
+                android:textColor="@color/ink_500"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:id="@+id/studentConnectChatListContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <TextView
                 android:id="@+id/studentConnectConnectionsTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

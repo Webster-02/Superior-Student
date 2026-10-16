@@ -161,6 +161,13 @@ class StudentChatActivity : AppCompatActivity() {
                 return@listenMessages
             }
             renderMessages(uid, messages)
+            chatRepository.markConversationRead(opened.id, uid) { readError ->
+                if (!isCurrentUser(uid)) return@markConversationRead
+                if (readError != null) {
+                    statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
+                    statusText.text = "Messages are open, but unread status could not be updated. Check the published chat rules."
+                }
+            }
         }
     }
 

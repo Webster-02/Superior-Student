@@ -6,6 +6,10 @@ import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatIds
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessageText
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessage
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatUnreadCounter
+import com.google.firebase.Timestamp
+import java.util.Date
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationIds
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationNavigation
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTarget
@@ -97,6 +101,19 @@ class StudentPublicIdGeneratorTest {
         assertTrue(!StudentChatMessageText.isValid("  "))
         assertTrue(StudentChatMessageText.isValid("a".repeat(StudentChatMessageText.MAX_LENGTH)))
         assertTrue(!StudentChatMessageText.isValid("a".repeat(StudentChatMessageText.MAX_LENGTH + 1)))
+    }
+
+    @Test
+    fun chatUnreadCounterCountsOnlyIncomingMessagesAfterLastRead() {
+        val readAt = Timestamp(Date(2_000L))
+        val messages = listOf(
+            StudentChatMessage("old", "other", "me", "Other Student", "already read", Timestamp(Date(1_000L))),
+            StudentChatMessage("new1", "other", "me", "Other Student", "new one", Timestamp(Date(3_000L))),
+            StudentChatMessage("mine", "me", "other", "My Student", "my own", Timestamp(Date(4_000L))),
+            StudentChatMessage("new2", "other", "me", "Other Student", "new two", Timestamp(Date(5_000L)))
+        )
+        assertEquals(2, StudentChatUnreadCounter.count(messages, "me", readAt))
+        assertEquals(3, StudentChatUnreadCounter.count(messages, "me", null))
     }
 
     @Test

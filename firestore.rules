@@ -353,7 +353,6 @@ service cloud.firestore {
         );
 
       allow list: if signedInWithVerifiedEmail()
-        && validChatConversation(conversationId, resource.data)
         && request.auth.uid in resource.data.participantUids;
 
       allow create: if signedInWithVerifiedEmail()
@@ -382,6 +381,38 @@ service cloud.firestore {
         );
 
       allow delete: if false;
+
+      match /readStates/{uid} {
+        // Each participant can read and update only their own chat read marker.
+        allow get: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && activeChatConversationMember(conversationId);
+        allow list: if false;
+
+        allow create: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.keys().hasAll(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.lastReadAt is timestamp
+          && request.resource.data.lastReadAt == request.time
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && resource.data.uid == uid
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.keys().hasAll(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.lastReadAt is timestamp
+          && request.resource.data.lastReadAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastReadAt', 'updatedAt']);
+
+        allow delete: if false;
+      }
 
       match /messages/{messageId} {
         // Reading the messages subcollection is scoped to the parent conversation.

@@ -43,6 +43,8 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatSummary
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTokenRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotification
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationRepository
@@ -86,6 +88,9 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var sendFriendRequestButton: Button
     private lateinit var friendRequestsPanel: View
     private lateinit var refreshFriendRequestsButton: Button
+    private lateinit var chatListTitleText: TextView
+    private lateinit var chatListContainer: LinearLayout
+    private lateinit var chatListEmptyText: TextView
     private lateinit var connectionsContainer: LinearLayout
     private lateinit var connectionsSearchInput: EditText
     private lateinit var connectionsTitleText: TextView
@@ -102,11 +107,15 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private val profileRepository by lazy { StudentProfileRepository() }
     private val friendRequestRepository by lazy { FriendRequestRepository() }
+    private val studentChatRepository by lazy { StudentChatRepository() }
     private val notificationTokenRepository by lazy { StudentNotificationTokenRepository() }
     private val studentNotificationRepository by lazy { StudentNotificationRepository() }
     private var notificationListener: ListenerRegistration? = null
     private var notificationsListeningFor: String? = null
     private var cachedStudentNotifications: List<StudentNotification> = emptyList()
+    private var chatListListener: ListenerRegistration? = null
+    private var chatListListeningFor: String? = null
+    private var cachedChatSummaries: List<StudentChatSummary> = emptyList()
     private val notificationHighlightHandler = Handler(Looper.getMainLooper())
     private var highlightedNotificationRequestId: String? = null
     private var highlightedNotificationTarget: StudentNotificationTarget? = null
@@ -147,6 +156,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         stopNotificationsListener()
+        stopChatListListener()
         clearNotificationHighlight()
         super.onDestroy()
     }
@@ -157,8 +167,9 @@ class StudentConnectActivity : AppCompatActivity() {
 
         val user = auth.currentUser ?: return
         if (user.isEmailVerified && currentStudentProfile?.uid == user.uid) {
-            // Refresh requests/connections when the user returns to this screen.
+            // Refresh requests/connections and unread summaries when returning from a chat.
             refreshFriendRequests(showLoadingMessage = false)
+            startChatListListener(user.uid, forceRefresh = true)
         }
     }
 
@@ -191,6 +202,9 @@ class StudentConnectActivity : AppCompatActivity() {
         sendFriendRequestButton = findViewById(R.id.studentConnectSendFriendRequestButton)
         friendRequestsPanel = findViewById(R.id.studentConnectFriendRequestsPanel)
         refreshFriendRequestsButton = findViewById(R.id.studentConnectRefreshFriendRequestsButton)
+        chatListTitleText = findViewById(R.id.studentConnectChatListTitle)
+        chatListContainer = findViewById(R.id.studentConnectChatListContainer)
+        chatListEmptyText = findViewById(R.id.studentConnectChatListEmpty)
         connectionsContainer = findViewById(R.id.studentConnectConnectionsContainer)
         connectionsSearchInput = findViewById(R.id.studentConnectConnectionsSearchInput)
         connectionsTitleText = findViewById(R.id.studentConnectConnectionsTitle)
@@ -467,6 +481,11 @@ class StudentConnectActivity : AppCompatActivity() {
             profileCard.visibility = View.GONE
             studentSearchPanel.visibility = View.GONE
             studentSearchResultCard.visibility = View.GONE
+            stopChatListListener()
+            chatListContainer.removeAllViews()
+            chatListEmptyText.text = "Sign in to see your recent chats."
+            chatListEmptyText.visibility = View.VISIBLE
+            chatListTitleText.text = "Recent chats"
             profileLoadInProgressFor = null
             profileLoadedFor = null
             stopNotificationsListener()
@@ -630,6 +649,7 @@ class StudentConnectActivity : AppCompatActivity() {
         currentStudentProfile = profile
         notificationsPanel.visibility = View.VISIBLE
         startNotificationsListener(profile.uid)
+        startChatListListener(profile.uid)
         requestStudentConnectNotificationPermissionIfNeeded()
         registerStudentNotificationToken(profile.uid)
         profileSetupPanel.visibility = View.GONE
@@ -670,6 +690,96 @@ class StudentConnectActivity : AppCompatActivity() {
         notificationListener?.remove()
         notificationListener = null
         notificationsListeningFor = null
+    }
+
+    private fun startChatListListener(uid: String, forceRefresh: Boolean = false) {
+        if (!forceRefresh && chatListListeningFor == uid && chatListListener != null) return
+        stopChatListListener()
+        chatListListeningFor = uid
+        chatListTitleText.text = "Recent chats"
+        chatListEmptyText.text = "Loading recent chats…"
+        chatListEmptyText.visibility = View.VISIBLE
+
+        chatListListener = studentChatRepository.listenConversationSummaries(uid) { summaries, error ->
+            if (auth.currentUser?.uid != uid || currentStudentProfile?.uid != uid) return@listenConversationSummaries
+            if (error != null || summaries == null) {
+                cachedChatSummaries = emptyList()
+                chatListContainer.removeAllViews()
+                chatListTitleText.text = "Recent chats"
+                chatListEmptyText.text = if (error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
+                    "Could not load recent chats. Confirm the current Firestore chat rules are published."
+                } else {
+                    "Could not load recent chats. Check your internet connection and return to try again."
+                }
+                chatListEmptyText.visibility = View.VISIBLE
+                return@listenConversationSummaries
+            }
+
+            cachedChatSummaries = summaries
+            renderChatList(uid, summaries)
+        }
+    }
+
+    private fun stopChatListListener() {
+        chatListListener?.remove()
+        chatListListener = null
+        chatListListeningFor = null
+        cachedChatSummaries = emptyList()
+    }
+
+    private fun renderChatList(uid: String, summaries: List<StudentChatSummary>) {
+        chatListContainer.removeAllViews()
+        val unreadCount = summaries.sumOf { it.unreadCount }
+        chatListTitleText.text = if (unreadCount > 0) "Recent chats ($unreadCount unread)" else "Recent chats"
+        chatListEmptyText.text = if (summaries.isEmpty()) {
+            "No chats yet. Open Message from My Connections to start a conversation."
+        } else {
+            ""
+        }
+        chatListEmptyText.visibility = if (summaries.isEmpty()) View.VISIBLE else View.GONE
+
+        summaries.forEach { summary ->
+            val row = layoutInflater.inflate(R.layout.item_student_chat_summary, chatListContainer, false)
+            row.findViewById<TextView>(R.id.studentChatSummaryName).text = summary.otherDisplayName
+            val preview = summary.lastMessageText?.let { message ->
+                val prefix = if (summary.lastMessageSenderUid == uid) "You: " else ""
+                (prefix + message).take(92).let { if ((prefix + message).length > 92) "$it…" else it }
+            } ?: "No messages yet. Say hello!"
+            row.findViewById<TextView>(R.id.studentChatSummaryPreview).text = preview
+            row.findViewById<TextView>(R.id.studentChatSummaryTime).text =
+                formatChatSummaryTime(summary.lastMessageAt ?: summary.updatedAt)
+            val unreadBadge = row.findViewById<TextView>(R.id.studentChatSummaryUnreadBadge)
+            if (summary.unreadCount > 0) {
+                unreadBadge.text = if (summary.unreadCount > 99) "99+" else summary.unreadCount.toString()
+                unreadBadge.visibility = View.VISIBLE
+            } else {
+                unreadBadge.visibility = View.GONE
+            }
+            row.setOnClickListener {
+                val user = auth.currentUser
+                if (user == null || !user.isEmailVerified || user.uid != uid) {
+                    statusText.text = "Sign in with your verified Student Connect account before opening a chat."
+                    return@setOnClickListener
+                }
+                startActivity(
+                    Intent(this, StudentChatActivity::class.java)
+                        .putExtra(StudentChatActivity.EXTRA_OTHER_UID, summary.otherUid)
+                        .putExtra(StudentChatActivity.EXTRA_OTHER_DISPLAY_NAME, summary.otherDisplayName)
+                )
+            }
+            chatListContainer.addView(row)
+        }
+    }
+
+    private fun formatChatSummaryTime(timestamp: com.google.firebase.Timestamp?): String {
+        if (timestamp == null) return "New chat"
+        val elapsed = (System.currentTimeMillis() - timestamp.toDate().time).coerceAtLeast(0L)
+        return when {
+            elapsed < 60_000L -> "Just now"
+            elapsed < 3_600_000L -> "${elapsed / 60_000L} min ago"
+            elapsed < 86_400_000L -> "${elapsed / 3_600_000L} hr ago"
+            else -> SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(timestamp.toDate().time))
+        }
     }
 
     private fun renderNotifications(notifications: List<StudentNotification>) {
