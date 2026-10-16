@@ -7,10 +7,13 @@ service cloud.firestore {
     }
 
 
-    // Chat access is tied to an existing accepted directional friend request.
+
+    // Chat access requires an existing accepted directional friend request.
     function acceptedChatConnectionExists(uidA, uidB) {
-      let forwardPath = /databases/$(database)/documents/friendRequests/$(uidA + '_' + uidB);
-      let reversePath = /databases/$(database)/documents/friendRequests/$(uidB + '_' + uidA);
+      let forwardId = uidA + '_' + uidB;
+      let reverseId = uidB + '_' + uidA;
+      let forwardPath = /databases/$(database)/documents/friendRequests/$(forwardId);
+      let reversePath = /databases/$(database)/documents/friendRequests/$(reverseId);
       return (
         exists(forwardPath)
         && get(forwardPath).data.senderUid == uidA
@@ -41,30 +44,15 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function currentUserHasActiveChatConnection(participantUids) {
-      return participantUids is list
-        && participantUids.size() == 2
-        && participantUids[0] is string
-        && participantUids[1] is string
-        && participantUids[0] != participantUids[1]
-        && request.auth.uid in participantUids
-        && (
-          (
-            request.auth.uid == participantUids[0]
-            && acceptedChatConnectionExists(participantUids[0], participantUids[1])
-          )
-          || (
-            request.auth.uid == participantUids[1]
-            && acceptedChatConnectionExists(participantUids[1], participantUids[0])
-          )
-        );
-    }
-
     function activeChatConversationMember(conversationId) {
       let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
       return exists(conversationPath)
         && validChatConversation(conversationId, get(conversationPath).data)
-        && currentUserHasActiveChatConnection(get(conversationPath).data.participantUids);
+        && request.auth.uid in get(conversationPath).data.participantUids
+        && acceptedChatConnectionExists(
+          get(conversationPath).data.participantUids[0],
+          get(conversationPath).data.participantUids[1]
+        );
     }
 
     function validChatMessage(conversationId, data, participantUids) {
@@ -93,7 +81,6 @@ service cloud.firestore {
         && data.text.size() <= 2000
         && data.createdAt is timestamp;
     }
-
     function validNotificationShape(uid, data) {
       return data.keys().hasAll([
           'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
@@ -346,61 +333,17 @@ service cloud.firestore {
     }
 
 
-    // Student Connect one-to-one chat. Existing friend/ERP rules stay unchanged.
+    // Student Connect one-to-one chat. Existing rules remain in place.
     match /chatConversations/{conversationId} {
-      // A caller may test whether their own deterministic pair document exists.
-      // Existing conversation metadata is visible only to its participants.
+      // Allow a verified student to check their own deterministic pair path when no
+      // conversation exists yet. Existing metadata is visible only to participants.
       allow get: if signedInWithVerifiedEmail()
         && (
           (
             !exists(/databases/$(database)/documents/chatConversations/$(conversationId))
             && (
-              conversationId.matches('^' + request.auth.uid + '_[^/]+
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      allow update, delete: if false;
-    }
-  }
-}
-)
-              || conversationId.matches('^[^/]+_' + request.auth.uid + '
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      allow update, delete: if false;
-    }
-  }
-}
-)
+              conversationId.matches('^' + request.auth.uid + '_[^/]+$')
+              || conversationId.matches('^[^/]+_' + request.auth.uid + '$')
             )
           )
           || (
@@ -409,9 +352,8 @@ service cloud.firestore {
           )
         );
 
-      // Querying the user's conversation list is authorized by membership.
-      // Documents are created with the stricter validChatConversation check below.
       allow list: if signedInWithVerifiedEmail()
+        && validChatConversation(conversationId, resource.data)
         && request.auth.uid in resource.data.participantUids;
 
       allow create: if signedInWithVerifiedEmail()
@@ -442,8 +384,8 @@ service cloud.firestore {
       allow delete: if false;
 
       match /messages/{messageId} {
-        // A chat becomes unreadable when the accepted connection is removed.
-        // Keep collection queries authorized by the fixed parent conversation and its pair.
+        // Reading the messages subcollection is scoped to the parent conversation.
+        // It is blocked as soon as the accepted friend connection is removed.
         allow list: if signedInWithVerifiedEmail()
           && activeChatConversationMember(conversationId);
 
@@ -469,7 +411,7 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
             == request.resource.data.senderName;
 
-        // Sent messages are immutable: edit/delete support can be designed separately.
+        // Sent messages are immutable.
         allow update, delete: if false;
       }
     }
