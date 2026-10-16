@@ -471,38 +471,24 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     /**
-     * Applies the branded dark presentation only while the Firebase sign-in form is visible.
-     * Once an account is signed in, existing profile and connection screens keep their current
-     * light styling until their own branding step. This method does not change auth/session data.
+     * Keeps the entire Student Connect experience on its scoped navy/purple brand.
+     * This affects presentation only; ERP and Firebase sign-in/session logic are unchanged.
      */
-    private fun applyStudentConnectBranding(isSignedIn: Boolean) {
-        val backButton = findViewById<TextView>(R.id.studentConnectBackButton)
-        val brandTitle = findViewById<TextView>(R.id.studentConnectBrandTitle)
-        val brandTagline = findViewById<TextView>(R.id.studentConnectBrandTagline)
-        val brandPromise = findViewById<TextView>(R.id.studentConnectBrandPromise)
-        val statusCard = findViewById<MaterialCardView>(R.id.studentConnectStatusCard)
-
-        if (isSignedIn) {
-            studentConnectScrollView.setBackgroundColor(
-                ContextCompat.getColor(this, R.color.surface_alt)
-            )
-            backButton.setTextColor(ContextCompat.getColor(this, R.color.brand_primary))
-            brandTitle.setTextColor(ContextCompat.getColor(this, R.color.ink_900))
-            brandTagline.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
-            brandPromise.setTextColor(ContextCompat.getColor(this, R.color.brand_primary))
-            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface))
-            statusCard.setStrokeColor(ContextCompat.getColor(this, R.color.surface_stroke))
-            statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_700))
-        } else {
-            studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
-            backButton.setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
-            brandTitle.setTextColor(ContextCompat.getColor(this, R.color.sc_text_primary))
-            brandTagline.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
-            brandPromise.setTextColor(ContextCompat.getColor(this, R.color.sc_purple))
-            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.sc_card))
-            statusCard.setStrokeColor(ContextCompat.getColor(this, R.color.sc_border))
-            statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+    private fun applyStudentConnectBranding() {
+        studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
+        findViewById<TextView>(R.id.studentConnectBackButton)
+            .setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
+        findViewById<TextView>(R.id.studentConnectBrandTitle)
+            .setTextColor(ContextCompat.getColor(this, R.color.sc_text_primary))
+        findViewById<TextView>(R.id.studentConnectBrandTagline)
+            .setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+        findViewById<TextView>(R.id.studentConnectBrandPromise)
+            .setTextColor(ContextCompat.getColor(this, R.color.sc_purple))
+        findViewById<MaterialCardView>(R.id.studentConnectStatusCard).apply {
+            setCardBackgroundColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_card))
+            setStrokeColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_border))
         }
+        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
     }
 
     private fun renderCurrentUser() {
@@ -510,7 +496,7 @@ class StudentConnectActivity : AppCompatActivity() {
         val signedIn = user != null
         authForm.visibility = if (signedIn) View.GONE else View.VISIBLE
         signedInPanel.visibility = if (signedIn) View.VISIBLE else View.GONE
-        applyStudentConnectBranding(isSignedIn = signedIn)
+        applyStudentConnectBranding()
 
         if (user == null) {
             profileSetupPanel.visibility = View.GONE
@@ -837,7 +823,7 @@ class StudentConnectActivity : AppCompatActivity() {
             val readState = row.findViewById<TextView>(R.id.studentConnectNotificationItemReadState)
             readState.text = if (notification.isRead) "READ" else "UNREAD"
             readState.setTextColor(ContextCompat.getColor(
-                this, if (notification.isRead) R.color.ink_500 else R.color.brand_primary
+                this, if (notification.isRead) R.color.sc_text_muted else R.color.sc_purple
             ))
             row.findViewById<TextView>(R.id.studentConnectNotificationItemTime).text =
                 formatNotificationTime(notification.createdAt)
@@ -1154,7 +1140,7 @@ class StudentConnectActivity : AppCompatActivity() {
         (row as? MaterialCardView)?.apply {
             setStrokeColor(ContextCompat.getColor(
                 this@StudentConnectActivity,
-                if (shouldHighlight) R.color.brand_primary else R.color.surface_stroke
+                if (shouldHighlight) R.color.sc_purple else R.color.sc_border
             ))
             strokeWidth = (resources.displayMetrics.density *
                 if (shouldHighlight) 2 else 1).toInt().coerceAtLeast(1)
@@ -1207,7 +1193,7 @@ class StudentConnectActivity : AppCompatActivity() {
                 }
                 removeConnectionButton.visibility = View.VISIBLE
                 removeConnectionButton.setOnClickListener {
-                    AlertDialog.Builder(this)
+                    AlertDialog.Builder(this, R.style.ThemeOverlay_StudentConnect_Dialog)
                         .setTitle("Remove connection?")
                         .setMessage("Remove ${nameText.text} from My Connections? You can send a new request later.")
                         .setNegativeButton("Keep connection", null)

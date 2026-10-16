@@ -7,10 +7,10 @@
     android:clickable="true"
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
-    app:cardBackgroundColor="@color/surface"
+    app:cardBackgroundColor="@color/sc_card"
     app:cardCornerRadius="14dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/surface_stroke"
+    app:strokeColor="@color/sc_border"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -32,7 +32,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/ink_900"
+                android:textColor="@color/sc_text_primary"
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
@@ -43,7 +43,7 @@
                 android:layout_marginTop="4dp"
                 android:ellipsize="end"
                 android:maxLines="2"
-                android:textColor="@color/ink_500"
+                android:textColor="@color/sc_text_muted"
                 android:textSize="13sp" />
         </LinearLayout>
 
@@ -58,7 +58,7 @@
                 android:id="@+id/studentChatSummaryTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="@color/ink_500"
+                android:textColor="@color/sc_text_muted"
                 android:textSize="10sp" />
 
             <TextView
@@ -71,7 +71,7 @@
                 android:paddingTop="3dp"
                 android:paddingEnd="8dp"
                 android:paddingBottom="3dp"
-                android:textColor="@color/on_brand"
+                android:textColor="@color/sc_text_primary"
                 android:textSize="10sp"
                 android:textStyle="bold"
                 android:visibility="gone" />

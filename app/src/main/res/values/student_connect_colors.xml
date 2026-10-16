@@ -11,4 +11,6 @@
     <color name="sc_lavender">#C4B5FD</color>
     <color name="sc_text_primary">#F7F5FF</color>
     <color name="sc_text_muted">#B7BEDC</color>
+    <color name="sc_danger">#FDA4AF</color>
+    <color name="sc_danger_bg">#3B1D35</color>
 </resources>

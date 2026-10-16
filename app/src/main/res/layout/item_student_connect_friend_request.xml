@@ -4,9 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginTop="10dp"
+    app:cardBackgroundColor="@color/sc_card"
     app:cardCornerRadius="14dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/surface_stroke"
+    app:strokeColor="@color/sc_border"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -19,7 +20,7 @@
             android:id="@+id/studentConnectFriendRequestName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="@color/ink_900"
+            android:textColor="@color/sc_text_primary"
             android:textSize="16sp"
             android:textStyle="bold" />
 
@@ -29,7 +30,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="3dp"
             android:letterSpacing="0.04"
-            android:textColor="@color/brand_primary"
+            android:textColor="@color/sc_purple"
             android:textSize="13sp" />
 
         <TextView
@@ -37,7 +38,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:textColor="@color/ink_500"
+            android:textColor="@color/sc_text_muted"
             android:textSize="13sp" />
 
         <LinearLayout
@@ -58,10 +59,10 @@
                 android:textAllCaps="false"
                 android:textSize="12sp"
                 android:visibility="gone"
-                android:textColor="@color/brand_primary"
-                app:backgroundTint="@color/surface"
+                android:textColor="@color/sc_purple"
+                app:backgroundTint="@color/sc_input"
                 app:cornerRadius="10dp"
-                app:strokeColor="@color/surface_stroke"
+                app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -74,10 +75,10 @@
                 android:textAllCaps="false"
                 android:textSize="12sp"
                 android:visibility="gone"
-                android:textColor="@color/brand_primary"
-                app:backgroundTint="@color/surface"
+                android:textColor="@color/sc_purple"
+                app:backgroundTint="@color/sc_input"
                 app:cornerRadius="10dp"
-                app:strokeColor="@color/surface_stroke"
+                app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -90,7 +91,7 @@
                 android:textAllCaps="false"
                 android:textSize="12sp"
                 android:visibility="gone"
-                app:backgroundTint="@color/brand_primary"
+                app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="10dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -103,10 +104,10 @@
                 android:textAllCaps="false"
                 android:textSize="12sp"
                 android:visibility="gone"
-                android:textColor="@color/brand_primary"
-                app:backgroundTint="@color/surface"
+                android:textColor="@color/sc_purple"
+                app:backgroundTint="@color/sc_input"
                 app:cornerRadius="10dp"
-                app:strokeColor="@color/surface_stroke"
+                app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -118,10 +119,10 @@
                 android:textAllCaps="false"
                 android:textSize="12sp"
                 android:visibility="gone"
-                android:textColor="@color/brand_primary"
-                app:backgroundTint="@color/surface"
+                android:textColor="@color/sc_purple"
+                app:backgroundTint="@color/sc_input"
                 app:cornerRadius="10dp"
-                app:strokeColor="@color/surface_stroke"
+                app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -133,7 +134,7 @@
                 android:textAllCaps="false"
                 android:textSize="12sp"
                 android:visibility="gone"
-                app:backgroundTint="@color/brand_primary"
+                app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="10dp" />
         </LinearLayout>
 
@@ -146,8 +147,8 @@
             android:textAllCaps="false"
             android:textSize="13sp"
             android:visibility="gone"
-            android:textColor="@color/on_brand"
-            app:backgroundTint="@color/brand_primary"
+            android:textColor="@color/sc_text_primary"
+            app:backgroundTint="@color/sc_purple"
             app:cornerRadius="10dp" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

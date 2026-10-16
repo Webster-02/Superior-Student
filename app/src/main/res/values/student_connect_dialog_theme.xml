@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Used only by confirmation dialogs launched from Student Connect. -->
+    <style name="ThemeOverlay.StudentConnect.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorPrimary">@color/sc_purple</item>
+        <item name="colorSecondary">@color/sc_purple</item>
+        <item name="colorSurface">@color/sc_card</item>
+        <item name="colorOnSurface">@color/sc_text_primary</item>
+        <item name="android:colorAccent">@color/sc_purple</item>
+        <item name="android:textColorPrimary">@color/sc_text_primary</item>
+        <item name="android:textColorSecondary">@color/sc_text_muted</item>
+    </style>
+</resources>
