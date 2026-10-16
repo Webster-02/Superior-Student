@@ -445,6 +445,46 @@ service cloud.firestore {
         // Sent messages are immutable.
         allow update, delete: if false;
       }
+
+      // Ephemeral one-to-one typing state. Active participants can read it;
+      // each account can write only its own document.
+      match /typing/{uid} {
+        allow get, list: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId);
+
+        allow create: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.keys().hasAll(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.isTyping == true
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && activeChatConversationMember(conversationId)
+          && resource.data.uid == uid
+          && resource.data.isTyping == true
+          && request.resource.data.keys().hasAll(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.isTyping == true
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']);
+
+        // Cleanup of one's own state is allowed even if the accepted connection disappears.
+        allow delete: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/chatConversations/$(conversationId))
+          && validChatConversation(
+            conversationId,
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data
+          )
+          && request.auth.uid in get(
+            /databases/$(database)/documents/chatConversations/$(conversationId)
+          ).data.participantUids;
+      }
     }
 
     match /studentIds/{publicId} {

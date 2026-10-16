@@ -111,6 +111,18 @@
                         android:textColor="@color/sc_text_muted"
                         android:textSize="9sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/studentChatTypingIndicator"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:accessibilityLiveRegion="polite"
+                        android:text="Typing…"
+                        android:textColor="@color/sc_lavender"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
                 </LinearLayout>
             </LinearLayout>
 

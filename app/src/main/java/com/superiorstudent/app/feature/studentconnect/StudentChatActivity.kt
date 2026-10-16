@@ -1,6 +1,11 @@
 package com.superiorstudent.app.feature.studentconnect
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -14,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.card.MaterialCardView
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
@@ -32,6 +38,7 @@ class StudentChatActivity : AppCompatActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var contactNameText: TextView
     private lateinit var contactInitialsText: TextView
+    private lateinit var typingIndicatorText: TextView
     private lateinit var statusText: TextView
     private lateinit var messagesScroll: ScrollView
     private lateinit var messagesContainer: LinearLayout
@@ -47,8 +54,24 @@ class StudentChatActivity : AppCompatActivity() {
     private var currentProfile: StudentProfile? = null
     private var conversation: StudentChatConversation? = null
     private var messagesListener: ListenerRegistration? = null
+    private var typingListener: ListenerRegistration? = null
+    private val typingHandler = Handler(Looper.getMainLooper())
+    private var isLocalTypingActive = false
+    private var remoteTypingUpdatedAt: Timestamp? = null
     private var isSending = false
     private var chatUnavailable = false
+
+    private val typingIdleRunnable = Runnable { stopLocalTypingState() }
+    private val typingHeartbeatRunnable = object : Runnable {
+        override fun run() {
+            if (!isLocalTypingActive) return
+            publishLocalTypingHeartbeat()
+            typingHandler.postDelayed(this, TYPING_HEARTBEAT_MS)
+        }
+    }
+    private val remoteTypingExpiryRunnable = object : Runnable {
+        override fun run() { renderRemoteTypingIndicator() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,21 +110,54 @@ class StudentChatActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!::auth.isInitialized) return
+        val user = auth.currentUser
+        val activeConversation = conversation
+        if (user != null && user.isEmailVerified && activeConversation != null && !chatUnavailable) {
+            startTypingListener(user.uid, activeConversation)
+        }
+    }
+
+    override fun onStop() {
+        stopLocalTypingState()
+        typingListener?.remove()
+        typingListener = null
+        remoteTypingUpdatedAt = null
+        typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
+        if (::typingIndicatorText.isInitialized) typingIndicatorText.visibility = View.GONE
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        stopLocalTypingState()
+        typingListener?.remove()
+        typingListener = null
         messagesListener?.remove()
         messagesListener = null
+        typingHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
 
     private fun bindViews() {
         contactNameText = findViewById(R.id.studentChatContactName)
         contactInitialsText = findViewById(R.id.studentChatAvatarInitials)
+        typingIndicatorText = findViewById(R.id.studentChatTypingIndicator)
         statusText = findViewById(R.id.studentChatStatus)
         messagesScroll = findViewById(R.id.studentChatMessagesScroll)
         messagesContainer = findViewById(R.id.studentChatMessagesContainer)
         emptyStateText = findViewById(R.id.studentChatEmptyState)
         messageInput = findViewById(R.id.studentChatMessageInput)
         sendButton = findViewById(R.id.studentChatSendButton)
+        typingIndicatorText.visibility = View.GONE
+        messageInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (s.isNullOrBlank()) stopLocalTypingState() else onLocalComposerChanged()
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
         setComposerEnabled(false)
     }
 
@@ -135,6 +191,7 @@ class StudentChatActivity : AppCompatActivity() {
                 statusText.text = "Private chat · Only this accepted connection can access these messages."
                 setComposerEnabled(true)
                 startMessagesListener(uid, opened)
+                startTypingListener(uid, opened)
             }
         }
     }
@@ -159,6 +216,11 @@ class StudentChatActivity : AppCompatActivity() {
                 }
                 if (denied) {
                     chatUnavailable = true
+                    stopLocalTypingState()
+                    typingListener?.remove()
+                    typingListener = null
+                    remoteTypingUpdatedAt = null
+                    typingIndicatorText.visibility = View.GONE
                     setComposerEnabled(false)
                 }
                 return@listenMessages
@@ -242,6 +304,79 @@ class StudentChatActivity : AppCompatActivity() {
         messagesScroll.post { messagesScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
+    private fun onLocalComposerChanged() {
+        val user = auth.currentUser
+        val activeConversation = conversation
+        if (user == null || !user.isEmailVerified || activeConversation == null || chatUnavailable || isSending) {
+            stopLocalTypingState()
+            return
+        }
+        if (!isLocalTypingActive) {
+            isLocalTypingActive = true
+            publishLocalTypingHeartbeat()
+            typingHandler.removeCallbacks(typingHeartbeatRunnable)
+            typingHandler.postDelayed(typingHeartbeatRunnable, TYPING_HEARTBEAT_MS)
+        }
+        typingHandler.removeCallbacks(typingIdleRunnable)
+        typingHandler.postDelayed(typingIdleRunnable, TYPING_IDLE_MS)
+    }
+
+    private fun publishLocalTypingHeartbeat() {
+        val user = auth.currentUser ?: return
+        val activeConversation = conversation ?: return
+        if (!user.isEmailVerified || chatUnavailable || !isLocalTypingActive) return
+        chatRepository.publishTypingState(activeConversation.id, user.uid, otherUid) { error ->
+            if (error != null && !isDestroyed) Log.w(TAG, "Could not update ephemeral typing state.", error)
+        }
+    }
+
+    private fun stopLocalTypingState() {
+        typingHandler.removeCallbacks(typingIdleRunnable)
+        typingHandler.removeCallbacks(typingHeartbeatRunnable)
+        if (!isLocalTypingActive) return
+        isLocalTypingActive = false
+        val user = auth.currentUser
+        val activeConversation = conversation
+        if (user == null || activeConversation == null) return
+        chatRepository.clearTypingState(activeConversation.id, user.uid, otherUid) { error ->
+            if (error != null && !isDestroyed) Log.w(TAG, "Could not clear ephemeral typing state.", error)
+        }
+    }
+
+    private fun startTypingListener(uid: String, activeConversation: StudentChatConversation) {
+        typingListener?.remove()
+        typingListener = chatRepository.listenTypingState(
+            conversationId = activeConversation.id,
+            currentUid = uid,
+            otherUid = otherUid
+        ) { typingState, error ->
+            if (!isCurrentUser(uid)) return@listenTypingState
+            if (error != null) {
+                remoteTypingUpdatedAt = null
+                typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
+                typingIndicatorText.visibility = View.GONE
+                Log.w(TAG, "Could not listen for typing state.", error)
+                return@listenTypingState
+            }
+            remoteTypingUpdatedAt = typingState?.updatedAt
+            renderRemoteTypingIndicator()
+        }
+    }
+
+    private fun renderRemoteTypingIndicator() {
+        val updatedAtMillis = remoteTypingUpdatedAt?.toDate()?.time
+        val ageMillis = updatedAtMillis?.let { System.currentTimeMillis() - it }
+        val isFresh = ageMillis != null && ageMillis in -2_000L..TYPING_STALE_AFTER_MS
+        typingIndicatorText.visibility = if (isFresh) View.VISIBLE else View.GONE
+        if (isFresh) {
+            typingIndicatorText.text = "Typing…"
+            typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
+            typingHandler.postDelayed(remoteTypingExpiryRunnable, TYPING_EXPIRY_CHECK_MS)
+        } else {
+            typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
+        }
+    }
+
     private fun sendCurrentMessage() {
         val user = auth.currentUser
         val profile = currentProfile
@@ -264,6 +399,7 @@ class StudentChatActivity : AppCompatActivity() {
             return
         }
 
+        stopLocalTypingState()
         isSending = true
         setComposerEnabled(true)
         sendButton.isEnabled = false
@@ -305,6 +441,11 @@ class StudentChatActivity : AppCompatActivity() {
 
     private fun showFatalError(message: String) {
         chatUnavailable = true
+        stopLocalTypingState()
+        typingListener?.remove()
+        typingListener = null
+        remoteTypingUpdatedAt = null
+        if (::typingIndicatorText.isInitialized) typingIndicatorText.visibility = View.GONE
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_danger))
         statusText.text = message
         emptyStateText.text = "Chat unavailable.\nGo back to My Connections and try again."
@@ -335,6 +476,11 @@ class StudentChatActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_OTHER_UID = "student_chat_other_uid"
         const val EXTRA_OTHER_DISPLAY_NAME = "student_chat_other_display_name"
+        private const val TAG = "StudentChatTyping"
+        private const val TYPING_IDLE_MS = 1_500L
+        private const val TYPING_HEARTBEAT_MS = 4_000L
+        private const val TYPING_STALE_AFTER_MS = 9_000L
+        private const val TYPING_EXPIRY_CHECK_MS = 1_000L
         private val WHITESPACE = Regex("\\s+")
     }
 }

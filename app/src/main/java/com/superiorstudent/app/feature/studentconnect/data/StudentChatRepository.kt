@@ -34,6 +34,9 @@ data class StudentChatSummary(
     val unreadCount: Int
 )
 
+/** Ephemeral typing state, stored separately from immutable chat messages. */
+data class StudentChatTypingStatus(val uid: String, val updatedAt: Timestamp)
+
 /** Derives an unread count from recent messages and the user's last-read timestamp. */
 internal object StudentChatUnreadCounter {
     fun count(
@@ -335,6 +338,73 @@ class StudentChatRepository(
             .addOnFailureListener { error -> callback(null, error) }
     }
 
+    /** Publishes a short-lived typing heartbeat; Firestore rules enforce active-chat access. */
+    fun publishTypingState(conversationId: String, currentUid: String, otherUid: String, callback: (Exception?) -> Unit) {
+        val expectedId = try { StudentChatIds.conversationId(currentUid, otherUid) }
+        catch (error: IllegalArgumentException) { callback(error); return }
+        if (conversationId != expectedId) {
+            callback(IllegalArgumentException("The conversation does not match these two students."))
+            return
+        }
+        firestore.collection(CONVERSATIONS).document(conversationId).collection(TYPING).document(currentUid)
+            .set(
+                mapOf("uid" to currentUid, "isTyping" to true, "updatedAt" to FieldValue.serverTimestamp()),
+                com.google.firebase.firestore.SetOptions.merge()
+            )
+            .addOnSuccessListener { callback(null) }
+            .addOnFailureListener { error -> callback(error) }
+    }
+
+    /** Removes this student's ephemeral typing state on idle, send, or close. */
+    fun clearTypingState(
+        conversationId: String,
+        currentUid: String,
+        otherUid: String,
+        callback: (Exception?) -> Unit = {}
+    ) {
+        val expectedId = try { StudentChatIds.conversationId(currentUid, otherUid) }
+        catch (error: IllegalArgumentException) { callback(error); return }
+        if (conversationId != expectedId) {
+            callback(IllegalArgumentException("The conversation does not match these two students."))
+            return
+        }
+        firestore.collection(CONVERSATIONS).document(conversationId).collection(TYPING).document(currentUid)
+            .delete()
+            .addOnSuccessListener { callback(null) }
+            .addOnFailureListener { error -> callback(error) }
+    }
+
+    /** Listens only to the other participant's typing state, never message contents. */
+    fun listenTypingState(
+        conversationId: String,
+        currentUid: String,
+        otherUid: String,
+        callback: (StudentChatTypingStatus?, Exception?) -> Unit
+    ): ListenerRegistration? {
+        val expectedId = try { StudentChatIds.conversationId(currentUid, otherUid) }
+        catch (error: IllegalArgumentException) { callback(null, error); return null }
+        if (conversationId != expectedId) {
+            callback(null, IllegalArgumentException("The conversation does not match these two students."))
+            return null
+        }
+        return firestore.collection(CONVERSATIONS).document(conversationId).collection(TYPING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) { callback(null, error); return@addSnapshotListener }
+                if (snapshot == null) {
+                    callback(null, IllegalStateException("No typing state was returned."))
+                    return@addSnapshotListener
+                }
+                val document = snapshot.documents.firstOrNull { it.id == otherUid }
+                val updatedAt = document?.getTimestamp("updatedAt")
+                val status = if (
+                    document?.getBoolean("isTyping") == true &&
+                    document.getString("uid") == otherUid &&
+                    updatedAt != null
+                ) StudentChatTypingStatus(uid = otherUid, updatedAt = updatedAt) else null
+                callback(status, null)
+            }
+    }
+
     fun sendMessage(
         conversationId: String,
         currentUid: String,
@@ -490,6 +560,7 @@ class StudentChatRepository(
         const val CONVERSATIONS = "chatConversations"
         const val MESSAGES = "messages"
         const val READ_STATES = "readStates"
+        const val TYPING = "typing"
         const val PROFILES = "profiles"
         const val FRIEND_REQUESTS = "friendRequests"
         const val ACCEPTED = "accepted"
