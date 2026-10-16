@@ -6,6 +6,100 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
+
+    // Chat access is tied to an existing accepted directional friend request.
+    function acceptedChatConnectionExists(uidA, uidB) {
+      let forwardPath = /databases/$(database)/documents/friendRequests/$(uidA + '_' + uidB);
+      let reversePath = /databases/$(database)/documents/friendRequests/$(uidB + '_' + uidA);
+      return (
+        exists(forwardPath)
+        && get(forwardPath).data.senderUid == uidA
+        && get(forwardPath).data.receiverUid == uidB
+        && get(forwardPath).data.status == 'accepted'
+      ) || (
+        exists(reversePath)
+        && get(reversePath).data.senderUid == uidB
+        && get(reversePath).data.receiverUid == uidA
+        && get(reversePath).data.status == 'accepted'
+      );
+    }
+
+    function validChatConversation(conversationId, data) {
+      return data.keys().hasAll(['participantUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['participantUids', 'createdAt', 'updatedAt'])
+        && data.participantUids is list
+        && data.participantUids.size() == 2
+        && data.participantUids[0] is string
+        && data.participantUids[0].size() > 0
+        && data.participantUids[0].size() <= 128
+        && data.participantUids[1] is string
+        && data.participantUids[1].size() > 0
+        && data.participantUids[1].size() <= 128
+        && data.participantUids[0] != data.participantUids[1]
+        && (
+          conversationId == data.participantUids[0] + '_' + data.participantUids[1]
+          || conversationId == data.participantUids[1] + '_' + data.participantUids[0]
+        )
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function currentUserHasActiveChatConnection(participantUids) {
+      return participantUids is list
+        && participantUids.size() == 2
+        && participantUids[0] is string
+        && participantUids[1] is string
+        && participantUids[0] != participantUids[1]
+        && request.auth.uid in participantUids
+        && (
+          (
+            request.auth.uid == participantUids[0]
+            && acceptedChatConnectionExists(participantUids[0], participantUids[1])
+          )
+          || (
+            request.auth.uid == participantUids[1]
+            && acceptedChatConnectionExists(participantUids[1], participantUids[0])
+          )
+        );
+    }
+
+    function activeChatConversationMember(conversationId) {
+      let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+      return exists(conversationPath)
+        && validChatConversation(conversationId, get(conversationPath).data)
+        && currentUserHasActiveChatConnection(get(conversationPath).data.participantUids);
+    }
+
+    function validChatMessage(conversationId, data, participantUids) {
+      return data.keys().hasAll([
+          'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt'
+        ])
+        && data.participantUids == participantUids
+        && data.participantUids is list
+        && data.participantUids.size() == 2
+        && data.senderUid is string
+        && data.recipientUid is string
+        && data.senderUid != data.recipientUid
+        && (
+          (data.senderUid == participantUids[0] && data.recipientUid == participantUids[1])
+          || (data.senderUid == participantUids[1] && data.recipientUid == participantUids[0])
+        )
+        && (
+          conversationId == data.senderUid + '_' + data.recipientUid
+          || conversationId == data.recipientUid + '_' + data.senderUid
+        )
+        && data.senderName is string
+        && data.senderName.size() >= 2
+        && data.senderName.size() <= 60
+        && data.text is string
+        && data.text.size() >= 1
+        && data.text.size() <= 2000
+        && data.createdAt is timestamp;
+    }
+
     function validNotificationShape(uid, data) {
       return data.keys().hasAll([
           'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
@@ -255,6 +349,130 @@ service cloud.firestore {
 
       allow delete: if signedInWithVerifiedEmail()
         && request.auth.uid == uid;
+    }
+
+
+    // Student Connect one-to-one chat. Existing friend/ERP rules stay unchanged.
+    match /chatConversations/{conversationId} {
+      // A caller may test whether their own deterministic pair document exists.
+      // Existing conversation metadata is visible only to its participants.
+      allow get: if signedInWithVerifiedEmail()
+        && (
+          (
+            !exists(/databases/$(database)/documents/chatConversations/$(conversationId))
+            && (
+              conversationId.matches('^' + request.auth.uid + '_[^/]+
+      allow get: if signedInWithVerifiedEmail();
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.uid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.publicId == publicId;
+
+      allow update, delete: if false;
+    }
+  }
+}
+)
+              || conversationId.matches('^[^/]+_' + request.auth.uid + '
+      allow get: if signedInWithVerifiedEmail();
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.uid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.publicId == publicId;
+
+      allow update, delete: if false;
+    }
+  }
+}
+)
+            )
+          )
+          || (
+            validChatConversation(conversationId, resource.data)
+            && request.auth.uid in resource.data.participantUids
+          )
+        );
+
+      allow list: if signedInWithVerifiedEmail()
+        && validChatConversation(conversationId, resource.data)
+        && request.auth.uid in resource.data.participantUids;
+
+      allow create: if signedInWithVerifiedEmail()
+        && validChatConversation(conversationId, request.resource.data)
+        && request.auth.uid in request.resource.data.participantUids
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.participantUids[0]))
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.participantUids[1]))
+        && acceptedChatConnectionExists(
+          request.resource.data.participantUids[0],
+          request.resource.data.participantUids[1]
+        );
+
+      allow update: if signedInWithVerifiedEmail()
+        && validChatConversation(conversationId, resource.data)
+        && validChatConversation(conversationId, request.resource.data)
+        && request.auth.uid in resource.data.participantUids
+        && request.resource.data.participantUids == resource.data.participantUids
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && acceptedChatConnectionExists(
+          resource.data.participantUids[0],
+          resource.data.participantUids[1]
+        );
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        // A chat becomes unreadable when the accepted connection is removed.
+        allow get, list: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId)
+          && validChatMessage(
+            conversationId,
+            resource.data,
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.participantUids
+          )
+          && request.auth.uid in resource.data.participantUids;
+
+        allow create: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId)
+          && validChatMessage(
+            conversationId,
+            request.resource.data,
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.participantUids
+          )
+          && request.auth.uid == request.resource.data.senderUid
+          && request.resource.data.createdAt == request.time
+          && exists(/databases/$(database)/documents/profiles/$(request.auth.uid))
+          && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
+            == request.resource.data.senderName;
+
+        // Sent messages are immutable: edit/delete support can be designed separately.
+        allow update, delete: if false;
+      }
     }
 
     match /studentIds/{publicId} {

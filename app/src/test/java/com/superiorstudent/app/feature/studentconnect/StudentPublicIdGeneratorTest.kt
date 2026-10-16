@@ -4,6 +4,8 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdGenera
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatIds
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessageText
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationIds
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationNavigation
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTarget
@@ -73,6 +75,28 @@ class StudentPublicIdGeneratorTest {
             StudentNotificationNavigation.targetForType("friend_request_accepted")
         )
         assertEquals(null, StudentNotificationNavigation.targetForType("unknown"))
+    }
+
+    @Test
+    fun chatConversationIdsAreStableRegardlessOfParticipantOrder() {
+        assertEquals("studentA_studentB", StudentChatIds.conversationId("studentA", "studentB"))
+        assertEquals("studentA_studentB", StudentChatIds.conversationId("studentB", "studentA"))
+        assertEquals(listOf("studentA", "studentB"), StudentChatIds.participantUids("studentB", "studentA"))
+    }
+
+    @Test
+    fun chatConversationIdRejectsBlankAndSameParticipants() {
+        assertTrue(runCatching { StudentChatIds.conversationId("", "studentB") }.isFailure)
+        assertTrue(runCatching { StudentChatIds.conversationId("studentA", "studentA") }.isFailure)
+    }
+
+    @Test
+    fun chatMessageTextIsTrimmedAndLimitedToTwoThousandCharacters() {
+        assertEquals("hello", StudentChatMessageText.normalize("  hello  "))
+        assertTrue(StudentChatMessageText.isValid("  hello  "))
+        assertTrue(!StudentChatMessageText.isValid("  "))
+        assertTrue(StudentChatMessageText.isValid("a".repeat(StudentChatMessageText.MAX_LENGTH)))
+        assertTrue(!StudentChatMessageText.isValid("a".repeat(StudentChatMessageText.MAX_LENGTH + 1)))
     }
 
     @Test
