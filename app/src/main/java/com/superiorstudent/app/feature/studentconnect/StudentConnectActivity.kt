@@ -470,11 +470,47 @@ class StudentConnectActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Applies the branded dark presentation only while the Firebase sign-in form is visible.
+     * Once an account is signed in, existing profile and connection screens keep their current
+     * light styling until their own branding step. This method does not change auth/session data.
+     */
+    private fun applyStudentConnectBranding(isSignedIn: Boolean) {
+        val backButton = findViewById<TextView>(R.id.studentConnectBackButton)
+        val brandTitle = findViewById<TextView>(R.id.studentConnectBrandTitle)
+        val brandTagline = findViewById<TextView>(R.id.studentConnectBrandTagline)
+        val brandPromise = findViewById<TextView>(R.id.studentConnectBrandPromise)
+        val statusCard = findViewById<MaterialCardView>(R.id.studentConnectStatusCard)
+
+        if (isSignedIn) {
+            studentConnectScrollView.setBackgroundColor(
+                ContextCompat.getColor(this, R.color.surface_alt)
+            )
+            backButton.setTextColor(ContextCompat.getColor(this, R.color.brand_primary))
+            brandTitle.setTextColor(ContextCompat.getColor(this, R.color.ink_900))
+            brandTagline.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
+            brandPromise.setTextColor(ContextCompat.getColor(this, R.color.brand_primary))
+            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface))
+            statusCard.setStrokeColor(ContextCompat.getColor(this, R.color.surface_stroke))
+            statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_700))
+        } else {
+            studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
+            backButton.setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
+            brandTitle.setTextColor(ContextCompat.getColor(this, R.color.sc_text_primary))
+            brandTagline.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+            brandPromise.setTextColor(ContextCompat.getColor(this, R.color.sc_purple))
+            statusCard.setCardBackgroundColor(ContextCompat.getColor(this, R.color.sc_card))
+            statusCard.setStrokeColor(ContextCompat.getColor(this, R.color.sc_border))
+            statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+        }
+    }
+
     private fun renderCurrentUser() {
         val user = auth.currentUser
         val signedIn = user != null
         authForm.visibility = if (signedIn) View.GONE else View.VISIBLE
         signedInPanel.visibility = if (signedIn) View.VISIBLE else View.GONE
+        applyStudentConnectBranding(isSignedIn = signedIn)
 
         if (user == null) {
             profileSetupPanel.visibility = View.GONE

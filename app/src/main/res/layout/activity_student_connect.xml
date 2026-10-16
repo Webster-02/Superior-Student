@@ -5,7 +5,7 @@
     android:forceDarkAllowed="false"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/surface_alt"
+    android:background="@drawable/bg_student_connect_auth"
     android:fillViewport="true"
     android:overScrollMode="never">
 
@@ -27,35 +27,73 @@
             android:gravity="center_vertical"
             android:paddingEnd="12dp"
             android:text="‹  Back to app"
-            android:textColor="@color/brand_primary"
+            android:textColor="@color/sc_lavender"
             android:textSize="15sp"
             android:textStyle="bold" />
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/studentConnectBrandHeader"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Student Connect"
-            android:textColor="@color/ink_900"
-            android:textSize="28sp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="58dp"
+                android:layout_height="58dp"
+                android:contentDescription="Student Connect logo"
+                android:importantForAccessibility="yes"
+                android:src="@drawable/ic_student_connect_brand" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/studentConnectBrandTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Student Connect"
+                    android:textColor="@color/sc_text_primary"
+                    android:textSize="25sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/studentConnectBrandTagline"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:lineSpacingExtra="1dp"
+                    android:text="Same campus. Real people. New opportunities."
+                    android:textColor="@color/sc_text_muted"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/studentConnectBrandPromise"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:letterSpacing="0.07"
+            android:text="MORE THAN CLASSMATES  •  A STRONGER CAMPUS TOGETHER"
+            android:textColor="@color/sc_purple"
+            android:textSize="10sp"
             android:textStyle="bold" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:lineSpacingExtra="3dp"
-            android:text="Set up a separate, recoverable identity for student-to-student features. Your current university login stays unchanged."
-            android:textColor="@color/ink_500"
-            android:textSize="14sp" />
-
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/studentConnectStatusCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="18dp"
+            app:cardBackgroundColor="@color/sc_card"
             app:cardCornerRadius="18dp"
             app:cardElevation="0dp"
-            app:strokeColor="@color/surface_stroke"
+            app:strokeColor="@color/sc_border"
             app:strokeWidth="1dp">
 
             <TextView
@@ -64,7 +102,7 @@
                 android:layout_height="wrap_content"
                 android:padding="18dp"
                 android:text="Checking Student Connect status…"
-                android:textColor="@color/ink_700"
+                android:textColor="@color/sc_text_muted"
                 android:textSize="14sp" />
         </com.google.android.material.card.MaterialCardView>
 
@@ -73,13 +111,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:orientation="vertical">
+            android:background="@drawable/bg_student_connect_auth_card"
+            android:orientation="vertical"
+            android:padding="18dp">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Email address"
-                android:textColor="@color/ink_700"
+                android:textColor="@color/sc_text_primary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
@@ -87,16 +127,18 @@
                 android:id="@+id/studentConnectEmailInput"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="7dp"
                 android:autofillHints="emailAddress"
-                android:backgroundTint="@color/brand_primary"
+                android:background="@drawable/bg_student_connect_input"
                 android:hint="you@example.com"
                 android:inputType="textEmailAddress"
                 android:maxLines="1"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:textColor="@color/ink_900"
-                android:textColorHint="@color/ink_400"
+                android:paddingStart="14dp"
+                android:paddingTop="12dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="12dp"
+                android:textColor="@color/sc_text_primary"
+                android:textColorHint="@color/sc_text_muted"
                 android:textSize="15sp" />
 
             <TextView
@@ -104,7 +146,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:text="Student Connect password"
-                android:textColor="@color/ink_700"
+                android:textColor="@color/sc_text_primary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
@@ -112,16 +154,18 @@
                 android:id="@+id/studentConnectPasswordInput"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="7dp"
                 android:autofillHints="newPassword"
-                android:backgroundTint="@color/brand_primary"
+                android:background="@drawable/bg_student_connect_input"
                 android:hint="At least 6 characters"
                 android:inputType="textPassword"
                 android:maxLines="1"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:textColor="@color/ink_900"
-                android:textColorHint="@color/ink_400"
+                android:paddingStart="14dp"
+                android:paddingTop="12dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="12dp"
+                android:textColor="@color/sc_text_primary"
+                android:textColorHint="@color/sc_text_muted"
                 android:textSize="15sp" />
 
             <com.google.android.material.button.MaterialButton
@@ -131,8 +175,9 @@
                 android:layout_marginTop="20dp"
                 android:text="Create Student Connect account"
                 android:textAllCaps="false"
+                android:textColor="@color/sc_text_primary"
                 android:textSize="14sp"
-                app:backgroundTint="@color/brand_primary"
+                app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="14dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -142,11 +187,11 @@
                 android:layout_marginTop="8dp"
                 android:text="I already have an account — Sign in"
                 android:textAllCaps="false"
-                android:textColor="@color/brand_primary"
+                android:textColor="@color/sc_text_primary"
                 android:textSize="14sp"
-                app:backgroundTint="@color/surface"
+                app:backgroundTint="@color/sc_input"
                 app:cornerRadius="14dp"
-                app:strokeColor="@color/surface_stroke"
+                app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
         </LinearLayout>
 

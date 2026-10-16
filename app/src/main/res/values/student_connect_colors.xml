@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Scoped Student Connect login palette; ERP and academic screens remain unchanged. -->
+    <color name="sc_navy">#080B1C</color>
+    <color name="sc_navy_mid">#121735</color>
+    <color name="sc_navy_violet">#21164B</color>
+    <color name="sc_card">#171C38</color>
+    <color name="sc_input">#0F142D</color>
+    <color name="sc_border">#45427D</color>
+    <color name="sc_purple">#7757FF</color>
+    <color name="sc_lavender">#C4B5FD</color>
+    <color name="sc_text_primary">#F7F5FF</color>
+    <color name="sc_text_muted">#B7BEDC</color>
+</resources>
