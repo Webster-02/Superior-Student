@@ -28,6 +28,10 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessage
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentPresence
+import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceFormatter
+import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentConnectPresenceTracker
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,6 +42,7 @@ class StudentChatActivity : AppCompatActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var contactNameText: TextView
     private lateinit var contactInitialsText: TextView
+    private lateinit var contactPresenceText: TextView
     private lateinit var typingIndicatorText: TextView
     private lateinit var statusText: TextView
     private lateinit var messagesScroll: ScrollView
@@ -48,6 +53,7 @@ class StudentChatActivity : AppCompatActivity() {
 
     private val chatRepository by lazy { StudentChatRepository() }
     private val profileRepository by lazy { StudentProfileRepository() }
+    private val presenceRepository by lazy { StudentPresenceRepository() }
 
     private var otherUid: String = ""
     private var otherDisplayName: String = "Classmate"
@@ -56,6 +62,17 @@ class StudentChatActivity : AppCompatActivity() {
     private var messagesListener: ListenerRegistration? = null
     private var typingListener: ListenerRegistration? = null
     private var readReceiptListener: ListenerRegistration? = null
+    private var otherPresenceListener: ListenerRegistration? = null
+    private var currentOtherPresence: StudentPresence? = null
+    private var activityStarted = false
+    private val presenceOwnerKey by lazy { "StudentChatActivity:" + System.identityHashCode(this) }
+    private val presenceRefreshRunnable = object : Runnable {
+        override fun run() {
+            if (!activityStarted) return
+            renderOtherPresence()
+            typingHandler.postDelayed(this, PRESENCE_UI_REFRESH_MS)
+        }
+    }
     private val outgoingReceiptViews = mutableMapOf<String, TextView>()
     private var displayedMessages: List<StudentChatMessage> = emptyList()
     private var recipientLastReadAt: Timestamp? = null
@@ -116,16 +133,23 @@ class StudentChatActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        activityStarted = true
         if (!::auth.isInitialized) return
         val user = auth.currentUser
         val activeConversation = conversation
         if (user != null && user.isEmailVerified && activeConversation != null && !chatUnavailable) {
             startTypingListener(user.uid, activeConversation)
             startReadReceiptListener(user.uid, activeConversation)
+            syncChatPresence(user.uid)
         }
     }
 
     override fun onStop() {
+        activityStarted = false
+        StudentConnectPresenceTracker.stop(presenceOwnerKey)
+        otherPresenceListener?.remove()
+        otherPresenceListener = null
+        typingHandler.removeCallbacks(presenceRefreshRunnable)
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
@@ -138,6 +162,10 @@ class StudentChatActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        StudentConnectPresenceTracker.stop(presenceOwnerKey)
+        otherPresenceListener?.remove()
+        otherPresenceListener = null
+        activityStarted = false
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
@@ -154,6 +182,7 @@ class StudentChatActivity : AppCompatActivity() {
     private fun bindViews() {
         contactNameText = findViewById(R.id.studentChatContactName)
         contactInitialsText = findViewById(R.id.studentChatAvatarInitials)
+        contactPresenceText = findViewById(R.id.studentChatPresenceIndicator)
         typingIndicatorText = findViewById(R.id.studentChatTypingIndicator)
         statusText = findViewById(R.id.studentChatStatus)
         messagesScroll = findViewById(R.id.studentChatMessagesScroll)
@@ -204,6 +233,7 @@ class StudentChatActivity : AppCompatActivity() {
                 startMessagesListener(uid, opened)
                 startTypingListener(uid, opened)
                 startReadReceiptListener(uid, opened)
+                if (activityStarted) syncChatPresence(uid)
             }
         }
     }
@@ -390,6 +420,45 @@ class StudentChatActivity : AppCompatActivity() {
         }
     }
 
+    private fun syncChatPresence(uid: String) {
+        if (!activityStarted || !isCurrentUser(uid) || currentProfile?.uid != uid ||
+            conversation == null || chatUnavailable
+        ) {
+            StudentConnectPresenceTracker.stop(presenceOwnerKey)
+            otherPresenceListener?.remove()
+            otherPresenceListener = null
+            typingHandler.removeCallbacks(presenceRefreshRunnable)
+            return
+        }
+        StudentConnectPresenceTracker.start(presenceOwnerKey, uid)
+        startOtherPresenceListener(uid)
+        typingHandler.removeCallbacks(presenceRefreshRunnable)
+        typingHandler.postDelayed(presenceRefreshRunnable, PRESENCE_UI_REFRESH_MS)
+    }
+
+    private fun startOtherPresenceListener(uid: String) {
+        otherPresenceListener?.remove()
+        otherPresenceListener = presenceRepository.listenPresence(uid, otherUid) { presence, error ->
+            if (!activityStarted || !isCurrentUser(uid)) return@listenPresence
+            if (error != null) {
+                Log.w(TAG, "Could not listen for connection presence.", error)
+                currentOtherPresence = null
+            } else {
+                currentOtherPresence = presence
+            }
+            renderOtherPresence()
+        }
+    }
+
+    private fun renderOtherPresence() {
+        val label = StudentPresenceFormatter.label(currentOtherPresence, System.currentTimeMillis())
+        contactPresenceText.text = label
+        contactPresenceText.setTextColor(ContextCompat.getColor(
+            this, if (label == "Online") R.color.sc_online else R.color.sc_text_muted
+        ))
+        contactPresenceText.visibility = View.VISIBLE
+    }
+
     private fun startReadReceiptListener(uid: String, activeConversation: StudentChatConversation) {
         readReceiptListener?.remove()
         readReceiptListener = chatRepository.listenOtherParticipantReadState(
@@ -508,6 +577,10 @@ class StudentChatActivity : AppCompatActivity() {
 
     private fun showFatalError(message: String) {
         chatUnavailable = true
+        StudentConnectPresenceTracker.stop(presenceOwnerKey, immediate = true)
+        otherPresenceListener?.remove()
+        otherPresenceListener = null
+        typingHandler.removeCallbacks(presenceRefreshRunnable)
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
@@ -548,6 +621,7 @@ class StudentChatActivity : AppCompatActivity() {
         private const val TYPING_HEARTBEAT_MS = 4_000L
         private const val TYPING_STALE_AFTER_MS = 9_000L
         private const val TYPING_EXPIRY_CHECK_MS = 1_000L
+        private const val PRESENCE_UI_REFRESH_MS = 15_000L
         private val WHITESPACE = Regex("\\s+")
     }
 }

@@ -491,6 +491,41 @@ service cloud.firestore {
       }
     }
 
+    // Presence is scoped to a student's own document and accepted connections.
+    // Heartbeat timestamps are server-generated; clients cannot list presence documents.
+    match /studentPresence/{uid} {
+      allow get: if signedInWithVerifiedEmail()
+        && (
+          request.auth.uid == uid
+          || acceptedChatConnectionExists(request.auth.uid, uid)
+        );
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.isOnline is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid
+        && resource.data.uid == uid
+        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.isOnline is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isOnline', 'lastSeenAt', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
     match /studentIds/{publicId} {
       allow get: if signedInWithVerifiedEmail();
       allow list: if false;

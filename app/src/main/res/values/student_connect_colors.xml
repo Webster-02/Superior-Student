@@ -9,6 +9,7 @@
     <color name="sc_border">#45427D</color>
     <color name="sc_purple">#7757FF</color>
     <color name="sc_lavender">#C4B5FD</color>
+    <color name="sc_online">#4ADE80</color>
     <color name="sc_text_primary">#F7F5FF</color>
     <color name="sc_text_muted">#B7BEDC</color>
     <color name="sc_danger">#FDA4AF</color>

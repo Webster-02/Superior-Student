@@ -113,6 +113,16 @@
                         android:textStyle="bold" />
 
                     <TextView
+                        android:id="@+id/studentChatPresenceIndicator"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:accessibilityLiveRegion="polite"
+                        android:text="Offline"
+                        android:textColor="@color/sc_text_muted"
+                        android:textSize="11sp" />
+
+                    <TextView
                         android:id="@+id/studentChatTypingIndicator"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

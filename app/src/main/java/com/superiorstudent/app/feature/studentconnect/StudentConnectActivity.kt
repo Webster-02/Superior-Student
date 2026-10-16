@@ -32,6 +32,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.material.card.MaterialCardView
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
@@ -47,6 +48,10 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentPresence
+import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceFormatter
+import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentConnectPresenceTracker
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatSummary
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTokenRepository
@@ -161,6 +166,20 @@ class StudentConnectActivity : AppCompatActivity() {
     private var friendRequestsRefreshQueued = false
     private var profileLoadInProgressFor: String? = null
     private var profileLoadedFor: String? = null
+    private var activityStarted = false
+    private val presenceOwnerKey by lazy { "StudentConnectActivity:" + System.identityHashCode(this) }
+    private val presenceRepository by lazy { StudentPresenceRepository() }
+    private val connectionPresenceListeners = mutableMapOf<String, ListenerRegistration>()
+    private val connectionPresenceCache = mutableMapOf<String, StudentPresence>()
+    private val connectionPresenceViews = mutableMapOf<String, TextView>()
+    private val presenceUiHandler = Handler(Looper.getMainLooper())
+    private val presenceUiRefreshRunnable = object : Runnable {
+        override fun run() {
+            if (!activityStarted || currentScreen != StudentConnectScreen.CONNECTIONS) return
+            refreshConnectionPresenceLabels()
+            presenceUiHandler.postDelayed(this, 15_000L)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -181,25 +200,39 @@ class StudentConnectActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        activityStarted = true
         if (::homeDashboard.isInitialized && currentScreen == StudentConnectScreen.HOME) startDashboardAnimations()
+        syncOwnPresence()
+        syncVisibleConnectionPresence()
     }
 
     override fun onStop() {
+        activityStarted = false
+        StudentConnectPresenceTracker.stop(presenceOwnerKey)
+        stopConnectionPresenceListeners()
+        presenceUiHandler.removeCallbacks(presenceUiRefreshRunnable)
         stopDashboardAnimations()
         super.onStop()
     }
 
     override fun onDestroy() {
+        StudentConnectPresenceTracker.stop(presenceOwnerKey)
+        stopConnectionPresenceListeners()
+        presenceUiHandler.removeCallbacksAndMessages(null)
         stopDashboardAnimations()
         stopNotificationsListener()
         stopChatListListener()
         clearNotificationHighlight()
+        connectionPresenceViews.clear()
+        connectionPresenceCache.clear()
         super.onDestroy()
     }
 
     override fun onResume() {
         super.onResume()
         if (!::auth.isInitialized) return
+        syncOwnPresence()
+        syncVisibleConnectionPresence()
 
         val user = auth.currentUser ?: return
         if (user.isEmailVerified && currentStudentProfile?.uid == user.uid) {
@@ -340,6 +373,10 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun finishStudentConnectSignOut() {
+        StudentConnectPresenceTracker.stop(presenceOwnerKey, immediate = true)
+        stopConnectionPresenceListeners()
+        connectionPresenceCache.clear()
+        connectionPresenceViews.clear()
         auth.signOut()
         passwordInput.text?.clear()
         profileLoadInProgressFor = null
@@ -586,6 +623,7 @@ class StudentConnectActivity : AppCompatActivity() {
         }
 
         studentConnectScrollView.scrollTo(0, 0)
+        syncVisibleConnectionPresence()
         if (screen == StudentConnectScreen.HOME) {
             animateDashboardEntrance()
             startDashboardAnimations()
@@ -856,6 +894,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private fun showProfile(profile: StudentProfile) {
         currentStudentProfile = profile
+        syncOwnPresence()
         notificationsPanel.visibility = View.VISIBLE
         startNotificationsListener(profile.uid)
         startChatListListener(profile.uid)
@@ -1222,6 +1261,91 @@ class StudentConnectActivity : AppCompatActivity() {
         }
     }
 
+    private fun syncOwnPresence() {
+        val user = if (::auth.isInitialized) auth.currentUser else null
+        val profile = currentStudentProfile
+        if (activityStarted && user != null && user.isEmailVerified && profile?.uid == user.uid) {
+            StudentConnectPresenceTracker.start(presenceOwnerKey, user.uid)
+        } else {
+            StudentConnectPresenceTracker.stop(presenceOwnerKey)
+        }
+    }
+
+    private fun syncVisibleConnectionPresence() {
+        val user = if (::auth.isInitialized) auth.currentUser else null
+        if (!activityStarted || currentScreen != StudentConnectScreen.CONNECTIONS ||
+            user == null || !user.isEmailVerified || currentStudentProfile?.uid != user.uid
+        ) {
+            stopConnectionPresenceListeners()
+            return
+        }
+        val visibleConnections = cachedFriendRequests
+            .filter { it.status == FriendRequestStatus.ACCEPTED }
+            .filter { request ->
+                val isSender = request.senderUid == user.uid
+                val name = if (isSender) request.receiverName else request.senderName
+                val publicId = if (isSender) request.receiverPublicId else request.senderPublicId
+                StudentConnectionFilter.matches(connectionsQuery, name, publicId)
+            }
+        syncConnectionPresenceListeners(user.uid, visibleConnections)
+    }
+
+    private fun syncConnectionPresenceListeners(uid: String, connections: List<FriendRequest>) {
+        if (!activityStarted || currentScreen != StudentConnectScreen.CONNECTIONS ||
+            auth.currentUser?.uid != uid || auth.currentUser?.isEmailVerified != true
+        ) {
+            stopConnectionPresenceListeners()
+            return
+        }
+        val targetUids = connections.mapNotNull { request ->
+            val peerUid = if (request.senderUid == uid) request.receiverUid
+            else if (request.receiverUid == uid) request.senderUid
+            else null
+            peerUid?.takeIf { it.isNotBlank() && it != uid }
+        }.toSet()
+
+        (connectionPresenceListeners.keys - targetUids).forEach { removedUid ->
+            connectionPresenceListeners.remove(removedUid)?.remove()
+            connectionPresenceCache.remove(removedUid)
+        }
+        targetUids.forEach { peerUid ->
+            if (connectionPresenceListeners.containsKey(peerUid)) return@forEach
+            val listener = presenceRepository.listenPresence(uid, peerUid) { presence, error ->
+                if (!activityStarted || currentScreen != StudentConnectScreen.CONNECTIONS ||
+                    auth.currentUser?.uid != uid
+                ) return@listenPresence
+                if (error != null) {
+                    Log.w("StudentConnectPresence", "Could not load connection presence.", error)
+                    return@listenPresence
+                }
+                if (presence == null) connectionPresenceCache.remove(peerUid)
+                else connectionPresenceCache[peerUid] = presence
+                refreshConnectionPresenceLabels()
+            }
+            if (listener != null) connectionPresenceListeners[peerUid] = listener
+        }
+        presenceUiHandler.removeCallbacks(presenceUiRefreshRunnable)
+        if (targetUids.isNotEmpty()) presenceUiHandler.postDelayed(presenceUiRefreshRunnable, 15_000L)
+        refreshConnectionPresenceLabels()
+    }
+
+    private fun stopConnectionPresenceListeners() {
+        connectionPresenceListeners.values.forEach { it.remove() }
+        connectionPresenceListeners.clear()
+        presenceUiHandler.removeCallbacks(presenceUiRefreshRunnable)
+    }
+
+    private fun refreshConnectionPresenceLabels() {
+        val now = System.currentTimeMillis()
+        connectionPresenceViews.forEach { (peerUid, statusView) ->
+            val label = StudentPresenceFormatter.label(connectionPresenceCache[peerUid], now)
+            statusView.text = if (label == "Offline") "Connected · Offline" else "Connected · $label"
+            statusView.setTextColor(ContextCompat.getColor(
+                this, if (label == "Online") R.color.sc_online else R.color.sc_text_muted
+            ))
+        }
+    }
+
     private fun refreshFriendRequests(showLoadingMessage: Boolean = true) {
         val user = auth.currentUser
         if (user == null || !user.isEmailVerified || currentStudentProfile?.uid != user.uid) {
@@ -1277,6 +1401,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private fun renderFriendRequestLists(uid: String, requests: List<FriendRequest>) {
         connectionsContainer.removeAllViews()
+        connectionPresenceViews.clear()
         incomingRequestsContainer.removeAllViews()
         outgoingRequestsContainer.removeAllViews()
 
@@ -1308,6 +1433,8 @@ class StudentConnectActivity : AppCompatActivity() {
         }
         incoming.forEach { addFriendRequestRow(incomingRequestsContainer, it, incomingRequest = true) }
         outgoing.forEach { addFriendRequestRow(outgoingRequestsContainer, it, incomingRequest = false) }
+        syncConnectionPresenceListeners(uid, if (currentScreen == StudentConnectScreen.CONNECTIONS) connections else emptyList())
+        refreshConnectionPresenceLabels()
 
         connectionsTitleText.text = "My Connections (" + allConnections.size + ")"
         homeConnectionsSubtitle.text = if (allConnections.isEmpty()) "Start your network" else allConnections.size.toString() + " connected"
@@ -1384,6 +1511,11 @@ class StudentConnectActivity : AppCompatActivity() {
             FriendRequestStatus.REJECTED -> if (incomingRequest) "You rejected this request" else "Request declined. You can resend it."
             FriendRequestStatus.CANCELLED -> if (incomingRequest) "Sender cancelled this request" else "You cancelled this request. You can send it again."
             else -> "Unknown request status"
+        }
+        if (container === connectionsContainer && request.status == FriendRequestStatus.ACCEPTED) {
+            val currentUid = auth.currentUser?.uid
+            val peerUid = if (request.senderUid == currentUid) request.receiverUid else request.senderUid
+            if (peerUid.isNotBlank()) connectionPresenceViews[peerUid] = requestStatusText
         }
 
         when {
