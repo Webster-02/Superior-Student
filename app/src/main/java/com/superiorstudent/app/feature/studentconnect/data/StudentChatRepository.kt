@@ -37,6 +37,14 @@ data class StudentChatSummary(
 /** Ephemeral typing state, stored separately from immutable chat messages. */
 data class StudentChatTypingStatus(val uid: String, val updatedAt: Timestamp)
 
+/** True when the recipient's latest read marker is at or after this message timestamp. */
+internal object StudentChatReadReceiptStatus {
+    fun isRead(messageCreatedAt: Timestamp?, lastReadAt: Timestamp?): Boolean {
+        if (messageCreatedAt == null || lastReadAt == null) return false
+        return lastReadAt.toDate().time >= messageCreatedAt.toDate().time
+    }
+}
+
 /** Derives an unread count from recent messages and the user's last-read timestamp. */
 internal object StudentChatUnreadCounter {
     fun count(
@@ -453,6 +461,52 @@ class StudentChatRepository(
         batch.commit()
             .addOnSuccessListener { callback(null) }
             .addOnFailureListener { error -> callback(error) }
+    }
+
+    /**
+     * Listens to the other participant's read marker so sent messages can show
+     * a read receipt. Rules allow only participants in an active accepted chat.
+     */
+    fun listenOtherReadState(
+        conversationId: String,
+        currentUid: String,
+        otherUid: String,
+        callback: (Timestamp?, Exception?) -> Unit
+    ): ListenerRegistration? {
+        val expectedId = try {
+            StudentChatIds.conversationId(currentUid, otherUid)
+        } catch (error: IllegalArgumentException) {
+            callback(null, error)
+            return null
+        }
+        if (conversationId != expectedId) {
+            callback(null, IllegalArgumentException("The conversation does not match these two students."))
+            return null
+        }
+
+        return firestore.collection(CONVERSATIONS)
+            .document(conversationId)
+            .collection(READ_STATES)
+            .document(otherUid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    callback(null, error)
+                    return@addSnapshotListener
+                }
+                if (snapshot == null) {
+                    callback(null, IllegalStateException("No read receipt was returned."))
+                    return@addSnapshotListener
+                }
+                if (!snapshot.exists()) {
+                    callback(null, null)
+                    return@addSnapshotListener
+                }
+                if (snapshot.getString("uid") != otherUid) {
+                    callback(null, IllegalStateException("The recipient read marker is invalid."))
+                    return@addSnapshotListener
+                }
+                callback(snapshot.getTimestamp("lastReadAt"), null)
+            }
     }
 
     fun listenMessages(

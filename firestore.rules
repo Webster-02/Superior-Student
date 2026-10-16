@@ -383,10 +383,13 @@ service cloud.firestore {
       allow delete: if false;
 
       match /readStates/{uid} {
-        // Each participant can read and update only their own chat read marker.
+        // A participant can read their own marker and the other participant's
+        // marker for sent/read receipts, but only while the accepted chat is active.
         allow get: if signedInWithVerifiedEmail()
-          && request.auth.uid == uid
-          && activeChatConversationMember(conversationId);
+          && activeChatConversationMember(conversationId)
+          && uid in get(
+            /databases/$(database)/documents/chatConversations/$(conversationId)
+          ).data.participantUids;
         allow list: if false;
 
         allow create: if signedInWithVerifiedEmail()

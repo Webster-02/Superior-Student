@@ -55,6 +55,10 @@ class StudentChatActivity : AppCompatActivity() {
     private var conversation: StudentChatConversation? = null
     private var messagesListener: ListenerRegistration? = null
     private var typingListener: ListenerRegistration? = null
+    private var readReceiptListener: ListenerRegistration? = null
+    private var latestMessages: List<StudentChatMessage> = emptyList()
+    private var otherLastReadAt: Timestamp? = null
+    private val messageMetadataViews = mutableMapOf<String, TextView>()
     private val typingHandler = Handler(Looper.getMainLooper())
     private var isLocalTypingActive = false
     private var remoteTypingUpdatedAt: Timestamp? = null
@@ -117,6 +121,7 @@ class StudentChatActivity : AppCompatActivity() {
         val activeConversation = conversation
         if (user != null && user.isEmailVerified && activeConversation != null && !chatUnavailable) {
             startTypingListener(user.uid, activeConversation)
+            startReadReceiptListener(user.uid, activeConversation)
         }
     }
 
@@ -124,6 +129,8 @@ class StudentChatActivity : AppCompatActivity() {
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
+        readReceiptListener?.remove()
+        readReceiptListener = null
         remoteTypingUpdatedAt = null
         typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
         if (::typingIndicatorText.isInitialized) typingIndicatorText.visibility = View.GONE
@@ -134,6 +141,8 @@ class StudentChatActivity : AppCompatActivity() {
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
+        readReceiptListener?.remove()
+        readReceiptListener = null
         messagesListener?.remove()
         messagesListener = null
         typingHandler.removeCallbacksAndMessages(null)
@@ -192,6 +201,7 @@ class StudentChatActivity : AppCompatActivity() {
                 setComposerEnabled(true)
                 startMessagesListener(uid, opened)
                 startTypingListener(uid, opened)
+                startReadReceiptListener(uid, opened)
             }
         }
     }
@@ -219,6 +229,8 @@ class StudentChatActivity : AppCompatActivity() {
                     stopLocalTypingState()
                     typingListener?.remove()
                     typingListener = null
+                    readReceiptListener?.remove()
+                    readReceiptListener = null
                     remoteTypingUpdatedAt = null
                     typingIndicatorText.visibility = View.GONE
                     setComposerEnabled(false)
@@ -237,6 +249,8 @@ class StudentChatActivity : AppCompatActivity() {
     }
 
     private fun renderMessages(uid: String, messages: List<StudentChatMessage>) {
+        latestMessages = messages
+        messageMetadataViews.clear()
         messagesContainer.removeAllViews()
         emptyStateText.visibility = if (messages.isEmpty()) View.VISIBLE else View.GONE
 
@@ -274,9 +288,7 @@ class StudentChatActivity : AppCompatActivity() {
             bubbleContent.addView(body)
 
             val time = TextView(this).apply {
-                text = message.createdAt?.let {
-                    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(it.toDate().time))
-                } ?: "Sending…"
+                text = messageMetadataText(message, uid)
                 textSize = 10f
                 gravity = Gravity.END
                 setTextColor(ContextCompat.getColor(
@@ -285,6 +297,7 @@ class StudentChatActivity : AppCompatActivity() {
                 ))
                 setPadding(0, dp(3), 0, 0)
             }
+            messageMetadataViews[message.id] = time
             bubbleContent.addView(time)
             bubble.addView(bubbleContent)
 
@@ -302,6 +315,45 @@ class StudentChatActivity : AppCompatActivity() {
         }
 
         messagesScroll.post { messagesScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun startReadReceiptListener(uid: String, activeConversation: StudentChatConversation) {
+        readReceiptListener?.remove()
+        readReceiptListener = chatRepository.listenOtherReadState(
+            conversationId = activeConversation.id,
+            currentUid = uid,
+            otherUid = otherUid
+        ) { lastReadAt, error ->
+            if (!isCurrentUser(uid)) return@listenOtherReadState
+            if (error != null) {
+                // Read receipts are secondary; don't interrupt core chat on rule or network errors.
+                Log.w(TAG, "Could not listen for read receipts.", error)
+                return@listenOtherReadState
+            }
+            otherLastReadAt = lastReadAt
+            updateMessageMetadata(uid)
+        }
+    }
+
+    private fun updateMessageMetadata(uid: String) {
+        latestMessages.forEach { message ->
+            if (message.senderUid == uid) {
+                messageMetadataViews[message.id]?.text = messageMetadataText(message, uid)
+            }
+        }
+    }
+
+    private fun messageMetadataText(message: StudentChatMessage, currentUid: String): String {
+        val createdAt = message.createdAt ?: return "Sending…"
+        val formattedTime = SimpleDateFormat("h:mm a", Locale.getDefault())
+            .format(Date(createdAt.toDate().time))
+        if (message.senderUid != currentUid) return formattedTime
+        val status = if (StudentChatReadReceiptStatus.isRead(createdAt, otherLastReadAt)) {
+            "✓✓ Read"
+        } else {
+            "✓ Sent"
+        }
+        return "$formattedTime · $status"
     }
 
     private fun onLocalComposerChanged() {
@@ -444,6 +496,8 @@ class StudentChatActivity : AppCompatActivity() {
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
+        readReceiptListener?.remove()
+        readReceiptListener = null
         remoteTypingUpdatedAt = null
         if (::typingIndicatorText.isInitialized) typingIndicatorText.visibility = View.GONE
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_danger))
