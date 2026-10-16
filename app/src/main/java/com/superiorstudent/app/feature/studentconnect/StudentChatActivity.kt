@@ -55,6 +55,10 @@ class StudentChatActivity : AppCompatActivity() {
     private var conversation: StudentChatConversation? = null
     private var messagesListener: ListenerRegistration? = null
     private var typingListener: ListenerRegistration? = null
+    private var readReceiptListener: ListenerRegistration? = null
+    private val outgoingReceiptViews = mutableMapOf<String, TextView>()
+    private var displayedMessages: List<StudentChatMessage> = emptyList()
+    private var recipientLastReadAt: Timestamp? = null
     private val typingHandler = Handler(Looper.getMainLooper())
     private var isLocalTypingActive = false
     private var remoteTypingUpdatedAt: Timestamp? = null
@@ -117,6 +121,7 @@ class StudentChatActivity : AppCompatActivity() {
         val activeConversation = conversation
         if (user != null && user.isEmailVerified && activeConversation != null && !chatUnavailable) {
             startTypingListener(user.uid, activeConversation)
+            startReadReceiptListener(user.uid, activeConversation)
         }
     }
 
@@ -124,7 +129,9 @@ class StudentChatActivity : AppCompatActivity() {
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
-        remoteTypingUpdatedAt = null
+        readReceiptListener?.remove()
+        readReceiptListener = null
+        recipientLastReadAt = null
         typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
         if (::typingIndicatorText.isInitialized) typingIndicatorText.visibility = View.GONE
         super.onStop()
@@ -134,8 +141,12 @@ class StudentChatActivity : AppCompatActivity() {
         stopLocalTypingState()
         typingListener?.remove()
         typingListener = null
+        readReceiptListener?.remove()
+        readReceiptListener = null
         messagesListener?.remove()
         messagesListener = null
+        outgoingReceiptViews.clear()
+        displayedMessages = emptyList()
         typingHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -192,6 +203,7 @@ class StudentChatActivity : AppCompatActivity() {
                 setComposerEnabled(true)
                 startMessagesListener(uid, opened)
                 startTypingListener(uid, opened)
+                startReadReceiptListener(uid, opened)
             }
         }
     }
@@ -237,6 +249,8 @@ class StudentChatActivity : AppCompatActivity() {
     }
 
     private fun renderMessages(uid: String, messages: List<StudentChatMessage>) {
+        displayedMessages = messages
+        outgoingReceiptViews.clear()
         messagesContainer.removeAllViews()
         emptyStateText.visibility = if (messages.isEmpty()) View.VISIBLE else View.GONE
 
@@ -286,6 +300,17 @@ class StudentChatActivity : AppCompatActivity() {
                 setPadding(0, dp(3), 0, 0)
             }
             bubbleContent.addView(time)
+
+            if (isOutgoing) {
+                val receipt = TextView(this).apply {
+                    textSize = 9f
+                    gravity = Gravity.END
+                    setPadding(0, dp(2), 0, 0)
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                }
+                outgoingReceiptViews[message.id] = receipt
+                bubbleContent.addView(receipt)
+            }
             bubble.addView(bubbleContent)
 
             val bubbleParams = LinearLayout.LayoutParams(
@@ -360,6 +385,46 @@ class StudentChatActivity : AppCompatActivity() {
             }
             remoteTypingUpdatedAt = typingState?.updatedAt
             renderRemoteTypingIndicator()
+        }
+    }
+
+    private fun startReadReceiptListener(uid: String, activeConversation: StudentChatConversation) {
+        readReceiptListener?.remove()
+        readReceiptListener = chatRepository.listenOtherParticipantReadState(
+            conversationId = activeConversation.id,
+            currentUid = uid,
+            otherUid = otherUid
+        ) { readAt, error ->
+            if (!isCurrentUser(uid)) return@listenOtherParticipantReadState
+            if (error != null) {
+                Log.w(TAG, "Could not listen for recipient read receipts.", error)
+                return@listenOtherParticipantReadState
+            }
+            recipientLastReadAt = readAt
+            updateMessageReceipts(uid)
+        }
+    }
+
+    private fun updateMessageReceipts(currentUid: String) {
+        displayedMessages.forEach { message ->
+            if (message.senderUid != currentUid) return@forEach
+            val receipt = outgoingReceiptViews[message.id] ?: return@forEach
+            val read = com.superiorstudent.app.feature.studentconnect.data.StudentChatReadReceipt
+                .isRead(message.createdAt, recipientLastReadAt)
+            receipt.text = when {
+                message.createdAt == null -> "Sending…"
+                read -> "Read ✓✓"
+                else -> "Sent ✓"
+            }
+            receipt.contentDescription = when {
+                message.createdAt == null -> "Message is sending"
+                read -> "Message read by recipient"
+                else -> "Message sent"
+            }
+            receipt.setTextColor(ContextCompat.getColor(
+                this,
+                if (read) R.color.sc_lavender else R.color.sc_text_muted
+            ))
         }
     }
 
