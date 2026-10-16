@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -18,11 +20,13 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.google.android.material.card.MaterialCardView
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
@@ -41,6 +45,8 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentProfileReposit
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTokenRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotification
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationRepository
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationNavigation
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTarget
 import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 import com.superiorstudent.app.feature.studentconnect.notifications.StudentConnectNotificationHelper
 
@@ -54,6 +60,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var emailInput: EditText
     private lateinit var passwordInput: EditText
     private lateinit var statusText: TextView
+    private lateinit var studentConnectScrollView: ScrollView
     private lateinit var authForm: View
     private lateinit var signedInPanel: View
     private lateinit var accountEmail: TextView
@@ -99,6 +106,10 @@ class StudentConnectActivity : AppCompatActivity() {
     private var notificationListener: ListenerRegistration? = null
     private var notificationsListeningFor: String? = null
     private var cachedStudentNotifications: List<StudentNotification> = emptyList()
+    private val notificationHighlightHandler = Handler(Looper.getMainLooper())
+    private var highlightedNotificationRequestId: String? = null
+    private var highlightedNotificationTarget: StudentNotificationTarget? = null
+    private var notificationHighlightClearRunnable: Runnable? = null
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -135,6 +146,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         stopNotificationsListener()
+        clearNotificationHighlight()
         super.onDestroy()
     }
 
@@ -153,6 +165,7 @@ class StudentConnectActivity : AppCompatActivity() {
         emailInput = findViewById(R.id.studentConnectEmailInput)
         passwordInput = findViewById(R.id.studentConnectPasswordInput)
         statusText = findViewById(R.id.studentConnectStatus)
+        studentConnectScrollView = findViewById(R.id.studentConnectScrollView)
         authForm = findViewById(R.id.studentConnectAuthForm)
         signedInPanel = findViewById(R.id.studentConnectSignedInPanel)
         accountEmail = findViewById(R.id.studentConnectAccountEmail)
@@ -456,6 +469,7 @@ class StudentConnectActivity : AppCompatActivity() {
             profileLoadInProgressFor = null
             profileLoadedFor = null
             stopNotificationsListener()
+            clearNotificationHighlight()
             notificationsPanel.visibility = View.GONE
             notificationsContainer.removeAllViews()
             cachedStudentNotifications = emptyList()
@@ -668,22 +682,24 @@ class StudentConnectActivity : AppCompatActivity() {
 
         notifications.forEach { notification ->
             val row = layoutInflater.inflate(R.layout.item_student_connect_notification, notificationsContainer, false)
+            row.isClickable = true
+            row.isFocusable = true
+            row.setOnClickListener { openNotification(notification) }
             row.findViewById<TextView>(R.id.studentConnectNotificationItemTitle).text = notification.title
             row.findViewById<TextView>(R.id.studentConnectNotificationItemBody).text = notification.body
             val readState = row.findViewById<TextView>(R.id.studentConnectNotificationItemReadState)
             readState.text = if (notification.isRead) "READ" else "UNREAD"
-            readState.setTextColor(androidx.core.content.ContextCompat.getColor(
+            readState.setTextColor(ContextCompat.getColor(
                 this, if (notification.isRead) R.color.ink_500 else R.color.brand_primary
             ))
-            row.findViewById<TextView>(R.id.studentConnectNotificationItemTime).text = formatNotificationTime(notification.createdAt)
+            row.findViewById<TextView>(R.id.studentConnectNotificationItemTime).text =
+                formatNotificationTime(notification.createdAt)
             val markReadButton = row.findViewById<Button>(R.id.studentConnectNotificationItemMarkReadButton)
             markReadButton.visibility = if (notification.isRead) View.GONE else View.VISIBLE
             markReadButton.setOnClickListener {
-                val user = auth.currentUser
-                if (user == null || user.uid != notification.recipientUid) return@setOnClickListener
                 markReadButton.isEnabled = false
-                studentNotificationRepository.markAsRead(user.uid, notification.id) { error ->
-                    if (auth.currentUser?.uid != user.uid) return@markAsRead
+                markNotificationAsRead(notification) readResult@{ error ->
+                    if (auth.currentUser?.uid != notification.recipientUid) return@readResult
                     if (error != null) {
                         markReadButton.isEnabled = true
                         statusText.text = "Could not mark notification as read. Check the latest firestore.rules."
@@ -691,6 +707,161 @@ class StudentConnectActivity : AppCompatActivity() {
                 }
             }
             notificationsContainer.addView(row)
+        }
+    }
+
+    private fun markNotificationAsRead(
+        notification: StudentNotification,
+        callback: (Exception?) -> Unit
+    ) {
+        val user = auth.currentUser
+        if (user == null || !user.isEmailVerified || user.uid != notification.recipientUid) {
+            callback(IllegalStateException("Sign in to the account that received this notification."))
+            return
+        }
+        if (notification.isRead) {
+            callback(null)
+            return
+        }
+        studentNotificationRepository.markAsRead(user.uid, notification.id) { error ->
+            if (auth.currentUser?.uid != user.uid) return@markAsRead
+            callback(error)
+        }
+    }
+
+    private fun openNotification(notification: StudentNotification) {
+        val user = auth.currentUser
+        if (user == null || !user.isEmailVerified || user.uid != notification.recipientUid) {
+            statusText.text = "Sign in to the account that received this notification."
+            return
+        }
+
+        markNotificationAsRead(notification) readResult@{ error ->
+            if (auth.currentUser?.uid != user.uid) return@readResult
+            if (error != null) {
+                statusText.text = "Could not mark notification as read. Check the latest firestore.rules."
+            }
+        }
+
+        val initialTarget = StudentNotificationNavigation.targetForType(notification.type)
+        if (initialTarget == null) {
+            statusText.text = "This notification type cannot open a related section."
+            return
+        }
+        statusText.text = "Opening related request…"
+        friendRequestRepository.loadRequests(user.uid) { requests, error ->
+            if (auth.currentUser?.uid != user.uid) return@loadRequests
+            if (error != null || requests == null) {
+                statusText.text = "Could not load the related request. Check your connection and tap Refresh to retry."
+                scrollToNotificationSection(initialTarget)
+                return@loadRequests
+            }
+
+            cachedFriendRequests = requests
+            val relatedRequest = requests.firstOrNull { it.id == notification.requestId }
+            val target = if (
+                notification.type == "friend_request" &&
+                relatedRequest?.status == FriendRequestStatus.ACCEPTED &&
+                relatedRequest.receiverUid == user.uid
+            ) {
+                StudentNotificationTarget.CONNECTION
+            } else {
+                initialTarget
+            }
+
+            val validTargetRequest = when (target) {
+                StudentNotificationTarget.INCOMING_REQUEST -> requests.firstOrNull {
+                    it.id == notification.requestId &&
+                        it.receiverUid == user.uid &&
+                        it.status != FriendRequestStatus.ACCEPTED &&
+                        it.status != FriendRequestStatus.REMOVED
+                }
+                StudentNotificationTarget.CONNECTION -> requests.firstOrNull {
+                    it.id == notification.requestId &&
+                        it.senderUid == user.uid &&
+                        it.status == FriendRequestStatus.ACCEPTED
+                }
+            }
+
+            if (validTargetRequest == null) {
+                clearNotificationHighlight()
+                renderFriendRequestLists(user.uid, requests)
+                scrollToNotificationSection(target)
+                statusText.text = "This request has changed since the notification was created. Check the section for its latest status."
+                return@loadRequests
+            }
+
+            highlightNotificationRequest(user.uid, validTargetRequest.id, target, requests)
+            statusText.text = when (target) {
+                StudentNotificationTarget.INCOMING_REQUEST -> "Opened the related incoming request."
+                StudentNotificationTarget.CONNECTION -> "Opened the related connection."
+            }
+        }
+    }
+
+    private fun highlightNotificationRequest(
+        uid: String,
+        requestId: String,
+        target: StudentNotificationTarget,
+        requests: List<FriendRequest>
+    ) {
+        notificationHighlightClearRunnable?.let(notificationHighlightHandler::removeCallbacks)
+        notificationHighlightClearRunnable = null
+        highlightedNotificationRequestId = requestId
+        highlightedNotificationTarget = target
+
+        cachedFriendRequests = requests
+        renderFriendRequestLists(uid, requests)
+        val targetContainer = when (target) {
+            StudentNotificationTarget.INCOMING_REQUEST -> incomingRequestsContainer
+            StudentNotificationTarget.CONNECTION -> connectionsContainer
+        }
+        val matchingRow = (0 until targetContainer.childCount)
+            .map { targetContainer.getChildAt(it) }
+            .firstOrNull { it.tag == requestId }
+        val scrollTarget = matchingRow ?: when (target) {
+            StudentNotificationTarget.INCOMING_REQUEST -> findViewById(R.id.studentConnectIncomingRequestsHeading)
+            StudentNotificationTarget.CONNECTION -> connectionsTitleText
+        }
+        scrollToNotificationTarget(scrollTarget)
+
+        val clearHighlight = Runnable {
+            if (highlightedNotificationRequestId == requestId && highlightedNotificationTarget == target) {
+                highlightedNotificationRequestId = null
+                highlightedNotificationTarget = null
+                notificationHighlightClearRunnable = null
+                if (auth.currentUser?.uid == uid) renderFriendRequestLists(uid, cachedFriendRequests)
+            }
+        }
+        notificationHighlightClearRunnable = clearHighlight
+        notificationHighlightHandler.postDelayed(clearHighlight, 2_800L)
+    }
+
+    private fun clearNotificationHighlight() {
+        notificationHighlightClearRunnable?.let(notificationHighlightHandler::removeCallbacks)
+        notificationHighlightClearRunnable = null
+        highlightedNotificationRequestId = null
+        highlightedNotificationTarget = null
+    }
+
+    private fun scrollToNotificationSection(target: StudentNotificationTarget) {
+        val sectionView = when (target) {
+            StudentNotificationTarget.INCOMING_REQUEST -> findViewById(R.id.studentConnectIncomingRequestsHeading)
+            StudentNotificationTarget.CONNECTION -> connectionsTitleText
+        }
+        scrollToNotificationTarget(sectionView)
+    }
+
+    private fun scrollToNotificationTarget(target: View) {
+        studentConnectScrollView.post {
+            val targetLocation = IntArray(2)
+            val scrollLocation = IntArray(2)
+            target.getLocationOnScreen(targetLocation)
+            studentConnectScrollView.getLocationOnScreen(scrollLocation)
+            val topPadding = (18 * resources.displayMetrics.density).toInt()
+            val targetY = studentConnectScrollView.scrollY +
+                targetLocation[1] - scrollLocation[1] - topPadding
+            studentConnectScrollView.smoothScrollTo(0, targetY.coerceAtLeast(0))
         }
     }
 
@@ -827,6 +998,20 @@ class StudentConnectActivity : AppCompatActivity() {
         incomingRequest: Boolean
     ) {
         val row = layoutInflater.inflate(R.layout.item_student_connect_friend_request, container, false)
+        row.tag = request.id
+        val shouldHighlight = request.id == highlightedNotificationRequestId &&
+            ((container === incomingRequestsContainer &&
+                highlightedNotificationTarget == StudentNotificationTarget.INCOMING_REQUEST) ||
+                (container === connectionsContainer &&
+                    highlightedNotificationTarget == StudentNotificationTarget.CONNECTION))
+        (row as? MaterialCardView)?.apply {
+            setStrokeColor(ContextCompat.getColor(
+                this@StudentConnectActivity,
+                if (shouldHighlight) R.color.brand_primary else R.color.surface_stroke
+            ))
+            strokeWidth = (resources.displayMetrics.density *
+                if (shouldHighlight) 2 else 1).toInt().coerceAtLeast(1)
+        }
         val nameText = row.findViewById<TextView>(R.id.studentConnectFriendRequestName)
         val publicIdText = row.findViewById<TextView>(R.id.studentConnectFriendRequestId)
         val requestStatusText = row.findViewById<TextView>(R.id.studentConnectFriendRequestStatus)

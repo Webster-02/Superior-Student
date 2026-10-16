@@ -27,6 +27,19 @@ internal object StudentNotificationIds {
     fun requestAccepted(requestId: String): String = requestId + "_accepted"
 }
 
+internal enum class StudentNotificationTarget {
+    INCOMING_REQUEST,
+    CONNECTION
+}
+
+internal object StudentNotificationNavigation {
+    fun targetForType(type: String): StudentNotificationTarget? = when (type) {
+        "friend_request" -> StudentNotificationTarget.INCOMING_REQUEST
+        "friend_request_accepted" -> StudentNotificationTarget.CONNECTION
+        else -> null
+    }
+}
+
 /** Spark-compatible inbox. Firestore rules validate the related friend-request state. */
 class StudentNotificationRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()

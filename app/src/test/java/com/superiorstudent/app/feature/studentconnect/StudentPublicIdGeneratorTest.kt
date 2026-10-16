@@ -5,6 +5,8 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectionFilter
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationIds
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationNavigation
+import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,6 +60,19 @@ class StudentPublicIdGeneratorTest {
         assertEquals("studentA_studentB_accepted", StudentNotificationIds.requestAccepted("studentA_studentB"))
         assertTrue(StudentNotificationIds.requestReceived("studentA_studentB") !=
             StudentNotificationIds.requestAccepted("studentA_studentB"))
+    }
+
+    @Test
+    fun notificationTypesOpenTheCorrectStudentConnectSection() {
+        assertEquals(
+            StudentNotificationTarget.INCOMING_REQUEST,
+            StudentNotificationNavigation.targetForType("friend_request")
+        )
+        assertEquals(
+            StudentNotificationTarget.CONNECTION,
+            StudentNotificationNavigation.targetForType("friend_request_accepted")
+        )
+        assertEquals(null, StudentNotificationNavigation.targetForType("unknown"))
     }
 
     @Test
