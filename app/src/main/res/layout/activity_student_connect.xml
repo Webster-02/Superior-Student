@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/studentConnectScrollView"
-    android:forceDarkAllowed="false"
+    android:id="@+id/studentConnectRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/bg_student_connect_auth"
-    android:fillViewport="true"
-    android:overScrollMode="never">
+    android:orientation="vertical">
+    <ScrollView
+        android:id="@+id/studentConnectScrollView"
+        android:forceDarkAllowed="false"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_student_connect_auth"
+        android:fillViewport="true"
+        android:overScrollMode="never">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -21,7 +28,7 @@
         <TextView
             android:id="@+id/studentConnectBackButton"
             android:layout_width="wrap_content"
-            android:layout_height="48dp"
+            android:layout_height="38dp"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center_vertical"
@@ -40,6 +47,7 @@
             android:orientation="horizontal">
 
             <ImageView
+                android:id="@+id/studentConnectBrandLogo"
                 android:layout_width="58dp"
                 android:layout_height="58dp"
                 android:contentDescription="Student Connect logo"
@@ -72,6 +80,19 @@
                     android:textColor="@color/sc_text_muted"
                     android:textSize="12sp" />
             </LinearLayout>
+            <FrameLayout android:layout_width="46dp" android:layout_height="46dp" android:layout_marginStart="6dp">
+                <ImageButton
+                    android:id="@+id/studentConnectHeaderNotificationsButton"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_student_connect_dashboard_tile"
+                    android:contentDescription="Open notifications"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_sc_bell"
+                    android:tint="@color/sc_lavender" />
+                <TextView android:id="@+id/studentConnectHeaderNotificationBadge" android:layout_width="18dp" android:layout_height="18dp" android:layout_gravity="top|end" android:background="@drawable/bg_chat_unread_badge" android:gravity="center" android:textColor="@color/sc_text_primary" android:textSize="9sp" android:textStyle="bold" android:visibility="gone" />
+            </FrameLayout>
         </LinearLayout>
 
         <TextView
@@ -89,9 +110,9 @@
             android:id="@+id/studentConnectStatusCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="10dp"
             app:cardBackgroundColor="@color/sc_card"
-            app:cardCornerRadius="18dp"
+            app:cardCornerRadius="14dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/sc_border"
             app:strokeWidth="1dp">
@@ -100,10 +121,10 @@
                 android:id="@+id/studentConnectStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:padding="18dp"
+                android:padding="10dp"
                 android:text="Checking Student Connect status…"
                 android:textColor="@color/sc_text_muted"
-                android:textSize="14sp" />
+                android:textSize="12sp" />
         </com.google.android.material.card.MaterialCardView>
 
         <LinearLayout
@@ -311,6 +332,93 @@
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="14dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/studentConnectHomeDashboard"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp"
+            android:orientation="vertical" android:visibility="gone">
+            <FrameLayout
+                android:id="@+id/studentConnectHeroCard"
+                android:layout_width="match_parent" android:layout_height="188dp"
+                android:background="@drawable/bg_student_connect_dashboard_hero"
+                android:clipChildren="false" android:clipToPadding="false" android:elevation="8dp" android:padding="18dp">
+                <View android:id="@+id/studentConnectHeroOrb" android:layout_width="130dp" android:layout_height="130dp" android:layout_gravity="top|end" android:layout_marginTop="7dp" android:layout_marginEnd="-6dp" android:alpha="0.72" android:background="@drawable/bg_student_connect_dashboard_orb" android:elevation="2dp" />
+                <LinearLayout android:layout_width="205dp" android:layout_height="wrap_content" android:layout_gravity="start|center_vertical" android:orientation="vertical">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:letterSpacing="0.12" android:text="CAMPUS COMMUNITY" android:textColor="@color/sc_lavender" android:textSize="10sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/studentConnectHomeGreeting" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:ellipsize="end" android:maxLines="1" android:text="Your campus. Your people." android:textColor="@color/sc_text_primary" android:textSize="22sp" android:textStyle="bold" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:lineSpacingExtra="2dp" android:maxLines="2" android:text="Meet classmates. Build your circle." android:textColor="@color/sc_text_muted" android:textSize="13sp" />
+                </LinearLayout>
+                <ImageView android:id="@+id/studentConnectHeroLogo" android:layout_width="66dp" android:layout_height="66dp" android:layout_gravity="top|end" android:layout_marginTop="29dp" android:layout_marginEnd="16dp" android:cameraDistance="9000" android:contentDescription="@null" android:elevation="16dp" android:importantForAccessibility="no" android:rotation="-7" android:rotationY="12" android:src="@drawable/ic_student_connect_brand" />
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHeroFloatingChip" android:layout_width="wrap_content" android:layout_height="38dp" android:layout_gravity="bottom|end" android:elevation="16dp" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="13dp" app:cardElevation="12dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                    <LinearLayout android:layout_width="wrap_content" android:layout_height="match_parent" android:gravity="center" android:orientation="horizontal" android:paddingStart="10dp" android:paddingEnd="12dp">
+                        <ImageView android:layout_width="17dp" android:layout_height="17dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_chat" android:tint="@color/sc_lavender" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Connect · Chat · Grow" android:textColor="@color/sc_text_primary" android:textSize="10sp" android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </FrameLayout>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="Your space" android:textColor="@color/sc_text_primary" android:textSize="19sp" android:textStyle="bold" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Everything you need to connect on campus." android:textColor="@color/sc_text_muted" android:textSize="12sp" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="horizontal">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeFindCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginEnd="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="17dp" app:cardElevation="6dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_search" android:tint="@color/sc_lavender" />
+                        </FrameLayout>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Find Students" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Discover classmates" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeRequestsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="17dp" app:cardElevation="6dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
+                        </FrameLayout>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Friend Requests" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
+                            <TextView android:id="@+id/studentConnectHomeRequestsSubtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Manage requests" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeConnectionsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginEnd="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="17dp" app:cardElevation="6dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
+                        </FrameLayout>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="My Connections" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
+                            <TextView android:id="@+id/studentConnectHomeConnectionsSubtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Your network" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeProfileCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="17dp" app:cardElevation="6dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_profile" android:tint="@color/sc_lavender" />
+                        </FrameLayout>
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="My Profile" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
+                            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Your identity" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/studentConnectChatSection"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp"
+            android:orientation="vertical" android:visibility="gone">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/studentConnectChatListTitle" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Recent chats" android:textColor="@color/sc_text_primary" android:textSize="19sp" android:textStyle="bold" />
+                <TextView android:id="@+id/studentConnectSeeAllChats" android:layout_width="wrap_content" android:layout_height="40dp" android:clickable="true" android:focusable="true" android:gravity="center" android:paddingStart="10dp" android:paddingEnd="4dp" android:text="See all" android:textColor="@color/sc_lavender" android:textSize="13sp" android:textStyle="bold" />
+            </LinearLayout>
+            <TextView android:id="@+id/studentConnectChatListEmpty" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:padding="16dp" android:text="Your recent conversations will appear here." android:textColor="@color/sc_text_muted" android:textSize="13sp" />
+            <LinearLayout android:id="@+id/studentConnectChatListContainer" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
         </LinearLayout>
 
         <LinearLayout
@@ -536,6 +644,52 @@
 
         <!-- Request lists are revealed after a verified student profile loads. -->
         <LinearLayout
+            android:id="@+id/studentConnectConnectionsSection"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp"
+            android:orientation="vertical" android:visibility="gone">
+                        <TextView
+                            android:id="@+id/studentConnectConnectionsTitle"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:text="My Connections (0)"
+                            android:textColor="@color/sc_text_primary"
+                            android:textSize="17sp"
+                            android:textStyle="bold" />
+            
+                        <EditText
+                            android:id="@+id/studentConnectConnectionsSearchInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="8dp"
+                            android:autofillHints="none"
+                            android:background="@drawable/bg_student_connect_input"
+                            android:hint="Search connections by name or student ID"
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            android:textColor="@color/sc_text_primary"
+                            android:textColorHint="@color/sc_text_muted"
+                            android:textSize="14sp" />
+            
+                        <LinearLayout
+                            android:id="@+id/studentConnectConnectionsContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical" />
+            
+                        <TextView
+                            android:id="@+id/studentConnectConnectionsEmpty"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="No connections yet. Accept a friend request to connect with classmates."
+                            android:textColor="@color/sc_text_muted"
+                            android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/studentConnectFriendRequestsPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -570,72 +724,6 @@
                     app:strokeColor="@color/sc_border"
                     app:strokeWidth="1dp" />
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/studentConnectChatListTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Recent chats"
-                android:textColor="@color/sc_text_primary"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/studentConnectChatListEmpty"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="Your recent conversations will appear here."
-                android:textColor="@color/sc_text_muted"
-                android:textSize="13sp" />
-
-            <LinearLayout
-                android:id="@+id/studentConnectChatListContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
-
-            <TextView
-                android:id="@+id/studentConnectConnectionsTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="My Connections (0)"
-                android:textColor="@color/sc_text_primary"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-
-            <EditText
-                android:id="@+id/studentConnectConnectionsSearchInput"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:layout_marginTop="8dp"
-                android:autofillHints="none"
-                android:background="@drawable/bg_student_connect_input"
-                android:hint="Search connections by name or student ID"
-                android:inputType="text"
-                android:maxLines="1"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:textColor="@color/sc_text_primary"
-                android:textColorHint="@color/sc_text_muted"
-                android:textSize="14sp" />
-
-            <LinearLayout
-                android:id="@+id/studentConnectConnectionsContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
-
-            <TextView
-                android:id="@+id/studentConnectConnectionsEmpty"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="No connections yet. Accept a friend request to connect with classmates."
-                android:textColor="@color/sc_text_muted"
-                android:textSize="13sp" />
 
             <TextView
                 android:id="@+id/studentConnectIncomingRequestsHeading"
@@ -688,13 +776,51 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/studentConnectSecurityNote"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="22dp"
+            android:visibility="gone"
             android:lineSpacingExtra="3dp"
             android:text="Security note: use a different password from your university ERP password. Keep access to this email so you can recover your Student Connect identity if you change phones."
             android:textColor="@color/sc_text_muted"
             android:textSize="12sp" />
 
     </LinearLayout>
-</ScrollView>
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/studentConnectBottomNavigation"
+        android:layout_width="match_parent"
+        android:layout_height="66dp"
+        android:background="@drawable/bg_student_connect_nav_bar"
+        android:elevation="18dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingStart="6dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="5dp"
+        android:visibility="gone">
+        <LinearLayout android:id="@+id/studentConnectNavHome" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@drawable/bg_student_connect_nav_selected" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/studentConnectNavHomeIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_home" android:tint="@color/sc_text_primary" />
+            <TextView android:id="@+id/studentConnectNavHomeLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Home" android:textColor="@color/sc_text_primary" android:textSize="10sp" android:textStyle="bold" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/studentConnectNavSearch" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/studentConnectNavSearchIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_search" android:tint="@color/sc_text_muted" />
+            <TextView android:id="@+id/studentConnectNavSearchLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Find" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/studentConnectNavChats" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/studentConnectNavChatsIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_chat" android:tint="@color/sc_text_muted" />
+            <TextView android:id="@+id/studentConnectNavChatsLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Chats" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/studentConnectNavRequests" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/studentConnectNavRequestsIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_text_muted" />
+            <TextView android:id="@+id/studentConnectNavRequestsLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Requests" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/studentConnectNavProfile" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
+            <ImageView android:id="@+id/studentConnectNavProfileIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_profile" android:tint="@color/sc_text_muted" />
+            <TextView android:id="@+id/studentConnectNavProfileLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Profile" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

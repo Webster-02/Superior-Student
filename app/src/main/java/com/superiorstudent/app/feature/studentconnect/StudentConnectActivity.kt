@@ -1,5 +1,7 @@
 package com.superiorstudent.app.feature.studentconnect
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -18,7 +20,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -58,6 +62,12 @@ import com.superiorstudent.app.feature.studentconnect.notifications.StudentConne
  * The university ERP login/session flow remains owned by MainActivity.
  */
 class StudentConnectActivity : AppCompatActivity() {
+
+    private enum class StudentConnectScreen { HOME, SEARCH, CHATS, REQUESTS, CONNECTIONS, NOTIFICATIONS, PROFILE }
+    private var currentScreen = StudentConnectScreen.HOME
+    private var heroFloatAnimator: ObjectAnimator? = null
+    private var heroTiltAnimator: ObjectAnimator? = null
+    private var heroOrbAnimator: ObjectAnimator? = null
 
     private lateinit var auth: FirebaseAuth
     private lateinit var emailInput: EditText
@@ -104,6 +114,21 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var notificationsContainer: LinearLayout
     private lateinit var notificationsEmptyText: TextView
     private lateinit var markAllNotificationsReadButton: Button
+    private lateinit var homeDashboard: View
+    private lateinit var homeGreetingText: TextView
+    private lateinit var homeHeroLogo: View
+    private lateinit var homeHeroOrb: View
+    private lateinit var chatSection: View
+    private lateinit var connectionsSection: View
+    private lateinit var bottomNavigation: View
+    private lateinit var securityNoteText: View
+    private lateinit var headerNotificationsButton: View
+    private lateinit var headerNotificationBadge: TextView
+    private lateinit var homeRequestsSubtitle: TextView
+    private lateinit var homeConnectionsSubtitle: TextView
+    private lateinit var navItems: List<View>
+    private lateinit var navIcons: List<ImageView>
+    private lateinit var navLabels: List<TextView>
 
     private val profileRepository by lazy { StudentProfileRepository() }
     private val friendRequestRepository by lazy { FriendRequestRepository() }
@@ -154,7 +179,18 @@ class StudentConnectActivity : AppCompatActivity() {
         if (auth.currentUser != null) refreshVerificationStatus(silent = true)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (::homeDashboard.isInitialized && currentScreen == StudentConnectScreen.HOME) startDashboardAnimations()
+    }
+
+    override fun onStop() {
+        stopDashboardAnimations()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        stopDashboardAnimations()
         stopNotificationsListener()
         stopChatListListener()
         clearNotificationHighlight()
@@ -218,8 +254,34 @@ class StudentConnectActivity : AppCompatActivity() {
         notificationsContainer = findViewById(R.id.studentConnectNotificationsContainer)
         notificationsEmptyText = findViewById(R.id.studentConnectNotificationsEmpty)
         markAllNotificationsReadButton = findViewById(R.id.studentConnectMarkAllNotificationsReadButton)
+        homeDashboard = findViewById(R.id.studentConnectHomeDashboard)
+        homeGreetingText = findViewById(R.id.studentConnectHomeGreeting)
+        homeHeroLogo = findViewById(R.id.studentConnectHeroLogo)
+        homeHeroOrb = findViewById(R.id.studentConnectHeroOrb)
+        chatSection = findViewById(R.id.studentConnectChatSection)
+        connectionsSection = findViewById(R.id.studentConnectConnectionsSection)
+        bottomNavigation = findViewById(R.id.studentConnectBottomNavigation)
+        securityNoteText = findViewById(R.id.studentConnectSecurityNote)
+        headerNotificationsButton = findViewById(R.id.studentConnectHeaderNotificationsButton)
+        headerNotificationBadge = findViewById(R.id.studentConnectHeaderNotificationBadge)
+        homeRequestsSubtitle = findViewById(R.id.studentConnectHomeRequestsSubtitle)
+        homeConnectionsSubtitle = findViewById(R.id.studentConnectHomeConnectionsSubtitle)
+        navItems = listOf(findViewById(R.id.studentConnectNavHome), findViewById(R.id.studentConnectNavSearch), findViewById(R.id.studentConnectNavChats), findViewById(R.id.studentConnectNavRequests), findViewById(R.id.studentConnectNavProfile))
+        navIcons = listOf(findViewById(R.id.studentConnectNavHomeIcon), findViewById(R.id.studentConnectNavSearchIcon), findViewById(R.id.studentConnectNavChatsIcon), findViewById(R.id.studentConnectNavRequestsIcon), findViewById(R.id.studentConnectNavProfileIcon))
+        navLabels = listOf(findViewById(R.id.studentConnectNavHomeLabel), findViewById(R.id.studentConnectNavSearchLabel), findViewById(R.id.studentConnectNavChatsLabel), findViewById(R.id.studentConnectNavRequestsLabel), findViewById(R.id.studentConnectNavProfileLabel))
 
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
+        headerNotificationsButton.setOnClickListener { showStudentConnectScreen(StudentConnectScreen.NOTIFICATIONS) }
+        findViewById<View>(R.id.studentConnectHomeFindCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
+        findViewById<View>(R.id.studentConnectHomeRequestsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.REQUESTS) }
+        findViewById<View>(R.id.studentConnectHomeConnectionsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CONNECTIONS) }
+        findViewById<View>(R.id.studentConnectHomeProfileCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.PROFILE) }
+        findViewById<View>(R.id.studentConnectSeeAllChats).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CHATS) }
+        navItems[0].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.HOME) }
+        navItems[1].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
+        navItems[2].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CHATS) }
+        navItems[3].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.REQUESTS) }
+        navItems[4].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.PROFILE) }
         createAccountButton.setOnClickListener { createAccount() }
         signInButton.setOnClickListener { signIn() }
         resendVerificationButton.setOnClickListener { resendVerificationEmail() }
@@ -474,6 +536,120 @@ class StudentConnectActivity : AppCompatActivity() {
      * Keeps the entire Student Connect experience on its scoped navy/purple brand.
      * This affects presentation only; ERP and Firebase sign-in/session logic are unchanged.
      */
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun hideStudentConnectWorkspace() {
+        stopDashboardAnimations()
+        homeDashboard.visibility = View.GONE
+        chatSection.visibility = View.GONE
+        connectionsSection.visibility = View.GONE
+        studentSearchPanel.visibility = View.GONE
+        notificationsPanel.visibility = View.GONE
+        friendRequestsPanel.visibility = View.GONE
+        profileCard.visibility = View.GONE
+        bottomNavigation.visibility = View.GONE
+        securityNoteText.visibility = if (auth.currentUser == null || auth.currentUser?.isEmailVerified != true) View.VISIBLE else View.GONE
+    }
+
+    private fun showStudentConnectScreen(screen: StudentConnectScreen) {
+        if (currentStudentProfile == null || auth.currentUser?.isEmailVerified != true) return
+        currentScreen = screen
+        homeDashboard.visibility = if (screen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
+        chatSection.visibility = if (screen == StudentConnectScreen.HOME || screen == StudentConnectScreen.CHATS) View.VISIBLE else View.GONE
+        studentSearchPanel.visibility = if (screen == StudentConnectScreen.SEARCH) View.VISIBLE else View.GONE
+        connectionsSection.visibility = if (screen == StudentConnectScreen.CONNECTIONS) View.VISIBLE else View.GONE
+        friendRequestsPanel.visibility = if (screen == StudentConnectScreen.REQUESTS) View.VISIBLE else View.GONE
+        notificationsPanel.visibility = if (screen == StudentConnectScreen.NOTIFICATIONS) View.VISIBLE else View.GONE
+        profileCard.visibility = if (screen == StudentConnectScreen.PROFILE) View.VISIBLE else View.GONE
+        signedInPanel.visibility = if (screen == StudentConnectScreen.PROFILE) View.VISIBLE else View.GONE
+        profileSetupPanel.visibility = View.GONE
+        bottomNavigation.visibility = View.VISIBLE
+        securityNoteText.visibility = if (screen == StudentConnectScreen.PROFILE) View.VISIBLE else View.GONE
+
+        val selectedIndex = when (screen) {
+            StudentConnectScreen.HOME -> 0
+            StudentConnectScreen.SEARCH -> 1
+            StudentConnectScreen.CHATS -> 2
+            StudentConnectScreen.REQUESTS -> 3
+            StudentConnectScreen.PROFILE -> 4
+            else -> -1
+        }
+        navItems.forEachIndexed { index, item ->
+            val selected = index == selectedIndex
+            item.setBackgroundResource(if (selected) R.drawable.bg_student_connect_nav_selected else android.R.color.transparent)
+            navIcons[index].imageTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this, if (selected) R.color.sc_text_primary else R.color.sc_text_muted)
+            )
+            navLabels[index].setTextColor(ContextCompat.getColor(this, if (selected) R.color.sc_lavender else R.color.sc_text_muted))
+            navLabels[index].setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        }
+
+        studentConnectScrollView.scrollTo(0, 0)
+        if (screen == StudentConnectScreen.HOME) {
+            animateDashboardEntrance()
+            startDashboardAnimations()
+        } else {
+            stopDashboardAnimations()
+        }
+    }
+
+    private fun animateDashboardEntrance() {
+        homeDashboard.animate().cancel()
+        homeDashboard.alpha = 0f
+        homeDashboard.translationY = dp(12).toFloat()
+        homeDashboard.animate().alpha(1f).translationY(0f).setDuration(300L)
+            .setInterpolator(AccelerateDecelerateInterpolator()).start()
+        listOf(R.id.studentConnectHomeFindCard, R.id.studentConnectHomeRequestsCard,
+            R.id.studentConnectHomeConnectionsCard, R.id.studentConnectHomeProfileCard).forEachIndexed { index, id ->
+            val card = findViewById<View>(id)
+            card.animate().cancel()
+            card.alpha = 0f
+            card.translationY = dp(10).toFloat()
+            card.animate().alpha(1f).translationY(0f).setStartDelay(index * 55L).setDuration(240L)
+                .setInterpolator(AccelerateDecelerateInterpolator()).start()
+        }
+    }
+
+    private fun startDashboardAnimations() {
+        stopDashboardAnimations()
+        if (!::homeDashboard.isInitialized || homeDashboard.visibility != View.VISIBLE) return
+        heroFloatAnimator = ObjectAnimator.ofFloat(homeHeroLogo, View.TRANSLATION_Y, 0f, -dp(6).toFloat()).apply {
+            duration = 1900L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+        heroTiltAnimator = ObjectAnimator.ofFloat(homeHeroLogo, View.ROTATION_Y, 7f, 15f).apply {
+            duration = 2700L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+        heroOrbAnimator = ObjectAnimator.ofFloat(homeHeroOrb, View.ALPHA, 0.42f, 0.84f).apply {
+            duration = 2300L
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            interpolator = AccelerateDecelerateInterpolator()
+            start()
+        }
+    }
+
+    private fun stopDashboardAnimations() {
+        heroFloatAnimator?.cancel()
+        heroTiltAnimator?.cancel()
+        heroOrbAnimator?.cancel()
+        heroFloatAnimator = null
+        heroTiltAnimator = null
+        heroOrbAnimator = null
+        if (::homeHeroLogo.isInitialized) {
+            homeHeroLogo.translationY = 0f
+            homeHeroLogo.rotationY = 12f
+        }
+        if (::homeHeroOrb.isInitialized) homeHeroOrb.alpha = 0.72f
+    }
+
     private fun applyStudentConnectBranding() {
         studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
         findViewById<TextView>(R.id.studentConnectBackButton)
@@ -489,6 +665,15 @@ class StudentConnectActivity : AppCompatActivity() {
             setStrokeColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_border))
         }
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+        val hasStudentProfile = currentStudentProfile != null && auth.currentUser?.isEmailVerified == true
+        findViewById<TextView>(R.id.studentConnectBrandTagline).visibility = if (hasStudentProfile) View.GONE else View.VISIBLE
+        findViewById<TextView>(R.id.studentConnectBrandPromise).visibility = if (hasStudentProfile) View.GONE else View.VISIBLE
+        findViewById<TextView>(R.id.studentConnectBrandTitle).textSize = if (hasStudentProfile) 21f else 25f
+        val brandLogo = findViewById<ImageView>(R.id.studentConnectBrandLogo)
+        brandLogo.layoutParams = brandLogo.layoutParams.apply {
+            width = dp(if (hasStudentProfile) 44 else 58)
+            height = dp(if (hasStudentProfile) 44 else 58)
+        }
     }
 
     private fun renderCurrentUser() {
@@ -499,6 +684,7 @@ class StudentConnectActivity : AppCompatActivity() {
         applyStudentConnectBranding()
 
         if (user == null) {
+            hideStudentConnectWorkspace()
             profileSetupPanel.visibility = View.GONE
             profileCard.visibility = View.GONE
             studentSearchPanel.visibility = View.GONE
@@ -538,9 +724,9 @@ class StudentConnectActivity : AppCompatActivity() {
             statusText.text = "Email verified. Checking your student profile…"
             loadProfileIfNeeded(user.uid)
         } else {
+            hideStudentConnectWorkspace()
             profileSetupPanel.visibility = View.GONE
             profileCard.visibility = View.GONE
-            friendRequestsPanel.visibility = View.GONE
             statusText.text = "Email verification is required before a student profile can be created."
         }
     }
@@ -680,6 +866,9 @@ class StudentConnectActivity : AppCompatActivity() {
         friendRequestsPanel.visibility = View.VISIBLE
         profileDisplayName.text = profile.displayName
         profilePublicId.text = profile.publicId
+        homeGreetingText.text = "Hi, " + profile.displayName.substringBefore(" ").ifBlank { profile.displayName } + "!"
+        applyStudentConnectBranding()
+        showStudentConnectScreen(StudentConnectScreen.HOME)
         refreshFriendRequests(showLoadingMessage = false)
     }
 
@@ -807,6 +996,12 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun renderNotifications(notifications: List<StudentNotification>) {
         notificationsContainer.removeAllViews()
         val unreadCount = notifications.count { !it.isRead }
+        headerNotificationBadge.text = when {
+            unreadCount > 99 -> "99+"
+            unreadCount > 0 -> unreadCount.toString()
+            else -> ""
+        }
+        headerNotificationBadge.visibility = if (unreadCount > 0) View.VISIBLE else View.GONE
         notificationsTitleText.text = if (unreadCount == 0) "Notifications" else "Notifications ($unreadCount unread)"
         notificationsEmptyText.text = "No notifications yet. Friend request updates will appear here."
         notificationsEmptyText.visibility = if (notifications.isEmpty()) View.VISIBLE else View.GONE
@@ -945,6 +1140,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
         cachedFriendRequests = requests
         renderFriendRequestLists(uid, requests)
+        showStudentConnectScreen(if (target == StudentNotificationTarget.INCOMING_REQUEST) StudentConnectScreen.REQUESTS else StudentConnectScreen.CONNECTIONS)
         val targetContainer = when (target) {
             StudentNotificationTarget.INCOMING_REQUEST -> incomingRequestsContainer
             StudentNotificationTarget.CONNECTION -> connectionsContainer
@@ -978,6 +1174,7 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun scrollToNotificationSection(target: StudentNotificationTarget) {
+        showStudentConnectScreen(if (target == StudentNotificationTarget.INCOMING_REQUEST) StudentConnectScreen.REQUESTS else StudentConnectScreen.CONNECTIONS)
         val sectionView = when (target) {
             StudentNotificationTarget.INCOMING_REQUEST -> findViewById(R.id.studentConnectIncomingRequestsHeading)
             StudentNotificationTarget.CONNECTION -> connectionsTitleText
@@ -1036,7 +1233,7 @@ class StudentConnectActivity : AppCompatActivity() {
             return
         }
 
-        friendRequestsPanel.visibility = View.VISIBLE
+        friendRequestsPanel.visibility = if (currentScreen == StudentConnectScreen.REQUESTS) View.VISIBLE else View.GONE
         friendRequestsLoadingFor = user.uid
         friendRequestsRefreshQueued = false
         val loadSequence = ++friendRequestsLoadSequence
@@ -1112,6 +1309,9 @@ class StudentConnectActivity : AppCompatActivity() {
         outgoing.forEach { addFriendRequestRow(outgoingRequestsContainer, it, incomingRequest = false) }
 
         connectionsTitleText.text = "My Connections (" + allConnections.size + ")"
+        homeConnectionsSubtitle.text = if (allConnections.isEmpty()) "Start your network" else allConnections.size.toString() + " connected"
+        val pendingIncomingCount = incoming.count { it.status == FriendRequestStatus.PENDING }
+        homeRequestsSubtitle.text = if (pendingIncomingCount == 0) "Manage requests" else pendingIncomingCount.toString() + " new request" + (if (pendingIncomingCount == 1) "" else "s")
         connectionsEmptyText.text = when {
             allConnections.isEmpty() -> "No connections yet. Accept a friend request to connect with classmates."
             connections.isEmpty() -> "No connections match your search."
