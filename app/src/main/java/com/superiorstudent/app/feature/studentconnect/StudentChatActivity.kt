@@ -31,6 +31,7 @@ class StudentChatActivity : AppCompatActivity() {
 
     private lateinit var auth: FirebaseAuth
     private lateinit var contactNameText: TextView
+    private lateinit var contactInitialsText: TextView
     private lateinit var statusText: TextView
     private lateinit var messagesScroll: ScrollView
     private lateinit var messagesContainer: LinearLayout
@@ -69,6 +70,7 @@ class StudentChatActivity : AppCompatActivity() {
             ?.takeIf { it.length in 2..60 }
             ?: "Classmate"
         contactNameText.text = otherDisplayName
+        contactInitialsText.text = initialsForName(otherDisplayName)
 
         findViewById<TextView>(R.id.studentChatBackButton).setOnClickListener { finish() }
         sendButton.setOnClickListener { sendCurrentMessage() }
@@ -93,6 +95,7 @@ class StudentChatActivity : AppCompatActivity() {
 
     private fun bindViews() {
         contactNameText = findViewById(R.id.studentChatContactName)
+        contactInitialsText = findViewById(R.id.studentChatAvatarInitials)
         statusText = findViewById(R.id.studentChatStatus)
         messagesScroll = findViewById(R.id.studentChatMessagesScroll)
         messagesContainer = findViewById(R.id.studentChatMessagesContainer)
@@ -103,7 +106,7 @@ class StudentChatActivity : AppCompatActivity() {
     }
 
     private fun openConversation(uid: String) {
-        statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
+        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
         statusText.text = "Checking connection and opening chat…"
         profileRepository.getOwnProfile(uid) { profile, profileError ->
             if (!isCurrentUser(uid)) return@getOwnProfile
@@ -128,7 +131,7 @@ class StudentChatActivity : AppCompatActivity() {
                 }
 
                 conversation = opened
-                statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
+                statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
                 statusText.text = "Private chat · Only this accepted connection can access these messages."
                 setComposerEnabled(true)
                 startMessagesListener(uid, opened)
@@ -147,7 +150,7 @@ class StudentChatActivity : AppCompatActivity() {
             if (error != null || messages == null) {
                 val denied = error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)
                 statusText.setTextColor(ContextCompat.getColor(
-                    this, if (denied) R.color.danger else R.color.ink_500
+                    this, if (denied) R.color.sc_danger else R.color.sc_text_muted
                 ))
                 statusText.text = if (denied) {
                     "Chat access is no longer available. The connection may have been removed."
@@ -164,7 +167,7 @@ class StudentChatActivity : AppCompatActivity() {
             chatRepository.markConversationRead(opened.id, uid) { readError ->
                 if (!isCurrentUser(uid)) return@markConversationRead
                 if (readError != null) {
-                    statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
+                    statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
                     statusText.text = "Messages are open, but unread status could not be updated. Check the published chat rules."
                 }
             }
@@ -178,16 +181,16 @@ class StudentChatActivity : AppCompatActivity() {
         messages.forEach { message ->
             val isOutgoing = message.senderUid == uid
             val bubble = MaterialCardView(this).apply {
-                radius = dp(16).toFloat()
+                radius = dp(19).toFloat()
                 cardElevation = 0f
                 useCompatPadding = false
                 strokeWidth = if (isOutgoing) 0 else dp(1)
                 setCardBackgroundColor(ContextCompat.getColor(
                     this@StudentChatActivity,
-                    if (isOutgoing) R.color.brand_primary else R.color.surface
+                    if (isOutgoing) R.color.sc_purple else R.color.sc_chat_bubble
                 ))
                 if (!isOutgoing) {
-                    setStrokeColor(ContextCompat.getColor(this@StudentChatActivity, R.color.surface_stroke))
+                    setStrokeColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_border))
                 }
             }
 
@@ -201,7 +204,7 @@ class StudentChatActivity : AppCompatActivity() {
                 textSize = 14f
                 setTextColor(ContextCompat.getColor(
                     this@StudentChatActivity,
-                    if (isOutgoing) R.color.on_brand else R.color.ink_900
+                    R.color.sc_text_primary
                 ))
                 maxWidth = (resources.displayMetrics.widthPixels - dp(92)).coerceAtLeast(dp(170))
                 setLineSpacing(dp(2).toFloat(), 1f)
@@ -216,7 +219,7 @@ class StudentChatActivity : AppCompatActivity() {
                 gravity = Gravity.END
                 setTextColor(ContextCompat.getColor(
                     this@StudentChatActivity,
-                    if (isOutgoing) R.color.surface else R.color.ink_500
+                    if (isOutgoing) R.color.sc_lavender else R.color.sc_text_muted
                 ))
                 setPadding(0, dp(3), 0, 0)
             }
@@ -264,7 +267,7 @@ class StudentChatActivity : AppCompatActivity() {
         isSending = true
         setComposerEnabled(true)
         sendButton.isEnabled = false
-        statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
+        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
         statusText.text = "Sending message…"
 
         chatRepository.sendMessage(
@@ -280,7 +283,7 @@ class StudentChatActivity : AppCompatActivity() {
             if (error != null) {
                 val denied = error.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)
                 statusText.setTextColor(ContextCompat.getColor(
-                    this, if (denied) R.color.danger else R.color.ink_500
+                    this, if (denied) R.color.sc_danger else R.color.sc_text_muted
                 ))
                 statusText.text = if (denied) {
                     "Message not sent. Chat access may have changed because this connection is no longer active."
@@ -295,14 +298,14 @@ class StudentChatActivity : AppCompatActivity() {
             }
 
             messageInput.text?.clear()
-            statusText.setTextColor(ContextCompat.getColor(this, R.color.ink_500))
+            statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
             statusText.text = "Message sent."
         }
     }
 
     private fun showFatalError(message: String) {
         chatUnavailable = true
-        statusText.setTextColor(ContextCompat.getColor(this, R.color.danger))
+        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_danger))
         statusText.text = message
         emptyStateText.text = "Chat unavailable.\nGo back to My Connections and try again."
         emptyStateText.visibility = View.VISIBLE
@@ -317,6 +320,15 @@ class StudentChatActivity : AppCompatActivity() {
 
     private fun isCurrentUser(uid: String): Boolean =
         !isFinishing && !isDestroyed && auth.currentUser?.uid == uid
+
+    private fun initialsForName(name: String): String {
+        val parts = name.trim().split(WHITESPACE).filter { it.isNotBlank() }
+        return when {
+            parts.size >= 2 -> (parts[0].take(1) + parts[1].take(1)).uppercase(Locale.ROOT)
+            parts.isNotEmpty() -> parts[0].take(2).uppercase(Locale.ROOT)
+            else -> "SC"
+        }
+    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 

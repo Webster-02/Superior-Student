@@ -13,4 +13,7 @@
     <color name="sc_text_muted">#B7BEDC</color>
     <color name="sc_danger">#FDA4AF</color>
     <color name="sc_danger_bg">#3B1D35</color>
+    <color name="sc_chat_avatar">#30245F</color>
+    <color name="sc_chat_status">#12172F</color>
+    <color name="sc_chat_bubble">#191F3B</color>
 </resources>
