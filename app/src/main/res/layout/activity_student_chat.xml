@@ -74,6 +74,7 @@
                         android:id="@+id/studentChatAvatarInitials"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
+                        android:background="@drawable/bg_student_connect_chat_avatar"
                         android:gravity="center"
                         android:text="SC"
                         android:textColor="@color/sc_text_primary"
