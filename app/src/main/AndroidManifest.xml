@@ -22,6 +22,11 @@
             </intent-filter>
         </service>
         <activity
+            android:name=".feature.studentconnect.StudentChatActivity"
+            android:exported="false"
+            android:label="Student Chat"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
+        <activity
             android:name=".feature.studentconnect.StudentConnectActivity"
             android:exported="false"
             android:label="Student Connect" />

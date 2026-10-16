@@ -3,6 +3,7 @@ package com.superiorstudent.app.feature.studentconnect
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.Manifest
 import android.os.Build
@@ -1021,7 +1022,11 @@ class StudentConnectActivity : AppCompatActivity() {
         val resendButton = row.findViewById<Button>(R.id.studentConnectFriendRequestResendButton)
         val copyIdButton = row.findViewById<Button>(R.id.studentConnectFriendRequestCopyIdButton)
         val removeConnectionButton = row.findViewById<Button>(R.id.studentConnectFriendRequestRemoveButton)
-        val actionButtons = listOf(acceptButton, rejectButton, cancelButton, resendButton, copyIdButton, removeConnectionButton)
+        val messageButton = row.findViewById<Button>(R.id.studentConnectFriendRequestMessageButton)
+        val actionButtons = listOf(
+            acceptButton, rejectButton, cancelButton, resendButton,
+            copyIdButton, removeConnectionButton, messageButton
+        )
         actionButtons.forEach {
             it.visibility = View.GONE
             it.isEnabled = true
@@ -1050,6 +1055,10 @@ class StudentConnectActivity : AppCompatActivity() {
 
         when {
             request.status == FriendRequestStatus.ACCEPTED -> {
+                if (container === connectionsContainer) {
+                    messageButton.visibility = View.VISIBLE
+                    messageButton.setOnClickListener { openChatWithConnection(request) }
+                }
                 removeConnectionButton.visibility = View.VISIBLE
                 removeConnectionButton.setOnClickListener {
                     AlertDialog.Builder(this)
@@ -1093,6 +1102,33 @@ class StudentConnectActivity : AppCompatActivity() {
         }
 
         container.addView(row)
+    }
+
+    private fun openChatWithConnection(request: FriendRequest) {
+        val user = auth.currentUser
+        if (user == null || !user.isEmailVerified || currentStudentProfile?.uid != user.uid) {
+            statusText.text = "Sign in with your verified Student Connect account before opening a chat."
+            return
+        }
+        if (request.status != FriendRequestStatus.ACCEPTED ||
+            (request.senderUid != user.uid && request.receiverUid != user.uid)
+        ) {
+            statusText.text = "Chat is available only for an accepted connection."
+            return
+        }
+
+        val otherUid = if (request.senderUid == user.uid) request.receiverUid else request.senderUid
+        val otherName = if (request.senderUid == user.uid) request.receiverName else request.senderName
+        if (otherUid.isBlank() || otherName.trim().length !in 2..60) {
+            statusText.text = "The connected student's profile is incomplete. Refresh and try again."
+            return
+        }
+
+        startActivity(
+            Intent(this, StudentChatActivity::class.java)
+                .putExtra(StudentChatActivity.EXTRA_OTHER_UID, otherUid)
+                .putExtra(StudentChatActivity.EXTRA_OTHER_DISPLAY_NAME, otherName)
+        )
     }
 
     private fun updateFriendRequestStatus(
