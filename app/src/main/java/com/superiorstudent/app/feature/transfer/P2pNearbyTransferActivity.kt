@@ -638,6 +638,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 writeControl(output, "reject", mapOf("reason" to "invalid_saved_checkpoint"))
                 throw IOException("The saved partial file is not at a valid chunk boundary.")
             }
+            if (existingState != null) preserveCheckpoint = true
 
             val pending = PendingIncomingSession(socket, input, output, offer, existingState)
             pendingIncomingSession = pending
@@ -798,8 +799,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                         P2pTransferFileMetadataReader.formatBytes(checkpoint.length()) +
                         ". Keep Receive nearby file active while the sender reconnects."
                 )
-            } else {
-                if (offer != null && savedState != null) resumableDownloads.remove(offer.transferId, savedState)
+            } else if (checkpoint != null && offer != null && savedState != null) {
+                resumableDownloads.remove(offer.transferId, savedState)
             }
             if (receiving.get()) {
                 LogNearbyTransfer.error("Nearby receiver connection ended", error)
@@ -811,10 +812,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             ) }
         } finally {
             runCatching { receiver?.close() }
-            if (completed || !preserveCheckpoint) {
-                val offer = receivedOffer
-                if (offer != null) resumableDownloads.remove(offer.transferId)
+            if (completed) {
+                receivedOffer?.let { resumableDownloads.remove(it.transferId) }
                 temp?.delete()
+            } else if (!preserveCheckpoint && temp != null) {
+                receivedOffer?.let { resumableDownloads.remove(it.transferId) }
+                temp.delete()
             }
             if (temporaryDownload === temp) temporaryDownload = null
             if (pendingIncomingSession?.socket === socket) pendingIncomingSession = null
