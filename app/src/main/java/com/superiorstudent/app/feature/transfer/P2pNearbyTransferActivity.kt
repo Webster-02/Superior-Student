@@ -370,7 +370,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                                 outgoingStreamActive.set(false)
                                 updatePauseResumeButton(enabled = false, paused = false)
                             } else {
-                                writePacket(output, P2pNearbyTransferProtocol.DATA_PACKET, nextFrame)
+                                try {
+                                    writePacket(output, P2pNearbyTransferProtocol.DATA_PACKET, nextFrame)
+                                } finally {
+                                    nextFrame.fill(0)
+                                }
                             }
                         }
                     }
@@ -378,12 +382,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                         Thread.sleep(PAUSE_POLL_DELAY_MS)
                         continue
                     }
-                    val outgoingFrame = frame ?: break
-                    try {
-                        outgoingFrame.fill(0)
-                    } finally {
-                        // The frame has been fully written while holding outgoingFrameLock.
-                    }
+                    if (frame == null) break
                     val processed = sender.bytesProcessed
                     if (processed - lastStatusBytes >= STATUS_UPDATE_BYTES) {
                         lastStatusBytes = processed
