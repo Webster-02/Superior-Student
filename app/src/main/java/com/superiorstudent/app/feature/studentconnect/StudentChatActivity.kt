@@ -18,6 +18,8 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -39,9 +41,13 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPresence
 import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceFormatter
 import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectPresenceTracker
+import com.superiorstudent.app.feature.transfer.P2pChatFileTransferManager
+import com.superiorstudent.app.feature.transfer.data.FirebaseP2pTransferSignaling
 import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadata
 import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadataReader
+import com.superiorstudent.app.feature.transfer.data.P2pTransferOffer
 import java.text.SimpleDateFormat
+import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 
@@ -72,6 +78,47 @@ class StudentChatActivity : AppCompatActivity() {
     private val chatRepository by lazy { StudentChatRepository() }
     private val profileRepository by lazy { StudentProfileRepository() }
     private val presenceRepository by lazy { StudentPresenceRepository() }
+    private val transferSignaling by lazy { FirebaseP2pTransferSignaling() }
+    private val fileTransferManager by lazy {
+        P2pChatFileTransferManager(
+            this,
+            object : P2pChatFileTransferManager.Callback {
+                override fun onStatus(fileName: String, detail: String) {
+                    if (::statusText.isInitialized && !chatUnavailable) statusText.text = fileName + " · " + detail
+                }
+
+                override fun onCompleted(fileName: String, outgoing: Boolean) {
+                    if (::statusText.isInitialized && !chatUnavailable) {
+                        statusText.text = if (outgoing) {
+                            "File sent and verified by receiver: " + fileName
+                        } else {
+                            "File received and SHA-256 verified: " + fileName
+                        }
+                    }
+                    Toast.makeText(
+                        this@StudentChatActivity,
+                        if (outgoing) "File transfer completed" else "File received",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+
+                override fun onError(fileName: String, message: String, error: Throwable?) {
+                    if (::statusText.isInitialized && !chatUnavailable) {
+                        statusText.setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_danger))
+                        statusText.text = fileName + " · " + message
+                    }
+                    if (error != null) Log.w(TAG, "P2P file transfer error: " + message, error)
+                }
+            },
+            transferSignaling
+        )
+    }
+
+    private var incomingOffersListener: ListenerRegistration? = null
+    private val promptedIncomingOfferIds = mutableSetOf<String>()
+    private val incomingOfferQueue = ArrayDeque<P2pTransferOffer>()
+    private var incomingOfferDialogVisible = false
+    private var pendingIncomingOfferForSave: P2pTransferOffer? = null
 
     private var otherUid: String = ""
     private var otherDisplayName: String = "Classmate"
@@ -112,6 +159,30 @@ class StudentChatActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
         handlePickedFile(uri)
+    }
+
+    private val incomingFileSavePicker = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri: Uri? ->
+        val offer = pendingIncomingOfferForSave
+        pendingIncomingOfferForSave = null
+        if (offer == null) return@registerForActivityResult
+        if (uri == null) {
+            statusText.text = "Save location cancelled. The file was not accepted."
+            promptedIncomingOfferIds.remove(offer.transferId)
+            incomingOfferQueue.addFirst(offer)
+            return@registerForActivityResult
+        }
+        fileTransferManager.acceptIncoming(offer, uri) { error ->
+            if (isFinishing || isDestroyed) return@acceptIncoming
+            if (error != null) {
+                statusText.text = "Could not accept " + offer.fileName + ". Please check the published P2P rules and try again."
+                promptedIncomingOfferIds.remove(offer.transferId)
+            } else {
+                statusText.text = "Accepted " + offer.fileName + ". Starting secure connection…"
+            }
+            showNextIncomingOffer()
+        }
     }
 
     private val typingIdleRunnable = Runnable { stopLocalTypingState() }
@@ -191,6 +262,7 @@ class StudentChatActivity : AppCompatActivity() {
             if (displayedMessages.isNotEmpty()) {
                 startMessageReactionsListeners(user.uid, displayedMessages)
             }
+            startIncomingOffersListener(activeConversation)
         }
     }
 
@@ -199,6 +271,8 @@ class StudentChatActivity : AppCompatActivity() {
         StudentConnectPresenceTracker.stop(presenceOwnerKey)
         otherPresenceListener?.remove()
         otherPresenceListener = null
+        incomingOffersListener?.remove()
+        incomingOffersListener = null
         typingHandler.removeCallbacks(presenceRefreshRunnable)
         stopLocalTypingState()
         typingListener?.remove()
@@ -233,6 +307,9 @@ class StudentChatActivity : AppCompatActivity() {
         reactionRecords = emptyList()
         messagesListener?.remove()
         messagesListener = null
+        incomingOffersListener?.remove()
+        incomingOffersListener = null
+        fileTransferManager.close()
         outgoingReceiptViews.clear()
         displayedMessages = emptyList()
         replyToMessage = null
@@ -303,6 +380,7 @@ class StudentChatActivity : AppCompatActivity() {
                 statusText.text = "Private chat · Only this accepted connection can access these messages."
                 setComposerEnabled(true)
                 startMessagesListener(uid, opened)
+                startIncomingOffersListener(opened)
                 startTypingListener(uid, opened)
                 startReadReceiptListener(uid, opened)
                 if (activityStarted) syncChatPresence(uid)
@@ -782,12 +860,74 @@ class StudentChatActivity : AppCompatActivity() {
         }
     }
 
+    private fun startIncomingOffersListener(opened: StudentChatConversation) {
+        if (chatUnavailable || !activityStarted || incomingOffersListener != null) return
+        val uid = auth.currentUser?.takeIf { it.isEmailVerified }?.uid ?: return
+        incomingOffersListener = transferSignaling.listenForIncomingOffers(opened.id) { offers, error ->
+            if (!isCurrentUser(uid) || chatUnavailable) return@listenForIncomingOffers
+            if (error != null) {
+                val detail = error.message.orEmpty()
+                statusText.text = if (detail.contains("PERMISSION_DENIED", ignoreCase = true)) {
+                    "Incoming file transfers need the latest P2P Firestore rules published."
+                } else {
+                    "Could not check incoming files. Check your connection."
+                }
+                return@listenForIncomingOffers
+            }
+            offers.forEach { offer ->
+                if (promptedIncomingOfferIds.add(offer.transferId)) incomingOfferQueue.addLast(offer)
+            }
+            showNextIncomingOffer()
+        }
+    }
+
+    private fun showNextIncomingOffer() {
+        if (isFinishing || isDestroyed || incomingOfferDialogVisible || incomingOfferQueue.isEmpty()) return
+        if (!activityStarted || chatUnavailable) return
+        val offer = incomingOfferQueue.removeFirst()
+        incomingOfferDialogVisible = true
+        AlertDialog.Builder(this)
+            .setTitle("Incoming file")
+            .setMessage(
+                offer.fileName + "\n" +
+                    P2pTransferFileMetadataReader.formatBytes(offer.sizeBytes) + " · " + offer.mimeType +
+                    "\n\nSave this file to your device? It will be received through an encrypted connection."
+            )
+            .setPositiveButton("Choose save location") { _, _ ->
+                pendingIncomingOfferForSave = offer
+                incomingFileSavePicker.launch(offer.fileName.take(180))
+            }
+            .setNegativeButton("Decline") { _, _ ->
+                fileTransferManager.rejectIncoming(offer) { error ->
+                    if (error != null) {
+                        statusText.text = "Could not decline " + offer.fileName + ". Check the published P2P rules."
+                    } else {
+                        statusText.text = "File declined: " + offer.fileName
+                        promptedIncomingOfferIds.remove(offer.transferId)
+                    }
+                    incomingOfferDialogVisible = false
+                    showNextIncomingOffer()
+                }
+            }
+            .setOnCancelListener {
+                incomingOfferDialogVisible = false
+                incomingOfferQueue.addFirst(offer)
+            }
+            .show()
+            .also { dialog ->
+                dialog.setOnDismissListener { incomingOfferDialogVisible = false }
+            }
+    }
+
     private fun handlePickedFile(uri: Uri) {
         val metadata = runCatching { P2pTransferFileMetadataReader.read(this, uri) }.getOrNull()
         if (metadata == null) {
             clearSelectedFile()
             statusText.text = "Could not read this file. Please choose another file."
             return
+        }
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         selectedFileMetadata = metadata
         selectedFileNameText.text = metadata.fileName
@@ -815,8 +955,35 @@ class StudentChatActivity : AppCompatActivity() {
         }
 
         val rawText = messageInput.text?.toString().orEmpty()
+        val selectedFile = selectedFileMetadata
+        if (selectedFile != null) {
+            if (rawText.isNotBlank()) {
+                statusText.text = "Send the text message first, then send the selected file separately."
+                return
+            }
+            isSending = true
+            sendButton.isEnabled = false
+            statusText.text = "Preparing encrypted file offer…"
+            fileTransferManager.sendFile(selectedFile, activeConversation.id, otherUid) { offer, error ->
+                runOnUiThread {
+                    isSending = false
+                    sendButton.isEnabled = !chatUnavailable
+                    if (!isCurrentUser(user.uid)) return@runOnUiThread
+                    if (error != null || offer == null) {
+                        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_danger))
+                        statusText.text = "File not sent. " + (error?.message ?: "Please try again.")
+                        Log.w(TAG, "Could not create file offer.", error)
+                    } else {
+                        clearSelectedFile()
+                        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+                        statusText.text = "File offer sent. Waiting for " + otherDisplayName + " to accept…"
+                    }
+                }
+            }
+            return
+        }
         if (rawText.trim().isEmpty()) {
-            statusText.text = "Type a message before tapping Send."
+            statusText.text = "Type a message or attach a file before tapping Send."
             messageInput.requestFocus()
             return
         }
