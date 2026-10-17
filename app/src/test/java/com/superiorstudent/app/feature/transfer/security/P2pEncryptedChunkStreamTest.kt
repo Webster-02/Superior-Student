@@ -13,7 +13,7 @@ import org.junit.Test
 class P2pEncryptedChunkStreamTest {
     private val transferId = "transfer_0123456789ab"
 
-    private fun descriptor(bytes: ByteArray, chunkSize: Int = 8192) =
+    private fun descriptor(bytes: ByteArray, chunkSize: Int = 32 * 1024) =
         P2pEncryptedChunkStream.TransferDescriptor(
             transferId = transferId,
             fileName = "sample.bin",
@@ -21,11 +21,11 @@ class P2pEncryptedChunkStreamTest {
             totalBytes = bytes.size.toLong(),
             sha256Hex = MessageDigest.getInstance("SHA-256")
                 .digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) },
-            chunkSize = chunkSize
+            chunkSize = minOf(chunkSize, P2pEncryptedChunkStream.MAX_CHUNK_BYTES)
         )
 
     @Test fun encryptedStreamRoundTripsMultipleChunks() {
-        val bytes = ByteArray(42000) { ((it * 31) xor (it shr 3)).toByte() }
+        val bytes = ByteArray(132000) { ((it * 31) xor (it shr 3)).toByte() }
         val description = descriptor(bytes)
         val senderKeys = P2pTransferCrypto.generateEphemeralKeyPair()
         val receiverKeys = P2pTransferCrypto.generateEphemeralKeyPair()
