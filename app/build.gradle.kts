@@ -43,6 +43,9 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-messaging")
 
+    // WebRTC DataChannel support for P2P binary transport.
+    implementation("io.github.webrtc-sdk:android:150.7871.01")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
