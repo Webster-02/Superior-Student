@@ -27,6 +27,8 @@ class P2pPeerConnectionController(
         fun onLocalSignal(type: SignalType, payload: Map<String, Any?>)
         fun onStateChanged(state: PeerConnection.PeerConnectionState, detail: String? = null)
         fun onRemoteDataChannel(channel: DataChannel)
+        /** Invoked before SDP creation so an offerer can create its DataChannel in time. */
+        fun onPeerConnectionCreated(connection: PeerConnection, offerer: Boolean): Boolean
         fun onError(message: String, error: Throwable? = null)
     }
 
@@ -40,7 +42,7 @@ class P2pPeerConnectionController(
     @Volatile private var offerCreating = false
 
     fun startAsOfferer(): Boolean {
-        if (!preparePeer()) return false
+        if (!preparePeer(offerer = true)) return false
         val connection = peer ?: return false
         offerCreating = true
         connection.createOffer(object : SdpObserverAdapter() {
@@ -71,7 +73,7 @@ class P2pPeerConnectionController(
             listener.onError("Remote SDP offer is invalid.")
             return false
         }
-        if (!preparePeer()) return false
+        if (!preparePeer(offerer = false)) return false
         val connection = peer ?: return false
         val remote = SessionDescription(SessionDescription.Type.OFFER, sdp)
         connection.setRemoteDescription(object : SdpObserverAdapter() {
@@ -160,7 +162,7 @@ class P2pPeerConnectionController(
 
     fun currentConnectionState(): PeerConnection.PeerConnectionState? = peer?.connectionState()
 
-    private fun preparePeer(): Boolean {
+    private fun preparePeer(offerer: Boolean): Boolean {
         if (closed.get()) return false
         if (peer != null) return true
         val configuration = PeerConnection.RTCConfiguration(iceServers).apply {
@@ -199,6 +201,19 @@ class P2pPeerConnectionController(
             return false
         }
         peer = created
+        val attached = try {
+            listener.onPeerConnectionCreated(created, offerer)
+        } catch (error: RuntimeException) {
+            listener.onError("Could not attach the file DataChannel transport.", error)
+            false
+        }
+        if (!attached) {
+            peer = null
+            runCatching { created.close() }
+            runCatching { created.dispose() }
+            listener.onError("Could not initialise the file DataChannel transport.")
+            return false
+        }
         return true
     }
 
