@@ -56,11 +56,15 @@ object P2pEncryptedChunkStream {
         private val digest = MessageDigest.getInstance("SHA-256")
         private var finished = false
         private var endFrameCreated = false
+        private var endFrameSent = false
 
         fun nextFrame(): ByteArray? {
             check(!finished && !endFrameCreated) { "Sender is already finished." }
             val block = readAtMost(input, descriptor.chunkSize)
-            if (block.isEmpty()) return null
+            if (block.isEmpty()) {
+                require(bytesRead == descriptor.totalBytes) { "Source file is shorter than declared." }
+                return null
+            }
             bytesRead = Math.addExact(bytesRead, block.size.toLong())
             require(bytesRead <= descriptor.totalBytes) { "Source file grew during transfer." }
             digest.update(block)
@@ -86,7 +90,8 @@ object P2pEncryptedChunkStream {
         }
 
         fun markEndFrameSent() {
-            check(endFrameCreated && !finished) { "End frame has not been created." }
+            check(endFrameCreated && !finished && !endFrameSent) { "End frame has not been created or was already sent." }
+            endFrameSent = true
             finished = true
         }
 
