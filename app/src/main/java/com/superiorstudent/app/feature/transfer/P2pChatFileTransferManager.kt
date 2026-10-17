@@ -544,6 +544,24 @@ class P2pChatFileTransferManager(
                             )
                         }
 
+                        override fun onEncryptedFrame(frame: ByteArray) {
+                            if (closed.get() || runtime.disposed.get()) {
+                                frame.fill(0)
+                                return
+                            }
+                            try {
+                                runtime.receiveExecutor.execute { processIncomingFrame(runtime, frame) }
+                            } catch (error: Exception) {
+                                frame.fill(0)
+                                failRuntime(
+                                    runtime,
+                                    "Could not queue an authenticated LAN frame.",
+                                    error,
+                                    deleteDestination = true
+                                )
+                            }
+                        }
+
                         override fun onError(error: Exception) {
                             if (runtime.disposed.get() || runtime.completed.get()) return
                             if (runtime.lanTransport != null) {
@@ -672,7 +690,7 @@ class P2pChatFileTransferManager(
             chooseWebRtcFallback(runtime, "Invalid LAN endpoint; using secure WebRTC.")
             return
         }
-        runtime.lanCandidate = LanCandidate(ip, port, token)
+        runtime.lanCandidate = LanCandidate(ip, port!!, token)
         tryConnectLanSender(runtime)
     }
 
