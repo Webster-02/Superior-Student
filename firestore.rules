@@ -871,10 +871,12 @@ service cloud.firestore {
         && validP2pTransferOffer(conversationId, transferId, resource.data)
         && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid];
 
+      // Every client-created offer is validated by allow create above. Keep the
+      // list rule query-provable by constraining the receiver field queried by Android.
+      // The client still validates every returned document before showing it.
       allow list: if signedInWithVerifiedEmail()
         && activeChatConversationMember(conversationId)
-        && request.auth.uid == resource.data.receiverUid
-        && validP2pTransferOffer(conversationId, transferId, resource.data);
+        && request.auth.uid == resource.data.receiverUid;
 
       allow create: if signedInWithVerifiedEmail()
         && activeChatConversationMember(conversationId)
