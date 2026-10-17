@@ -197,6 +197,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                     object : P2pLanDiscovery.Callback {
                         override fun onPeerDiscovered(peer: P2pLanDiscovery.Peer) {
                             if (!sending.get() || peerPromptShown) return
+                            if (!peer.sessionId.startsWith(NEARBY_SESSION_PREFIX)) return
                             val address = peer.host.hostAddress.orEmpty()
                             if (peer.host !is Inet4Address ||
                                 !P2pTransferValidation.isPrivateLanAddress(address) ||
@@ -395,7 +396,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 server.reuseAddress = true
                 server.bind(InetSocketAddress("0.0.0.0", 0), 4)
                 serverSocket = server
-                val sessionId = UUID.randomUUID().toString()
+                if (!receiving.get()) {
+                    runCatching { server.close() }
+                    if (serverSocket === server) serverSocket = null
+                    return@execute
+                }
+                val sessionId = NEARBY_SESSION_PREFIX + UUID.randomUUID().toString()
                 val discovery = P2pLanDiscovery(
                     this,
                     object : P2pLanDiscovery.Callback {
@@ -857,5 +863,6 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         const val USER_DECISION_TIMEOUT_MINUTES = 3L
         const val CONFIRMATION_TIMEOUT_MINUTES = 3L
         const val STATUS_UPDATE_BYTES = 1024L * 1024L
+        const val NEARBY_SESSION_PREFIX = "nearby_"
     }
 }
