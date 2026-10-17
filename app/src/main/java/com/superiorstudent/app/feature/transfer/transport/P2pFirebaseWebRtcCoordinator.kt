@@ -39,6 +39,7 @@ class P2pFirebaseWebRtcCoordinator(
         fun onBinaryFrame(frame: ByteArray)
         fun onBufferedAmountChanged(bufferedBytes: Long)
         fun onRemotePublicKey(publicKeyBase64: String)
+        fun onRemoteLanCandidate(payload: Map<String, Any?>) = Unit
         fun onError(message: String, error: Throwable? = null)
     }
 
@@ -110,6 +111,7 @@ class P2pFirebaseWebRtcCoordinator(
             remoteUid = remoteUid,
             session = session,
             onRemotePublicKey = { publicKey -> dispatch { callback.onRemotePublicKey(publicKey) } },
+            onRemoteLanCandidate = { payload -> dispatch { callback.onRemoteLanCandidate(payload) } },
             report = { message, error -> report(message, error) }
         )
     }
@@ -152,6 +154,20 @@ class P2pFirebaseWebRtcCoordinator(
             return
         }
         activeBridge.publishReceiverPublicKey(publicKeyBase64, callback)
+    }
+
+    /** Publishes the receiver's short-lived LAN endpoint through authenticated Firestore signaling. */
+    fun publishLanCandidate(ip: String, port: Int, token: String, callback: (Exception?) -> Unit = {}) {
+        if (closed.get() || !started) {
+            callback(IllegalStateException("WebRTC transfer session is not active."))
+            return
+        }
+        val activeBridge = bridge
+        if (activeBridge == null) {
+            callback(IllegalStateException("Firebase signaling bridge is unavailable."))
+            return
+        }
+        activeBridge.publishLanCandidate(ip, port, token, callback)
     }
 
     /** Sends exactly one already-encrypted frame. False means retry later or channel not ready. */
