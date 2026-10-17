@@ -5,6 +5,7 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Handler
 import android.os.Looper
+import android.net.wifi.WifiManager
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -49,6 +50,8 @@ class P2pLanDiscovery(
     @Volatile private var discoveryListener: NsdManager.DiscoveryListener? = null
     @Volatile private var registrationListener: NsdManager.RegistrationListener? = null
     @Volatile private var registeredServiceName: String? = null
+    @Volatile private var localSessionId: String? = null
+    @Volatile private var multicastLock: WifiManager.MulticastLock? = null
 
     /**
      * Announces the caller's already-open TCP listener. [port] must be the actual bound port.
@@ -94,6 +97,7 @@ class P2pLanDiscovery(
 
             override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                 registrationListener = null
+                localSessionId = null
                 reportError("advertise", errorCode)
             }
 
@@ -106,6 +110,7 @@ class P2pLanDiscovery(
             }
         }
 
+        localSessionId = sessionId
         registrationListener = listener
         return try {
             manager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, listener)
@@ -153,6 +158,7 @@ class P2pLanDiscovery(
                             resolvingNames.remove(info.serviceName)
                             if (closed.get() || info.serviceName == registeredServiceName) return
                             val peer = parsePeer(info) ?: return
+                            if (peer.sessionId == localSessionId) return
                             discoveredPeers[peer.serviceName] = peer
                             mainHandler.post {
                                 if (!closed.get()) callback.onPeerDiscovered(peer)
@@ -176,10 +182,13 @@ class P2pLanDiscovery(
                 }
             }
 
-            override fun onDiscoveryStopped(serviceType: String) = Unit
+            override fun onDiscoveryStopped(serviceType: String) {
+                releaseMulticastLock()
+            }
 
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
                 discoveryListener = null
+                releaseMulticastLock()
                 reportError("discover", errorCode)
             }
 
@@ -190,6 +199,7 @@ class P2pLanDiscovery(
 
         discoveryListener = listener
         return try {
+            acquireMulticastLock()
             manager.discoverServices(
                 P2pLanDiscoveryProtocol.SERVICE_TYPE,
                 NsdManager.PROTOCOL_DNS_SD,
@@ -198,9 +208,25 @@ class P2pLanDiscovery(
             true
         } catch (error: RuntimeException) {
             discoveryListener = null
+            releaseMulticastLock()
             reportError("discover", ERROR_NSD_CALL_FAILED)
             false
         }
+    }
+
+    private fun acquireMulticastLock() {
+        if (multicastLock?.isHeld == true) return
+        val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return
+        val lock = wifiManager.createMulticastLock("SuperiorStudentP2pDiscovery")
+        lock.setReferenceCounted(false)
+        lock.acquire()
+        multicastLock = lock
+    }
+
+    private fun releaseMulticastLock() {
+        val lock = multicastLock
+        multicastLock = null
+        if (lock?.isHeld == true) runCatching { lock.release() }
     }
 
     fun currentPeers(): List<Peer> = discoveredPeers.values
@@ -219,6 +245,7 @@ class P2pLanDiscovery(
                 // The platform may already have stopped discovery after an asynchronous failure.
             }
         }
+        releaseMulticastLock()
     }
 
     fun stopAdvertising() {
@@ -233,6 +260,7 @@ class P2pLanDiscovery(
             }
         }
         registeredServiceName = null
+        localSessionId = null
     }
 
     private fun parsePeer(info: NsdServiceInfo): Peer? {
