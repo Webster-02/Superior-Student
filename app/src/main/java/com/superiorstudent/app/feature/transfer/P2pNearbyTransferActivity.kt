@@ -301,8 +301,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                     lastError = error
                     if (!sending.get() || attempt >= MAX_RECONNECT_ATTEMPTS) break
                     showStatus(
-                        "Local connection interrupted. Keeping the verified checkpoint and retrying " +
-                            "("${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})…"
+                        "Local connection interrupted. Checking for a saved checkpoint and retrying " +
+                            "(${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})…"
                     )
                     try {
                         Thread.sleep(RECONNECT_DELAY_MS)
