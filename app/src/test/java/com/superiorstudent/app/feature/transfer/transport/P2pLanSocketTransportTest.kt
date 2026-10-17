@@ -65,10 +65,11 @@ class P2pLanSocketTransportTest {
             val accepted = acceptExecutor.submit<P2pLanSocketTransport> {
                 P2pLanSocketTransport.fromAcceptedSocket(serverSocket.accept(), callback)
             }
-            rawClient = Socket(address, serverSocket.localPort)
+            val clientSocket = Socket(address, serverSocket.localPort)
+            rawClient = clientSocket
             transport = accepted.get(3, TimeUnit.SECONDS)
 
-            DataOutputStream(rawClient.getOutputStream()).use { output ->
+            DataOutputStream(clientSocket.getOutputStream()).use { output ->
                 output.writeInt(P2pLanSocketTransport.MAX_FRAME_BYTES + 1)
                 output.flush()
             }
@@ -98,11 +99,12 @@ class P2pLanSocketTransportTest {
             val accepted = acceptExecutor.submit<P2pLanSocketTransport> {
                 P2pLanSocketTransport.fromAcceptedSocket(serverSocket.accept(), callback)
             }
-            rawClient = Socket(address, serverSocket.localPort)
+            val clientSocket = Socket(address, serverSocket.localPort)
+            rawClient = clientSocket
             transport = accepted.get(3, TimeUnit.SECONDS)
-            rawClient.getOutputStream().write(byteArrayOf(0, 0))
-            rawClient.getOutputStream().flush()
-            rawClient.close()
+            clientSocket.getOutputStream().write(byteArrayOf(0, 0))
+            clientSocket.getOutputStream().flush()
+            clientSocket.close()
             rawClient = null
 
             assertNotNull(
