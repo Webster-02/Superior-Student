@@ -31,7 +31,7 @@ class P2pLanDiscoveryProtocolTest {
 
         assertTrue(name.length <= 63)
         assertTrue(name.matches(Regex("^[A-Za-z0-9_-]+$")))
-        assertTrue(name.endsWith("01234589ab".takeLast(8)))
+        assertTrue(name.endsWith("transfer_0123456789ab".takeLast(8)))
     }
 
     @Test
