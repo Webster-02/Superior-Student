@@ -24,6 +24,10 @@
             </intent-filter>
         </service>
         <activity
+            android:name=".feature.transfer.P2pNearbyTransferActivity"
+            android:exported="false"
+            android:label="Nearby file transfer" />
+        <activity
             android:name=".feature.studentconnect.StudentChatActivity"
             android:exported="false"
             android:label="Student Chat"
