@@ -237,8 +237,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                                     .setPositiveButton("Connect") { _, _ ->
                                         val current = preparedOutgoing
                                         if (current != null && sending.get()) {
-                                            outgoingDiscovery?.close()
-                                            outgoingDiscovery = null
+                                            // Keep mDNS discovery alive so a reconnect can refresh the
+                                            // receiver's local IP if Wi-Fi briefly disconnects.
                                             ioExecutor.execute { sendToPeer(peer, current) }
                                         }
                                     }
@@ -283,10 +283,18 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             for (attempt in 0..MAX_RECONNECT_ATTEMPTS) {
                 if (!sending.get()) break
                 try {
-                    sendOneNearbyAttempt(peer, prepared, transferId)
+                    val refreshedPeer = outgoingDiscovery?.currentPeers()
+                        ?.firstOrNull { candidate ->
+                            candidate.sessionId == peer.sessionId &&
+                                candidate.host is Inet4Address &&
+                                P2pTransferValidation.isPrivateLanAddress(candidate.host.hostAddress.orEmpty()) &&
+                                candidate.port in 1..65535
+                        } ?: peer
+                    sendOneNearbyAttempt(refreshedPeer, prepared, transferId)
                     lastError = null
                     break
                 } catch (cancelled: NearbyUserCancelledException) {
+                    lastError = null
                     showStatus(cancelled.message ?: "Nearby transfer cancelled.")
                     break
                 } catch (error: Exception) {
@@ -1192,8 +1200,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         const val CONFIRMATION_TIMEOUT_MINUTES = 3L
         const val STATUS_UPDATE_BYTES = 1024L * 1024L
         const val PAUSE_POLL_DELAY_MS = 50L
-        const val MAX_RECONNECT_ATTEMPTS = 3
-        const val RECONNECT_DELAY_MS = 1_000L
+        const val MAX_RECONNECT_ATTEMPTS = 12
+        const val RECONNECT_DELAY_MS = 1_500L
         const val NEARBY_SESSION_PREFIX = "nearby_"
     }
 }
