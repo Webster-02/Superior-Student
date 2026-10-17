@@ -59,6 +59,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private val receiving = AtomicBoolean(false)
     private val activeIncomingSocket = AtomicBoolean(false)
     private val resumableDownloads = ConcurrentHashMap<String, ResumableDownloadState>()
+    private val checkpointStore by lazy { P2pNearbyCheckpointStore(applicationContext) }
     private val outgoingPaused = AtomicBoolean(false)
     private val outgoingStreamActive = AtomicBoolean(false)
     private val senderDataFinished = AtomicBoolean(false)
@@ -83,7 +84,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private data class ResumableDownloadState(
         val tempFile: File,
         val originalOffer: P2pNearbyOffer,
-        val destinationUri: Uri
+        @Volatile var destinationUri: Uri?
     )
 
     private class PendingIncomingSession(
@@ -111,6 +112,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             val pending = pendingIncomingSession
             if (pending == null) return@registerForActivityResult
             pending.destinationUri = uri
+            pending.resumeState?.destinationUri = uri
             pending.accepted = uri != null
             pending.selectionReady.countDown()
             pendingIncomingSession = null
@@ -121,6 +123,29 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         renderScreen()
+        restoreResumableDownloads()
+    }
+
+    private fun restoreResumableDownloads() {
+        val checkpoints = try {
+            checkpointStore.restore()
+        } catch (error: Exception) {
+            LogNearbyTransfer.error("Could not restore nearby transfer checkpoints", error)
+            emptyList()
+        }
+        checkpoints.forEach { checkpoint ->
+            resumableDownloads[checkpoint.offer.transferId] = ResumableDownloadState(
+                tempFile = checkpoint.tempFile,
+                originalOffer = checkpoint.offer,
+                destinationUri = null
+            )
+        }
+        if (checkpoints.isNotEmpty()) {
+            showStatus(
+                "Found " + checkpoints.size +
+                    " saved nearby transfer checkpoint(s). Start Receive nearby file on the same Wi-Fi to resume."
+            )
+        }
     }
 
     private fun renderScreen() {
@@ -669,9 +694,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             val key = P2pTransferCrypto.deriveTransferKey(
                 keyPair, offer.senderPublicKeyBase64, offer.transferId
             )
-            val downloadFile = existingState?.tempFile ?: File.createTempFile(
-                "p2p-nearby-", ".part", cacheDir
-            )
+            val downloadFile = existingState?.tempFile ?: checkpointStore.createTempFile()
             temp = downloadFile
             val resumeOffset = downloadFile.length()
             if (!P2pEncryptedChunkStream.isValidCheckpoint(
@@ -682,6 +705,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             }
 
             val resumeState = existingState ?: ResumableDownloadState(downloadFile, offer, destinationUri)
+            resumeState.destinationUri = destinationUri
+            checkpointStore.save(downloadFile, offer)
             resumableDownloads[offer.transferId] = resumeState
             temporaryDownload = downloadFile
             writeControl(output, "accept", mapOf(
@@ -797,6 +822,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             writeControl(output, "complete", mapOf("sha256" to offer.sha256))
             completed = true
             resumableDownloads.remove(offer.transferId, resumeState)
+            checkpointStore.remove(offer.transferId)
             showStatus("File received and SHA-256 verified over local Wi-Fi: " + offer.fileName)
             runOnUiThread {
                 Toast.makeText(this, "Nearby file received and verified", Toast.LENGTH_LONG).show()
@@ -807,20 +833,23 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             val offer = receivedOffer
             val checkpoint = temp
             val savedState = offer?.let { resumableDownloads[it.transferId] }
-            if (!completed && receiving.get() && offer != null && checkpoint != null &&
+            if (!completed && offer != null && checkpoint != null &&
                 savedState != null && checkpoint.isFile &&
                 P2pEncryptedChunkStream.isValidCheckpoint(
                     checkpoint.length(), offer.sizeBytes, offer.chunkSize
                 )
             ) {
                 preserveCheckpoint = true
-                showStatus(
-                    "Connection interrupted. Saved checkpoint: " +
-                        P2pTransferFileMetadataReader.formatBytes(checkpoint.length()) +
-                        ". Keep Receive nearby file active while the sender reconnects."
-                )
+                if (receiving.get()) {
+                    showStatus(
+                        "Connection interrupted. Saved checkpoint: " +
+                            P2pTransferFileMetadataReader.formatBytes(checkpoint.length()) +
+                            ". Keep Receive nearby file active while the sender reconnects."
+                    )
+                }
             } else if (checkpoint != null && offer != null && savedState != null) {
                 resumableDownloads.remove(offer.transferId, savedState)
+                checkpointStore.remove(offer.transferId)
             }
             if (receiving.get()) {
                 LogNearbyTransfer.error("Nearby receiver connection ended", error)
@@ -833,10 +862,16 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         } finally {
             runCatching { receiver?.close() }
             if (completed) {
-                receivedOffer?.let { resumableDownloads.remove(it.transferId) }
+                receivedOffer?.let {
+                    resumableDownloads.remove(it.transferId)
+                    checkpointStore.remove(it.transferId)
+                }
                 temp?.delete()
             } else if (!preserveCheckpoint && temp != null) {
-                receivedOffer?.let { resumableDownloads.remove(it.transferId) }
+                receivedOffer?.let {
+                    resumableDownloads.remove(it.transferId)
+                    checkpointStore.remove(it.transferId)
+                }
                 temp.delete()
             }
             if (temporaryDownload === temp) temporaryDownload = null
@@ -853,6 +888,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         val resumeState = pending.resumeState
         val resumeOffset = resumeState?.tempFile?.length() ?: 0L
         val isResume = resumeState != null
+        val canReuseDestination = isResume && resumeState?.destinationUri != null
         AlertDialog.Builder(this)
             .setTitle(if (isResume) "Resume nearby file" else "Incoming nearby file")
             .setMessage(
@@ -867,8 +903,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                         "\n\nOnly accept if you expected this file from the person next to you."
                     }
             )
-            .setPositiveButton(if (isResume) "Resume transfer" else "Accept & choose save location") { _, _ ->
-                if (isResume) {
+            .setPositiveButton(
+                if (!isResume) "Accept & choose save location"
+                else if (canReuseDestination) "Resume transfer"
+                else "Resume & choose save location"
+            ) { _, _ ->
+                if (canReuseDestination) {
                     pending.destinationUri = resumeState?.destinationUri
                     pending.accepted = pending.destinationUri != null
                     pending.selectionReady.countDown()
@@ -1123,8 +1163,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun clearResumableDownloads() {
-        resumableDownloads.values.toList().forEach { state ->
-            runCatching { state.tempFile.delete() }
+        resumableDownloads.entries.toList().forEach { entry ->
+            runCatching { entry.value.tempFile.delete() }
+            checkpointStore.remove(entry.key)
         }
         resumableDownloads.clear()
     }
@@ -1191,9 +1232,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         serverSocket = null
         runCatching { activeSocket?.close() }
         activeSocket = null
-        temporaryDownload?.delete()
+        // Saved partial files intentionally survive Activity destruction. Explicitly stopping
+        // reception still clears checkpoints through stopReceiving()/clearResumableDownloads().
         temporaryDownload = null
-        clearResumableDownloads()
         ioExecutor.shutdownNow()
         super.onDestroy()
     }
