@@ -14,7 +14,7 @@ enum class P2pOfferState(val wireValue: String) {
 }
 
 enum class P2pSignalType(val wireValue: String) {
-    LAN_CANDIDATES("lan_candidates"), WEBRTC_OFFER("webrtc_offer"),
+    LAN_CANDIDATES("lan_candidates"), KEY_EXCHANGE("key_exchange"), WEBRTC_OFFER("webrtc_offer"),
     WEBRTC_ANSWER("webrtc_answer"), ICE_CANDIDATE("ice_candidate"),
     RESUME_REQUEST("resume_request"), TRANSFER_PROGRESS("transfer_progress"),
     TRANSFER_COMPLETE("transfer_complete"), TRANSFER_CANCEL("transfer_cancel"), ERROR("error");
@@ -100,6 +100,8 @@ internal object P2pTransferValidation {
                     port != null && port in 1..65535 &&
                     token != null && token.length in 32..128 && token.none { it.isISOControl() }
             }
+            P2pSignalType.KEY_EXCHANGE ->
+                hasExactly("publicKey") && text("publicKey", 2048)
             P2pSignalType.WEBRTC_OFFER, P2pSignalType.WEBRTC_ANSWER ->
                 hasExactly("sdp") && text("sdp", 120_000)
             P2pSignalType.ICE_CANDIDATE -> {
