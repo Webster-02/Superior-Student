@@ -275,8 +275,11 @@ class P2pChatFileTransferManager(
                     }
                 }
                 P2pOfferState.TRANSFERRING -> {
-                    runtime.pauseRequested = false
-                    callbackStatus(observed.fileName, "File transfer resumed.")
+                    // A possibly delayed TRANSFERRING snapshot must not undo a local pause
+                    // request. The explicit resume callback clears pauseRequested.
+                    if (!runtime.pauseRequested) {
+                        callbackStatus(observed.fileName, "Encrypted file transfer in progress…")
+                    }
                 }
                 P2pOfferState.PAUSED -> {
                     runtime.pauseRequested = true
