@@ -236,6 +236,7 @@ class StudentChatActivity : AppCompatActivity() {
         outgoingReceiptViews.clear()
         displayedMessages = emptyList()
         replyToMessage = null
+        clearSelectedFile()
         typingHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
