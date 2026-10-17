@@ -154,13 +154,14 @@ class P2pLanSocketListener(
                     override fun onError(error: Exception) {
                         if (!closed.get()) notifyError(error)
                     }
+                },
+                beforeReader = { prepared ->
+                    if (closed.get() || !activeTransport.compareAndSet(null, prepared)) {
+                        throw IOException("Another LAN peer is already active.")
+                    }
                 }
             )
 
-            if (closed.get() || !activeTransport.compareAndSet(null, transport)) {
-                transport.close()
-                return
-            }
             callback.onAuthenticatedTransport(transport)
         } catch (error: Exception) {
             runCatching { peer.close() }
@@ -210,8 +211,11 @@ class P2pLanSocketListener(
     private fun newToken(): String {
         val random = ByteArray(TOKEN_BYTES)
         randomSource.nextBytes(random)
-        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(random)
-            .also { random.fill(0) }
+        return try {
+            random.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        } finally {
+            random.fill(0)
+        }
     }
 
     private fun asIoException(message: String, cause: Throwable): IOException =
@@ -266,7 +270,7 @@ internal object P2pLanHandshake {
             expected.fill(0)
             output.write(if (matches) ACCEPTED else REJECTED)
             output.flush()
-            return matches && input.read() == -1 // The client keeps this socket open after the proof.
+            return matches
         } catch (_: IOException) {
             return false
         } finally {
