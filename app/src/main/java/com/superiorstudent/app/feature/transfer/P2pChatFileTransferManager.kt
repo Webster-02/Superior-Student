@@ -370,7 +370,8 @@ class P2pChatFileTransferManager(
     }
 
     private fun markTransferring(runtime: RuntimeTransfer) {
-        if (!runtime.transferStarted.compareAndSet(false, true)) return
+        // Firestore rules intentionally reserve the accepted -> transferring transition for sender.
+        if (!runtime.outgoing || !runtime.transferStarted.compareAndSet(false, true)) return
         signaling.startTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
             if (error != null && !runtime.disposed.get()) {
                 callbackError(runtime.offer.fileName, "Connection opened, but transfer status could not be updated.", error)
