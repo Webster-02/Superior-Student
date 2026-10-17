@@ -45,6 +45,8 @@ class P2pLanSocketListener(
     interface Callback {
         /** An authenticated sender socket is ready to carry AES-GCM encrypted frames. */
         fun onAuthenticatedTransport(transport: P2pLanSocketTransport)
+        /** A complete, length-bounded frame arrived from the authenticated remote sender. */
+        fun onEncryptedFrame(frame: ByteArray)
         /** An established LAN connection failed. Do not silently switch transports mid-file. */
         fun onError(error: Exception)
     }
@@ -139,7 +141,7 @@ class P2pLanSocketListener(
                             return
                         }
                         try {
-                            callbackTransport().onEncryptedFrame(frame)
+                            callback.onEncryptedFrame(frame)
                         } catch (error: Exception) {
                             frame.fill(0)
                             notifyError(asIoException("Could not process an authenticated LAN frame.", error))
@@ -170,16 +172,6 @@ class P2pLanSocketListener(
             }
             // Unauthenticated LAN peers are silently dropped; the Internet/WebRTC route can remain active.
         }
-    }
-
-    /**
-     * Returns the active connection as the transport's callback proxy. The authenticated
-     * transport reference is assigned immediately after construction; frames are still AES-GCM
-     * authenticated by P2pEncryptedChunkStream before being written to a saved file.
-     */
-    private fun callbackTransport(): P2pLanSocketTransport {
-        return activeTransport.get()
-            ?: throw IOException("Authenticated LAN transport is not ready.")
     }
 
     private fun findPrivateIpv4Address(): Inet4Address? {
