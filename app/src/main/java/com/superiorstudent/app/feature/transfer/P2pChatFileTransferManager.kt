@@ -802,13 +802,12 @@ class P2pChatFileTransferManager(
             } catch (_: InterruptedException) {
                 return@execute
             }
-            if (!runtime.disposed.get() && !runtime.completed.get() &&
-                runtime.lanPathDecisionMade.compareAndSet(false, true)
-            ) {
+            if (!runtime.disposed.get() && !runtime.completed.get() && runtime.lanTransport == null) {
+                runtime.lanPathDecisionMade.set(true)
                 runtime.lanDiscovery?.stopDiscovery()
                 val webRtcReady =
                     runtime.coordinator?.currentDataChannelState() == P2pDataChannelTransport.State.CONNECTED
-                if (runtime.lanTransport == null && !webRtcReady) {
+                if (!webRtcReady) {
                     failRuntime(
                         runtime,
                         "Neither direct LAN nor WebRTC could connect. Keep both phones on the same Wi-Fi and retry.",
