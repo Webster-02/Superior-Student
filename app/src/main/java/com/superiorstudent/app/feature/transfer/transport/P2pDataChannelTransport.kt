@@ -67,12 +67,13 @@ class P2pDataChannelTransport(
                     fail("WebRTC could not create the file DataChannel.")
                     return
                 }
-            attachDataChannel(channel)
+            registerDataChannel(channel)
         }
     }
 
     /** Called by the owning PeerConnection.Observer when the remote creates a channel. */
-    fun onRemoteDataChannel(channel: DataChannel) {
+    /** Attach a DataChannel created/received by P2pPeerConnectionController. */
+    fun attachExistingDataChannel(channel: DataChannel) {
         if (closed.get()) {
             channel.close()
             return
@@ -82,8 +83,11 @@ class P2pDataChannelTransport(
             fail("Unexpected duplicate DataChannel.")
             return
         }
-        attachDataChannel(channel)
+        registerDataChannel(channel)
     }
+
+    /** Kept for callers that hand ownership of a PeerConnection to this transport directly. */
+    fun onRemoteDataChannel(channel: DataChannel) = attachExistingDataChannel(channel)
 
     /** ICE callback is forwarded unchanged to the trusted signaling controller. */
     fun onIceCandidate(candidate: IceCandidate) {
@@ -115,7 +119,7 @@ class P2pDataChannelTransport(
         return sent
     }
 
-    private fun attachDataChannel(channel: DataChannel) {
+    private fun registerDataChannel(channel: DataChannel) {
         if (closed.get()) {
             channel.close()
             return
