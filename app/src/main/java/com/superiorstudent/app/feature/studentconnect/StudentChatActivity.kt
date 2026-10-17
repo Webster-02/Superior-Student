@@ -1,5 +1,6 @@
 package com.superiorstudent.app.feature.studentconnect
 
+import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
@@ -42,6 +43,7 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceFormat
 import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectPresenceTracker
 import com.superiorstudent.app.feature.transfer.P2pChatFileTransferManager
+import com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity
 import com.superiorstudent.app.feature.transfer.data.FirebaseP2pTransferSignaling
 import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadata
 import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadataReader
@@ -241,7 +243,19 @@ class StudentChatActivity : AppCompatActivity() {
             if (conversation == null || chatUnavailable) {
                 statusText.text = "Open a valid chat before attaching a file."
             } else {
-                filePicker.launch(arrayOf("*/*"))
+                PopupMenu(this, attachFileButton).apply {
+                    menu.add(0, 1, 0, "Send file in chat")
+                    menu.add(0, 2, 1, "Nearby offline transfer")
+                    setOnMenuItemClickListener { item ->
+                        when (item.itemId) {
+                            1 -> filePicker.launch(arrayOf("*/*"))
+                            2 -> startActivity(
+                                Intent(this@StudentChatActivity, P2pNearbyTransferActivity::class.java)
+                            )
+                        }
+                        true
+                    }
+                }.show()
             }
         }
         findViewById<TextView>(R.id.studentChatSelectedFileRemove).setOnClickListener {
