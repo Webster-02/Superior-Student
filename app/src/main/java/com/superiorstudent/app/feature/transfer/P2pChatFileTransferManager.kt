@@ -68,6 +68,8 @@ class P2pChatFileTransferManager(
         @Volatile var temporaryFile: File? = null,
         @Volatile var key: SecretKey? = null
     ) {
+        /** Sender pauses only at encrypted-frame boundaries; the live stream stays open. */
+        @Volatile var pauseRequested: Boolean = false
         val disposed = AtomicBoolean(false)
         val sending = AtomicBoolean(false)
         val transferStarted = AtomicBoolean(false)
@@ -272,7 +274,14 @@ class P2pChatFileTransferManager(
                         else callbackStatus(observed.fileName, "Your classmate accepted. Establishing encrypted connection…")
                     }
                 }
-                P2pOfferState.TRANSFERRING -> callbackStatus(observed.fileName, "Encrypted file transfer in progress…")
+                P2pOfferState.TRANSFERRING -> {
+                    runtime.pauseRequested = false
+                    callbackStatus(observed.fileName, "File transfer resumed.")
+                }
+                P2pOfferState.PAUSED -> {
+                    runtime.pauseRequested = true
+                    callbackStatus(observed.fileName, "File transfer paused. Tap Resume to continue.")
+                }
                 P2pOfferState.COMPLETED -> completeRuntime(runtime)
                 P2pOfferState.REJECTED -> failRuntime(runtime, "Your classmate declined the file.", null, false)
                 P2pOfferState.CANCELLED, P2pOfferState.FAILED -> failRuntime(runtime, "The file transfer did not complete.", null, false)
@@ -407,6 +416,78 @@ class P2pChatFileTransferManager(
         workExecutor.execute { runSender(runtime) }
     }
 
+    /** Pause an active outgoing transfer without closing its authenticated stream. */
+    fun pauseOutgoingTransfer(transferId: String, callback: (Exception?) -> Unit = {}) {
+        val user = auth.currentUser
+        val runtime = runtimes[transferId]
+        if (user == null || !user.isEmailVerified) {
+            callback(IllegalStateException("A verified Student Connect account is required."))
+            return
+        }
+        if (runtime == null || !runtime.outgoing || runtime.disposed.get() || runtime.completed.get()) {
+            callback(IllegalStateException("This outgoing transfer is no longer active."))
+            return
+        }
+        if (!runtime.transferStatusConfirmed.get()) {
+            callback(IllegalStateException("Wait until the file transfer has started before pausing."))
+            return
+        }
+        if (runtime.pauseRequested) {
+            callback(null)
+            return
+        }
+
+        // Stop producing/sending frames immediately while Firestore confirms the shared state.
+        runtime.pauseRequested = true
+        signaling.pauseTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
+            if (runtime.disposed.get()) {
+                callback(error ?: IllegalStateException("Transfer is no longer active."))
+                return@pauseTransfer
+            }
+            if (error != null) {
+                runtime.pauseRequested = false
+                callback(error)
+            } else {
+                runtime.offer = runtime.offer.copy(status = P2pOfferState.PAUSED)
+                callbackStatus(runtime.offer.fileName, "File transfer paused at a safe chunk boundary.")
+                callback(null)
+            }
+        }
+    }
+
+    /** Resume an outgoing transfer that was paused while its secure session remained alive. */
+    fun resumeOutgoingTransfer(transferId: String, callback: (Exception?) -> Unit = {}) {
+        val user = auth.currentUser
+        val runtime = runtimes[transferId]
+        if (user == null || !user.isEmailVerified) {
+            callback(IllegalStateException("A verified Student Connect account is required."))
+            return
+        }
+        if (runtime == null || !runtime.outgoing || runtime.disposed.get() || runtime.completed.get()) {
+            callback(IllegalStateException("This outgoing transfer is no longer active."))
+            return
+        }
+        if (!runtime.pauseRequested) {
+            callback(IllegalStateException("This transfer is not paused."))
+            return
+        }
+
+        signaling.startTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
+            if (runtime.disposed.get()) {
+                callback(error ?: IllegalStateException("Transfer is no longer active."))
+                return@startTransfer
+            }
+            if (error != null) {
+                callback(error)
+            } else {
+                runtime.offer = runtime.offer.copy(status = P2pOfferState.TRANSFERRING)
+                runtime.pauseRequested = false
+                callbackStatus(runtime.offer.fileName, "File transfer resumed.")
+                callback(null)
+            }
+        }
+    }
+
     private fun runSender(runtime: RuntimeTransfer) {
         val sourceUri = runtime.sourceUri
         val key = runtime.key
@@ -423,8 +504,12 @@ class P2pChatFileTransferManager(
                 descriptorFor(runtime.offer)
             ).use { sender ->
                 runtime.senderStream = sender
+                callbackStatus(
+                    runtime.offer.fileName,
+                    "Sending encrypted file… ${P2pTransferFileMetadataReader.formatBytes(0)} / ${P2pTransferFileMetadataReader.formatBytes(runtime.offer.sizeBytes)}"
+                )
                 while (true) {
-                    if (runtime.disposed.get()) throw InterruptedException("Transfer was cancelled.")
+                    waitWhilePaused(runtime)
                     val frame = sender.nextFrame() ?: break
                     try {
                         sendFrameWithBackpressure(runtime, frame)
@@ -457,13 +542,25 @@ class P2pChatFileTransferManager(
     private fun sendFrameWithBackpressure(runtime: RuntimeTransfer, frame: ByteArray) {
         val deadline = System.currentTimeMillis() + SEND_FRAME_TIMEOUT_MS
         while (true) {
-            if (runtime.disposed.get() || closed.get()) throw InterruptedException("Transfer was cancelled.")
+            waitWhilePaused(runtime)
             val coordinator = runtime.coordinator ?: throw IllegalStateException("WebRTC session closed.")
             if (coordinator.currentDataChannelState() == P2pDataChannelTransport.State.CONNECTED &&
                 coordinator.sendEncryptedFrame(frame)
             ) return
             if (System.currentTimeMillis() >= deadline) throw IllegalStateException("File channel stalled while sending a frame.")
             Thread.sleep(SEND_RETRY_DELAY_MS)
+        }
+    }
+
+    private fun waitWhilePaused(runtime: RuntimeTransfer) {
+        while (runtime.pauseRequested) {
+            if (runtime.disposed.get() || closed.get()) {
+                throw InterruptedException("Transfer was cancelled.")
+            }
+            Thread.sleep(PAUSE_POLL_DELAY_MS)
+        }
+        if (runtime.disposed.get() || closed.get()) {
+            throw InterruptedException("Transfer was cancelled.")
         }
     }
 
@@ -632,6 +729,7 @@ class P2pChatFileTransferManager(
 
     private companion object {
         const val SEND_RETRY_DELAY_MS = 30L
+        const val PAUSE_POLL_DELAY_MS = 50L
         const val SEND_FRAME_TIMEOUT_MS = 120_000L
     }
 }
