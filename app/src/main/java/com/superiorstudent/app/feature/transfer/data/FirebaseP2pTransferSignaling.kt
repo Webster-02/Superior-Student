@@ -246,7 +246,7 @@ class FirebaseP2pTransferSignaling(
         if (draft.sizeBytes <= 0L) return "File size must be greater than zero."
         if (!P2pTransferValidation.isValidMimeType(draft.mimeType)) return "MIME type is invalid."
         if (!P2pTransferValidation.isValidSha256(draft.sha256)) return "SHA-256 must contain 64 hexadecimal characters."
-        if (draft.chunkSize !in 64 * 1024..1024 * 1024) return "Chunk size must be between 64 KiB and 1 MiB."
+        if (!P2pTransferValidation.isValidChunkSize(draft.chunkSize)) return "Chunk size must be between 1 KiB and 64 KiB."
         if (!P2pTransferValidation.isValidPublicKey(draft.senderPublicKeyBase64)) return "Sender public key is invalid."
         if (!P2pTransferValidation.isValidThumbnail(draft.thumbnailBase64)) return "Thumbnail metadata is too large or invalid."
         return null
@@ -273,7 +273,7 @@ class FirebaseP2pTransferSignaling(
             !P2pTransferValidation.isValidFileName(fileName) || sizeBytes <= 0L ||
             !P2pTransferValidation.isValidMimeType(mimeType) ||
             !P2pTransferValidation.isValidSha256(sha256) ||
-            chunkSize !in 64 * 1024..1024 * 1024 ||
+            !P2pTransferValidation.isValidChunkSize(chunkSize) ||
             !P2pTransferValidation.isValidPublicKey(publicKey) ||
             !P2pTransferValidation.isValidThumbnail(thumbnail) ||
             !P2pTransferValidation.isConversationIdForPair(conversationId, senderUid, receiverUid)
