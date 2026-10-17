@@ -33,31 +33,34 @@ class P2pNearbyTransferProtocolTest {
     }
 
     @Test
-    fun confirmationCodeDoesNotDependOnKeyOrder() {
-        val senderKey = "sender-public-key"
-        val receiverKey = "receiver-public-key"
-        val first = P2pNearbyTransferProtocol.confirmationCode(
-            validOffer.transferId, validOffer.sha256, senderKey, receiverKey
+    fun confirmationCodeDoesNotDependOnKeyOrderOrDirection() {
+        val offer = validOffer.copy(senderPublicKeyBase64 = "B".repeat(88))
+        val receiverKey = "C".repeat(88)
+        val forward = P2pNearbyTransferProtocol.confirmationCode(offer, receiverKey)
+        val reversedOffer = offer.copy(senderPublicKeyBase64 = receiverKey)
+        val backward = P2pNearbyTransferProtocol.confirmationCode(
+            reversedOffer, offer.senderPublicKeyBase64
         )
-        val second = P2pNearbyTransferProtocol.confirmationCode(
-            validOffer.transferId, validOffer.sha256, receiverKey, senderKey
-        )
-        assertEquals(6, first.length)
-        assertEquals(first, second)
+        assertEquals(6, forward.length)
+        assertEquals(forward, backward)
     }
 
     @Test
     fun confirmationCodeChangesWhenTranscriptChanges() {
-        val baseline = P2pNearbyTransferProtocol.confirmationCode(
-            validOffer.transferId, validOffer.sha256, "sender-key", "receiver-key"
-        )
+        val offer = validOffer.copy(senderPublicKeyBase64 = "B".repeat(88))
+        val receiverKey = "C".repeat(88)
+        val baseline = P2pNearbyTransferProtocol.confirmationCode(offer, receiverKey)
         val differentKey = P2pNearbyTransferProtocol.confirmationCode(
-            validOffer.transferId, validOffer.sha256, "sender-key-modified", "receiver-key"
+            offer.copy(senderPublicKeyBase64 = "D".repeat(88)), receiverKey
         )
         val differentDigest = P2pNearbyTransferProtocol.confirmationCode(
-            validOffer.transferId, "b".repeat(64), "sender-key", "receiver-key"
+            offer.copy(sha256 = "b".repeat(64)), receiverKey
+        )
+        val differentName = P2pNearbyTransferProtocol.confirmationCode(
+            offer.copy(fileName = "different.pdf"), receiverKey
         )
         assertNotEquals(baseline, differentKey)
         assertNotEquals(baseline, differentDigest)
+        assertNotEquals(baseline, differentName)
     }
 }
