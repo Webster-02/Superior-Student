@@ -439,7 +439,13 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 sha256Hex = prepared.sha256,
                 chunkSize = offer.chunkSize
             )
-            P2pEncryptedChunkStream.Sender(source, key, descriptor, resumeOffset).use { sender ->
+            val resumedSender = try {
+                P2pEncryptedChunkStream.Sender(source, key, descriptor, resumeOffset)
+            } catch (error: Exception) {
+                runCatching { source.close() }
+                throw error
+            }
+            resumedSender.use { sender ->
                 var lastStatusBytes = resumeOffset
                 while (true) {
                     var waitForResume = false
@@ -663,10 +669,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             val key = P2pTransferCrypto.deriveTransferKey(
                 keyPair, offer.senderPublicKeyBase64, offer.transferId
             )
-            temp = existingState?.tempFile ?: File.createTempFile(
+            val downloadFile = existingState?.tempFile ?: File.createTempFile(
                 "p2p-nearby-", ".part", cacheDir
             )
-            val resumeOffset = temp.length()
+            temp = downloadFile
+            val resumeOffset = downloadFile.length()
             if (!P2pEncryptedChunkStream.isValidCheckpoint(
                     resumeOffset, offer.sizeBytes, offer.chunkSize
                 )
@@ -674,9 +681,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 throw IOException("Partial file size is not aligned to an authenticated chunk checkpoint.")
             }
 
-            val resumeState = existingState ?: ResumableDownloadState(temp, offer, destinationUri)
+            val resumeState = existingState ?: ResumableDownloadState(downloadFile, offer, destinationUri)
             resumableDownloads[offer.transferId] = resumeState
-            temporaryDownload = temp
+            temporaryDownload = downloadFile
             writeControl(output, "accept", mapOf(
                 "receiverPublicKey" to keyPair.publicKeyBase64(),
                 "resumeOffset" to resumeOffset
@@ -725,14 +732,19 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 sha256Hex = offer.sha256,
                 chunkSize = offer.chunkSize
             )
-            val outputFile = FileOutputStream(temp, resumeOffset > 0L)
-            receiver = P2pEncryptedChunkStream.Receiver(
-                outputFile,
-                key,
-                descriptor,
-                initialBytes = resumeOffset,
-                prefixInput = if (resumeOffset > 0L) FileInputStream(temp) else null
-            )
+            val outputFile = FileOutputStream(downloadFile, resumeOffset > 0L)
+            receiver = try {
+                P2pEncryptedChunkStream.Receiver(
+                    outputFile,
+                    key,
+                    descriptor,
+                    initialBytes = resumeOffset,
+                    prefixInput = if (resumeOffset > 0L) FileInputStream(downloadFile) else null
+                )
+            } catch (error: Exception) {
+                runCatching { outputFile.close() }
+                throw error
+            }
             var lastStatusBytes = resumeOffset
             var remotePaused = false
             while (!receiver.isComplete) {
@@ -781,7 +793,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             receiver.finish()
             receiver.close()
             receiver = null
-            promoteVerifiedFile(temp, destinationUri, offer.sizeBytes)
+            promoteVerifiedFile(downloadFile, destinationUri, offer.sizeBytes)
             writeControl(output, "complete", mapOf("sha256" to offer.sha256))
             completed = true
             resumableDownloads.remove(offer.transferId, resumeState)
