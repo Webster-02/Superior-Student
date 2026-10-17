@@ -6,8 +6,8 @@ import java.security.MessageDigest
 /**
  * Public metadata for an Internet-independent, same-LAN transfer.
  *
- * A six-digit confirmation code fingerprints the offer and both ephemeral public keys. Users must
- * compare the code on both devices before accepting: LAN discovery alone is never authentication.
+ * The six-digit confirmation code fingerprints the complete offer and both ephemeral public keys.
+ * Users must compare the code on both devices before accepting; LAN discovery alone is not identity.
  */
 internal data class P2pNearbyOffer(
     val transferId: String,
@@ -46,29 +46,28 @@ internal object P2pNearbyTransferProtocol {
             publicKeyPattern.matches(offer.senderPublicKeyBase64)
 
     /**
-     * Returns a six-digit transcript fingerprint. It is not a replacement for comparing the value
-     * on both devices; the UI must require explicit confirmation on sender and receiver.
+     * Returns a six-digit fingerprint for the complete offer transcript. This is not a replacement
+     * for out-of-band comparison: both users must explicitly confirm that the displayed values match.
      */
     fun confirmationCode(
-        transferId: String,
-        fileSha256: String,
-        firstPublicKeyBase64: String,
-        secondPublicKeyBase64: String
+        offer: P2pNearbyOffer,
+        receiverPublicKeyBase64: String
     ): String {
-        require(transferIdPattern.matches(transferId)) { "Invalid transfer ID." }
-        require(digestPattern.matches(fileSha256)) { "Invalid file digest." }
-        require(firstPublicKeyBase64.isNotBlank() && secondPublicKeyBase64.isNotBlank()) {
-            "Both ephemeral public keys are required."
-        }
-        require(firstPublicKeyBase64 != secondPublicKeyBase64) {
+        require(isValidOffer(offer)) { "Invalid nearby offer." }
+        require(publicKeyPattern.matches(receiverPublicKeyBase64)) { "Invalid receiver public key." }
+        require(offer.senderPublicKeyBase64 != receiverPublicKeyBase64) {
             "Nearby peers must use different ephemeral keys."
         }
 
-        val keys = listOf(firstPublicKeyBase64, secondPublicKeyBase64).sorted()
+        val keys = listOf(offer.senderPublicKeyBase64, receiverPublicKeyBase64).sorted()
         val transcript = listOf(
             "SuperiorStudent/NearbyTransfer/v1",
-            transferId,
-            fileSha256.lowercase(),
+            offer.transferId,
+            offer.fileName,
+            offer.sizeBytes.toString(),
+            offer.mimeType,
+            offer.sha256.lowercase(),
+            offer.chunkSize.toString(),
             keys[0],
             keys[1]
         ).joinToString("|").toByteArray(Charsets.UTF_8)
