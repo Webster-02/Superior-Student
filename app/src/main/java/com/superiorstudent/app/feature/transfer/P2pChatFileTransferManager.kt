@@ -666,7 +666,7 @@ class P2pChatFileTransferManager(
         val ip = payload["ip"] as? String
         val port = (payload["port"] as? Number)?.toInt()
         val token = payload["token"] as? String
-        if (ip.isNullOrBlank() || port !in 1..65535 || token.isNullOrBlank() ||
+        if (ip.isNullOrBlank() || port == null || port !in 1..65535 || token.isNullOrBlank() ||
             !P2pTransferValidation.isPrivateLanAddress(ip) || token.length !in 32..128
         ) {
             chooseWebRtcFallback(runtime, "Invalid LAN endpoint; using secure WebRTC.")
@@ -843,6 +843,11 @@ class P2pChatFileTransferManager(
             } else {
                 waitWhilePaused(runtime)
             }
+            val lanTransport = runtime.lanTransport
+            if (runtime.outgoing && lanTransport != null) {
+                if (lanTransport.sendEncryptedFrame(frame)) return
+                throw IllegalStateException("Direct LAN connection was lost during transfer. Restart the file transfer.")
+            }
             val coordinator = runtime.coordinator ?: throw IllegalStateException("WebRTC session closed.")
             if (coordinator.currentDataChannelState() == P2pDataChannelTransport.State.CONNECTED &&
                 coordinator.sendEncryptedFrame(frame)
@@ -952,6 +957,14 @@ class P2pChatFileTransferManager(
         runtime.offerListener = null
         runtime.coordinator?.close()
         runtime.coordinator = null
+        runCatching { runtime.lanDiscovery?.close() }
+        runtime.lanDiscovery = null
+        runCatching { runtime.lanListener?.close() }
+        runtime.lanListener = null
+        runCatching { runtime.lanTransport?.close() }
+        runtime.lanTransport = null
+        runtime.lanCandidate = null
+        runtime.lanPeer = null
         runCatching { runtime.senderStream?.close() }
         runCatching { runtime.receiverStream?.close() }
         runtime.receiveExecutor.shutdownNow()
@@ -969,6 +982,14 @@ class P2pChatFileTransferManager(
         runtime.offerListener = null
         runtime.coordinator?.close()
         runtime.coordinator = null
+        runCatching { runtime.lanDiscovery?.close() }
+        runtime.lanDiscovery = null
+        runCatching { runtime.lanListener?.close() }
+        runtime.lanListener = null
+        runCatching { runtime.lanTransport?.close() }
+        runtime.lanTransport = null
+        runtime.lanCandidate = null
+        runtime.lanPeer = null
         runCatching { runtime.senderStream?.close() }
         runCatching { runtime.receiverStream?.close() }
         runtime.receiveExecutor.shutdownNow()
@@ -1031,5 +1052,8 @@ class P2pChatFileTransferManager(
         const val SEND_RETRY_DELAY_MS = 30L
         const val PAUSE_POLL_DELAY_MS = 50L
         const val SEND_FRAME_TIMEOUT_MS = 120_000L
+        const val LAN_DISCOVERY_GRACE_MS = 5_000L
+        const val LAN_CONNECT_TIMEOUT_MS = 3_000
+        const val LAN_HANDSHAKE_TIMEOUT_MS = 3_000
     }
 }
