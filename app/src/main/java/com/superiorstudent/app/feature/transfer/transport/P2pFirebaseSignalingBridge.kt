@@ -9,7 +9,7 @@ import com.superiorstudent.app.feature.transfer.data.P2pTransferSignal
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Routes a single transfer's trusted peer signals between Firestore and a peer controller.
+ * Routes one accepted transfer's trusted peer signals between Firestore and a WebRTC session.
  *
  * A bridge instance must only be created after validating that the current user is one of
  * the offer's two participants and that the offer was accepted. Signal sender/target identity
@@ -24,7 +24,7 @@ class P2pFirebaseSignalingBridge(
     private val offer: P2pTransferOffer,
     private val currentUid: String,
     private val remoteUid: String,
-    private val controller: P2pPeerConnectionController,
+    private val session: P2pWebRtcSession,
     private val report: (String, Throwable?) -> Unit
 ) : AutoCloseable {
 
@@ -60,7 +60,7 @@ class P2pFirebaseSignalingBridge(
         }
     }
 
-    /** Called by the controller for each local SDP or ICE signal. */
+    /** Called by the session for each local SDP or ICE signal. */
     fun publish(type: P2pPeerConnectionController.SignalType, payload: Map<String, Any?>) {
         if (closed.get()) return
         val wireType = when (type) {
@@ -99,7 +99,7 @@ class P2pFirebaseSignalingBridge(
                     val sdp = signal.payload["sdp"] as? String
                         ?: throw IllegalArgumentException("SDP offer is missing.")
                     remoteOfferSeen = true
-                    if (!controller.acceptOffer(sdp)) {
+                    if (!session.acceptOffer(sdp)) {
                         throw IllegalArgumentException("PeerConnection refused the SDP offer.")
                     }
                 }
@@ -110,12 +110,12 @@ class P2pFirebaseSignalingBridge(
                     val sdp = signal.payload["sdp"] as? String
                         ?: throw IllegalArgumentException("SDP answer is missing.")
                     remoteAnswerSeen = true
-                    if (!controller.acceptAnswer(sdp)) {
+                    if (!session.acceptAnswer(sdp)) {
                         throw IllegalArgumentException("PeerConnection refused the SDP answer.")
                     }
                 }
                 P2pSignalType.ICE_CANDIDATE -> {
-                    if (!controller.addRemoteIceCandidate(signal.payload)) {
+                    if (!session.addRemoteIceCandidate(signal.payload)) {
                         throw IllegalArgumentException("PeerConnection refused the ICE candidate.")
                     }
                 }
