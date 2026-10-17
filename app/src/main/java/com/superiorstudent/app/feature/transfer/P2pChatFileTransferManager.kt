@@ -185,12 +185,13 @@ class P2pChatFileTransferManager(
                 val key = P2pTransferCrypto.deriveTransferKey(
                     keyPair, offer.senderPublicKeyBase64, offer.transferId
                 )
-                temporaryFile = File.createTempFile(
+                val createdTempFile = File.createTempFile(
                     "p2p-" + offer.transferId.take(32) + "-",
                     ".part",
                     appContext.cacheDir
                 )
-                val output = FileOutputStream(temporaryFile)
+                temporaryFile = createdTempFile
+                val output = FileOutputStream(createdTempFile)
                 val descriptor = descriptorFor(offer)
                 val preparedReceiver = P2pEncryptedChunkStream.Receiver(output, key, descriptor)
                 receiverStream = preparedReceiver
@@ -198,13 +199,14 @@ class P2pChatFileTransferManager(
                 signaling.acceptOffer(offer.conversationId, offer.transferId) { error ->
                     if (closed.get()) {
                         preparedReceiver.close()
-                        temporaryFile.delete()
+                        createdTempFile.delete()
                         deletePartialDestination(destinationUri)
                         onAccepted(IllegalStateException("Chat closed before accepting the offer."))
                         return@acceptOffer
                     }
                     if (error != null) {
                         preparedReceiver.close()
+                        createdTempFile.delete()
                         deletePartialDestination(destinationUri)
                         callbackError(offer.fileName, "Could not accept the file offer. Check the published Firestore P2P rules.", error)
                         onAccepted(error)
@@ -217,7 +219,7 @@ class P2pChatFileTransferManager(
                         outgoing = false,
                         localKeyPair = keyPair,
                         destinationUri = destinationUri,
-                        temporaryFile = temporaryFile,
+                        temporaryFile = createdTempFile,
                         key = key
                     )
                     runtime.receiverStream = preparedReceiver
