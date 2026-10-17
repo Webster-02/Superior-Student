@@ -4,7 +4,6 @@ import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.io.EOFException
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -98,11 +97,13 @@ class P2pLanSocketTransport private constructor(
         readerExecutor.execute {
             try {
                 while (!closed.get()) {
-                    val length = try {
-                        input.readInt()
-                    } catch (_: EOFException) {
-                        break
-                    }
+                    // Distinguish a clean EOF before a frame from a truncated 4-byte prefix.
+                    val firstByte = input.read()
+                    if (firstByte < 0) break
+                    val length = (firstByte shl 24) or
+                        (input.readUnsignedByte() shl 16) or
+                        (input.readUnsignedByte() shl 8) or
+                        input.readUnsignedByte()
 
                     if (length !in 1..MAX_FRAME_BYTES) {
                         throw IOException("Invalid LAN frame length: $length")
