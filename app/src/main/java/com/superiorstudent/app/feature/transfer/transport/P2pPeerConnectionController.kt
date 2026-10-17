@@ -6,7 +6,6 @@ import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
-import org.webrtc.RTCConfiguration
 import org.webrtc.SessionDescription
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -164,8 +163,7 @@ class P2pPeerConnectionController(
     private fun preparePeer(): Boolean {
         if (closed.get()) return false
         if (peer != null) return true
-        val configuration = RTCConfiguration(iceServers).apply {
-            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+        val configuration = PeerConnection.RTCConfiguration(iceServers).apply {
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
         val observer = object : PeerConnection.Observer {
