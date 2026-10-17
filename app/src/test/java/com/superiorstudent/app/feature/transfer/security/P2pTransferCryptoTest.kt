@@ -3,6 +3,7 @@ package com.superiorstudent.app.feature.transfer.security
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class P2pTransferCryptoTest {
@@ -60,6 +61,17 @@ class P2pTransferCryptoTest {
         val first = P2pTransferCrypto.deriveTransferKey(sender, receiver.publicKeyBase64(), transferId)
         val second = P2pTransferCrypto.deriveTransferKey(sender, receiver.publicKeyBase64(), transferId + "_other")
         assertNotEquals(first.encoded.toList(), second.encoded.toList())
+    }
+
+    @Test fun publicKeysUseCanonicalBase64WithoutPlatformHelpers() {
+        val alice = P2pTransferCrypto.generateEphemeralKeyPair()
+        val bob = P2pTransferCrypto.generateEphemeralKeyPair()
+        assertEquals(alice.publicKeyBase64().length % 4, 0)
+        assertEquals(bob.publicKeyBase64().length % 4, 0)
+
+        val aliceKey = P2pTransferCrypto.deriveTransferKey(alice, bob.publicKeyBase64(), transferId)
+        val bobKey = P2pTransferCrypto.deriveTransferKey(bob, alice.publicKeyBase64(), transferId)
+        assertArrayEquals(aliceKey.encoded, bobKey.encoded)
     }
 
     @Test fun rejectsMalformedPeerPublicKeyAndInvalidTransferId() {
