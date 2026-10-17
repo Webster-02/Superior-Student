@@ -24,6 +24,11 @@ internal object P2pNearbyTransferProtocol {
     const val DATA_PACKET: Int = 2
     const val MAX_CONTROL_BYTES: Int = 64 * 1024
     const val MAX_PACKET_BYTES: Int = 96 * 1024
+    const val CONTROL_PAUSE = "pause"
+    const val CONTROL_RESUME = "resume"
+
+    fun isPauseResumeControl(type: String): Boolean =
+        type == CONTROL_PAUSE || type == CONTROL_RESUME
 
     private val transferIdPattern = Regex("^[A-Za-z0-9_-]{16,80}$")
     private val digestPattern = Regex("^[A-Fa-f0-9]{64}$")
