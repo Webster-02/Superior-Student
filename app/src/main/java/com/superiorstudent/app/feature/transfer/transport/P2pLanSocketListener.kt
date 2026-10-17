@@ -47,6 +47,8 @@ class P2pLanSocketListener(
         fun onAuthenticatedTransport(transport: P2pLanSocketTransport)
         /** A complete, length-bounded frame arrived from the authenticated remote sender. */
         fun onEncryptedFrame(frame: ByteArray)
+        /** Called when the authenticated remote closes before the owning transfer is disposed. */
+        fun onTransportClosed() = Unit
         /** An established LAN connection failed. Do not silently switch transports mid-file. */
         fun onError(error: Exception)
     }
@@ -151,6 +153,7 @@ class P2pLanSocketListener(
 
                     override fun onClosed() {
                         activeTransport.set(null)
+                        if (!closed.get()) runCatching { callback.onTransportClosed() }
                     }
 
                     override fun onError(error: Exception) {
