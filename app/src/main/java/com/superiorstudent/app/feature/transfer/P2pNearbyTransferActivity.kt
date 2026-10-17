@@ -297,9 +297,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 throw IOException("The receiver's public key is invalid.")
             }
             val key = P2pTransferCrypto.deriveTransferKey(keyPair, receiverPublicKey, transferId)
-            val code = P2pNearbyTransferProtocol.confirmationCode(
-                transferId, prepared.sha256, offer.senderPublicKeyBase64, receiverPublicKey
-            )
+            val code = P2pNearbyTransferProtocol.confirmationCode(offer, receiverPublicKey)
             if (!askForCodeConfirmation(
                     "Confirm nearby security code",
                     "File: " + offer.fileName + "\nSize: " +
@@ -508,9 +506,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 keyPair, offer.senderPublicKeyBase64, offer.transferId
             )
             writeControl(output, "accept", mapOf("receiverPublicKey" to keyPair.publicKeyBase64()))
-            val code = P2pNearbyTransferProtocol.confirmationCode(
-                offer.transferId, offer.sha256, offer.senderPublicKeyBase64, keyPair.publicKeyBase64()
-            )
+            val code = P2pNearbyTransferProtocol.confirmationCode(offer, keyPair.publicKeyBase64())
             if (!askForCodeConfirmation(
                     "Confirm nearby security code",
                     "Incoming file: " + offer.fileName + "\nSize: " +
