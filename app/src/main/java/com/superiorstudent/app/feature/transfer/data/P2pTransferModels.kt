@@ -47,6 +47,9 @@ data class P2pTransferOfferDraft(
 
 /** Pure validation shared by the repository and unit tests. */
 internal object P2pTransferValidation {
+    const val MIN_CHUNK_SIZE_BYTES = 1024
+    const val MAX_CHUNK_SIZE_BYTES = 64 * 1024
+
     private val idRegex = Regex("^[A-Za-z0-9_-]{16,80}$")
     private val hashRegex = Regex("^[A-Fa-f0-9]{64}$")
     private val publicKeyRegex = Regex("^[A-Za-z0-9+/]{40,128}={0,2}$")
@@ -58,6 +61,8 @@ internal object P2pTransferValidation {
     fun isValidMimeType(value: String): Boolean =
         value.isNotBlank() && value.length <= 160 && value.none { it.isISOControl() }
     fun isValidSha256(value: String): Boolean = hashRegex.matches(value)
+    fun isValidChunkSize(value: Int): Boolean =
+        value in MIN_CHUNK_SIZE_BYTES..MAX_CHUNK_SIZE_BYTES
     fun isValidPublicKey(value: String): Boolean = publicKeyRegex.matches(value)
     fun isValidThumbnail(value: String?): Boolean =
         value == null || (value.length <= 20 * 1024 && value.all { it.isLetterOrDigit() || it in "+/=\r\n" })
