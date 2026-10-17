@@ -995,6 +995,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         const val USER_DECISION_TIMEOUT_MINUTES = 3L
         const val CONFIRMATION_TIMEOUT_MINUTES = 3L
         const val STATUS_UPDATE_BYTES = 1024L * 1024L
+        const val PAUSE_POLL_DELAY_MS = 50L
         const val NEARBY_SESSION_PREFIX = "nearby_"
     }
 }
