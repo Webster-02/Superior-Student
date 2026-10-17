@@ -50,23 +50,17 @@ class FirebaseP2pTransferSignaling(
         )
         draft.thumbnailBase64?.let { data["thumbnailBase64"] = it }
 
-        // UUIDs make collisions exceptionally unlikely; a read-before-write prevents
-        // accidental overwrite if a caller reuses a transfer ID.
-        reference.get()
-            .addOnSuccessListener { existing ->
-                if (existing.exists()) {
-                    callback(null, IllegalStateException("Transfer ID already exists. Generate a new ID."))
-                    return@addOnSuccessListener
-                }
-                reference.set(data)
-                    .addOnSuccessListener {
-                        reference.get()
-                            .addOnSuccessListener { saved ->
-                                val offer = saved.toP2pTransferOffer()
-                                if (offer == null) callback(null, IllegalStateException("Saved offer metadata failed validation."))
-                                else callback(offer, null)
-                            }
-                            .addOnFailureListener { callback(null, it) }
+        // Do not pre-read a missing offer: strict Firestore rules only permit get
+        // for a valid existing participant offer. A direct set is checked as create
+        // when the document is absent. If the ID already exists, the strict update
+        // rule rejects replacing its full metadata, so duplicate protection remains.
+        reference.set(data)
+            .addOnSuccessListener {
+                reference.get()
+                    .addOnSuccessListener { saved ->
+                        val offer = saved.toP2pTransferOffer()
+                        if (offer == null) callback(null, IllegalStateException("Saved offer metadata failed validation."))
+                        else callback(offer, null)
                     }
                     .addOnFailureListener { callback(null, it) }
             }
