@@ -14,7 +14,7 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.Base64
+import android.util.Base64
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -30,14 +30,14 @@ class P2pLanSocketTransport private constructor(
     private val socket: Socket,
     private val input: DataInputStream,
     private val output: DataOutputStream,
-    val transferId: String
-) : AutoCloseable {
+    override val transferId: String
+) : P2pFrameChannel {
 
     private val closed = AtomicBoolean(false)
 
     @Synchronized
     @Throws(IOException::class)
-    fun sendFrame(frame: ByteArray): Boolean {
+    override fun sendFrame(frame: ByteArray): Boolean {
         if (closed.get() || frame.isEmpty() || frame.size > MAX_FRAME_BYTES) return false
         return try {
             output.writeInt(frame.size)
@@ -56,7 +56,7 @@ class P2pLanSocketTransport private constructor(
      */
     @Synchronized
     @Throws(IOException::class)
-    fun receiveFrame(timeoutMillis: Int = DEFAULT_READ_TIMEOUT_MS): ByteArray? {
+    override fun receiveFrame(timeoutMillis: Int): ByteArray? {
         if (closed.get()) return null
         require(timeoutMillis in 1..MAX_SOCKET_TIMEOUT_MS) { "Socket timeout is invalid." }
         return try {
@@ -78,7 +78,7 @@ class P2pLanSocketTransport private constructor(
         }
     }
 
-    fun isOpen(): Boolean = !closed.get() && socket.isConnected && !socket.isClosed
+    override fun isOpen(): Boolean = !closed.get() && socket.isConnected && !socket.isClosed
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
@@ -99,7 +99,7 @@ class P2pLanSocketTransport private constructor(
 
         fun createToken(): String {
             val bytes = ByteArray(32).also(SecureRandom()::nextBytes)
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+            return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
         }
 
         /** Bind to every local interface. Advertise only a private IPv4 from localPrivateIpv4(). */
@@ -175,6 +175,7 @@ class P2pLanSocketTransport private constructor(
                 client.soTimeout = handshakeTimeoutMillis.coerceIn(1, MAX_SOCKET_TIMEOUT_MS)
                 val input = DataInputStream(BufferedInputStream(client.getInputStream()))
                 val output = DataOutputStream(BufferedOutputStream(client.getOutputStream()))
+                output.writeInt(HANDSHAKE_MAGIC)
                 writeBoundedString(output, transferId, MAX_TRANSFER_ID_BYTES)
                 writeBoundedString(output, candidate.token, MAX_TOKEN_BYTES)
                 output.flush()
