@@ -8,6 +8,8 @@ import org.webrtc.IceCandidate
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import java.nio.ByteBuffer
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -25,7 +27,7 @@ class P2pDataChannelTransport(
     private val callback: Callback,
     private val maxBufferedBytes: Long = 512L * 1024L,
     private val mainHandler: Handler = Handler(Looper.getMainLooper())
-) : AutoCloseable {
+) : P2pFrameChannel {
 
     interface Callback {
         /** A small text-free binary frame arrived. Copy/consume it promptly off the callback thread. */
@@ -40,10 +42,20 @@ class P2pDataChannelTransport(
     }
 
     private val closed = AtomicBoolean(false)
+    private val incomingFrames = ArrayBlockingQueue<ByteArray>(16)
     @Volatile private var state: State = State.NEW
     @Volatile private var peerConnection: PeerConnection? = null
     @Volatile private var dataChannel: DataChannel? = null
     @Volatile private var localOfferer = false
+
+    override val transferId: String get() = activeTransferId ?: throw IllegalStateException("Transfer ID is not set.")
+    @Volatile private var activeTransferId: String? = null
+
+    fun bindTransferId(value: String) {
+        require(value.matches(Regex("^[A-Za-z0-9_-]{16,80}$"))) { "Invalid transfer ID." }
+        check(activeTransferId == null || activeTransferId == value) { "Transport transfer ID cannot change." }
+        activeTransferId = value
+    }
 
     fun currentState(): State = state
 
@@ -98,6 +110,8 @@ class P2pDataChannelTransport(
      * Non-blocking send with strict DataChannel backpressure. Returns false when not ready,
      * the transport is closing, the payload is too large, or the peer's send buffer is full.
      */
+    override fun sendFrame(frame: ByteArray): Boolean = sendBinaryFrame(frame)
+
     fun sendBinaryFrame(frame: ByteArray): Boolean {
         if (closed.get() || state != State.CONNECTED || frame.isEmpty() ||
             frame.size > MAX_FRAME_BYTES
@@ -153,6 +167,12 @@ class P2pDataChannelTransport(
                 }
                 val copy = ByteArray(buffer.data.remaining())
                 buffer.data.get(copy)
+                if (!incomingFrames.offer(copy.copyOf())) {
+                    copy.fill(0)
+                    fail("Incoming DataChannel frame queue is full.")
+                    runCatching { channel.close() }
+                    return
+                }
                 mainHandler.post {
                     if (!closed.get()) callback.onBinaryFrame(copy)
                     else copy.fill(0)
@@ -167,6 +187,14 @@ class P2pDataChannelTransport(
         }
     }
 
+    override fun receiveFrame(timeoutMillis: Int): ByteArray? {
+        require(timeoutMillis in 1..120_000) { "Frame read timeout is invalid." }
+        if (closed.get() && incomingFrames.isEmpty()) return null
+        return incomingFrames.poll(timeoutMillis.toLong(), TimeUnit.MILLISECONDS)
+    }
+
+    override fun isOpen(): Boolean = !closed.get() && state == State.CONNECTED && dataChannel?.state() == DataChannel.State.OPEN
+
     private fun setState(next: State, message: String? = null) {
         if (closed.get() && next != State.CLOSED) return
         state = next
@@ -180,6 +208,7 @@ class P2pDataChannelTransport(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        while (true) { val frame = incomingFrames.poll() ?: break; frame.fill(0) }
         state = State.CLOSING
         runCatching { dataChannel?.unregisterObserver() }
         runCatching { dataChannel?.close() }
