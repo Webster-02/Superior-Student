@@ -20,7 +20,10 @@ data class StudentChatMessage(
     val recipientUid: String,
     val senderName: String,
     val text: String,
-    val createdAt: Timestamp?
+    val createdAt: Timestamp?,
+    val replyToMessageId: String? = null,
+    val replyToSenderName: String? = null,
+    val replyToText: String? = null
 )
 
 data class StudentChatSummary(
@@ -79,6 +82,19 @@ internal object StudentChatMessageText {
     fun normalize(value: String): String = value.trim()
 
     fun isValid(value: String): Boolean = normalize(value).length in 1..MAX_LENGTH
+}
+
+/** Validates optional quote metadata without making existing plain messages invalid. */
+internal object StudentChatReplyMetadata {
+    fun isValid(messageId: String?, senderName: String?, text: String?): Boolean {
+        if (messageId == null && senderName == null && text == null) return true
+        return !messageId.isNullOrBlank() &&
+            messageId.length <= 128 &&
+            !senderName.isNullOrBlank() &&
+            senderName.trim().length in 2..60 &&
+            !text.isNullOrBlank() &&
+            StudentChatMessageText.isValid(text)
+    }
 }
 
 /**
@@ -461,6 +477,7 @@ class StudentChatRepository(
         otherUid: String,
         senderName: String,
         rawText: String,
+        replyTo: StudentChatMessage? = null,
         callback: (Exception?) -> Unit
     ) {
         val expectedId = try {
@@ -484,21 +501,36 @@ class StudentChatRepository(
             callback(IllegalArgumentException("Messages must contain 1 to 2000 characters."))
             return
         }
+        if (replyTo != null && (
+                !StudentChatReplyMetadata.isValid(
+                    replyTo.id, replyTo.senderName, replyTo.text
+                ) ||
+                replyTo.senderUid !in setOf(currentUid, otherUid) ||
+                replyTo.recipientUid !in setOf(currentUid, otherUid) ||
+                replyTo.senderUid == replyTo.recipientUid
+            )
+        ) {
+            callback(IllegalArgumentException("The selected reply message is invalid."))
+            return
+        }
 
         val conversationRef = firestore.collection(CONVERSATIONS).document(conversationId)
         val messageRef = conversationRef.collection(MESSAGES).document()
-        val batch = firestore.batch()
-        batch.set(
-            messageRef,
-            mapOf(
-                "participantUids" to StudentChatIds.participantUids(currentUid, otherUid),
-                "senderUid" to currentUid,
-                "recipientUid" to otherUid,
-                "senderName" to normalizedName,
-                "text" to text,
-                "createdAt" to FieldValue.serverTimestamp()
-            )
+        val messageData = mutableMapOf<String, Any>(
+            "participantUids" to StudentChatIds.participantUids(currentUid, otherUid),
+            "senderUid" to currentUid,
+            "recipientUid" to otherUid,
+            "senderName" to normalizedName,
+            "text" to text,
+            "createdAt" to FieldValue.serverTimestamp()
         )
+        replyTo?.let { quoted ->
+            messageData["replyToMessageId"] = quoted.id
+            messageData["replyToSenderName"] = quoted.senderName
+            messageData["replyToText"] = quoted.text
+        }
+        val batch = firestore.batch()
+        batch.set(messageRef, messageData)
         batch.update(conversationRef, "updatedAt", FieldValue.serverTimestamp())
         batch.commit()
             .addOnSuccessListener { callback(null) }
@@ -593,8 +625,12 @@ class StudentChatRepository(
         val recipientUid = getString("recipientUid") ?: return null
         val senderName = getString("senderName") ?: return null
         val text = getString("text") ?: return null
+        val replyToMessageId = getString("replyToMessageId")
+        val replyToSenderName = getString("replyToSenderName")
+        val replyToText = getString("replyToText")
         if (senderUid.isBlank() || recipientUid.isBlank() || senderUid == recipientUid ||
-            senderName.trim().length !in 2..60 || !StudentChatMessageText.isValid(text)
+            senderName.trim().length !in 2..60 || !StudentChatMessageText.isValid(text) ||
+            !StudentChatReplyMetadata.isValid(replyToMessageId, replyToSenderName, replyToText)
         ) return null
         return StudentChatMessage(
             id = id,
@@ -602,7 +638,10 @@ class StudentChatRepository(
             recipientUid = recipientUid,
             senderName = senderName,
             text = text,
-            createdAt = getTimestamp("createdAt")
+            createdAt = getTimestamp("createdAt"),
+            replyToMessageId = replyToMessageId,
+            replyToSenderName = replyToSenderName,
+            replyToText = replyToText
         )
     }
 

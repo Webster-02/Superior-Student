@@ -55,12 +55,38 @@ service cloud.firestore {
         );
     }
 
+    // Optional reply metadata must quote a real message in this same conversation.
+    // This prevents a client from fabricating the quoted sender or message text.
+    function validReplyToMessage(conversationId, data, participantUids) {
+      return !data.keys().hasAny([
+          'replyToMessageId', 'replyToSenderName', 'replyToText'
+        ]) || (
+          data.keys().hasAll([
+            'replyToMessageId', 'replyToSenderName', 'replyToText'
+          ])
+          && data.replyToMessageId is string
+          && data.replyToMessageId.size() >= 1
+          && data.replyToMessageId.size() <= 128
+          && data.replyToSenderName is string
+          && data.replyToSenderName.size() >= 2
+          && data.replyToSenderName.size() <= 60
+          && data.replyToText is string
+          && data.replyToText.size() >= 1
+          && data.replyToText.size() <= 2000
+          && exists(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId))
+          && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.participantUids == participantUids
+          && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.senderName == data.replyToSenderName
+          && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.text == data.replyToText
+        );
+    }
+
     function validChatMessage(conversationId, data, participantUids) {
       return data.keys().hasAll([
           'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt'
         ])
         && data.keys().hasOnly([
-          'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt'
+          'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt',
+          'replyToMessageId', 'replyToSenderName', 'replyToText'
         ])
         && data.participantUids == participantUids
         && data.participantUids is list
@@ -79,7 +105,8 @@ service cloud.firestore {
         && data.text is string
         && data.text.size() >= 1
         && data.text.size() <= 2000
-        && data.createdAt is timestamp;
+        && data.createdAt is timestamp
+        && validReplyToMessage(conversationId, data, participantUids);
     }
     function validNotificationShape(uid, data) {
       return data.keys().hasAll([

@@ -1,5 +1,6 @@
 package com.superiorstudent.app.feature.studentconnect
 
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -13,6 +14,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -25,6 +27,7 @@ import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatConversation
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessage
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatReplyMetadata
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfileRepository
@@ -50,6 +53,10 @@ class StudentChatActivity : AppCompatActivity() {
     private lateinit var emptyStateText: TextView
     private lateinit var messageInput: EditText
     private lateinit var sendButton: Button
+    private lateinit var replyPreview: LinearLayout
+    private lateinit var replyPreviewTitle: TextView
+    private lateinit var replyPreviewBody: TextView
+    private lateinit var clearReplyButton: TextView
 
     private val chatRepository by lazy { StudentChatRepository() }
     private val profileRepository by lazy { StudentProfileRepository() }
@@ -75,6 +82,7 @@ class StudentChatActivity : AppCompatActivity() {
     }
     private val outgoingReceiptViews = mutableMapOf<String, TextView>()
     private var displayedMessages: List<StudentChatMessage> = emptyList()
+    private var replyToMessage: StudentChatMessage? = null
     private var recipientLastReadAt: Timestamp? = null
     private val typingHandler = Handler(Looper.getMainLooper())
     private var isLocalTypingActive = false
@@ -117,6 +125,10 @@ class StudentChatActivity : AppCompatActivity() {
         contactInitialsText.text = initialsForName(otherDisplayName)
 
         findViewById<TextView>(R.id.studentChatBackButton).setOnClickListener { finish() }
+        clearReplyButton.setOnClickListener {
+            clearReplyTarget()
+            statusText.text = "Reply cancelled."
+        }
         sendButton.setOnClickListener { sendCurrentMessage() }
 
         val user = auth.currentUser
@@ -175,6 +187,7 @@ class StudentChatActivity : AppCompatActivity() {
         messagesListener = null
         outgoingReceiptViews.clear()
         displayedMessages = emptyList()
+        replyToMessage = null
         typingHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -190,6 +203,11 @@ class StudentChatActivity : AppCompatActivity() {
         emptyStateText = findViewById(R.id.studentChatEmptyState)
         messageInput = findViewById(R.id.studentChatMessageInput)
         sendButton = findViewById(R.id.studentChatSendButton)
+        replyPreview = findViewById(R.id.studentChatReplyPreview)
+        replyPreviewTitle = findViewById(R.id.studentChatReplyPreviewTitle)
+        replyPreviewBody = findViewById(R.id.studentChatReplyPreviewBody)
+        clearReplyButton = findViewById(R.id.studentChatReplyPreviewClose)
+        replyPreview.visibility = View.GONE
         typingIndicatorText.visibility = View.GONE
         messageInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -315,6 +333,42 @@ class StudentChatActivity : AppCompatActivity() {
                 maxWidth = (resources.displayMetrics.widthPixels - dp(92)).coerceAtLeast(dp(170))
                 setLineSpacing(dp(2).toFloat(), 1f)
             }
+            val replyId = message.replyToMessageId
+            val replyName = message.replyToSenderName
+            val replyText = message.replyToText
+            if (replyId != null && StudentChatReplyMetadata.isValid(replyId, replyName, replyText)) {
+                val quotePanel = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(9), dp(7), dp(9), dp(7))
+                    background = GradientDrawable().apply {
+                        setColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_chat_status))
+                        cornerRadius = dp(10).toFloat()
+                    }
+                }
+                val quoteTitle = TextView(this).apply {
+                    text = "↪ $replyName"
+                    textSize = 10f
+                    setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_lavender))
+                    maxLines = 1
+                }
+                val quoteBody = TextView(this).apply {
+                    text = replyText
+                    textSize = 12f
+                    setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_text_primary))
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(2), 0, 0)
+                }
+                quotePanel.addView(quoteTitle)
+                quotePanel.addView(quoteBody)
+                bubbleContent.addView(
+                    quotePanel,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(8) }
+                )
+            }
             bubbleContent.addView(body)
 
             val time = TextView(this).apply {
@@ -342,6 +396,19 @@ class StudentChatActivity : AppCompatActivity() {
                 bubbleContent.addView(receipt)
             }
             bubble.addView(bubbleContent)
+            bubble.setOnLongClickListener {
+                if (chatUnavailable || isSending) {
+                    false
+                } else {
+                    val popup = PopupMenu(this@StudentChatActivity, bubble)
+                    popup.menu.add("Reply").setOnMenuItemClickListener {
+                        selectReplyTarget(message)
+                        true
+                    }
+                    popup.show()
+                    true
+                }
+            }
 
             val bubbleParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -359,6 +426,28 @@ class StudentChatActivity : AppCompatActivity() {
         // Apply the latest read marker even when its listener fired before messages rendered.
         updateMessageReceipts(uid)
         messagesScroll.post { messagesScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun selectReplyTarget(message: StudentChatMessage) {
+        if (message.id.isBlank() ||
+            !StudentChatReplyMetadata.isValid(message.id, message.senderName, message.text)
+        ) {
+            statusText.text = "This message cannot be quoted."
+            return
+        }
+        replyToMessage = message
+        replyPreviewTitle.text = "Replying to ${message.senderName}"
+        replyPreviewBody.text = message.text
+        replyPreview.visibility = View.VISIBLE
+        messageInput.requestFocus()
+        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+        statusText.text = "Reply to this message, then tap Send."
+    }
+
+    private fun clearReplyTarget() {
+        replyToMessage = null
+        if (::replyPreview.isInitialized) replyPreview.visibility = View.GONE
+        if (::replyPreviewBody.isInitialized) replyPreviewBody.text = ""
     }
 
     private fun onLocalComposerChanged() {
@@ -547,7 +636,8 @@ class StudentChatActivity : AppCompatActivity() {
             currentUid = user.uid,
             otherUid = otherUid,
             senderName = profile.displayName,
-            rawText = rawText
+            rawText = rawText,
+            replyTo = replyToMessage
         ) { error ->
             if (!isCurrentUser(user.uid)) return@sendMessage
             isSending = false
@@ -570,6 +660,7 @@ class StudentChatActivity : AppCompatActivity() {
             }
 
             messageInput.text?.clear()
+            clearReplyTarget()
             statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
             statusText.text = "Message sent."
         }
