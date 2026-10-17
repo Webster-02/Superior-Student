@@ -574,7 +574,7 @@ service cloud.firestore {
     // Presence is scoped to a student's own document and accepted connections.
     // Heartbeat timestamps are server-generated; clients cannot list presence documents.
 
-    // P2P transfer metadata only; file bytes must never be stored in Firestore.
+    // P2P transfers store metadata/signaling only; encrypted file bytes never enter Firestore.
     function validP2pTransferOffer(conversationId, transferId, data) {
       let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
       return exists(conversationPath)
@@ -605,68 +605,14 @@ service cloud.firestore {
         && data.mimeType.size() > 0
         && data.mimeType.size() <= 160
         && data.sha256 is string
-        && data.sha256.matches('^[A-Fa-f0-9]{64}
-      allow get: if signedInWithVerifiedEmail()
-        && (
-          request.auth.uid == uid
-          || acceptedChatConnectionExists(request.auth.uid, uid)
-        );
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.uid == uid
-        && request.resource.data.isOnline is bool
-        && request.resource.data.lastSeenAt == request.time
-        && request.resource.data.updatedAt == request.time;
-
-      allow update: if signedInWithVerifiedEmail()
-        && request.auth.uid == uid
-        && resource.data.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.uid == uid
-        && request.resource.data.isOnline is bool
-        && request.resource.data.lastSeenAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'isOnline', 'lastSeenAt', 'updatedAt'
-        ]);
-
-      allow delete: if false;
-    }
-
-    match /studentIds/{publicId} {
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      allow update, delete: if false;
-    }
-  }
-}
-)
+        && data.sha256.matches('^[A-Fa-f0-9]{64}$')
         && data.chunkSize is int
         && data.chunkSize >= 65536
         && data.chunkSize <= 1048576
         && data.senderPublicKey is string
         && data.senderPublicKey.size() >= 40
-        && data.senderPublicKey.size() <= 128
+        && data.senderPublicKey.size() <= 2048
+        && data.senderPublicKey.matches('^[A-Za-z0-9+/]+={0,2}$')
         && data.status in [
           'offered', 'accepted', 'rejected', 'transferring',
           'paused', 'completed', 'failed', 'cancelled'
@@ -679,12 +625,20 @@ service cloud.firestore {
 
     function validP2pSignalPayload(signalType, payload) {
       return payload is map && (
-        (signalType in ['webrtc_offer', 'webrtc_answer']
+        ((signalType == 'webrtc_offer' || signalType == 'webrtc_answer')
           && payload.keys().hasAll(['sdp'])
           && payload.keys().hasOnly(['sdp'])
           && payload.sdp is string
           && payload.sdp.size() > 0
           && payload.sdp.size() <= 120000)
+        ||
+        (signalType == 'key_exchange'
+          && payload.keys().hasAll(['publicKey'])
+          && payload.keys().hasOnly(['publicKey'])
+          && payload.publicKey is string
+          && payload.publicKey.size() >= 40
+          && payload.publicKey.size() <= 2048
+          && payload.publicKey.matches('^[A-Za-z0-9+/]+={0,2}$'))
         ||
         (signalType == 'ice_candidate'
           && payload.keys().hasAll(['candidate', 'sdpMid', 'sdpMLineIndex'])
@@ -717,62 +671,7 @@ service cloud.firestore {
           && payload.bitmapBase64 is string
           && payload.bitmapBase64.size() <= 80000
           && payload.fileSha256 is string
-          && payload.fileSha256.matches('^[A-Fa-f0-9]{64}
-      allow get: if signedInWithVerifiedEmail()
-        && (
-          request.auth.uid == uid
-          || acceptedChatConnectionExists(request.auth.uid, uid)
-        );
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.uid == uid
-        && request.resource.data.isOnline is bool
-        && request.resource.data.lastSeenAt == request.time
-        && request.resource.data.updatedAt == request.time;
-
-      allow update: if signedInWithVerifiedEmail()
-        && request.auth.uid == uid
-        && resource.data.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.uid == uid
-        && request.resource.data.isOnline is bool
-        && request.resource.data.lastSeenAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'isOnline', 'lastSeenAt', 'updatedAt'
-        ]);
-
-      allow delete: if false;
-    }
-
-    match /studentIds/{publicId} {
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      allow update, delete: if false;
-    }
-  }
-}
-))
+          && payload.fileSha256.matches('^[A-Fa-f0-9]{64}$'))
         ||
         (signalType == 'transfer_progress'
           && payload.keys().hasAll(['bytesDone', 'totalBytes', 'bytesPerSecond', 'etaSeconds'])
@@ -791,62 +690,7 @@ service cloud.firestore {
           && payload.keys().hasAll(['sha256'])
           && payload.keys().hasOnly(['sha256'])
           && payload.sha256 is string
-          && payload.sha256.matches('^[A-Fa-f0-9]{64}
-      allow get: if signedInWithVerifiedEmail()
-        && (
-          request.auth.uid == uid
-          || acceptedChatConnectionExists(request.auth.uid, uid)
-        );
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.uid == uid
-        && request.resource.data.isOnline is bool
-        && request.resource.data.lastSeenAt == request.time
-        && request.resource.data.updatedAt == request.time;
-
-      allow update: if signedInWithVerifiedEmail()
-        && request.auth.uid == uid
-        && resource.data.uid == uid
-        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
-        && request.resource.data.uid == uid
-        && request.resource.data.isOnline is bool
-        && request.resource.data.lastSeenAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'isOnline', 'lastSeenAt', 'updatedAt'
-        ]);
-
-      allow delete: if false;
-    }
-
-    match /studentIds/{publicId} {
-      allow get: if signedInWithVerifiedEmail();
-      allow list: if false;
-
-      allow create: if signedInWithVerifiedEmail()
-        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
-        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.uid == request.auth.uid
-        && getAfter(
-          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
-        ).data.publicId == publicId;
-
-      allow update, delete: if false;
-    }
-  }
-}
-))
+          && payload.sha256.matches('^[A-Fa-f0-9]{64}$'))
         ||
         (signalType == 'transfer_cancel'
           && payload.keys().hasAll(['reason'])
@@ -959,7 +803,7 @@ service cloud.firestore {
           get(parentOfferPath()).data.receiverUid
         ]
         && request.resource.data.type in [
-          'lan_candidates', 'webrtc_offer', 'webrtc_answer', 'ice_candidate',
+          'lan_candidates', 'key_exchange', 'webrtc_offer', 'webrtc_answer', 'ice_candidate',
           'resume_request', 'transfer_progress', 'transfer_complete',
           'transfer_cancel', 'error'
         ]
