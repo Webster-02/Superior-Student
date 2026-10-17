@@ -67,6 +67,7 @@ class P2pChatFileTransferManager(
         val disposed = AtomicBoolean(false)
         val sending = AtomicBoolean(false)
         val transferStarted = AtomicBoolean(false)
+        val transferStatusConfirmed = AtomicBoolean(false)
         val completed = AtomicBoolean(false)
         val keyReceived = AtomicBoolean(false)
         val receiveExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -373,15 +374,19 @@ class P2pChatFileTransferManager(
         // Firestore rules intentionally reserve the accepted -> transferring transition for sender.
         if (!runtime.outgoing || !runtime.transferStarted.compareAndSet(false, true)) return
         signaling.startTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
-            if (error != null && !runtime.disposed.get()) {
-                callbackError(runtime.offer.fileName, "Connection opened, but transfer status could not be updated.", error)
+            if (runtime.disposed.get()) return@startTransfer
+            if (error != null) {
+                failRuntime(runtime, "Connection opened, but Firestore could not confirm transfer status.", error, false)
+            } else {
+                runtime.transferStatusConfirmed.set(true)
+                maybeStartSender(runtime)
             }
         }
     }
 
     private fun maybeStartSender(runtime: RuntimeTransfer) {
         if (!runtime.outgoing || runtime.disposed.get() || runtime.completed.get()) return
-        if (runtime.key == null ||
+        if (runtime.key == null || !runtime.transferStatusConfirmed.get() ||
             runtime.coordinator?.currentDataChannelState() != P2pDataChannelTransport.State.CONNECTED ||
             !runtime.sending.compareAndSet(false, true)
         ) return
