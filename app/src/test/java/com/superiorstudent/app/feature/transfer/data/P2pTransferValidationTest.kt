@@ -18,6 +18,13 @@ class P2pTransferValidationTest {
         assertFalse(P2pTransferValidation.isValidSha256("g".repeat(64)))
     }
 
+    @Test fun chunkSizeIsBoundedByEncryptedStreamFrameLimit() {
+        assertTrue(P2pTransferValidation.isValidChunkSize(1024))
+        assertTrue(P2pTransferValidation.isValidChunkSize(64 * 1024))
+        assertFalse(P2pTransferValidation.isValidChunkSize(1023))
+        assertFalse(P2pTransferValidation.isValidChunkSize(64 * 1024 + 1))
+    }
+
     @Test fun lanCandidatesRequirePrivateAddress() {
         assertTrue(P2pTransferValidation.isPrivateLanAddress("192.168.1.22"))
         assertTrue(P2pTransferValidation.isPrivateLanAddress("10.0.0.4"))
