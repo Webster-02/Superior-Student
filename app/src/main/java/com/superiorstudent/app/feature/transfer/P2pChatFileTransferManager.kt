@@ -97,6 +97,7 @@ class P2pChatFileTransferManager(
         val lanConnectStarted = AtomicBoolean(false)
         val lanPathDecisionMade = AtomicBoolean(false)
         val lanFallbackScheduled = AtomicBoolean(false)
+        val lanReceiverGraceScheduled = AtomicBoolean(false)
     }
 
     /**
@@ -330,10 +331,20 @@ class P2pChatFileTransferManager(
                             PeerConnection.PeerConnectionState.CONNECTED ->
                                 callbackStatus(runtime.offer.fileName, "Peer connected. Waiting for encrypted file channel…")
                             PeerConnection.PeerConnectionState.FAILED,
-                            PeerConnection.PeerConnectionState.CLOSED ->
+                            PeerConnection.PeerConnectionState.CLOSED -> {
                                 if (!runtime.completed.get() && !runtime.disposed.get()) {
-                                    failRuntime(runtime, "Peer connection failed. Check network and ICE connectivity.", null, !runtime.outgoing)
+                                    if (runtime.lanTransport != null) {
+                                        callbackStatus(
+                                            runtime.offer.fileName,
+                                            "WebRTC is unavailable; continuing on the authenticated local Wi-Fi connection."
+                                        )
+                                    } else if (runtime.outgoing) {
+                                        scheduleLanFallback(runtime)
+                                    } else {
+                                        scheduleLanReceiverGrace(runtime)
+                                    }
                                 }
+                            }
                             else -> Unit
                         }
                     }
@@ -352,8 +363,18 @@ class P2pChatFileTransferManager(
                                     callbackStatus(runtime.offer.fileName, "Secure channel ready. Receiving encrypted file…")
                                 }
                             }
-                            P2pDataChannelTransport.State.FAILED ->
-                                failRuntime(runtime, detail ?: "Encrypted file channel failed.", null, !runtime.outgoing)
+                            P2pDataChannelTransport.State.FAILED -> {
+                                if (runtime.lanTransport != null) {
+                                    callbackStatus(
+                                        runtime.offer.fileName,
+                                        "WebRTC data channel failed; continuing on the authenticated local Wi-Fi connection."
+                                    )
+                                } else if (runtime.outgoing) {
+                                    scheduleLanFallback(runtime)
+                                } else {
+                                    scheduleLanReceiverGrace(runtime)
+                                }
+                            }
                             else -> Unit
                         }
                     }
@@ -440,8 +461,11 @@ class P2pChatFileTransferManager(
 
     private fun maybeStartSender(runtime: RuntimeTransfer) {
         if (!runtime.outgoing || runtime.disposed.get() || runtime.completed.get()) return
-        if (!runtime.lanPathDecisionMade.get() || runtime.key == null || !runtime.transferStatusConfirmed.get() ||
-            runtime.coordinator?.currentDataChannelState() != P2pDataChannelTransport.State.CONNECTED ||
+        val hasLanTransport = runtime.lanTransport != null
+        val hasWebRtcTransport =
+            runtime.coordinator?.currentDataChannelState() == P2pDataChannelTransport.State.CONNECTED
+        if (!runtime.lanPathDecisionMade.get() || runtime.key == null ||
+            !runtime.transferStatusConfirmed.get() || (!hasLanTransport && !hasWebRtcTransport) ||
             !runtime.sending.compareAndSet(false, true)
         ) return
         workExecutor.execute { runSender(runtime) }
@@ -760,6 +784,7 @@ class P2pChatFileTransferManager(
                     runtime.offer.fileName,
                     "Direct Wi-Fi connection authenticated. Sending encrypted file locally…"
                 )
+                markTransferring(runtime)
                 maybeStartSender(runtime)
             } catch (error: Exception) {
                 if (!runtime.disposed.get()) {
@@ -781,12 +806,42 @@ class P2pChatFileTransferManager(
                 runtime.lanPathDecisionMade.compareAndSet(false, true)
             ) {
                 runtime.lanDiscovery?.stopDiscovery()
+                val webRtcReady =
+                    runtime.coordinator?.currentDataChannelState() == P2pDataChannelTransport.State.CONNECTED
+                if (runtime.lanTransport == null && !webRtcReady) {
+                    failRuntime(
+                        runtime,
+                        "Neither direct LAN nor WebRTC could connect. Keep both phones on the same Wi-Fi and retry.",
+                        null,
+                        deleteDestination = !runtime.outgoing
+                    )
+                    return@execute
+                }
                 callbackStatus(
                     runtime.offer.fileName,
                     "No verified LAN endpoint found; sending through the secure WebRTC route."
                 )
                 maybeStartSender(runtime)
             }
+        }
+    }
+
+    private fun scheduleLanReceiverGrace(runtime: RuntimeTransfer) {
+        if (runtime.outgoing || !runtime.lanReceiverGraceScheduled.compareAndSet(false, true)) return
+        workExecutor.execute {
+            try {
+                Thread.sleep(LAN_DISCOVERY_GRACE_MS)
+            } catch (_: InterruptedException) {
+                return@execute
+            }
+            if (runtime.disposed.get() || runtime.completed.get() || runtime.lanTransport != null) return@execute
+            if (runtime.coordinator?.currentDataChannelState() == P2pDataChannelTransport.State.CONNECTED) return@execute
+            failRuntime(
+                runtime,
+                "Neither direct LAN nor WebRTC could connect. Keep both phones on the same Wi-Fi and retry.",
+                null,
+                deleteDestination = true
+            )
         }
     }
 
