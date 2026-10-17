@@ -46,6 +46,14 @@ class P2pNearbyTransferProtocolTest {
     }
 
     @Test
+    fun pauseAndResumeAreRecognizedAsTransferControls() {
+        assertTrue(P2pNearbyTransferProtocol.isPauseResumeControl(P2pNearbyTransferProtocol.CONTROL_PAUSE))
+        assertTrue(P2pNearbyTransferProtocol.isPauseResumeControl(P2pNearbyTransferProtocol.CONTROL_RESUME))
+        assertFalse(P2pNearbyTransferProtocol.isPauseResumeControl("complete"))
+        assertFalse(P2pNearbyTransferProtocol.isPauseResumeControl("unknown"))
+    }
+
+    @Test
     fun confirmationCodeChangesWhenTranscriptChanges() {
         val offer = validOffer.copy(senderPublicKeyBase64 = "B".repeat(88))
         val receiverKey = "C".repeat(88)
