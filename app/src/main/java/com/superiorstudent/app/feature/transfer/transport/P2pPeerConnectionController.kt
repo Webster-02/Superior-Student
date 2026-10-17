@@ -183,14 +183,14 @@ class P2pPeerConnectionController(
                     "sdpMLineIndex" to candidate.sdpMLineIndex
                 ))
             }
-            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
+            override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
             override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
             override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
             override fun onDataChannel(channel: DataChannel) {
                 if (!closed.get()) listener.onRemoteDataChannel(channel) else channel.close()
             }
             override fun onRenegotiationNeeded() = Unit
-            override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<out org.webrtc.MediaStream>) = Unit
+            override fun onAddTrack(receiver: org.webrtc.RtpReceiver, streams: Array<org.webrtc.MediaStream>) = Unit
             override fun onTrack(transceiver: org.webrtc.RtpTransceiver) = Unit
         }
         val created = factory.createPeerConnection(configuration, observer)
