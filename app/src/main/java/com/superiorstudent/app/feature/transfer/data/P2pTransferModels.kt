@@ -41,7 +41,7 @@ data class P2pTransferSignal(
 data class P2pTransferOfferDraft(
     val conversationId: String, val receiverUid: String, val fileName: String,
     val sizeBytes: Long, val mimeType: String, val sha256: String,
-    val chunkSize: Int = 256 * 1024, val senderPublicKeyBase64: String,
+    val chunkSize: Int = 64 * 1024, val senderPublicKeyBase64: String,
     val thumbnailBase64: String? = null, val transferId: String = UUID.randomUUID().toString()
 )
 
