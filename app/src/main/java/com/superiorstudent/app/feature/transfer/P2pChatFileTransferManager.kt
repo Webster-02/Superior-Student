@@ -880,9 +880,14 @@ class P2pChatFileTransferManager(
                 descriptorFor(runtime.offer)
             ).use { sender ->
                 runtime.senderStream = sender
+                val routeLabel = if (runtime.lanTransport != null) {
+                    "Sending directly over local Wi-Fi"
+                } else {
+                    "Sending through secure WebRTC"
+                }
                 callbackStatus(
                     runtime.offer.fileName,
-                    "Sending encrypted file… ${P2pTransferFileMetadataReader.formatBytes(0)} / ${P2pTransferFileMetadataReader.formatBytes(runtime.offer.sizeBytes)}"
+                    "${routeLabel}… ${P2pTransferFileMetadataReader.formatBytes(0)} / ${P2pTransferFileMetadataReader.formatBytes(runtime.offer.sizeBytes)}"
                 )
                 while (true) {
                     waitWhilePaused(runtime)
@@ -895,7 +900,7 @@ class P2pChatFileTransferManager(
                     val bytes = sender.bytesProcessed
                     if (bytes - runtime.lastReportedBytes >= 1024L * 1024L) {
                         runtime.lastReportedBytes = bytes
-                        callbackStatus(runtime.offer.fileName, "Sending encrypted file… ${P2pTransferFileMetadataReader.formatBytes(bytes)} / ${P2pTransferFileMetadataReader.formatBytes(runtime.offer.sizeBytes)}")
+                        callbackStatus(runtime.offer.fileName, "${routeLabel}… ${P2pTransferFileMetadataReader.formatBytes(bytes)} / ${P2pTransferFileMetadataReader.formatBytes(runtime.offer.sizeBytes)}")
                     }
                 }
                 val endFrame = sender.finishFrame()
