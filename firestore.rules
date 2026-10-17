@@ -607,8 +607,8 @@ service cloud.firestore {
         && data.sha256 is string
         && data.sha256.matches('^[A-Fa-f0-9]{64}$')
         && data.chunkSize is int
-        && data.chunkSize >= 65536
-        && data.chunkSize <= 1048576
+        && data.chunkSize >= 1024
+        && data.chunkSize <= 65536
         && data.senderPublicKey is string
         && data.senderPublicKey.size() >= 40
         && data.senderPublicKey.size() <= 2048
