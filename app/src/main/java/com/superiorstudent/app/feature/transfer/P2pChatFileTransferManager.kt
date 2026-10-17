@@ -586,6 +586,17 @@ class P2pChatFileTransferManager(
                             }
                         }
 
+                        override fun onTransportClosed() {
+                            if (!runtime.disposed.get() && !runtime.completed.get()) {
+                                failRuntime(
+                                    runtime,
+                                    "Direct LAN connection closed before the file was verified.",
+                                    null,
+                                    deleteDestination = true
+                                )
+                            }
+                        }
+
                         override fun onError(error: Exception) {
                             if (runtime.disposed.get() || runtime.completed.get()) return
                             if (runtime.lanTransport != null) {
