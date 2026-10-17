@@ -24,7 +24,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 class P2pDataChannelTransport(
     private val callback: Callback,
     private val maxBufferedBytes: Long = 512L * 1024L,
-    private val mainHandler: Handler = Handler(Looper.getMainLooper())
+    private val mainHandler: Handler = Handler(Looper.getMainLooper()),
+    /** False when a PeerConnection controller remains the sole lifecycle owner. */
+    private val closePeerConnectionOnClose: Boolean = true
 ) : AutoCloseable {
 
     interface Callback {
@@ -49,11 +51,11 @@ class P2pDataChannelTransport(
 
     /**
      * Attach a PeerConnection created by the signaling controller. Offerer creates a channel;
-     * answerer awaits onDataChannel. Ownership is transferred to this transport.
+     * answerer awaits onDataChannel. Lifecycle ownership is controlled by the constructor flag.
+     * Returns false when setup cannot start.
      */
-    fun attachPeerConnection(connection: PeerConnection, offerer: Boolean) {
-        check(!closed.get()) { "Transport has been closed." }
-        check(peerConnection == null) { "PeerConnection has already been attached." }
+    fun attachPeerConnection(connection: PeerConnection, offerer: Boolean): Boolean {
+        if (closed.get() || peerConnection != null) return false
         peerConnection = connection
         localOfferer = offerer
         setState(State.CONNECTING)
@@ -65,10 +67,12 @@ class P2pDataChannelTransport(
             val channel = connection.createDataChannel(CHANNEL_LABEL, init)
                 ?: run {
                     fail("WebRTC could not create the file DataChannel.")
-                    return
+                    return false
                 }
             attachDataChannel(channel)
+            if (state == State.FAILED) return false
         }
+        return true
     }
 
     /** Called by the owning PeerConnection.Observer when the remote creates a channel. */
@@ -179,7 +183,7 @@ class P2pDataChannelTransport(
         state = State.CLOSING
         runCatching { dataChannel?.unregisterObserver() }
         runCatching { dataChannel?.close() }
-        runCatching { peerConnection?.close() }
+        if (closePeerConnectionOnClose) runCatching { peerConnection?.close() }
         dataChannel = null
         peerConnection = null
         state = State.CLOSED
