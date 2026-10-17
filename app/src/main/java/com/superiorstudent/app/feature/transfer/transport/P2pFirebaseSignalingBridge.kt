@@ -1,6 +1,5 @@
 package com.superiorstudent.app.feature.transfer.transport
 
-import android.util.Base64
 import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.feature.transfer.data.FirebaseP2pTransferSignaling
 import com.superiorstudent.app.feature.transfer.data.P2pSignalType
@@ -25,7 +24,8 @@ class P2pFirebaseSignalingBridge(
     private val currentUid: String,
     private val remoteUid: String,
     private val controller: P2pPeerConnectionController,
-    private val report: (String, Throwable?) -> Unit
+    private val report: (String, Throwable?) -> Unit,
+    private val onRemotePublicKey: (String) -> Unit = {}
 ) : AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -60,6 +60,26 @@ class P2pFirebaseSignalingBridge(
         }
     }
 
+    /** Receiver sends its ephemeral public key to the authenticated sender after accepting an offer. */
+    fun publishKeyExchange(publicKeyBase64: String) {
+        if (closed.get()) return
+        require(currentUid == offer.receiverUid && remoteUid == offer.senderUid) {
+            "Only the accepted receiver may publish the receiver-side key exchange."
+        }
+        require(publicKeyBase64.isNotBlank() && publicKeyBase64.length <= 2048) {
+            "Public key payload is invalid."
+        }
+        signaling.sendSignal(
+            conversationId = offer.conversationId,
+            transferId = offer.transferId,
+            targetUid = remoteUid,
+            type = P2pSignalType.KEY_EXCHANGE,
+            payload = mapOf("publicKey" to publicKeyBase64)
+        ) { _, error ->
+            if (error != null && !closed.get()) report("Could not publish ephemeral key exchange.", error)
+        }
+    }
+
     /** Called by the controller for each local SDP or ICE signal. */
     fun publish(type: P2pPeerConnectionController.SignalType, payload: Map<String, Any?>) {
         if (closed.get()) return
@@ -91,6 +111,9 @@ class P2pFirebaseSignalingBridge(
         }
 
         try {
+            require(com.superiorstudent.app.feature.transfer.data.P2pTransferValidation.isValidSignalPayload(signal.type, signal.payload)) {
+                "Signaling payload failed model validation."
+            }
             when (signal.type) {
                 P2pSignalType.WEBRTC_OFFER -> {
                     require(!remoteOfferSeen && currentUid == offer.receiverUid) {
@@ -120,11 +143,16 @@ class P2pFirebaseSignalingBridge(
                     }
                 }
                 P2pSignalType.KEY_EXCHANGE -> {
-                    // Do not accept self-asserted keys through this bridge. Key exchange must
-                    // be explicitly coordinated with the accepted offer and verified via an
-                    // authenticated conversation transcript before enabling file transport.
+                    require(currentUid == offer.senderUid && remoteUid == offer.receiverUid) {
+                        "Receiver-side ephemeral key may only be consumed by the accepted sender."
+                    }
+                    val publicKey = signal.payload["publicKey"] as? String
+                        ?: throw IllegalArgumentException("Peer public key is missing.")
+                    require(publicKey.length <= 2048 && publicKey.none { it.isISOControl() }) {
+                        "Peer public key is invalid."
+                    }
+                    onRemotePublicKey(publicKey)
                     keyExchangeSeen = true
-                    report("Peer key signal received; authenticated key verification is still required.", null)
                 }
                 else -> Unit
             }
