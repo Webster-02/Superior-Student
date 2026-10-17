@@ -37,8 +37,7 @@ object P2pTransferCrypto {
     private val secureRandom = SecureRandom()
 
     data class EphemeralKeyPair internal constructor(internal val keyPair: KeyPair) {
-        fun publicKeyBase64(): String =
-            java.util.Base64.getEncoder().encodeToString(keyPair.public.encoded)
+        fun publicKeyBase64(): String = encodeBase64(keyPair.public.encoded)
     }
 
     data class EncryptedChunk(
@@ -167,12 +166,69 @@ object P2pTransferCrypto {
 
     private fun decodeBase64Bounded(value: String, maxBytes: Int): ByteArray {
         require(value.isNotBlank() && value.length <= maxBytes * 2) { "Encoded key is too large." }
-        val decoded = try {
-            java.util.Base64.getDecoder().decode(value)
-        } catch (_: IllegalArgumentException) {
-            throw IllegalArgumentException("Remote public key is not valid Base64.")
-        }
+        require(value.length % 4 == 0) { "Remote public key is not valid Base64." }
+        val decoded = decodeBase64(value)
         require(decoded.isNotEmpty() && decoded.size <= maxBytes) { "Remote public key size is invalid." }
+        require(encodeBase64(decoded) == value) { "Remote public key is not canonical Base64." }
         return decoded
     }
+
+    // Small RFC 4648 Base64 helpers keep minSdk 23 support and make the crypto tests
+    // runnable on the plain JVM used by this repository's GitHub Actions workflow.
+    private const val BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
+    private fun encodeBase64(input: ByteArray): String {
+        val output = StringBuilder(((input.size + 2) / 3) * 4)
+        var index = 0
+        while (index < input.size) {
+            val first = input[index++].toInt() and 0xff
+            val hasSecond = index < input.size
+            val second = if (hasSecond) input[index++].toInt() and 0xff else 0
+            val hasThird = index < input.size
+            val third = if (hasThird) input[index++].toInt() and 0xff else 0
+            output.append(BASE64_ALPHABET[first ushr 2])
+            output.append(BASE64_ALPHABET[((first and 0x03) shl 4) or (second ushr 4)])
+            output.append(if (hasSecond) BASE64_ALPHABET[((second and 0x0f) shl 2) or (third ushr 6)] else '=')
+            output.append(if (hasThird) BASE64_ALPHABET[third and 0x3f] else '=')
+        }
+        return output.toString()
+    }
+
+    private fun decodeBase64(value: String): ByteArray {
+        require(value.isNotEmpty() && value.length % 4 == 0) { "Invalid Base64 length." }
+        val padding = when {
+            value.endsWith("==") -> 2
+            value.endsWith("=") -> 1
+            else -> 0
+        }
+        val decodedSize = value.length / 4 * 3 - padding
+        val output = ByteArray(decodedSize)
+        var outIndex = 0
+        var index = 0
+        while (index < value.length) {
+            val c0 = base64Value(value[index++])
+            val c1 = base64Value(value[index++])
+            val c2Char = value[index++]
+            val c3Char = value[index++]
+            val finalQuartet = index == value.length
+            require(c0 >= 0 && c1 >= 0) { "Invalid Base64 character." }
+            val c2 = if (c2Char == '=') -2 else base64Value(c2Char)
+            val c3 = if (c3Char == '=') -2 else base64Value(c3Char)
+            require(c2 != -1 && c3 != -1) { "Invalid Base64 character." }
+            require(c2 != -2 || (finalQuartet && c3 == -2)) { "Invalid Base64 padding." }
+            require(c3 != -2 || finalQuartet) { "Invalid Base64 padding." }
+            require(c2 != -2 || (c1 and 0x0f) == 0) { "Non-canonical Base64 padding." }
+            if (c2 >= 0) require(c3 != -2 || (c2 and 0x03) == 0) { "Non-canonical Base64 padding." }
+
+            val combined = (c0 shl 18) or (c1 shl 12) or
+                ((if (c2 >= 0) c2 else 0) shl 6) or (if (c3 >= 0) c3 else 0)
+            if (outIndex < output.size) output[outIndex++] = (combined ushr 16).toByte()
+            if (outIndex < output.size) output[outIndex++] = (combined ushr 8).toByte()
+            if (outIndex < output.size) output[outIndex++] = combined.toByte()
+        }
+        require(outIndex == output.size) { "Invalid Base64 payload." }
+        return output
+    }
+
+    private fun base64Value(character: Char): Int = BASE64_ALPHABET.indexOf(character)
 }
