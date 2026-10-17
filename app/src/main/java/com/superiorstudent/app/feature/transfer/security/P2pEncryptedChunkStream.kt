@@ -167,17 +167,16 @@ object P2pEncryptedChunkStream {
         }
 
         private fun acceptEnd(buffer: ByteBuffer) {
-            // The common header already includes the sequence number. End-frame payload:
-            // declared byte count, zero reserved word, and the final SHA-256 digest.
-            require(buffer.remaining() == 8 + 8 + DIGEST_BYTES) { "End frame length is invalid." }
-            val declaredBytes = buffer.long
-            val reserved = buffer.long
-            require(reserved == 0L) { "End-frame reserved field must be zero." }
-            val endDigest = ByteArray(DIGEST_BYTES).also(buffer::get).toHex()
-            val sequenceInHeader = ByteBuffer.wrap(buffer.array()).order(ByteOrder.BIG_ENDIAN).apply {
-                position(6)
-            }.long
+            // Header format: magic(4), version(1), type(1), sequence(8), payloadLength(4).
+            // End payload is exactly: bytesWritten(8) + SHA-256(32).
+            val sequenceInHeader = buffer.long
+            val payloadLength = buffer.int
             require(sequenceInHeader == expectedSequence) { "End frame sequence does not match." }
+            require(payloadLength == 8 + DIGEST_BYTES && buffer.remaining() == payloadLength) {
+                "End frame length is invalid."
+            }
+            val declaredBytes = buffer.long
+            val endDigest = ByteArray(DIGEST_BYTES).also(buffer::get).toHex()
             require(declaredBytes == bytesWritten && bytesWritten == descriptor.totalBytes) {
                 "Received file length does not match expected length."
             }
@@ -215,10 +214,10 @@ object P2pEncryptedChunkStream {
     private fun encodeEnd(sequence: Long, bytes: Long, sha256Hex: String): ByteArray {
         val digest = sha256Hex.hexToBytes()
         require(digest.size == DIGEST_BYTES)
-        return ByteBuffer.allocate(HEADER_BYTES + 8 + 8 + DIGEST_BYTES)
+        return ByteBuffer.allocate(HEADER_BYTES + 8 + DIGEST_BYTES)
             .order(ByteOrder.BIG_ENDIAN)
             .putInt(MAGIC).put(VERSION).put(TYPE_END)
-            .putLong(sequence).putInt(0).putLong(bytes).putLong(0L).put(digest).array()
+            .putLong(sequence).putInt(8 + DIGEST_BYTES).putLong(bytes).put(digest).array()
     }
 
     private fun chunkMetadata(
