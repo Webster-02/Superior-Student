@@ -18,7 +18,12 @@ import com.superiorstudent.app.feature.transfer.security.P2pEncryptedChunkStream
 import com.superiorstudent.app.feature.transfer.security.P2pTransferCrypto
 import com.superiorstudent.app.feature.transfer.transport.P2pDataChannelTransport
 import com.superiorstudent.app.feature.transfer.transport.P2pFirebaseWebRtcCoordinator
+import com.superiorstudent.app.feature.transfer.transport.P2pLanDiscovery
+import com.superiorstudent.app.feature.transfer.transport.P2pLanSocketListener
+import com.superiorstudent.app.feature.transfer.transport.P2pLanSocketTransport
 import org.webrtc.PeerConnection
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -59,6 +64,8 @@ class P2pChatFileTransferManager(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
     )
 
+    private data class LanCandidate(val ip: String, val port: Int, val token: String)
+
     private class RuntimeTransfer(
         @Volatile var offer: P2pTransferOffer,
         val outgoing: Boolean,
@@ -82,6 +89,14 @@ class P2pChatFileTransferManager(
         @Volatile var senderStream: P2pEncryptedChunkStream.Sender? = null
         @Volatile var receiverStream: P2pEncryptedChunkStream.Receiver? = null
         @Volatile var lastReportedBytes: Long = 0L
+        @Volatile var lanDiscovery: P2pLanDiscovery? = null
+        @Volatile var lanListener: P2pLanSocketListener? = null
+        @Volatile var lanTransport: P2pLanSocketTransport? = null
+        @Volatile var lanCandidate: LanCandidate? = null
+        @Volatile var lanPeer: P2pLanDiscovery.Peer? = null
+        val lanConnectStarted = AtomicBoolean(false)
+        val lanPathDecisionMade = AtomicBoolean(false)
+        val lanFallbackScheduled = AtomicBoolean(false)
     }
 
     /**
@@ -330,8 +345,12 @@ class P2pChatFileTransferManager(
                         when (state) {
                             P2pDataChannelTransport.State.CONNECTED -> {
                                 markTransferring(runtime)
-                                if (runtime.outgoing) maybeStartSender(runtime)
-                                else callbackStatus(runtime.offer.fileName, "Secure channel ready. Receiving encrypted file…")
+                                if (runtime.outgoing) {
+                                    scheduleLanFallback(runtime)
+                                    maybeStartSender(runtime)
+                                } else {
+                                    callbackStatus(runtime.offer.fileName, "Secure channel ready. Receiving encrypted file…")
+                                }
                             }
                             P2pDataChannelTransport.State.FAILED ->
                                 failRuntime(runtime, detail ?: "Encrypted file channel failed.", null, !runtime.outgoing)
@@ -353,6 +372,12 @@ class P2pChatFileTransferManager(
                     }
 
                     override fun onBufferedAmountChanged(bufferedBytes: Long) = Unit
+
+                    override fun onRemoteLanCandidate(payload: Map<String, Any?>) {
+                        if (runtime.outgoing && !runtime.disposed.get()) {
+                            handleRemoteLanCandidate(runtime, payload)
+                        }
+                    }
 
                     override fun onRemotePublicKey(publicKeyBase64: String) {
                         if (!runtime.outgoing || !runtime.keyReceived.compareAndSet(false, true)) {
@@ -389,6 +414,9 @@ class P2pChatFileTransferManager(
                         failRuntime(runtime, "Could not publish receiver encryption key.", error, true)
                     }
                 }
+                startLanReceiverEndpoint(runtime)
+            } else {
+                startLanDiscovery(runtime)
             }
             null
         } catch (error: Exception) {
@@ -412,7 +440,7 @@ class P2pChatFileTransferManager(
 
     private fun maybeStartSender(runtime: RuntimeTransfer) {
         if (!runtime.outgoing || runtime.disposed.get() || runtime.completed.get()) return
-        if (runtime.key == null || !runtime.transferStatusConfirmed.get() ||
+        if (!runtime.lanPathDecisionMade.get() || runtime.key == null || !runtime.transferStatusConfirmed.get() ||
             runtime.coordinator?.currentDataChannelState() != P2pDataChannelTransport.State.CONNECTED ||
             !runtime.sending.compareAndSet(false, true)
         ) return
