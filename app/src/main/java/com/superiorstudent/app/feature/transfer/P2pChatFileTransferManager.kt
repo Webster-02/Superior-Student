@@ -19,6 +19,9 @@ import com.superiorstudent.app.feature.transfer.security.P2pTransferCrypto
 import com.superiorstudent.app.feature.transfer.transport.P2pDataChannelTransport
 import com.superiorstudent.app.feature.transfer.transport.P2pFirebaseWebRtcCoordinator
 import org.webrtc.PeerConnection
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -62,6 +65,7 @@ class P2pChatFileTransferManager(
         val localKeyPair: P2pTransferCrypto.EphemeralKeyPair,
         val sourceUri: Uri? = null,
         val destinationUri: Uri? = null,
+        @Volatile var temporaryFile: File? = null,
         @Volatile var key: SecretKey? = null
     ) {
         val disposed = AtomicBoolean(false)
@@ -174,14 +178,19 @@ class P2pChatFileTransferManager(
 
         workExecutor.execute {
             var receiverStream: P2pEncryptedChunkStream.Receiver? = null
+            var temporaryFile: File? = null
             try {
                 val keyPair = P2pTransferCrypto.generateEphemeralKeyPair()
                 // The sender key is bound to the signed-in sender's accepted offer document.
                 val key = P2pTransferCrypto.deriveTransferKey(
                     keyPair, offer.senderPublicKeyBase64, offer.transferId
                 )
-                val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
-                    ?: throw IllegalStateException("Android could not open the selected save location.")
+                temporaryFile = File.createTempFile(
+                    "p2p-" + offer.transferId.take(32) + "-",
+                    ".part",
+                    appContext.cacheDir
+                )
+                val output = FileOutputStream(temporaryFile)
                 val descriptor = descriptorFor(offer)
                 val preparedReceiver = P2pEncryptedChunkStream.Receiver(output, key, descriptor)
                 receiverStream = preparedReceiver
@@ -189,6 +198,7 @@ class P2pChatFileTransferManager(
                 signaling.acceptOffer(offer.conversationId, offer.transferId) { error ->
                     if (closed.get()) {
                         preparedReceiver.close()
+                        temporaryFile.delete()
                         deletePartialDestination(destinationUri)
                         onAccepted(IllegalStateException("Chat closed before accepting the offer."))
                         return@acceptOffer
@@ -207,6 +217,7 @@ class P2pChatFileTransferManager(
                         outgoing = false,
                         localKeyPair = keyPair,
                         destinationUri = destinationUri,
+                        temporaryFile = temporaryFile,
                         key = key
                     )
                     runtime.receiverStream = preparedReceiver
@@ -222,6 +233,7 @@ class P2pChatFileTransferManager(
                 }
             } catch (error: Exception) {
                 runCatching { receiverStream?.close() }
+                temporaryFile?.delete()
                 deletePartialDestination(destinationUri)
                 callbackError(offer.fileName, "Could not prepare the secure download.", error)
                 onAccepted(error)
@@ -461,6 +473,8 @@ class P2pChatFileTransferManager(
             receiver.acceptFrame(frame)
             if (receiver.isComplete) {
                 receiver.finish()
+                receiver.close()
+                promoteVerifiedFile(runtime)
                 if (runtime.completed.compareAndSet(false, true)) {
                     signaling.completeTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
                         if (error != null) {
@@ -542,6 +556,8 @@ class P2pChatFileTransferManager(
         runCatching { runtime.senderStream?.close() }
         runCatching { runtime.receiverStream?.close() }
         runtime.receiveExecutor.shutdownNow()
+        runtime.temporaryFile?.delete()
+        runtime.temporaryFile = null
         if (deleteDestination) deletePartialDestination(runtime.destinationUri)
         signaling.failTransfer(runtime.offer.conversationId, runtime.offer.transferId) { }
         callbackError(runtime.offer.fileName, message, error)
@@ -557,7 +573,31 @@ class P2pChatFileTransferManager(
         runCatching { runtime.senderStream?.close() }
         runCatching { runtime.receiverStream?.close() }
         runtime.receiveExecutor.shutdownNow()
+        runtime.temporaryFile?.delete()
+        runtime.temporaryFile = null
         if (deleteDestination) deletePartialDestination(runtime.destinationUri)
+    }
+
+    /** Copies from private cache only after the receiver has verified the authenticated end frame. */
+    private fun promoteVerifiedFile(runtime: RuntimeTransfer) {
+        val file = runtime.temporaryFile ?: throw IllegalStateException("Temporary download file is missing.")
+        if (!file.isFile || file.length() != runtime.offer.sizeBytes) {
+            throw IllegalStateException("Verified temporary file length does not match the offer.")
+        }
+        val destination = runtime.destinationUri
+            ?: throw IllegalStateException("The chosen save destination is missing.")
+        val input = FileInputStream(file)
+        val output = appContext.contentResolver.openOutputStream(destination, "w")
+            ?: throw IllegalStateException("Android could not open the chosen save destination.")
+        input.use { source ->
+            output.use { target ->
+                source.copyTo(target, 64 * 1024)
+                target.flush()
+            }
+        }
+        if (file.length() != runtime.offer.sizeBytes) {
+            throw IllegalStateException("Temporary download changed during promotion.")
+        }
     }
 
     private fun deletePartialDestination(uri: Uri?) {
