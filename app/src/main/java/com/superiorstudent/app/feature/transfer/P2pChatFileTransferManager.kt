@@ -18,6 +18,7 @@ import com.superiorstudent.app.feature.transfer.security.P2pEncryptedChunkStream
 import com.superiorstudent.app.feature.transfer.security.P2pTransferCrypto
 import com.superiorstudent.app.feature.transfer.transport.P2pDataChannelTransport
 import com.superiorstudent.app.feature.transfer.transport.P2pFirebaseWebRtcCoordinator
+import com.superiorstudent.app.feature.transfer.transport.P2pLanCompletionAck
 import com.superiorstudent.app.feature.transfer.transport.P2pLanDiscovery
 import com.superiorstudent.app.feature.transfer.transport.P2pLanSocketListener
 import com.superiorstudent.app.feature.transfer.transport.P2pLanSocketTransport
@@ -94,6 +95,8 @@ class P2pChatFileTransferManager(
         @Volatile var lanTransport: P2pLanSocketTransport? = null
         @Volatile var lanCandidate: LanCandidate? = null
         @Volatile var lanPeer: P2pLanDiscovery.Peer? = null
+        @Volatile var lanLocalToken: String? = null
+        val senderEndFrameSent = AtomicBoolean(false)
         val lanConnectStarted = AtomicBoolean(false)
         val lanPathDecisionMade = AtomicBoolean(false)
         val lanFallbackScheduled = AtomicBoolean(false)
@@ -277,7 +280,17 @@ class P2pChatFileTransferManager(
         ) { observed, error ->
             if (runtime.disposed.get() || closed.get()) return@listenForOffer
             if (error != null) {
-                failRuntime(runtime, "Could not monitor the file offer.", error, deleteDestination = false)
+                if (runtime.lanTransport != null) {
+                    // Firestore may be offline while the authenticated local TCP path remains live.
+                    runtime.offerListener?.remove()
+                    runtime.offerListener = null
+                    callbackStatus(
+                        runtime.offer.fileName,
+                        "Internet signaling disconnected; the authenticated local Wi-Fi transfer continues."
+                    )
+                } else {
+                    failRuntime(runtime, "Could not monitor the file offer.", error, deleteDestination = false)
+                }
                 return@listenForOffer
             }
             if (observed == null) return@listenForOffer
@@ -451,7 +464,18 @@ class P2pChatFileTransferManager(
         signaling.startTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
             if (runtime.disposed.get()) return@startTransfer
             if (error != null) {
-                failRuntime(runtime, "Connection opened, but Firestore could not confirm transfer status.", error, false)
+                if (runtime.lanTransport != null) {
+                    // Offer acceptance/key exchange already happened; the authenticated LAN
+                    // session is allowed to finish without an Internet status update.
+                    runtime.transferStatusConfirmed.set(true)
+                    callbackStatus(
+                        runtime.offer.fileName,
+                        "Using authenticated local Wi-Fi; Internet status updates are unavailable."
+                    )
+                    maybeStartSender(runtime)
+                } else {
+                    failRuntime(runtime, "Connection opened, but Firestore could not confirm transfer status.", error, false)
+                }
             } else {
                 runtime.transferStatusConfirmed.set(true)
                 maybeStartSender(runtime)
@@ -616,6 +640,7 @@ class P2pChatFileTransferManager(
                     })
                 listener = createdListener
                 val endpoint = createdListener.start()
+                runtime.lanLocalToken = endpoint.token
                 runtime.lanListener = createdListener
 
                 val createdDiscovery = P2pLanDiscovery(appContext,
@@ -759,14 +784,28 @@ class P2pChatFileTransferManager(
                     handshakeTimeoutMs = LAN_HANDSHAKE_TIMEOUT_MS,
                     callback = object : P2pLanSocketTransport.Callback {
                         override fun onEncryptedFrame(frame: ByteArray) {
-                            frame.fill(0)
-                            if (!runtime.disposed.get()) {
-                                failRuntime(
-                                    runtime,
-                                    "Unexpected reverse-direction LAN data was rejected.",
-                                    null,
-                                    deleteDestination = false
-                                )
+                            try {
+                                val token = runtime.lanCandidate?.token
+                                if (runtime.disposed.get() || runtime.completed.get()) return
+                                if (!runtime.senderEndFrameSent.get() || token == null ||
+                                    !P2pLanCompletionAck.verify(
+                                        frame,
+                                        runtime.offer.transferId,
+                                        runtime.offer.sha256,
+                                        token
+                                    )
+                                ) {
+                                    failRuntime(
+                                        runtime,
+                                        "The receiver's local completion receipt could not be authenticated.",
+                                        null,
+                                        deleteDestination = false
+                                    )
+                                } else {
+                                    completeRuntime(runtime)
+                                }
+                            } finally {
+                                frame.fill(0)
                             }
                         }
 
@@ -905,6 +944,9 @@ class P2pChatFileTransferManager(
                 }
                 val endFrame = sender.finishFrame()
                 try {
+                    // The authenticated receiver can only produce a useful receipt after it
+                    // validates this end frame; set before the flush to avoid a reader-thread race.
+                    runtime.senderEndFrameSent.set(true)
                     sendFrameWithBackpressure(runtime, endFrame)
                     sender.markEndFrameSent()
                 } finally {
@@ -1053,6 +1095,7 @@ class P2pChatFileTransferManager(
         runtime.lanTransport = null
         runtime.lanCandidate = null
         runtime.lanPeer = null
+        runtime.lanLocalToken = null
         runCatching { runtime.senderStream?.close() }
         runCatching { runtime.receiverStream?.close() }
         runtime.receiveExecutor.shutdownNow()
