@@ -38,6 +38,7 @@ class P2pFirebaseWebRtcCoordinator(
         )
         fun onBinaryFrame(frame: ByteArray)
         fun onBufferedAmountChanged(bufferedBytes: Long)
+        fun onRemotePublicKey(publicKeyBase64: String)
         fun onError(message: String, error: Throwable? = null)
     }
 
@@ -108,6 +109,7 @@ class P2pFirebaseWebRtcCoordinator(
             currentUid = currentUid,
             remoteUid = remoteUid,
             session = session,
+            onRemotePublicKey = { publicKey -> dispatch { callback.onRemotePublicKey(publicKey) } },
             report = { message, error -> report(message, error) }
         )
     }
@@ -136,6 +138,20 @@ class P2pFirebaseWebRtcCoordinator(
             return false
         }
         return true
+    }
+
+    /** Sends the receiver's ECDH public key over the authenticated Firestore signal channel. */
+    fun publishReceiverPublicKey(publicKeyBase64: String, callback: (Exception?) -> Unit = {}) {
+        if (closed.get() || !started) {
+            callback(IllegalStateException("WebRTC transfer session is not active."))
+            return
+        }
+        val activeBridge = bridge
+        if (activeBridge == null) {
+            callback(IllegalStateException("Firebase signaling bridge is unavailable."))
+            return
+        }
+        activeBridge.publishReceiverPublicKey(publicKeyBase64, callback)
     }
 
     /** Sends exactly one already-encrypted frame. False means retry later or channel not ready. */
