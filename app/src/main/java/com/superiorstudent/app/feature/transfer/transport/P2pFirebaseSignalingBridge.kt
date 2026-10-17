@@ -5,6 +5,7 @@ import com.superiorstudent.app.feature.transfer.data.FirebaseP2pTransferSignalin
 import com.superiorstudent.app.feature.transfer.data.P2pSignalType
 import com.superiorstudent.app.feature.transfer.data.P2pTransferOffer
 import com.superiorstudent.app.feature.transfer.data.P2pTransferSignal
+import com.superiorstudent.app.feature.transfer.data.P2pTransferValidation
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -25,6 +26,7 @@ class P2pFirebaseSignalingBridge(
     private val remoteUid: String,
     private val session: P2pWebRtcSession,
     private val onRemotePublicKey: (String) -> Unit,
+    private val onRemoteLanCandidate: (Map<String, Any?>) -> Unit = {},
     private val report: (String, Throwable?) -> Unit
 ) : AutoCloseable {
 
@@ -34,6 +36,7 @@ class P2pFirebaseSignalingBridge(
     private var remoteOfferSeen = false
     private var remoteAnswerSeen = false
     private var keyExchangeSeen = false
+    private var lanCandidateSeen = false
 
     init {
         require(offer.status.name == "ACCEPTED" || offer.status.name == "TRANSFERRING") {
@@ -129,6 +132,17 @@ class P2pFirebaseSignalingBridge(
                     keyExchangeSeen = true
                     onRemotePublicKey(publicKey)
                 }
+                P2pSignalType.LAN_CANDIDATES -> {
+                    require(currentUid == offer.senderUid && remoteUid == offer.receiverUid) {
+                        "Only the accepted receiver may publish its LAN endpoint to the sender."
+                    }
+                    require(!lanCandidateSeen) { "Duplicate LAN endpoint signal." }
+                    require(P2pTransferValidation.isValidSignalPayload(signal.type, signal.payload)) {
+                        "LAN endpoint payload is invalid."
+                    }
+                    lanCandidateSeen = true
+                    onRemoteLanCandidate(signal.payload)
+                }
                 else -> Unit
             }
             signaling.acknowledgeSignal(offer.conversationId, offer.transferId, signal.signalId) { ackError ->
@@ -164,6 +178,31 @@ class P2pFirebaseSignalingBridge(
     }
 
     fun hasSeenKeyExchange(): Boolean = keyExchangeSeen
+
+    /** Publishes a one-transfer LAN endpoint only from the accepted receiver to the sender. */
+    fun publishLanCandidate(ip: String, port: Int, token: String, callback: (Exception?) -> Unit = {}) {
+        if (closed.get()) {
+            callback(IllegalStateException("Signaling bridge is closed."))
+            return
+        }
+        val payload = mapOf<String, Any?>("ip" to ip, "port" to port, "token" to token)
+        if (currentUid != offer.receiverUid ||
+            !P2pTransferValidation.isValidSignalPayload(P2pSignalType.LAN_CANDIDATES, payload)
+        ) {
+            callback(IllegalArgumentException("Receiver LAN endpoint is invalid."))
+            return
+        }
+        signaling.sendSignal(
+            conversationId = offer.conversationId,
+            transferId = offer.transferId,
+            targetUid = offer.senderUid,
+            type = P2pSignalType.LAN_CANDIDATES,
+            payload = payload
+        ) { _, error ->
+            if (error != null && !closed.get()) report("Could not publish the LAN endpoint.", error)
+            callback(error)
+        }
+    }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
