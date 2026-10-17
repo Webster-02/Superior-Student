@@ -182,17 +182,18 @@ class P2pChatFileTransferManager(
                 val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
                     ?: throw IllegalStateException("Android could not open the selected save location.")
                 val descriptor = descriptorFor(offer)
-                receiverStream = P2pEncryptedChunkStream.Receiver(output, key, descriptor)
+                val preparedReceiver = P2pEncryptedChunkStream.Receiver(output, key, descriptor)
+                receiverStream = preparedReceiver
 
                 signaling.acceptOffer(offer.conversationId, offer.transferId) { error ->
                     if (closed.get()) {
-                        receiverStream.close()
+                        preparedReceiver.close()
                         deletePartialDestination(destinationUri)
                         onAccepted(IllegalStateException("Chat closed before accepting the offer."))
                         return@acceptOffer
                     }
                     if (error != null) {
-                        receiverStream.close()
+                        preparedReceiver.close()
                         deletePartialDestination(destinationUri)
                         callbackError(offer.fileName, "Could not accept the file offer. Check the published Firestore P2P rules.", error)
                         onAccepted(error)
@@ -207,7 +208,7 @@ class P2pChatFileTransferManager(
                         destinationUri = destinationUri,
                         key = key
                     )
-                    runtime.receiverStream = receiverStream
+                    runtime.receiverStream = preparedReceiver
                     runtimes[offer.transferId] = runtime
                     val startError = startCoordinator(runtime)
                     if (startError != null) {
