@@ -78,11 +78,11 @@ class P2pLanDiscovery(
             this.port = port
             setAttribute(
                 P2pLanDiscoveryProtocol.ATTRIBUTE_VERSION,
-                P2pLanDiscoveryProtocol.PROTOCOL_VERSION.toString().toByteArray(Charsets.US_ASCII)
+                P2pLanDiscoveryProtocol.PROTOCOL_VERSION.toString()
             )
             setAttribute(
                 P2pLanDiscoveryProtocol.ATTRIBUTE_SESSION_ID,
-                sessionId.toByteArray(Charsets.US_ASCII)
+                sessionId
             )
         }
 
