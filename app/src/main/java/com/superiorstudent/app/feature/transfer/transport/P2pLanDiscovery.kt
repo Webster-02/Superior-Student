@@ -117,6 +117,7 @@ class P2pLanDiscovery(
             true
         } catch (error: RuntimeException) {
             registrationListener = null
+            localSessionId = null
             reportError("advertise", ERROR_NSD_CALL_FAILED)
             false
         }
