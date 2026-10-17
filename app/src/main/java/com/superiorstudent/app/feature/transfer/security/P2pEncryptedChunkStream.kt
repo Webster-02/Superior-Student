@@ -167,15 +167,18 @@ object P2pEncryptedChunkStream {
         }
 
         private fun acceptEnd(buffer: ByteBuffer) {
-            // After the common header, the end frame contains byte count, reserved field and digest.
+            // The common header already includes the sequence number. End-frame payload:
+            // declared byte count, zero reserved word, and the final SHA-256 digest.
             require(buffer.remaining() == 8 + 8 + DIGEST_BYTES) { "End frame length is invalid." }
-            val endSequence = buffer.long
-            val endBytes = buffer.long
+            val declaredBytes = buffer.long
             val reserved = buffer.long
             require(reserved == 0L) { "End-frame reserved field must be zero." }
             val endDigest = ByteArray(DIGEST_BYTES).also(buffer::get).toHex()
-            require(endSequence == expectedSequence) { "End frame sequence does not match." }
-            require(endBytes == bytesWritten && bytesWritten == descriptor.totalBytes) {
+            val sequenceInHeader = ByteBuffer.wrap(buffer.array()).order(ByteOrder.BIG_ENDIAN).apply {
+                position(6)
+            }.long
+            require(sequenceInHeader == expectedSequence) { "End frame sequence does not match." }
+            require(declaredBytes == bytesWritten && bytesWritten == descriptor.totalBytes) {
                 "Received file length does not match expected length."
             }
             val actualDigest = digest.digest().toHex()
