@@ -108,6 +108,32 @@ service cloud.firestore {
         && data.createdAt is timestamp
         && validReplyToMessage(conversationId, data, participantUids);
     }
+    // Reactions may reference only an existing message from this conversation.
+    function validChatMessageReaction(conversationId, reactionId, data) {
+      let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+      let messagePath = /databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.messageId);
+      return data.keys().hasAll(['messageId', 'uid', 'emoji', 'updatedAt'])
+        && data.keys().hasOnly(['messageId', 'uid', 'emoji', 'updatedAt'])
+        && data.messageId is string
+        && data.messageId.size() >= 1
+        && data.messageId.size() <= 128
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && reactionId == data.messageId + '_' + data.uid
+        && data.emoji in ['👍', '❤️', '😂', '😮', '😢', '🙏']
+        && data.updatedAt is timestamp
+        && exists(conversationPath)
+        && validChatConversation(conversationId, get(conversationPath).data)
+        && data.uid in get(conversationPath).data.participantUids
+        && exists(messagePath)
+        && get(messagePath).data.participantUids == get(conversationPath).data.participantUids
+        && (
+          get(messagePath).data.senderUid == data.uid
+          || get(messagePath).data.recipientUid == data.uid
+        );
+    }
+
     function validNotificationShape(uid, data) {
       return data.keys().hasAll([
           'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
@@ -475,6 +501,33 @@ service cloud.firestore {
 
         // Sent messages are immutable.
         allow update, delete: if false;
+      }
+
+      // Reactions are separate from immutable message documents. Participants can
+      // read reactions in an active chat, but each student can write only their own.
+      match /messageReactions/{reactionId} {
+        allow get, list: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId);
+
+        allow create: if signedInWithVerifiedEmail()
+          && request.auth.uid == request.resource.data.uid
+          && activeChatConversationMember(conversationId)
+          && validChatMessageReaction(conversationId, reactionId, request.resource.data)
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if signedInWithVerifiedEmail()
+          && request.auth.uid == resource.data.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.messageId == resource.data.messageId
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emoji', 'updatedAt'])
+          && validChatMessageReaction(conversationId, reactionId, request.resource.data)
+          && request.resource.data.updatedAt == request.time;
+
+        allow delete: if signedInWithVerifiedEmail()
+          && request.auth.uid == resource.data.uid
+          && activeChatConversationMember(conversationId)
+          && validChatMessageReaction(conversationId, reactionId, resource.data);
       }
 
       // Ephemeral one-to-one typing state. Active participants can read it;

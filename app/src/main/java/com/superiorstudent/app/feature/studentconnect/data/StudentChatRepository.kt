@@ -37,6 +37,19 @@ data class StudentChatSummary(
     val unreadCount: Int
 )
 
+/** Small, per-student reaction attached to an existing chat message. */
+data class StudentChatMessageReaction(
+    val messageId: String,
+    val uid: String,
+    val emoji: String
+)
+
+/** Restricts reactions to a predictable set of simple emoji. */
+internal object StudentChatReactionEmoji {
+    val supported = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
+    fun isValid(value: String): Boolean = value in supported
+}
+
 /** Ephemeral typing state, stored separately from immutable chat messages. */
 data class StudentChatTypingStatus(val uid: String, val updatedAt: Timestamp)
 
@@ -537,6 +550,125 @@ class StudentChatRepository(
             .addOnFailureListener { error -> callback(error) }
     }
 
+    /** Create/update only the current student's reaction, or remove it when emoji is null. */
+    fun setMessageReaction(
+        conversationId: String,
+        messageId: String,
+        currentUid: String,
+        otherUid: String,
+        emoji: String?,
+        callback: (Exception?) -> Unit
+    ) {
+        val expectedId = try {
+            StudentChatIds.conversationId(currentUid, otherUid)
+        } catch (error: IllegalArgumentException) {
+            callback(error)
+            return
+        }
+        if (conversationId != expectedId || messageId.isBlank() || messageId.length > 128) {
+            callback(IllegalArgumentException("The chat or message reference is invalid."))
+            return
+        }
+        if (emoji != null && !StudentChatReactionEmoji.isValid(emoji)) {
+            callback(IllegalArgumentException("This reaction is not supported."))
+            return
+        }
+
+        val reactionRef = firestore.collection(CONVERSATIONS)
+            .document(conversationId)
+            .collection(MESSAGE_REACTIONS)
+            .document("${messageId}_${currentUid}")
+        if (emoji == null) {
+            reactionRef.delete()
+                .addOnSuccessListener { callback(null) }
+                .addOnFailureListener { error -> callback(error) }
+            return
+        }
+        reactionRef.set(
+            mapOf(
+                "messageId" to messageId,
+                "uid" to currentUid,
+                "emoji" to emoji,
+                "updatedAt" to FieldValue.serverTimestamp()
+            ),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).addOnSuccessListener { callback(null) }
+            .addOnFailureListener { error -> callback(error) }
+    }
+
+    /**
+     * Listens only to reactions attached to the current visible messages.
+     * IDs are chunked so each Firestore whereIn query stays within platform limits.
+     */
+    fun listenMessageReactions(
+        conversationId: String,
+        currentUid: String,
+        otherUid: String,
+        messageIds: List<String>,
+        callback: (List<StudentChatMessageReaction>?, Exception?) -> Unit
+    ): List<ListenerRegistration> {
+        val expectedId = try {
+            StudentChatIds.conversationId(currentUid, otherUid)
+        } catch (error: IllegalArgumentException) {
+            callback(null, error)
+            return emptyList()
+        }
+        val uniqueIds = messageIds.distinct()
+        if (conversationId != expectedId ||
+            uniqueIds.size > MAX_MESSAGES.toInt() ||
+            uniqueIds.any { it.isBlank() || it.length > 128 }
+        ) {
+            callback(null, IllegalArgumentException("The visible message list is invalid."))
+            return emptyList()
+        }
+        if (uniqueIds.isEmpty()) {
+            callback(emptyList(), null)
+            return emptyList()
+        }
+
+        val latestByBatch = mutableMapOf<Int, List<StudentChatMessageReaction>>()
+        val listeners = mutableListOf<ListenerRegistration>()
+        uniqueIds.chunked(REACTION_QUERY_BATCH_SIZE).forEachIndexed { batchIndex, batchIds ->
+            val listener = firestore.collection(CONVERSATIONS)
+                .document(conversationId)
+                .collection(MESSAGE_REACTIONS)
+                .whereIn("messageId", batchIds)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        callback(null, error)
+                        return@addSnapshotListener
+                    }
+                    if (snapshot == null) {
+                        callback(null, IllegalStateException("Message reactions were not returned."))
+                        return@addSnapshotListener
+                    }
+
+                    val parsed = snapshot.documents.mapNotNull { document ->
+                        val messageId = document.getString("messageId") ?: return@mapNotNull null
+                        val uid = document.getString("uid") ?: return@mapNotNull null
+                        val emoji = document.getString("emoji") ?: return@mapNotNull null
+                        val updatedAt = document.getTimestamp("updatedAt") ?: return@mapNotNull null
+                        if (messageId !in batchIds ||
+                            uid !in setOf(currentUid, otherUid) ||
+                            !StudentChatReactionEmoji.isValid(emoji) ||
+                            document.id != "${messageId}_${uid}"
+                        ) return@mapNotNull null
+                        // Reading the timestamp also verifies the reaction record is complete.
+                        if (updatedAt.seconds < 0L) return@mapNotNull null
+                        StudentChatMessageReaction(messageId, uid, emoji)
+                    }
+                    if (parsed.size != snapshot.documents.size) {
+                        callback(null, IllegalStateException("A message reaction record is incomplete or invalid."))
+                        return@addSnapshotListener
+                    }
+                    latestByBatch[batchIndex] = parsed
+                    callback(latestByBatch.toSortedMap().values.flatten(), null)
+                }
+            listeners += listener
+        }
+        return listeners
+    }
+
     fun listenMessages(
         conversationId: String,
         currentUid: String,
@@ -650,6 +782,8 @@ class StudentChatRepository(
         const val MESSAGES = "messages"
         const val READ_STATES = "readStates"
         const val TYPING = "typing"
+        const val MESSAGE_REACTIONS = "messageReactions"
+        const val REACTION_QUERY_BATCH_SIZE = 10
         const val PROFILES = "profiles"
         const val FRIEND_REQUESTS = "friendRequests"
         const val ACCEPTED = "accepted"

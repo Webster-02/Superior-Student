@@ -27,6 +27,8 @@ import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatConversation
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessage
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessageReaction
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatReactionEmoji
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatReplyMetadata
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
@@ -81,6 +83,11 @@ class StudentChatActivity : AppCompatActivity() {
         }
     }
     private val outgoingReceiptViews = mutableMapOf<String, TextView>()
+    private val messageReactionSummaryViews = mutableMapOf<String, TextView>()
+    private val reactionListeners = mutableListOf<ListenerRegistration>()
+    private var reactionMessageIds: List<String> = emptyList()
+    private var reactionRecords: List<StudentChatMessageReaction> = emptyList()
+    private var reactionListening = false
     private var displayedMessages: List<StudentChatMessage> = emptyList()
     private var replyToMessage: StudentChatMessage? = null
     private var recipientLastReadAt: Timestamp? = null
@@ -153,6 +160,9 @@ class StudentChatActivity : AppCompatActivity() {
             startTypingListener(user.uid, activeConversation)
             startReadReceiptListener(user.uid, activeConversation)
             syncChatPresence(user.uid)
+            if (displayedMessages.isNotEmpty()) {
+                startMessageReactionsListeners(user.uid, displayedMessages)
+            }
         }
     }
 
@@ -167,6 +177,10 @@ class StudentChatActivity : AppCompatActivity() {
         typingListener = null
         readReceiptListener?.remove()
         readReceiptListener = null
+        reactionListeners.forEach { it.remove() }
+        reactionListeners.clear()
+        reactionListening = false
+        reactionMessageIds = emptyList()
         recipientLastReadAt = null
         typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
         if (::typingIndicatorText.isInitialized) typingIndicatorText.visibility = View.GONE
@@ -183,6 +197,12 @@ class StudentChatActivity : AppCompatActivity() {
         typingListener = null
         readReceiptListener?.remove()
         readReceiptListener = null
+        reactionListeners.forEach { it.remove() }
+        reactionListeners.clear()
+        reactionListening = false
+        reactionMessageIds = emptyList()
+        messageReactionSummaryViews.clear()
+        reactionRecords = emptyList()
         messagesListener?.remove()
         messagesListener = null
         outgoingReceiptViews.clear()
@@ -286,6 +306,7 @@ class StudentChatActivity : AppCompatActivity() {
                 return@listenMessages
             }
             renderMessages(uid, messages)
+            startMessageReactionsListeners(uid, messages)
             chatRepository.markConversationRead(opened.id, uid) { readError ->
                 if (!isCurrentUser(uid)) return@markConversationRead
                 if (readError != null) {
@@ -299,6 +320,7 @@ class StudentChatActivity : AppCompatActivity() {
     private fun renderMessages(uid: String, messages: List<StudentChatMessage>) {
         displayedMessages = messages
         outgoingReceiptViews.clear()
+        messageReactionSummaryViews.clear()
         messagesContainer.removeAllViews()
         emptyStateText.visibility = if (messages.isEmpty()) View.VISIBLE else View.GONE
 
@@ -395,6 +417,18 @@ class StudentChatActivity : AppCompatActivity() {
                 outgoingReceiptViews[message.id] = receipt
                 bubbleContent.addView(receipt)
             }
+            val reactionSummary = TextView(this).apply {
+                textSize = 10f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_text_muted))
+                setPadding(dp(7), dp(4), dp(7), dp(4))
+                visibility = View.GONE
+                contentDescription = "Message reactions"
+            }
+            messageReactionSummaryViews[message.id] = reactionSummary
+            bubbleContent.addView(reactionSummary)
+            renderMessageReactionSummary(message.id, reactionSummary)
             bubble.addView(bubbleContent)
             bubble.setOnLongClickListener {
                 if (chatUnavailable || isSending) {
@@ -404,6 +438,23 @@ class StudentChatActivity : AppCompatActivity() {
                     popup.menu.add("Reply").setOnMenuItemClickListener {
                         selectReplyTarget(message)
                         true
+                    }
+                    val reactionMenu = popup.menu.addSubMenu("React")
+                    StudentChatReactionEmoji.supported.forEach { emoji ->
+                        reactionMenu.add(emoji).setOnMenuItemClickListener {
+                            applyMessageReaction(message, emoji)
+                            true
+                        }
+                    }
+                    val userUid = auth.currentUser?.uid
+                    val ownReaction = reactionRecords.firstOrNull {
+                        it.messageId == message.id && it.uid == userUid
+                    }
+                    if (ownReaction != null) {
+                        popup.menu.add("Remove my reaction").setOnMenuItemClickListener {
+                            applyMessageReaction(message, null)
+                            true
+                        }
                     }
                     popup.show()
                     true
@@ -426,6 +477,101 @@ class StudentChatActivity : AppCompatActivity() {
         // Apply the latest read marker even when its listener fired before messages rendered.
         updateMessageReceipts(uid)
         messagesScroll.post { messagesScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun startMessageReactionsListeners(uid: String, messages: List<StudentChatMessage>) {
+        val ids = messages.map { it.id }.distinct()
+        if (reactionListening && reactionMessageIds == ids) return
+
+        reactionListeners.forEach { it.remove() }
+        reactionListeners.clear()
+        reactionListening = false
+        reactionMessageIds = ids
+        reactionRecords = emptyList()
+        updateMessageReactionViews()
+        if (!activityStarted || ids.isEmpty() || conversation == null || chatUnavailable) return
+
+        reactionListening = true
+        val registrations = chatRepository.listenMessageReactions(
+            conversationId = conversation!!.id,
+            currentUid = uid,
+            otherUid = otherUid,
+            messageIds = ids
+        ) { reactions, error ->
+            if (!activityStarted || !isCurrentUser(uid)) return@listenMessageReactions
+            if (error != null || reactions == null) {
+                Log.w(TAG, "Could not refresh message reactions.", error)
+                statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+                statusText.text = "Message reactions could not be refreshed. Check the published Firestore chat rules."
+                return@listenMessageReactions
+            }
+            reactionRecords = reactions.distinctBy { "${it.messageId}_${it.uid}" }
+            updateMessageReactionViews()
+        }
+        reactionListeners.addAll(registrations)
+    }
+
+    private fun updateMessageReactionViews() {
+        messageReactionSummaryViews.forEach { (messageId, view) ->
+            renderMessageReactionSummary(messageId, view)
+        }
+    }
+
+    private fun renderMessageReactionSummary(messageId: String, view: TextView) {
+        val reactions = reactionRecords.filter { it.messageId == messageId }
+        if (reactions.isEmpty()) {
+            view.text = ""
+            view.visibility = View.GONE
+            return
+        }
+        val counts = reactions.groupingBy { it.emoji }.eachCount()
+            .entries.sortedBy { StudentChatReactionEmoji.supported.indexOf(it.key) }
+        val summary = counts.joinToString("   ") { "${it.key} ${it.value}" }
+        val myReaction = reactions.firstOrNull { it.uid == auth.currentUser?.uid }
+        view.text = if (myReaction == null) summary else "$summary  · You: ${myReaction.emoji}"
+        view.setTextColor(ContextCompat.getColor(
+            this,
+            if (myReaction != null) R.color.sc_lavender else R.color.sc_text_muted
+        ))
+        view.background = GradientDrawable().apply {
+            setColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_chat_status))
+            cornerRadius = dp(10).toFloat()
+        }
+        view.visibility = View.VISIBLE
+    }
+
+    private fun applyMessageReaction(message: StudentChatMessage, emoji: String?) {
+        val user = auth.currentUser
+        val activeConversation = conversation
+        if (user == null || !user.isEmailVerified || activeConversation == null ||
+            chatUnavailable || displayedMessages.none { it.id == message.id }
+        ) {
+            statusText.text = "The chat is not ready for reactions. Reopen it from My Connections and try again."
+            return
+        }
+        if (emoji != null && !StudentChatReactionEmoji.isValid(emoji)) {
+            statusText.text = "This reaction is not supported."
+            return
+        }
+        chatRepository.setMessageReaction(
+            conversationId = activeConversation.id,
+            messageId = message.id,
+            currentUid = user.uid,
+            otherUid = otherUid,
+            emoji = emoji
+        ) { error ->
+            if (!isCurrentUser(user.uid)) return@setMessageReaction
+            statusText.setTextColor(ContextCompat.getColor(
+                this, if (error == null) R.color.sc_text_muted else R.color.sc_danger
+            ))
+            statusText.text = when {
+                error == null && emoji == null -> "Your reaction was removed."
+                error == null -> "Reaction saved."
+                error.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true) ->
+                    "Reaction not saved. Publish the latest message reaction rules."
+                else -> "Reaction not saved. Check your connection and try again."
+            }
+        }
     }
 
     private fun selectReplyTarget(message: StudentChatMessage) {
