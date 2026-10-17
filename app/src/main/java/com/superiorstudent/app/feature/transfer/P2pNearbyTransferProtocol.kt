@@ -36,7 +36,7 @@ internal object P2pNearbyTransferProtocol {
             offer.fileName.length <= 180 &&
             offer.fileName != "." &&
             offer.fileName != ".." &&
-            offer.fileName.none { it == '/' || it == '\\\\' || it.isISOControl() } &&
+            offer.fileName.none { it == '/' || it == '\\' || it.isISOControl() } &&
             offer.sizeBytes > 0L &&
             offer.mimeType.isNotBlank() &&
             offer.mimeType.length <= 160 &&
