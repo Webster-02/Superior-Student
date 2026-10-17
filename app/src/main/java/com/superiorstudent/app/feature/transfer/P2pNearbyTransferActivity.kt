@@ -49,6 +49,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var sendButton: Button
     private lateinit var receiveButton: Button
+    private lateinit var pauseResumeButton: Button
     private lateinit var stopButton: Button
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -56,6 +57,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private val sending = AtomicBoolean(false)
     private val receiving = AtomicBoolean(false)
     private val activeIncomingSocket = AtomicBoolean(false)
+    private val outgoingPaused = AtomicBoolean(false)
+    private val outgoingStreamActive = AtomicBoolean(false)
+    private val senderDataFinished = AtomicBoolean(false)
+    private val pauseRequestInFlight = AtomicBoolean(false)
+    private val outgoingFrameLock = Any()
+    @Volatile private var activeOutgoingOutput: DataOutputStream? = null
 
     @Volatile private var outgoingDiscovery: P2pLanDiscovery? = null
     @Volatile private var advertisingDiscovery: P2pLanDiscovery? = null
@@ -138,6 +145,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             isAllCaps = false
             setOnClickListener { startReceiving() }
         }
+        pauseResumeButton = Button(this).apply {
+            text = "Pause transfer"
+            isAllCaps = false
+            isEnabled = false
+            setOnClickListener { togglePauseResume() }
+        }
         stopButton = Button(this).apply {
             text = "Cancel / Stop"
             isAllCaps = false
@@ -162,6 +175,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ))
         root.addView(receiveButton, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(8) })
+        root.addView(pauseResumeButton, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(8) })
         root.addView(stopButton, LinearLayout.LayoutParams(
@@ -319,6 +335,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             }
             writeControl(output, "start")
             socket.soTimeout = SOCKET_READ_TIMEOUT_MS
+            activeOutgoingOutput = output
+            outgoingPaused.set(false)
+            senderDataFinished.set(false)
+            outgoingStreamActive.set(true)
+            pauseRequestInFlight.set(false)
+            updatePauseResumeButton(enabled = true, paused = false)
             showStatus("Sending directly over local Wi-Fi…")
 
             val source = contentResolver.openInputStream(prepared.metadata.uri)
@@ -334,12 +356,33 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             P2pEncryptedChunkStream.Sender(source, key, descriptor).use { sender ->
                 var lastStatusBytes = 0L
                 while (true) {
-                    if (!sending.get()) throw IOException("Transfer cancelled.")
-                    val frame = sender.nextFrame() ?: break
+                    var waitForResume = false
+                    var frame: ByteArray? = null
+                    synchronized(outgoingFrameLock) {
+                        if (!sending.get()) throw IOException("Transfer cancelled.")
+                        if (outgoingPaused.get()) {
+                            waitForResume = true
+                        } else {
+                            val nextFrame = sender.nextFrame()
+                            frame = nextFrame
+                            if (nextFrame == null) {
+                                senderDataFinished.set(true)
+                                outgoingStreamActive.set(false)
+                                updatePauseResumeButton(enabled = false, paused = false)
+                            } else {
+                                writePacket(output, P2pNearbyTransferProtocol.DATA_PACKET, nextFrame)
+                            }
+                        }
+                    }
+                    if (waitForResume) {
+                        Thread.sleep(PAUSE_POLL_DELAY_MS)
+                        continue
+                    }
+                    val outgoingFrame = frame ?: break
                     try {
-                        writePacket(output, P2pNearbyTransferProtocol.DATA_PACKET, frame)
+                        outgoingFrame.fill(0)
                     } finally {
-                        frame.fill(0)
+                        // The frame has been fully written while holding outgoingFrameLock.
                     }
                     val processed = sender.bytesProcessed
                     if (processed - lastStatusBytes >= STATUS_UPDATE_BYTES) {
@@ -351,8 +394,13 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 }
                 val endFrame = sender.finishFrame()
                 try {
-                    writePacket(output, P2pNearbyTransferProtocol.DATA_PACKET, endFrame)
-                    sender.markEndFrameSent()
+                    synchronized(outgoingFrameLock) {
+                        senderDataFinished.set(true)
+                        outgoingStreamActive.set(false)
+                        updatePauseResumeButton(enabled = false, paused = false)
+                        writePacket(output, P2pNearbyTransferProtocol.DATA_PACKET, endFrame)
+                        sender.markEndFrameSent()
+                    }
                 } finally {
                     endFrame.fill(0)
                 }
@@ -371,6 +419,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         } catch (error: Exception) {
             if (sending.get()) showStatus("Nearby transfer stopped: " + safeMessage(error))
         } finally {
+            outgoingStreamActive.set(false)
+            outgoingPaused.set(false)
+            senderDataFinished.set(true)
+            activeOutgoingOutput = null
+            pauseRequestInFlight.set(false)
+            updatePauseResumeButton(enabled = false, paused = false)
             runCatching { socket?.close() }
             if (activeSocket === socket) activeSocket = null
             finishSending()
@@ -545,6 +599,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             )
             receiver = P2pEncryptedChunkStream.Receiver(FileOutputStream(temp), key, descriptor)
             var lastStatusBytes = 0L
+            var remotePaused = false
             while (!receiver.isComplete) {
                 val packet = readPacket(input)
                 if (packet.kind == P2pNearbyTransferProtocol.CONTROL_PACKET) {
@@ -553,8 +608,23 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                     } finally {
                         packet.payload.fill(0)
                     }
-                    if (control.optString("type") == "cancel") throw IOException("The sender cancelled the transfer.")
-                    throw IOException("Unexpected control packet during file transfer.")
+                    val controlType = control.optString("type")
+                    when {
+                        controlType == "cancel" -> throw IOException("The sender cancelled the transfer.")
+                        controlType == "error" -> throw IOException("The sender reported a transfer error.")
+                        controlType == P2pNearbyTransferProtocol.CONTROL_PAUSE && !remotePaused -> {
+                            remotePaused = true
+                            socket.soTimeout = 0
+                            showStatus("Transfer paused by sender. Waiting for Resume…")
+                        }
+                        controlType == P2pNearbyTransferProtocol.CONTROL_RESUME && remotePaused -> {
+                            remotePaused = false
+                            socket.soTimeout = SOCKET_READ_TIMEOUT_MS
+                            showStatus("Transfer resumed. Receiving encrypted file over local Wi-Fi…")
+                        }
+                        else -> throw IOException("Unexpected control packet during file transfer.")
+                    }
+                    continue
                 }
                 if (packet.kind != P2pNearbyTransferProtocol.DATA_PACKET) {
                     packet.payload.fill(0)
@@ -762,6 +832,58 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         return Packet(kind, payload)
     }
 
+    private fun togglePauseResume() {
+        if (!sending.get() || !outgoingStreamActive.get() || senderDataFinished.get()) return
+        if (!pauseRequestInFlight.compareAndSet(false, true)) return
+        pauseResumeButton.isEnabled = false
+        ioExecutor.execute {
+            var nextPausedState: Boolean? = null
+            try {
+                synchronized(outgoingFrameLock) {
+                    val output = activeOutgoingOutput
+                    if (!sending.get() || !outgoingStreamActive.get() || senderDataFinished.get() || output == null) {
+                        return@synchronized
+                    }
+                    val shouldPause = !outgoingPaused.get()
+                    writeControl(
+                        output,
+                        if (shouldPause) P2pNearbyTransferProtocol.CONTROL_PAUSE
+                        else P2pNearbyTransferProtocol.CONTROL_RESUME
+                    )
+                    outgoingPaused.set(shouldPause)
+                    nextPausedState = shouldPause
+                }
+                nextPausedState?.let { paused ->
+                    updatePauseResumeButton(enabled = true, paused = paused)
+                    showStatus(
+                        if (paused) "Transfer paused at a safe encrypted-frame boundary."
+                        else "Transfer resumed over local Wi-Fi…"
+                    )
+                }
+            } catch (error: Exception) {
+                if (sending.get()) {
+                    showStatus("Pause/Resume failed: " + safeMessage(error))
+                    sending.set(false)
+                    runCatching { activeSocket?.close() }
+                }
+            } finally {
+                pauseRequestInFlight.set(false)
+                if (outgoingStreamActive.get() && !senderDataFinished.get() && sending.get()) {
+                    updatePauseResumeButton(enabled = true, paused = outgoingPaused.get())
+                }
+            }
+        }
+    }
+
+    private fun updatePauseResumeButton(enabled: Boolean, paused: Boolean) {
+        mainHandler.post {
+            if (!isFinishing && !isDestroyed && ::pauseResumeButton.isInitialized) {
+                pauseResumeButton.text = if (paused) "Resume transfer" else "Pause transfer"
+                pauseResumeButton.isEnabled = enabled && !pauseRequestInFlight.get()
+            }
+        }
+    }
+
     private fun cancelCurrentAction() {
         if (receiving.get()) {
             stopReceiving()
@@ -769,8 +891,13 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             return
         }
         sending.set(false)
+        outgoingStreamActive.set(false)
+        outgoingPaused.set(false)
+        senderDataFinished.set(true)
+        activeOutgoingOutput = null
         outgoingDiscovery?.close()
         outgoingDiscovery = null
+        updatePauseResumeButton(enabled = false, paused = false)
         runCatching { activeSocket?.close() }
         activeSocket = null
         finishSending()
@@ -808,12 +935,17 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         sendButton.isEnabled = !active && !receiving.get()
         receiveButton.isEnabled = !active && !receiving.get()
         stopButton.isEnabled = active || receiving.get()
+        updatePauseResumeButton(
+            enabled = active && outgoingStreamActive.get() && !senderDataFinished.get(),
+            paused = outgoingPaused.get()
+        )
     }
 
     private fun setReceiveUi(active: Boolean) {
         sendButton.isEnabled = !active && !sending.get()
         receiveButton.isEnabled = !active && !sending.get()
         stopButton.isEnabled = active || sending.get()
+        updatePauseResumeButton(enabled = false, paused = false)
     }
 
     private fun showStatus(message: String) {
@@ -838,6 +970,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         receiving.set(false)
         sending.set(false)
+        outgoingStreamActive.set(false)
+        outgoingPaused.set(false)
+        senderDataFinished.set(true)
+        activeOutgoingOutput = null
+        updatePauseResumeButton(enabled = false, paused = false)
         runCatching { advertisingDiscovery?.close() }
         runCatching { outgoingDiscovery?.close() }
         advertisingDiscovery = null
