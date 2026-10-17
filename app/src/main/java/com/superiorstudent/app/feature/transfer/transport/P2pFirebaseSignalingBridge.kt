@@ -1,6 +1,5 @@
 package com.superiorstudent.app.feature.transfer.transport
 
-import android.util.Base64
 import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.feature.transfer.data.FirebaseP2pTransferSignaling
 import com.superiorstudent.app.feature.transfer.data.P2pSignalType
@@ -25,6 +24,7 @@ class P2pFirebaseSignalingBridge(
     private val currentUid: String,
     private val remoteUid: String,
     private val session: P2pWebRtcSession,
+    private val onRemotePublicKey: (String) -> Unit,
     private val report: (String, Throwable?) -> Unit
 ) : AutoCloseable {
 
@@ -120,11 +120,14 @@ class P2pFirebaseSignalingBridge(
                     }
                 }
                 P2pSignalType.KEY_EXCHANGE -> {
-                    // Do not accept self-asserted keys through this bridge. Key exchange must
-                    // be explicitly coordinated with the accepted offer and verified via an
-                    // authenticated conversation transcript before enabling file transport.
+                    require(currentUid == offer.senderUid && remoteUid == offer.receiverUid) {
+                        "Only the accepted receiver may send the ECDH reply key."
+                    }
+                    require(!keyExchangeSeen) { "Duplicate ECDH key exchange." }
+                    val publicKey = signal.payload["publicKey"] as? String
+                        ?: throw IllegalArgumentException("ECDH public key is missing.")
                     keyExchangeSeen = true
-                    report("Peer key signal received; authenticated key verification is still required.", null)
+                    onRemotePublicKey(publicKey)
                 }
                 else -> Unit
             }
@@ -133,6 +136,30 @@ class P2pFirebaseSignalingBridge(
             }
         } catch (error: Exception) {
             report("Rejected P2P signaling message.", error)
+        }
+    }
+
+    /** The receiver sends its ephemeral public key only after accepting this offer. */
+    fun publishReceiverPublicKey(publicKeyBase64: String, callback: (Exception?) -> Unit = {}) {
+        if (closed.get()) {
+            callback(IllegalStateException("Signaling bridge is closed."))
+            return
+        }
+        if (currentUid != offer.receiverUid ||
+            !com.superiorstudent.app.feature.transfer.data.P2pTransferValidation.isValidPublicKey(publicKeyBase64)
+        ) {
+            callback(IllegalArgumentException("Receiver ECDH public key is invalid."))
+            return
+        }
+        signaling.sendSignal(
+            conversationId = offer.conversationId,
+            transferId = offer.transferId,
+            targetUid = offer.senderUid,
+            type = P2pSignalType.KEY_EXCHANGE,
+            payload = mapOf("publicKey" to publicKeyBase64)
+        ) { _, error ->
+            if (error != null && !closed.get()) report("Could not publish ECDH public key.", error)
+            callback(error)
         }
     }
 
