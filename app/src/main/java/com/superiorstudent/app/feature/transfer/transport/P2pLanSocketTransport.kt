@@ -180,18 +180,60 @@ class P2pLanSocketTransport private constructor(
         }
 
         /**
-         * Wraps a socket already accepted by the LAN listener.
-         * Keep this internal until the pairing layer authorises accepted peers.
+         * Establishes TCP and completes the transfer-specific HMAC handshake before returning a
+         * data transport. The authentication secret came from the offer participants' Firestore
+         * signaling; it is never sent across the LAN socket.
          */
-        internal fun fromAcceptedSocket(socket: Socket, callback: Callback): P2pLanSocketTransport {
-            require(socket.isConnected && !socket.isClosed) { "A connected LAN socket is required." }
-            return createConnected(socket, callback)
+        @JvmStatic
+        @Throws(IOException::class)
+        fun connectAuthenticated(
+            address: InetAddress,
+            port: Int,
+            transferId: String,
+            token: String,
+            connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
+            handshakeTimeoutMs: Int = DEFAULT_HANDSHAKE_TIMEOUT_MS,
+            callback: Callback
+        ): P2pLanSocketTransport {
+            require(port in 1..65535) { "LAN peer port is invalid." }
+            require(connectTimeoutMs > 0 && handshakeTimeoutMs > 0) { "LAN timeouts must be positive." }
+            val socket = Socket()
+            try {
+                socket.connect(InetSocketAddress(address, port), connectTimeoutMs)
+                socket.soTimeout = handshakeTimeoutMs
+                P2pLanHandshake.authenticateClient(socket, transferId, token)
+                socket.soTimeout = 0
+                return createConnected(socket, callback)
+            } catch (error: Exception) {
+                runCatching { socket.close() }
+                if (error is IOException) throw error
+                throw IOException("LAN peer authentication failed.", error)
+            }
         }
 
-        private fun createConnected(socket: Socket, callback: Callback): P2pLanSocketTransport {
+        /**
+         * Wraps an already authenticated socket accepted by the LAN listener. [beforeReader]
+         * is invoked before the frame reader starts, so the owning runtime can store the transport
+         * before any received frame callback can fire.
+         */
+        internal fun fromAcceptedSocket(
+            socket: Socket,
+            callback: Callback,
+            beforeReader: (P2pLanSocketTransport) -> Unit = {}
+        ): P2pLanSocketTransport {
+            require(socket.isConnected && !socket.isClosed) { "A connected LAN socket is required." }
+            return createConnected(socket, callback, beforeReader)
+        }
+
+        private fun createConnected(
+            socket: Socket,
+            callback: Callback,
+            beforeReader: (P2pLanSocketTransport) -> Unit = {}
+        ): P2pLanSocketTransport {
             val transport = P2pLanSocketTransport(socket, callback)
             try {
                 callback.onConnected()
+                beforeReader(transport)
             } catch (error: Exception) {
                 transport.close()
                 throw IOException("LAN connected callback failed.", error)
@@ -201,5 +243,6 @@ class P2pLanSocketTransport private constructor(
         }
 
         private const val DEFAULT_CONNECT_TIMEOUT_MS = 10_000
+        private const val DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
     }
 }
