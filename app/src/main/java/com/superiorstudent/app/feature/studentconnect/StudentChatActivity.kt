@@ -240,23 +240,26 @@ class StudentChatActivity : AppCompatActivity() {
         sendButton.setOnClickListener { sendCurrentMessage() }
         transferControlButton.setOnClickListener { toggleOutgoingTransferPause() }
         attachFileButton.setOnClickListener {
-            if (conversation == null || chatUnavailable) {
-                statusText.text = "Open a valid chat before attaching a file."
-            } else {
-                PopupMenu(this, attachFileButton).apply {
-                    menu.add(0, 1, 0, "Send file in chat")
-                    menu.add(0, 2, 1, "Nearby offline transfer")
-                    setOnMenuItemClickListener { item ->
-                        when (item.itemId) {
-                            1 -> filePicker.launch(arrayOf("*/*"))
-                            2 -> startActivity(
-                                Intent(this@StudentChatActivity, P2pNearbyTransferActivity::class.java)
-                            )
+            PopupMenu(this, attachFileButton).apply {
+                val inChatItem = menu.add(0, 1, 0, "Send file in chat")
+                inChatItem.isEnabled = conversation != null && !chatUnavailable
+                menu.add(0, 2, 1, "Nearby offline transfer")
+                setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> {
+                            if (conversation == null || chatUnavailable) {
+                                statusText.text = "Open a connected chat to send a file in chat."
+                            } else {
+                                filePicker.launch(arrayOf("*/*"))
+                            }
                         }
-                        true
+                        2 -> startActivity(
+                            Intent(this@StudentChatActivity, P2pNearbyTransferActivity::class.java)
+                        )
                     }
-                }.show()
-            }
+                    true
+                }
+            }.show()
         }
         findViewById<TextView>(R.id.studentChatSelectedFileRemove).setOnClickListener {
             clearSelectedFile()
