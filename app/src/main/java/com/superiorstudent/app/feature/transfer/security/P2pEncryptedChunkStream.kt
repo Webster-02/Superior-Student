@@ -49,7 +49,8 @@ object P2pEncryptedChunkStream {
     class Sender(
         private val input: InputStream,
         private val key: SecretKey,
-        private val descriptor: TransferDescriptor
+        private val descriptor: TransferDescriptor,
+        initialOffset: Long = 0L
     ) : AutoCloseable {
         private var sequence = 0L
         private var bytesRead = 0L
@@ -57,6 +58,22 @@ object P2pEncryptedChunkStream {
         private var finished = false
         private var endFrameCreated = false
         private var endFrameSent = false
+
+        init {
+            require(isValidCheckpoint(initialOffset, descriptor.totalBytes, descriptor.chunkSize)) {
+                "Resume offset is not aligned to a verified chunk boundary."
+            }
+            var remaining = initialOffset
+            while (remaining > 0L) {
+                val block = readAtMost(input, minOf(descriptor.chunkSize.toLong(), remaining).toInt())
+                require(block.isNotEmpty()) { "Source file is shorter than the saved checkpoint." }
+                digest.update(block)
+                bytesRead = Math.addExact(bytesRead, block.size.toLong())
+                remaining -= block.size.toLong()
+                block.fill(0)
+            }
+            sequence = sequenceForOffset(initialOffset, descriptor.totalBytes, descriptor.chunkSize)
+        }
 
         val bytesProcessed: Long get() = bytesRead
 
@@ -110,13 +127,45 @@ object P2pEncryptedChunkStream {
     class Receiver(
         private val output: OutputStream,
         private val key: SecretKey,
-        private val descriptor: TransferDescriptor
+        private val descriptor: TransferDescriptor,
+        initialBytes: Long = 0L,
+        prefixInput: InputStream? = null
     ) : AutoCloseable {
         private var expectedSequence = 0L
         private var bytesWritten = 0L
         private val digest = MessageDigest.getInstance("SHA-256")
         private var completed = false
         private var failed = false
+
+        init {
+            require(isValidCheckpoint(initialBytes, descriptor.totalBytes, descriptor.chunkSize)) {
+                "Resume offset is not aligned to a verified chunk boundary."
+            }
+            if (initialBytes == 0L) {
+                require(prefixInput == null) { "A prefix stream is unexpected for a new transfer." }
+            } else {
+                requireNotNull(prefixInput) { "Existing partial data is required to resume." }
+                prefixInput.use { prefix ->
+                    val buffer = ByteArray(32 * 1024)
+                    var remaining = initialBytes
+                    try {
+                        while (remaining > 0L) {
+                            val count = prefix.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                            require(count >= 0) { "Saved partial file is shorter than its checkpoint." }
+                            if (count == 0) continue
+                            digest.update(buffer, 0, count)
+                            bytesWritten = Math.addExact(bytesWritten, count.toLong())
+                            remaining -= count.toLong()
+                        }
+                        require(prefix.read() == -1) { "Saved partial file exceeds its checkpoint." }
+                    } finally {
+                        buffer.fill(0)
+                    }
+                }
+            }
+            require(bytesWritten == initialBytes) { "Saved partial file length does not match checkpoint." }
+            expectedSequence = sequenceForOffset(initialBytes, descriptor.totalBytes, descriptor.chunkSize)
+        }
 
         fun acceptFrame(frame: ByteArray) {
             check(!completed && !failed) { "Receiver is no longer accepting frames." }
@@ -202,6 +251,20 @@ object P2pEncryptedChunkStream {
 
         val bytesReceived: Long get() = bytesWritten
         val isComplete: Boolean get() = completed && !failed
+    }
+
+    /** Only complete plaintext chunks can be resumed. Total bytes is allowed for a lost end frame. */
+    fun isValidCheckpoint(offset: Long, totalBytes: Long, chunkSize: Int): Boolean {
+        if (totalBytes < 0L || chunkSize !in 1024..MAX_CHUNK_BYTES) return false
+        if (offset < 0L || offset > totalBytes) return false
+        return offset == 0L || offset == totalBytes || offset % chunkSize.toLong() == 0L
+    }
+
+    private fun sequenceForOffset(offset: Long, totalBytes: Long, chunkSize: Int): Long {
+        if (offset == totalBytes && offset % chunkSize.toLong() != 0L) {
+            return offset / chunkSize.toLong() + 1L
+        }
+        return offset / chunkSize.toLong()
     }
 
     private fun encodeChunk(sequence: Long, plainLength: Int, nonce: ByteArray, ciphertext: ByteArray): ByteArray {
