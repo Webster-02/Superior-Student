@@ -58,6 +58,8 @@ object P2pEncryptedChunkStream {
         private var endFrameCreated = false
         private var endFrameSent = false
 
+        val bytesProcessed: Long get() = bytesRead
+
         fun nextFrame(): ByteArray? {
             check(!finished && !endFrameCreated) { "Sender is already finished." }
             val block = readAtMost(input, descriptor.chunkSize)
