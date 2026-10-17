@@ -287,10 +287,76 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/studentChatSelectedFilePanel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="7dp"
+                android:background="@color/sc_chat_status"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="5dp"
+                android:paddingBottom="8dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/studentChatSelectedFileName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="middle"
+                        android:maxLines="1"
+                        android:textColor="@color/sc_text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/studentChatSelectedFileDetails"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:textColor="@color/sc_text_muted"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/studentChatSelectedFileRemove"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="Remove selected file"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:text="×"
+                    android:textColor="@color/sc_text_muted"
+                    android:textSize="22sp" />
+            </LinearLayout>
+
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="bottom"
                 android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/studentChatAttachFileButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:contentDescription="Attach file"
+                    android:text="＋"
+                    android:textAllCaps="false"
+                    android:textColor="@color/sc_text_primary"
+                    android:textSize="22sp"
+                    app:backgroundTint="@color/sc_chat_status"
+                    app:cornerRadius="15dp"
+                    app:strokeColor="@color/sc_border"
+                    app:strokeWidth="1dp" />
 
                 <EditText
                     android:id="@+id/studentChatMessageInput"
