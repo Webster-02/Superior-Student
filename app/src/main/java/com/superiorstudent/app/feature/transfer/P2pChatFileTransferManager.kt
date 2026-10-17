@@ -1010,14 +1010,53 @@ class P2pChatFileTransferManager(
                 receiver.close()
                 promoteVerifiedFile(runtime)
                 if (runtime.completed.compareAndSet(false, true)) {
-                    signaling.completeTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
-                        if (error != null) {
-                            runtime.completed.set(false)
-                            failRuntime(runtime, "File was received, but completion could not be confirmed.", error, false)
+                    val localTransport = runtime.lanTransport
+                    val localToken = runtime.lanLocalToken
+                    val receiptSent = if (localTransport != null && !localToken.isNullOrBlank()) {
+                        val receipt = runCatching {
+                            P2pLanCompletionAck.create(
+                                runtime.offer.transferId,
+                                runtime.offer.sha256,
+                                localToken
+                            )
+                        }.getOrNull()
+                        if (receipt == null) {
+                            false
                         } else {
-                            callbackStatus(runtime.offer.fileName, "File received and SHA-256 verified.")
-                            callbackComplete(runtime.offer.fileName, false)
-                            disposeRuntime(runtime, deleteDestination = false)
+                            try {
+                                localTransport.sendEncryptedFrame(receipt)
+                            } finally {
+                                receipt.fill(0)
+                            }
+                        }
+                    } else {
+                        false
+                    }
+
+                    if (receiptSent) {
+                        // The receiver has already verified and saved the file. The authenticated
+                        // local receipt is sufficient to finish on both phones if Internet is lost.
+                        signaling.completeTransfer(
+                            runtime.offer.conversationId,
+                            runtime.offer.transferId
+                        ) { /* Best effort only; local receipt is authoritative for this LAN session. */ }
+                        callbackStatus(
+                            runtime.offer.fileName,
+                            "File received and SHA-256 verified over local Wi-Fi."
+                        )
+                        callbackComplete(runtime.offer.fileName, false)
+                        disposeRuntime(runtime, deleteDestination = false)
+                    } else {
+                        signaling.completeTransfer(runtime.offer.conversationId, runtime.offer.transferId) { error ->
+                            if (runtime.disposed.get()) return@completeTransfer
+                            if (error != null) {
+                                runtime.completed.set(false)
+                                failRuntime(runtime, "File was received, but completion could not be confirmed.", error, false)
+                            } else {
+                                callbackStatus(runtime.offer.fileName, "File received and SHA-256 verified.")
+                                callbackComplete(runtime.offer.fileName, false)
+                                disposeRuntime(runtime, deleteDestination = false)
+                            }
                         }
                     }
                 }
@@ -1121,6 +1160,7 @@ class P2pChatFileTransferManager(
         runtime.lanTransport = null
         runtime.lanCandidate = null
         runtime.lanPeer = null
+        runtime.lanLocalToken = null
         runCatching { runtime.senderStream?.close() }
         runCatching { runtime.receiverStream?.close() }
         runtime.receiveExecutor.shutdownNow()
