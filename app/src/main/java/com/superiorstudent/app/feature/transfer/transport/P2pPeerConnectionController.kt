@@ -26,6 +26,7 @@ class P2pPeerConnectionController(
     interface Listener {
         fun onLocalSignal(type: SignalType, payload: Map<String, Any?>)
         fun onStateChanged(state: PeerConnection.PeerConnectionState, detail: String? = null)
+        fun onLocalDataChannel(channel: DataChannel) = Unit
         fun onRemoteDataChannel(channel: DataChannel)
         fun onError(message: String, error: Throwable? = null)
     }
@@ -38,10 +39,24 @@ class P2pPeerConnectionController(
     @Volatile private var remoteDescriptionSet = false
     @Volatile private var pendingCandidates: MutableList<IceCandidate> = mutableListOf()
     @Volatile private var offerCreating = false
+    @Volatile private var localChannelCreated = false
 
     fun startAsOfferer(): Boolean {
         if (!preparePeer()) return false
         val connection = peer ?: return false
+        if (!localChannelCreated) {
+            val init = DataChannel.Init().apply {
+                ordered = true
+                negotiated = false
+            }
+            val channel = connection.createDataChannel(P2pDataChannelTransport.CHANNEL_LABEL, init)
+            if (channel == null) {
+                listener.onError("WebRTC could not create the file DataChannel.")
+                return false
+            }
+            localChannelCreated = true
+            listener.onLocalDataChannel(channel)
+        }
         offerCreating = true
         connection.createOffer(object : SdpObserverAdapter() {
             override fun onCreateSuccess(description: SessionDescription) {
