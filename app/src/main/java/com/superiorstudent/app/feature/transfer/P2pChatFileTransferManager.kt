@@ -519,6 +519,268 @@ class P2pChatFileTransferManager(
         }
     }
 
+    /**
+     * The receiver opens one short-lived TCP listener only after the user accepts the offer.
+     * Its random token is sent to the authenticated sender via Firestore, never in mDNS TXT data
+     * and never directly over the LAN socket.
+     */
+    private fun startLanReceiverEndpoint(runtime: RuntimeTransfer) {
+        workExecutor.execute {
+            if (closed.get() || runtime.disposed.get()) return@execute
+            var listener: P2pLanSocketListener? = null
+            var discovery: P2pLanDiscovery? = null
+            try {
+                val createdListener = P2pLanSocketListener(runtime.offer.transferId,
+                    object : P2pLanSocketListener.Callback {
+                        override fun onAuthenticatedTransport(transport: P2pLanSocketTransport) {
+                            if (closed.get() || runtime.disposed.get()) {
+                                transport.close()
+                                return
+                            }
+                            runtime.lanTransport = transport
+                            callbackStatus(
+                                runtime.offer.fileName,
+                                "Authenticated direct Wi-Fi connection established. Receiving encrypted file…"
+                            )
+                        }
+
+                        override fun onError(error: Exception) {
+                            if (runtime.disposed.get() || runtime.completed.get()) return
+                            if (runtime.lanTransport != null) {
+                                failRuntime(
+                                    runtime,
+                                    "Direct LAN connection was interrupted. Restart the file transfer.",
+                                    error,
+                                    deleteDestination = true
+                                )
+                            } else {
+                                callbackStatus(
+                                    runtime.offer.fileName,
+                                    "Direct LAN unavailable; keeping the encrypted WebRTC fallback ready."
+                                )
+                            }
+                        }
+                    })
+                listener = createdListener
+                val endpoint = createdListener.start()
+                runtime.lanListener = createdListener
+
+                val createdDiscovery = P2pLanDiscovery(appContext,
+                    object : P2pLanDiscovery.Callback {
+                        override fun onPeerDiscovered(peer: P2pLanDiscovery.Peer) = Unit
+                        override fun onPeerLost(serviceName: String) = Unit
+                        override fun onAdvertised(serviceName: String) {
+                            callbackStatus(
+                                runtime.offer.fileName,
+                                "Advertising a temporary local endpoint for this accepted transfer…"
+                            )
+                        }
+                        override fun onError(operation: String, errorCode: Int) {
+                            if (!runtime.disposed.get()) {
+                                callbackStatus(
+                                    runtime.offer.fileName,
+                                    "LAN discovery unavailable; the secure WebRTC fallback remains available."
+                                )
+                            }
+                        }
+                    })
+                discovery = createdDiscovery
+                runtime.lanDiscovery = createdDiscovery
+
+                if (!createdDiscovery.advertise(runtime.offer.transferId, endpoint.port)) {
+                    throw IllegalStateException("Android could not advertise the local LAN endpoint.")
+                }
+
+                val coordinator = runtime.coordinator
+                    ?: throw IllegalStateException("Authenticated transfer signaling is not ready.")
+                coordinator.publishLanCandidate(endpoint.ip, endpoint.port, endpoint.token) { error ->
+                    if (runtime.disposed.get()) return@publishLanCandidate
+                    if (error != null) {
+                        createdDiscovery.close()
+                        createdListener.close()
+                        if (runtime.lanDiscovery === createdDiscovery) runtime.lanDiscovery = null
+                        if (runtime.lanListener === createdListener) runtime.lanListener = null
+                        callbackStatus(
+                            runtime.offer.fileName,
+                            "Could not share the LAN endpoint; the secure WebRTC fallback remains available."
+                        )
+                    } else {
+                        callbackStatus(
+                            runtime.offer.fileName,
+                            "Local endpoint ready. Waiting for the sender to verify this device…"
+                        )
+                    }
+                }
+            } catch (error: Exception) {
+                runCatching { discovery?.close() }
+                runCatching { listener?.close() }
+                if (runtime.lanDiscovery === discovery) runtime.lanDiscovery = null
+                if (runtime.lanListener === listener) runtime.lanListener = null
+                if (!runtime.disposed.get()) {
+                    callbackStatus(
+                        runtime.offer.fileName,
+                        "Direct LAN setup unavailable; the secure WebRTC fallback remains available."
+                    )
+                }
+            }
+        }
+    }
+
+    /** Sender discovers only the one-time service belonging to this accepted transfer. */
+    private fun startLanDiscovery(runtime: RuntimeTransfer) {
+        val discovery = P2pLanDiscovery(appContext,
+            object : P2pLanDiscovery.Callback {
+                override fun onPeerDiscovered(peer: P2pLanDiscovery.Peer) {
+                    if (closed.get() || runtime.disposed.get() || !runtime.outgoing) return
+                    if (peer.sessionId != runtime.offer.transferId) return
+                    if (peer.host !is Inet4Address ||
+                        !P2pTransferValidation.isPrivateLanAddress(peer.host.hostAddress)
+                    ) return
+                    runtime.lanPeer = peer
+                    tryConnectLanSender(runtime)
+                }
+
+                override fun onPeerLost(serviceName: String) {
+                    if (runtime.lanPeer?.serviceName == serviceName) runtime.lanPeer = null
+                }
+
+                override fun onAdvertised(serviceName: String) = Unit
+
+                override fun onError(operation: String, errorCode: Int) {
+                    if (!runtime.disposed.get() && !runtime.lanPathDecisionMade.get()) {
+                        callbackStatus(
+                            runtime.offer.fileName,
+                            "Local discovery is unavailable; waiting for the secure WebRTC fallback."
+                        )
+                    }
+                }
+            })
+        runtime.lanDiscovery = discovery
+        if (!discovery.startDiscovery()) {
+            chooseWebRtcFallback(runtime, "Local discovery could not start; using secure WebRTC.")
+        }
+    }
+
+    private fun handleRemoteLanCandidate(runtime: RuntimeTransfer, payload: Map<String, Any?>) {
+        if (!runtime.outgoing || runtime.disposed.get() || runtime.lanPathDecisionMade.get()) return
+        val ip = payload["ip"] as? String
+        val port = (payload["port"] as? Number)?.toInt()
+        val token = payload["token"] as? String
+        if (ip.isNullOrBlank() || port !in 1..65535 || token.isNullOrBlank() ||
+            !P2pTransferValidation.isPrivateLanAddress(ip) || token.length !in 32..128
+        ) {
+            chooseWebRtcFallback(runtime, "Invalid LAN endpoint; using secure WebRTC.")
+            return
+        }
+        runtime.lanCandidate = LanCandidate(ip, port, token)
+        tryConnectLanSender(runtime)
+    }
+
+    private fun tryConnectLanSender(runtime: RuntimeTransfer) {
+        if (!runtime.outgoing || runtime.disposed.get() || runtime.completed.get() ||
+            runtime.lanPathDecisionMade.get() || runtime.sending.get()
+        ) return
+        val peer = runtime.lanPeer ?: return
+        val candidate = runtime.lanCandidate ?: return
+        if (!runtime.lanConnectStarted.compareAndSet(false, true)) return
+
+        // Require the NSD result and authenticated Firestore candidate to identify the same endpoint.
+        // If the router/device returns a different interface address, fail closed to WebRTC.
+        if (peer.sessionId != runtime.offer.transferId ||
+            peer.port != candidate.port ||
+            peer.host.hostAddress != candidate.ip
+        ) {
+            chooseWebRtcFallback(runtime, "LAN endpoint could not be verified through local discovery.")
+            return
+        }
+
+        callbackStatus(runtime.offer.fileName, "Verifying the local Wi-Fi endpoint…")
+        workExecutor.execute {
+            try {
+                val transport = P2pLanSocketTransport.connectAuthenticated(
+                    address = peer.host,
+                    port = candidate.port,
+                    transferId = runtime.offer.transferId,
+                    token = candidate.token,
+                    connectTimeoutMs = LAN_CONNECT_TIMEOUT_MS,
+                    handshakeTimeoutMs = LAN_HANDSHAKE_TIMEOUT_MS,
+                    callback = object : P2pLanSocketTransport.Callback {
+                        override fun onEncryptedFrame(frame: ByteArray) {
+                            frame.fill(0)
+                            if (!runtime.disposed.get()) {
+                                failRuntime(
+                                    runtime,
+                                    "Unexpected reverse-direction LAN data was rejected.",
+                                    null,
+                                    deleteDestination = false
+                                )
+                            }
+                        }
+
+                        override fun onError(error: Exception) {
+                            if (!runtime.disposed.get() && !runtime.completed.get()) {
+                                failRuntime(
+                                    runtime,
+                                    "Direct LAN connection was interrupted. Restart the file transfer.",
+                                    error,
+                                    deleteDestination = false
+                                )
+                            }
+                        }
+                    }
+                )
+
+                if (runtime.disposed.get() || runtime.sending.get() ||
+                    !runtime.lanPathDecisionMade.compareAndSet(false, true)
+                ) {
+                    transport.close()
+                    return@execute
+                }
+                runtime.lanTransport = transport
+                runtime.lanDiscovery?.stopDiscovery()
+                callbackStatus(
+                    runtime.offer.fileName,
+                    "Direct Wi-Fi connection authenticated. Sending encrypted file locally…"
+                )
+                maybeStartSender(runtime)
+            } catch (error: Exception) {
+                if (!runtime.disposed.get()) {
+                    chooseWebRtcFallback(runtime, "Direct LAN connection failed; using secure WebRTC.")
+                }
+            }
+        }
+    }
+
+    private fun scheduleLanFallback(runtime: RuntimeTransfer) {
+        if (!runtime.outgoing || !runtime.lanFallbackScheduled.compareAndSet(false, true)) return
+        workExecutor.execute {
+            try {
+                Thread.sleep(LAN_DISCOVERY_GRACE_MS)
+            } catch (_: InterruptedException) {
+                return@execute
+            }
+            if (!runtime.disposed.get() && !runtime.completed.get() &&
+                runtime.lanPathDecisionMade.compareAndSet(false, true)
+            ) {
+                runtime.lanDiscovery?.stopDiscovery()
+                callbackStatus(
+                    runtime.offer.fileName,
+                    "No verified LAN endpoint found; sending through the secure WebRTC route."
+                )
+                maybeStartSender(runtime)
+            }
+        }
+    }
+
+    private fun chooseWebRtcFallback(runtime: RuntimeTransfer, status: String) {
+        if (!runtime.outgoing || runtime.disposed.get() || runtime.completed.get()) return
+        if (runtime.lanPathDecisionMade.compareAndSet(false, true)) {
+            runtime.lanDiscovery?.stopDiscovery()
+            callbackStatus(runtime.offer.fileName, status)
+            maybeStartSender(runtime)
+        }
+    }
+
     private fun runSender(runtime: RuntimeTransfer) {
         val sourceUri = runtime.sourceUri
         val key = runtime.key
