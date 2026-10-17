@@ -3,6 +3,7 @@ package com.superiorstudent.app.feature.studentconnect
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
+import android.net.Uri
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
@@ -18,6 +19,7 @@ import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.google.android.material.card.MaterialCardView
 import com.google.firebase.auth.FirebaseAuth
@@ -37,6 +39,8 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPresence
 import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceFormatter
 import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectPresenceTracker
+import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadata
+import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadataReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,6 +59,11 @@ class StudentChatActivity : AppCompatActivity() {
     private lateinit var emptyStateText: TextView
     private lateinit var messageInput: EditText
     private lateinit var sendButton: Button
+    private lateinit var attachFileButton: TextView
+    private lateinit var selectedFilePanel: LinearLayout
+    private lateinit var selectedFileNameText: TextView
+    private lateinit var selectedFileDetailsText: TextView
+    private var selectedFileMetadata: P2pTransferFileMetadata? = null
     private lateinit var replyPreview: LinearLayout
     private lateinit var replyPreviewTitle: TextView
     private lateinit var replyPreviewBody: TextView
@@ -97,6 +106,14 @@ class StudentChatActivity : AppCompatActivity() {
     private var isSending = false
     private var chatUnavailable = false
 
+    private val filePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) {
+            statusText.text = "File selection cancelled."
+            return@registerForActivityResult
+        }
+        handlePickedFile(uri)
+    }
+
     private val typingIdleRunnable = Runnable { stopLocalTypingState() }
     private val typingHeartbeatRunnable = object : Runnable {
         override fun run() {
@@ -137,6 +154,17 @@ class StudentChatActivity : AppCompatActivity() {
             statusText.text = "Reply cancelled."
         }
         sendButton.setOnClickListener { sendCurrentMessage() }
+        attachFileButton.setOnClickListener {
+            if (conversation == null || chatUnavailable) {
+                statusText.text = "Open a valid chat before attaching a file."
+            } else {
+                filePicker.launch(arrayOf("*/*"))
+            }
+        }
+        findViewById<TextView>(R.id.studentChatSelectedFileRemove).setOnClickListener {
+            clearSelectedFile()
+            statusText.text = "Selected file removed."
+        }
 
         val user = auth.currentUser
         when {
@@ -223,11 +251,16 @@ class StudentChatActivity : AppCompatActivity() {
         emptyStateText = findViewById(R.id.studentChatEmptyState)
         messageInput = findViewById(R.id.studentChatMessageInput)
         sendButton = findViewById(R.id.studentChatSendButton)
+        attachFileButton = findViewById(R.id.studentChatAttachFileButton)
+        selectedFilePanel = findViewById(R.id.studentChatSelectedFilePanel)
+        selectedFileNameText = findViewById(R.id.studentChatSelectedFileName)
+        selectedFileDetailsText = findViewById(R.id.studentChatSelectedFileDetails)
         replyPreview = findViewById(R.id.studentChatReplyPreview)
         replyPreviewTitle = findViewById(R.id.studentChatReplyPreviewTitle)
         replyPreviewBody = findViewById(R.id.studentChatReplyPreviewBody)
         clearReplyButton = findViewById(R.id.studentChatReplyPreviewClose)
         replyPreview.visibility = View.GONE
+        selectedFilePanel.visibility = View.GONE
         typingIndicatorText.visibility = View.GONE
         messageInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -746,6 +779,27 @@ class StudentChatActivity : AppCompatActivity() {
         } else {
             typingHandler.removeCallbacks(remoteTypingExpiryRunnable)
         }
+    }
+
+    private fun handlePickedFile(uri: Uri) {
+        val metadata = runCatching { P2pTransferFileMetadataReader.read(this, uri) }.getOrNull()
+        if (metadata == null) {
+            clearSelectedFile()
+            statusText.text = "Could not read this file. Please choose another file."
+            return
+        }
+        selectedFileMetadata = metadata
+        selectedFileNameText.text = metadata.fileName
+        selectedFileDetailsText.text = "${metadata.mimeType} · ${P2pTransferFileMetadataReader.formatBytes(metadata.sizeBytes)}\nReady to attach. Transfer has not started."
+        selectedFilePanel.visibility = View.VISIBLE
+        statusText.text = "File selected. It has not been sent yet."
+    }
+
+    private fun clearSelectedFile() {
+        selectedFileMetadata = null
+        if (::selectedFilePanel.isInitialized) selectedFilePanel.visibility = View.GONE
+        if (::selectedFileNameText.isInitialized) selectedFileNameText.text = ""
+        if (::selectedFileDetailsText.isInitialized) selectedFileDetailsText.text = ""
     }
 
     private fun sendCurrentMessage() {
