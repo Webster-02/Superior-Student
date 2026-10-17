@@ -543,9 +543,16 @@ class P2pChatFileTransferManager(
     }
 
     private fun sendFrameWithBackpressure(runtime: RuntimeTransfer, frame: ByteArray) {
-        val deadline = System.currentTimeMillis() + SEND_FRAME_TIMEOUT_MS
+        var deadline = System.currentTimeMillis() + SEND_FRAME_TIMEOUT_MS
         while (true) {
-            waitWhilePaused(runtime)
+            if (runtime.pauseRequested) {
+                val pauseStartedAt = System.currentTimeMillis()
+                waitWhilePaused(runtime)
+                // An intentional user pause must not consume the channel-stall timeout.
+                deadline += System.currentTimeMillis() - pauseStartedAt
+            } else {
+                waitWhilePaused(runtime)
+            }
             val coordinator = runtime.coordinator ?: throw IllegalStateException("WebRTC session closed.")
             if (coordinator.currentDataChannelState() == P2pDataChannelTransport.State.CONNECTED &&
                 coordinator.sendEncryptedFrame(frame)
