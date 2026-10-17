@@ -74,6 +74,12 @@ class StudentChatActivity : AppCompatActivity() {
     private lateinit var replyPreviewTitle: TextView
     private lateinit var replyPreviewBody: TextView
     private lateinit var clearReplyButton: TextView
+    private lateinit var transferControlButton: com.google.android.material.button.MaterialButton
+
+    private var activeOutgoingTransferId: String? = null
+    private var activeOutgoingFileName: String? = null
+    private var activeOutgoingPaused = false
+    private var transferControlRequestInFlight = false
 
     private val chatRepository by lazy { StudentChatRepository() }
     private val profileRepository by lazy { StudentProfileRepository() }
@@ -84,7 +90,10 @@ class StudentChatActivity : AppCompatActivity() {
             this,
             object : P2pChatFileTransferManager.Callback {
                 override fun onStatus(fileName: String, detail: String) {
-                    if (::statusText.isInitialized && !chatUnavailable) statusText.text = fileName + " · " + detail
+                    if (::statusText.isInitialized && !chatUnavailable) {
+                        statusText.text = fileName + " · " + detail
+                    }
+                    updateOutgoingTransferControl(fileName, detail)
                 }
 
                 override fun onCompleted(fileName: String, outgoing: Boolean) {
@@ -95,6 +104,7 @@ class StudentChatActivity : AppCompatActivity() {
                             "File received and SHA-256 verified: " + fileName
                         }
                     }
+                    if (outgoing) clearOutgoingTransferControl(fileName)
                     Toast.makeText(
                         this@StudentChatActivity,
                         if (outgoing) "File transfer completed" else "File received",
@@ -107,6 +117,7 @@ class StudentChatActivity : AppCompatActivity() {
                         statusText.setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_danger))
                         statusText.text = fileName + " · " + message
                     }
+                    clearOutgoingTransferControl(fileName)
                     if (error != null) Log.w(TAG, "P2P file transfer error: " + message, error)
                 }
             },
@@ -225,6 +236,7 @@ class StudentChatActivity : AppCompatActivity() {
             statusText.text = "Reply cancelled."
         }
         sendButton.setOnClickListener { sendCurrentMessage() }
+        transferControlButton.setOnClickListener { toggleOutgoingTransferPause() }
         attachFileButton.setOnClickListener {
             if (conversation == null || chatUnavailable) {
                 statusText.text = "Open a valid chat before attaching a file."
@@ -324,6 +336,8 @@ class StudentChatActivity : AppCompatActivity() {
         contactPresenceText = findViewById(R.id.studentChatPresenceIndicator)
         typingIndicatorText = findViewById(R.id.studentChatTypingIndicator)
         statusText = findViewById(R.id.studentChatStatus)
+        transferControlButton = findViewById(R.id.studentChatTransferControl)
+        transferControlButton.visibility = View.GONE
         messagesScroll = findViewById(R.id.studentChatMessagesScroll)
         messagesContainer = findViewById(R.id.studentChatMessagesContainer)
         emptyStateText = findViewById(R.id.studentChatEmptyState)
@@ -943,6 +957,77 @@ class StudentChatActivity : AppCompatActivity() {
         if (::selectedFileDetailsText.isInitialized) selectedFileDetailsText.text = ""
     }
 
+    private fun updateOutgoingTransferControl(fileName: String, detail: String) {
+        if (!::transferControlButton.isInitialized ||
+            activeOutgoingTransferId.isNullOrBlank() ||
+            activeOutgoingFileName != fileName
+        ) return
+
+        when {
+            detail.contains("paused", ignoreCase = true) -> {
+                activeOutgoingPaused = true
+                transferControlButton.text = "Resume transfer"
+                transferControlButton.visibility = View.VISIBLE
+            }
+            detail.contains("resumed", ignoreCase = true) ||
+                detail.contains("Sending encrypted file", ignoreCase = true) -> {
+                activeOutgoingPaused = false
+                transferControlButton.text = "Pause transfer"
+                transferControlButton.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun toggleOutgoingTransferPause() {
+        val transferId = activeOutgoingTransferId
+        if (transferId.isNullOrBlank() || transferControlRequestInFlight || chatUnavailable) return
+
+        transferControlRequestInFlight = true
+        transferControlButton.isEnabled = false
+        val requestedPause = !activeOutgoingPaused
+        val resultCallback: (Exception?) -> Unit = { error ->
+            runOnUiThread {
+                transferControlRequestInFlight = false
+                if (!::transferControlButton.isInitialized) return@runOnUiThread
+                transferControlButton.isEnabled = true
+                if (error != null) {
+                    statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_danger))
+                    statusText.text = (if (requestedPause) "Could not pause the transfer. " else "Could not resume the transfer. ") +
+                        (error.message ?: "Please try again.")
+                } else {
+                    activeOutgoingPaused = requestedPause
+                    transferControlButton.text = if (activeOutgoingPaused) "Resume transfer" else "Pause transfer"
+                    transferControlButton.visibility = View.VISIBLE
+                    statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+                    statusText.text = if (activeOutgoingPaused) {
+                        "File transfer paused. The secure connection remains open."
+                    } else {
+                        "File transfer resumed."
+                    }
+                }
+            }
+        }
+
+        if (requestedPause) {
+            fileTransferManager.pauseOutgoingTransfer(transferId, resultCallback)
+        } else {
+            fileTransferManager.resumeOutgoingTransfer(transferId, resultCallback)
+        }
+    }
+
+    private fun clearOutgoingTransferControl(fileName: String) {
+        if (activeOutgoingFileName != fileName) return
+        activeOutgoingTransferId = null
+        activeOutgoingFileName = null
+        activeOutgoingPaused = false
+        transferControlRequestInFlight = false
+        if (::transferControlButton.isInitialized) {
+            transferControlButton.visibility = View.GONE
+            transferControlButton.isEnabled = true
+            transferControlButton.text = "Pause transfer"
+        }
+    }
+
     private fun sendCurrentMessage() {
         val user = auth.currentUser
         val profile = currentProfile
@@ -974,6 +1059,12 @@ class StudentChatActivity : AppCompatActivity() {
                         statusText.text = "File not sent. " + (error?.message ?: "Please try again.")
                         Log.w(TAG, "Could not create file offer.", error)
                     } else {
+                        activeOutgoingTransferId = offer.transferId
+                        activeOutgoingFileName = selectedFile.fileName
+                        activeOutgoingPaused = false
+                        transferControlRequestInFlight = false
+                        transferControlButton.visibility = View.GONE
+                        transferControlButton.text = "Pause transfer"
                         clearSelectedFile()
                         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
                         statusText.text = "File offer sent. Waiting for " + otherDisplayName + " to accept…"
