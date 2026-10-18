@@ -405,7 +405,7 @@
                 android:id="@+id/dashboardHeader"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@color/page_bg">
+                android:background="@color/bg">
 
                 <LinearLayout
                     android:id="@+id/welcomeCard"
@@ -554,7 +554,7 @@
                         android:layout_height="20dp"
                         android:layout_gravity="center"
                         android:src="@drawable/ic_pt_arrow_right"
-                        android:tint="@color/page_bg"
+                        android:tint="@color/bg"
                         android:contentDescription="@null" />
                 </FrameLayout>
             </LinearLayout>
@@ -574,7 +574,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginEnd="5dp"
-                    android:background="@color/lavender"
+                    android:background="@color/lav"
                     android:orientation="vertical"
                     android:padding="14dp">
                     <TextView
@@ -675,7 +675,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="0dp"
                     android:layout_marginEnd="4dp"
-                    android:background="@color/card_bg"
+                    android:background="@color/card"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
@@ -690,7 +690,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="4dp"
                     android:layout_marginEnd="4dp"
-                    android:background="@color/card_bg"
+                    android:background="@color/card"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
@@ -705,7 +705,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="4dp"
                     android:layout_marginEnd="4dp"
-                    android:background="@color/card_bg"
+                    android:background="@color/card"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
@@ -720,7 +720,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="4dp"
                     android:layout_marginEnd="0dp"
-                    android:background="@color/card_bg"
+                    android:background="@color/card"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
@@ -749,7 +749,7 @@
         android:layout_marginStart="14dp"
         android:layout_marginEnd="14dp"
         android:layout_marginBottom="16dp"
-        android:background="@color/nav_bg"
+        android:background="@color/nav"
         android:elevation="22dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
@@ -813,7 +813,7 @@
                 android:text="Timetable"
                 android:textSize="13sp"
                 android:fontFamily="@font/poppins_medium"
-                android:textColor="@color/nav_icon"
+                android:textColor="@color/nav_ic"
                 android:includeFontPadding="false" />
         </LinearLayout>
 
@@ -842,7 +842,7 @@
                 android:text="Attendance"
                 android:textSize="13sp"
                 android:fontFamily="@font/poppins_medium"
-                android:textColor="@color/nav_icon"
+                android:textColor="@color/nav_ic"
                 android:includeFontPadding="false" />
         </LinearLayout>
 
@@ -871,7 +871,7 @@
                 android:text="Results"
                 android:textSize="13sp"
                 android:fontFamily="@font/poppins_medium"
-                android:textColor="@color/nav_icon"
+                android:textColor="@color/nav_ic"
                 android:includeFontPadding="false" />
         </LinearLayout>
 
@@ -900,7 +900,7 @@
                 android:text="More"
                 android:textSize="13sp"
                 android:fontFamily="@font/poppins_medium"
-                android:textColor="@color/nav_icon"
+                android:textColor="@color/nav_ic"
                 android:includeFontPadding="false" />
         </LinearLayout>
     </LinearLayout>

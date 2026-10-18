@@ -48,6 +48,8 @@ import com.superiorstudent.app.databinding.ActivityMainBinding
 import com.superiorstudent.app.ui.Palette
 import com.superiorstudent.app.ui.AppTheme
 import com.superiorstudent.app.ui.AppThemePreferences
+import com.superiorstudent.app.ui.HomeDisplayRules
+import com.superiorstudent.app.ui.components.*
 
 import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.data.model.AttendanceDetailLink
@@ -79,6 +81,7 @@ class MainActivity : AppCompatActivity() {
     private var webViewReady = false
     private var activityResumed = false
     private var dashboardEntranceAnimated = false
+    private var homePreloadComplete = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
     private val profileCache by lazy { ProfileCache(this) }
@@ -157,6 +160,7 @@ class MainActivity : AppCompatActivity() {
         // The manifest handles uiMode changes without recreating MainActivity.
         // Re-apply semantic tokens so Auto follows the newly selected system appearance.
         applySelectedTheme()
+        if (::binding.isInitialized && binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
     }
 
     private fun safeOnCreate(savedInstanceState: Bundle?) {
@@ -201,6 +205,7 @@ class MainActivity : AppCompatActivity() {
             loginProbeInProgress = false
             loginProbeAttempts = 0
             profileReadAttempts = 0
+            homePreloadComplete = false
             erpRepository.clearCache()
             binding.loginButton.isEnabled = false
             binding.loginStatus.setTextColor(Palette.ink500(this@MainActivity))
@@ -235,6 +240,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.RESULTS) }
+        binding.menuInvoicesButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.FEE) }
         binding.menuEnrolledCoursesButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.ENROLLED_COURSES) }
         binding.menuSettingsButton.setOnClickListener { closeSideMenu(); showThemePicker() }
         binding.menuLogoutButton.setOnClickListener { closeSideMenu(); logout() }
@@ -252,6 +258,7 @@ class MainActivity : AppCompatActivity() {
         attachPressFeedback(binding.navResultsButton)
         attachPressFeedback(binding.navMoreButton)
         attachPressFeedback(binding.menuStudentConnectButton)
+        attachPressFeedback(binding.menuInvoicesButton)
 
         val hasSavedSession = try { sessionStore.sessionActive } catch (t: Throwable) {
             android.util.Log.w("MainActivity", "Ignoring unreadable saved session", t)
@@ -899,16 +906,12 @@ class MainActivity : AppCompatActivity() {
                 sgpa = findGpaInText(cards, bodyText, "SGPA")
                 hasUsefulProfileFields = json.optBoolean("hasUsefulFields", false)
 
-                if (ParsingUtils.isValidStudentName(name)) {
-                    binding.studentName.text = name
-                }
-                if (cgpa.isNotBlank()) binding.studentCgpa.text = cgpa
-                if (sgpa.isNotBlank()) binding.studentSgpa.text = sgpa
                 profileCache.save(
                     name.takeIf { ParsingUtils.isValidStudentName(it) },
                     cgpa.ifBlank { null },
                     sgpa.ifBlank { null }
                 )
+                renderHomeDashboard()
             } catch (_: Exception) {
                 // The ERP may still be hydrating dynamic fields.
             }
@@ -950,6 +953,8 @@ class MainActivity : AppCompatActivity() {
             val cached = erpRepository.cachedPayload(module)?.let { parseModuleData(it) }
             cached == null || !erpRepository.hasUsableData(module, cached)
         })
+        homePreloadComplete = preloadQueue.isEmpty()
+        if (!homePreloadComplete && binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
         preloadNextModule()
     }
 
@@ -960,6 +965,7 @@ class MainActivity : AppCompatActivity() {
         moduleReadRequestId++
         if (preloadQueue.isEmpty()) {
             preloadingModule = null
+            homePreloadComplete = true
             webView.visibility = View.GONE
             updateNextClassPreview()
             return
@@ -980,6 +986,7 @@ class MainActivity : AppCompatActivity() {
         if (::webView.isInitialized) webView.stopLoading()
         preloadingModule = null
         preloadQueue.clear()
+        homePreloadComplete = true
         moduleFetchInProgress = false
         moduleReadAttempts = 0
         moduleReadRequestId++
@@ -1749,18 +1756,90 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateNextClassPreview() {
-        val label = binding.nextClassLabel
-        val payload = erpRepository.cachedPayload(StudentModule.TIMETABLE)
-        val data = payload?.let { parseModuleData(it) }
-        val rows = data?.let { TimetableParser.toRows(it.records) }
-            ?.filter { it.time.isNotBlank() }
-            ?.distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.code }
-            .orEmpty()
+        renderHomeDashboard()
+    }
 
-        if (rows.isEmpty()) {
-            label.text = "Schedule synced"
-            return
+    private fun renderHomeDashboard() {
+        if (!::binding.isInitialized) return
+
+        val fullName = profileCache.studentName.takeIf { ParsingUtils.isValidStudentName(it) }.orEmpty()
+        PageHeader.bind(this, binding.homeDateLine, binding.studentName, binding.studentAvatarInitial, fullName)
+
+        val attendanceData = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
+            ?.let { parseModuleData(it) }
+            ?.takeIf { erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) }
+        val attendancePercent = attendanceData?.overallAttendance
+            ?.takeIf { HomeDisplayRules.attendanceBand(it) != null }
+        val cgpa = profileCache.cgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
+            ?.let { ParsingUtils.validGpa(it) }.orEmpty()
+        val isLoading = loggedIn && !homePreloadComplete
+
+        binding.homeHeroContainer.removeAllViews()
+        val hero = when {
+            isLoading -> Skeleton.hero(this)
+            attendancePercent != null -> {
+                val counts = attendanceData?.let { findOverallAttendanceCounts(it) }
+                val canMiss = counts?.let { pair ->
+                    AttendanceCalculator.calculate(pair.first, pair.second)?.safeFutureLeaves
+                }
+                HeroCard.attendance(this, attendancePercent, canMiss).also { card ->
+                    card.setOnClickListener { loadModule(StudentModule.ATTENDANCE) }
+                    attachPressFeedback(card)
+                }
+            }
+            else -> HeroCard.cgpa(this, cgpa).also { card ->
+                card.setOnClickListener { loadModule(StudentModule.RESULTS) }
+                attachPressFeedback(card)
+            }
         }
+        binding.homeHeroContainer.addView(hero, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        renderHomeNextClassCard()
+
+        BentoCard.bind(
+            this, binding.cgpaCard, binding.studentCgpaLabel, binding.studentCgpa, binding.studentCgpaCaption,
+            "CGPA", cgpa, "", Palette.lav(this), isLoading, 38f
+        )
+
+        val feeData = erpRepository.cachedPayload(StudentModule.FEE)
+            ?.let { parseModuleData(it) }
+            ?.takeIf { erpRepository.hasUsableData(StudentModule.FEE, it) }
+        val dueInvoice = feeData?.let { HomeDisplayRules.feeDue(it.invoices) }
+        val dueDate = dueInvoice?.let { HomeDisplayRules.dueDateLabel(it.dueDate) }
+        val payable = dueInvoice?.let { HomeDisplayRules.payableLabel(it.payable) }
+        val showFeeDue = dueInvoice != null && !dueDate.isNullOrBlank() && !payable.isNullOrBlank()
+        val sgpa = profileCache.sgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
+            ?.let { ParsingUtils.validGpa(it) }.orEmpty()
+
+        BentoCard.bind(
+            this, binding.sgpaCard, binding.studentSgpaLabel, binding.studentSgpa, binding.studentSgpaCaption,
+            if (showFeeDue) "Fee due" else "SGPA",
+            if (showFeeDue) payable.orEmpty() else sgpa,
+            if (showFeeDue) "by " + dueDate else "",
+            Palette.sky(this), isLoading, if (showFeeDue) 23f else 38f
+        )
+
+        ListCard.bind(this, binding.timetableButton, R.drawable.ic_pt_calendar, "Timetable")
+        ListCard.bind(this, binding.resultsButton, R.drawable.ic_pt_chart, "Results")
+        ListCard.bind(this, binding.enrolledCoursesButton, R.drawable.ic_pt_book, "Courses")
+        ListCard.bind(this, binding.profileButton, R.drawable.ic_pt_user, "Profile")
+        binding.attendanceButton.visibility = View.GONE
+        binding.feeButton.visibility = View.GONE
+    }
+
+    private fun renderHomeNextClassCard() {
+        val container = binding.homeNextClassContainer
+        container.visibility = View.GONE
+        val data = erpRepository.cachedPayload(StudentModule.TIMETABLE)
+            ?.let { parseModuleData(it) }
+            ?.takeIf { erpRepository.hasUsableData(StudentModule.TIMETABLE, it) }
+            ?: return
+        val rows = TimetableParser.toRows(data.records)
+            .filter { it.time.isNotBlank() && it.course.isNotBlank() }
+            .distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.code }
+        if (rows.isEmpty()) return
 
         val now = java.util.Calendar.getInstance()
         val currentDay = when (now.get(java.util.Calendar.DAY_OF_WEEK)) {
@@ -1773,9 +1852,64 @@ class MainActivity : AppCompatActivity() {
             else -> "Sunday"
         }
         val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
-        val next = NextClassSelector.selectNext(rows, currentDay, currentMinutes)
+        val next = NextClassSelector.selectNext(rows, currentDay, currentMinutes) ?: return
+        if (next.course.isBlank()) return
+        val startMinutes = ParsingUtils.startMinutesOf(next.time) ?: return
+        val weekday = mapOf(
+            "Monday" to 1, "Tuesday" to 2, "Wednesday" to 3, "Thursday" to 4,
+            "Friday" to 5, "Saturday" to 6, "Sunday" to 7
+        )
+        val dayNumber = weekday.entries.firstOrNull { it.key.equals(next.day, true) }?.value ?: return
+        val todayNumber = weekday.entries.firstOrNull { it.key.equals(currentDay, true) }?.value ?: return
+        var daysUntil = (dayNumber - todayNumber + 7) % 7
+        if (daysUntil == 0 && startMinutes < currentMinutes) daysUntil = 7
+        val minutesUntil = (daysUntil * 1440 + startMinutes - currentMinutes).coerceAtLeast(0)
+        val timeText = ParsingUtils.formatScheduleTime(next.time)
+            .replace("\n–\n", " – ").replace("\n", " ").trim()
 
-        label.text = next?.let { "Next: " + ParsingUtils.formatScheduleTime(it.time).replace("\n–\n", " – ").replace("\n", " ") + " • " + it.course } ?: "Schedule synced"
+        container.visibility = View.VISIBLE
+        container.background = roundedBackground(Palette.peach(this), 24f)
+        binding.nextClassLabel.text = if (minutesUntil == 0) "Next class · starting now" else "Next class · in " + minutesUntil + " min"
+        binding.homeNextClassTitle.text = ParsingUtils.cleanDisplayText(next.course)
+        binding.homeNextClassTime.text = timeText
+        binding.homeNextClassTitle.setTextColor(Palette.ink(this))
+        binding.homeNextClassTitle.typeface =
+            androidx.core.content.res.ResourcesCompat.getFont(this, R.font.poppins_medium) ?: typeface
+        binding.nextClassLabel.setTextColor(Palette.ink2(this))
+        binding.homeNextClassTime.setTextColor(Palette.ink2(this))
+        binding.homeNextClassIcon.background = roundedBackground(Palette.ink(this), 999f)
+        val arrow = binding.homeNextClassIcon.getChildAt(0) as? android.widget.ImageView
+        arrow?.imageTintList = ColorStateList.valueOf(Palette.bg(this))
+        container.setOnClickListener { loadModule(StudentModule.TIMETABLE) }
+        attachPressFeedback(container)
+    }
+
+    /** Uses aggregate ERP counts only; a mean of subject percentages is not an overall total. */
+    private fun findOverallAttendanceCounts(data: ModuleData): Pair<Int, Int>? {
+        var attended: Int? = null
+        var conducted: Int? = null
+
+        fun accept(label: String, rawValue: String) {
+            val normalized = label.lowercase(java.util.Locale.US)
+            val aggregate = normalized.contains("overall") || normalized.contains("total") || normalized.contains("aggregate")
+            if (!aggregate) return
+            val count = Regex("""\d+""").find(rawValue)?.value?.toIntOrNull() ?: return
+            when {
+                normalized.contains("conducted") -> conducted = count
+                normalized.contains("attended") || normalized.contains("present") -> attended = count
+            }
+        }
+
+        data.cards.forEach { (label, value) -> accept(label, value) }
+        data.records.forEach { record ->
+            record.headers.forEachIndexed { index, label ->
+                record.values.getOrNull(index)?.let { accept(label, it) }
+            }
+        }
+        data.lines.forEach { line -> accept(line, line) }
+        val present = attended ?: return null
+        val total = conducted ?: return null
+        return if (total > 0 && present in 0..total) present to total else null
     }
 
     private fun startSessionHeartbeat() {
@@ -1844,50 +1978,42 @@ class MainActivity : AppCompatActivity() {
      */
     private fun applySelectedTheme() {
         if (!::binding.isInitialized) return
-
-        val background = Palette.surfaceAlt(this)
-        val surface = Palette.surface(this)
+        val background = Palette.bg(this)
+        val surface = Palette.card(this)
         val primary = Palette.primary(this)
 
         binding.root.setBackgroundColor(background)
         binding.dashboardScroll.setBackgroundColor(background)
         binding.dashboardScreen.setBackgroundColor(background)
+        binding.dashboardHeader.setBackgroundColor(background)
+        binding.welcomeCard.background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
         binding.moduleScreen.setBackgroundColor(background)
         binding.moduleScroll.setBackgroundColor(background)
         binding.moduleContent.setBackgroundColor(background)
-        styleTextAndIcons(binding.dashboardScreen)
 
-        binding.dashboardHeader.background =
-            gradientBackground(background, tintAlpha(primary, 48), 0f)
-        binding.welcomeCard.background = themedCard(surface, 20f)
-        binding.cgpaCard.background = themedCard(surface, 18f)
-        binding.sgpaCard.background = themedCard(surface, 18f)
-        binding.studentAvatarInitial.background =
-            gradientBackground(primary, Palette.accent(this), 28f)
+        binding.menuButton.visibility = View.GONE
+        binding.quickAccessTitle.visibility = View.GONE
+        binding.cgpaCard.background = roundedBackground(Palette.lav(this), 24f)
+        binding.sgpaCard.background = roundedBackground(Palette.sky(this), 24f)
+        binding.studentName.setTextColor(Palette.ink(this))
+        binding.homeDateLine.setTextColor(Palette.ink2(this))
+        binding.studentAvatarInitial.background = roundedBackground(Palette.lime(this), 999f)
+        binding.studentAvatarInitial.setTextColor(Palette.limeInk(this))
+        binding.studentCgpaLabel.setTextColor(Palette.ink2(this))
+        binding.studentSgpaLabel.setTextColor(Palette.ink2(this))
+        binding.studentCgpa.setTextColor(Palette.ink(this))
+        binding.studentSgpa.setTextColor(Palette.ink(this))
+        binding.nextClassLabel.setTextColor(Palette.ink2(this))
+        binding.homeNextClassTitle.setTextColor(Palette.ink(this))
+        binding.homeNextClassTime.setTextColor(Palette.ink2(this))
 
-        styleTextAndIcons(binding.dashboardHeader)
-        styleTextAndIcons(binding.cgpaCard)
-        styleTextAndIcons(binding.sgpaCard)
-
-        val quickTiles = listOf(
-            binding.timetableButton,
-            binding.attendanceButton,
-            binding.resultsButton,
-            binding.feeButton,
-            binding.profileButton,
-            binding.enrolledCoursesButton
-        )
-        quickTiles.forEach { tile ->
-            tile.background = themedCard(surface, 17f)
-            styleTextAndIcons(tile)
-        }
-
-        binding.dashboardBottomNav.background = themedCard(surface, 22f)
-        styleNavigationItem(binding.navHomeButton, true)
-        styleNavigationItem(binding.navTimetableButton, false)
-        styleNavigationItem(binding.navAttendanceButton, false)
-        styleNavigationItem(binding.navResultsButton, false)
-        styleNavigationItem(binding.navMoreButton, false)
+        FloatingNav.apply(this, binding.dashboardBottomNav, listOf(
+            FloatingNavItem(binding.navHomeButton, R.drawable.ic_pt_home, "Home", true),
+            FloatingNavItem(binding.navTimetableButton, R.drawable.ic_pt_calendar, "Timetable", false),
+            FloatingNavItem(binding.navAttendanceButton, R.drawable.ic_pt_clipboard, "Attendance", false),
+            FloatingNavItem(binding.navResultsButton, R.drawable.ic_pt_chart, "Results", false),
+            FloatingNavItem(binding.navMoreButton, R.drawable.ic_pt_menu, "More", false)
+        ))
 
         binding.sideMenu.setBackgroundColor(surface)
         styleTextAndIcons(binding.sideMenu)
@@ -1896,12 +2022,13 @@ class MainActivity : AppCompatActivity() {
         binding.menuStudentConnectButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
         binding.menuEnrolledCoursesButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
         binding.menuResultsButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
+        binding.menuInvoicesButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
         binding.menuSettingsButton.background = themedCard(tintAlpha(primary, 22), 13f)
         binding.menuLogoutButton.background = roundedBackground(tintAlpha(Palette.danger(this), 30), 13f)
         binding.closeMenuButton.background = themedCard(tintAlpha(primary, 22), 15f)
 
         binding.menuButton.background = themedCard(tintAlpha(primary, 30), 15f)
-        binding.menuButton.imageTintList = ColorStateList.valueOf(Palette.ink900(this))
+        binding.menuButton.imageTintList = ColorStateList.valueOf(Palette.ink(this))
         binding.homeButton.background = themedCard(tintAlpha(primary, 22), 15f)
         binding.homeButton.imageTintList = ColorStateList.valueOf(Palette.primaryLight(this))
         binding.refreshButton.background = themedCard(tintAlpha(primary, 22), 15f)
@@ -1909,27 +2036,17 @@ class MainActivity : AppCompatActivity() {
 
         val moduleToolbar = (binding.moduleTitle.parent as? View)?.parent as? View
         moduleToolbar?.background = themedCard(surface, 0f)
-        binding.moduleTitle.setTextColor(Palette.ink900(this))
-        binding.moduleSubtitle.setTextColor(Palette.ink500(this))
+        binding.moduleTitle.setTextColor(Palette.ink(this))
+        binding.moduleSubtitle.setTextColor(Palette.ink2(this))
         binding.moduleInfo.background = themedCard(Palette.infoBg(this), 12f)
         binding.moduleInfo.setTextColor(Palette.primaryLight(this))
         binding.moduleProgress.indeterminateTintList = ColorStateList.valueOf(primary)
 
-        // The lime CTA uses dark ink for contrast in both Paper and Night.
-        binding.loginButton.background =
-            gradientBackground(Palette.lime(this), Palette.lime(this), 14f)
+        binding.loginButton.background = gradientBackground(Palette.lime(this), Palette.lime(this), 14f)
         binding.loginButton.setTextColor(Palette.limeInk(this))
-        // The login form remains over the existing dark photo/glass artwork.
         binding.passwordVisibilityToggle.setTextColor(Palette.lime(this))
 
-        if (binding.dashboardScroll.visibility == View.VISIBLE) {
-            applySystemBarStyle(
-                statusColor = background,
-                navigationColor = background,
-                lightStatusIcons = Palette.isNight(this),
-                lightNavigationIcons = Palette.isNight(this)
-            )
-        } else if (binding.moduleScreen.visibility == View.VISIBLE) {
+        if (binding.dashboardScroll.visibility == View.VISIBLE || binding.moduleScreen.visibility == View.VISIBLE) {
             applySystemBarStyle(
                 statusColor = background,
                 navigationColor = background,
@@ -2072,9 +2189,8 @@ class MainActivity : AppCompatActivity() {
                 dialog.dismiss()
                 AppThemePreferences.applyToApp(this)
                 applySelectedTheme()
-                if (changed) {
-                    Toast.makeText(this, theme.title + " theme applied", Toast.LENGTH_SHORT).show()
-                }
+                renderHomeDashboard()
+                if (changed) showToastAboveNavigation(theme.title + " theme applied", Toast.LENGTH_SHORT)
             }
 
             content.addView(row, LinearLayout.LayoutParams(
@@ -2143,17 +2259,26 @@ class MainActivity : AppCompatActivity() {
         applySelectedTheme()
         binding.dashboardBottomNav.visibility = View.VISIBLE
         applySystemBarStyle(
-            statusColor = Palette.surfaceAlt(this),
-            navigationColor = Palette.surfaceAlt(this),
+            statusColor = Palette.bg(this),
+            navigationColor = Palette.bg(this),
             lightStatusIcons = Palette.isNight(this),
             lightNavigationIcons = Palette.isNight(this)
         )
+        renderHomeDashboard()
+    }
 
-        binding.studentName.text =
-            if (ParsingUtils.isValidStudentName(profileCache.studentName)) profileCache.studentName else "Student"
-        binding.studentCgpa.text = profileCache.cgpa.ifBlank { "—" }
-        binding.studentSgpa.text = profileCache.sgpa.ifBlank { "—" }
-        updateNextClassPreview()
+    private fun showToastAboveNavigation(message: String, duration: Int = Toast.LENGTH_SHORT) {
+        val toast = Toast.makeText(this, message, duration)
+        if (::binding.isInitialized &&
+            binding.dashboardScroll.visibility == View.VISIBLE &&
+            binding.dashboardBottomNav.visibility == View.VISIBLE
+        ) {
+            val navHeight = binding.dashboardBottomNav.height.takeIf { it > 0 } ?: dp(58)
+            val bottomInset = ViewCompat.getRootWindowInsets(binding.root)
+                ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+            toast.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, bottomInset + navHeight + dp(32))
+        }
+        toast.show()
     }
 
     private fun showLogin() {
