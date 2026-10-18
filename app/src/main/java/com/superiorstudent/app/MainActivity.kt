@@ -1915,9 +1915,12 @@ class MainActivity : AppCompatActivity() {
         binding.moduleInfo.setTextColor(Palette.primaryLight(this))
         binding.moduleProgress.indeterminateTintList = ColorStateList.valueOf(primary)
 
+        // The lime CTA uses dark ink for contrast in both Paper and Night.
         binding.loginButton.background =
-            gradientBackground(primary, Palette.accent(this), 14f)
-        binding.passwordVisibilityToggle.setTextColor(Palette.primaryLight(this))
+            gradientBackground(Palette.lime(this), Palette.lime(this), 14f)
+        binding.loginButton.setTextColor(Palette.limeInk(this))
+        // The login form remains over the existing dark photo/glass artwork.
+        binding.passwordVisibilityToggle.setTextColor(Palette.lime(this))
 
         if (binding.dashboardScroll.visibility == View.VISIBLE) {
             applySystemBarStyle(

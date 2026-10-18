@@ -146,9 +146,13 @@ object Palette {
     fun segmentInk(context: Context) = tokens(context).segInk
 
     // Compatibility aliases used by existing renderers until each screen is restyled.
-    fun primary(context: Context) = lime(context)
+    /**
+     * Compatibility aliases keep the old screens readable until they receive their own
+     * screen-specific restyle: forest green on Paper, lime on Night.
+     */
+    fun primary(context: Context) = if (isNight(context)) lime(context) else hero(context)
     fun primaryDark(context: Context) = hero(context)
-    fun primaryLight(context: Context) = lime(context)
+    fun primaryLight(context: Context) = if (isNight(context)) lime(context) else hero(context)
     fun accent(context: Context) = lime(context)
     fun accentDeep(context: Context) = hero(context)
     fun surface(context: Context) = card(context)
