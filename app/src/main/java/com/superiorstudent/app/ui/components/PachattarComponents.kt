@@ -148,6 +148,19 @@ object HeroCard {
             AttendanceBand.NEAR_LIMIT -> "Near limit"
             AttendanceBand.SHORT -> "Short"
         }
+        val chipColors = if (Palette.isNight(context)) {
+            Palette.heroTrack(context) to when (band) {
+                AttendanceBand.SAFE -> Palette.ok(context)
+                AttendanceBand.NEAR_LIMIT -> Palette.warn(context)
+                AttendanceBand.SHORT -> Palette.bad(context)
+            }
+        } else {
+            when (band) {
+                AttendanceBand.SAFE -> Palette.okBg(context) to Palette.ok(context)
+                AttendanceBand.NEAR_LIMIT -> Palette.warnBg(context) to Palette.warn(context)
+                AttendanceBand.SHORT -> Palette.badBg(context) to Palette.bad(context)
+            }
+        }
         return base(context).apply {
             val top = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -156,7 +169,7 @@ object HeroCard {
                     text = "Attendance"; textSize = 13f; setTextColor(Palette.heroInk(context))
                     typeface = regularTypeface(context); includeFontPadding = false
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(Chip.createCustom(context, statusText, Palette.heroTrack(context), Palette.heroInk(context)))
+                addView(Chip.createCustom(context, statusText, chipColors.first, chipColors.second))
             }
             addView(top)
             val valueRow = LinearLayout(context).apply {

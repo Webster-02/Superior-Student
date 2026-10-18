@@ -2265,6 +2265,8 @@ class MainActivity : AppCompatActivity() {
             lightNavigationIcons = Palette.isNight(this)
         )
         renderHomeDashboard()
+        // If opening a module interrupted a previous preload, resume missing ERP modules on return.
+        preloadAllModules()
     }
 
     private fun showToastAboveNavigation(message: String, duration: Int = Toast.LENGTH_SHORT) {

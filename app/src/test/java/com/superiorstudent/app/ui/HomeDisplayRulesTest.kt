@@ -34,8 +34,9 @@ class HomeDisplayRulesTest {
     }
 
     @Test fun feeLabelsNeverInventAnAmountWhenSourceIsInvalid() {
-        assertEquals("Rs 45,000", HomeDisplayRules.payableLabel("45000"))
+        assertEquals("45,000", HomeDisplayRules.payableLabel("45000"))
         assertEquals("Rs. 45,000", HomeDisplayRules.payableLabel("Rs. 45,000"))
         assertNull(HomeDisplayRules.payableLabel("N/A"))
+        assertNull(HomeDisplayRules.parsePayable("INV-45"))
     }
 }

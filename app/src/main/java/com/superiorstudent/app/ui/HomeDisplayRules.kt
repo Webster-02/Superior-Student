@@ -32,8 +32,14 @@ object HomeDisplayRules {
     }
 
     fun parsePayable(raw: String): Double? {
-        val match = Regex("""\d[\d,]*(?:\.\d{1,2})?""").find(raw) ?: return null
-        val number = match.value.replace(",", "").toDoubleOrNull() ?: return null
+        if (raw.isBlank()) return null
+        val normalized = raw.trim()
+            .replace(Regex("""(?i)\b(?:rs\.?|pkr|usd|eur|gbp)\b"""), "")
+            .replace(Regex("""[₨₹$€£]"""), "")
+            .replace(",", "")
+            .replace(Regex("""\s+"""), "")
+            .trim()
+        val number = normalized.toDoubleOrNull() ?: return null
         return number.takeIf { it.isFinite() && it > 0.0 }
     }
 
@@ -69,6 +75,6 @@ object HomeDisplayRules {
         if (Regex("""(?i)\b(?:rs|pkr|usd|eur|gbp)\b|[₨₹$€£]""").containsMatchIn(value)) {
             return value.replace(Regex("\\s+"), " ")
         }
-        return "Rs " + DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.US)).format(amount)
+        return DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.US)).format(amount)
     }
 }
