@@ -39,6 +39,7 @@
     <color name="brand_accent_deep">#D4F34A</color>
     <color name="surface">#18211C</color>
     <color name="surface_alt">#0D1410</color>
+    <color name="scrim">#99000000</color>
     <color name="surface_stroke">#14FFFFFF</color>
     <color name="ink_900">#F1F5F0</color>
     <color name="ink_700">#93A096</color>
