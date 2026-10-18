@@ -223,7 +223,7 @@ object BentoCard {
         root.orientation = LinearLayout.VERTICAL
         root.setPadding(px(context, 16f), px(context, 14f), px(context, 16f), px(context, 14f))
         root.background = roundRect(context, surface, 24f)
-        root.minHeight = px(context, 88f)
+        root.minimumHeight = px(context, 88f)
         labelView.text = label; labelView.textSize = 12f; labelView.setTextColor(Palette.ink2(context))
         labelView.typeface = regularTypeface(context); labelView.includeFontPadding = false
         valueView.text = value.ifBlank { "—" }; valueView.textSize = valueSizeSp
