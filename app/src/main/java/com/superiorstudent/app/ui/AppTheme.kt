@@ -1,8 +1,13 @@
 package com.superiorstudent.app.ui
 
 import android.content.Context
+import android.content.res.Configuration
+import androidx.appcompat.app.AppCompatDelegate
 
-/** Visual theme selected by the student. Kept separate from ERP login/session storage. */
+/**
+ * Visual appearance choices for Pachattar%. Appearance preferences remain separate from ERP
+ * credentials and are not cleared when the student signs out.
+ */
 enum class AppTheme(
     val key: String,
     val title: String,
@@ -10,35 +15,61 @@ enum class AppTheme(
     val previewStartHex: String,
     val previewEndHex: String
 ) {
-    PINK_NEON(
-        "pink_neon",
-        "Neon Pink",
-        "Vibrant pink highlights on a deep, calm background.",
-        "#FF2389",
-        "#9B1458"
+    PAPER(
+        "paper",
+        "Paper",
+        "Warm paper surfaces with a dark forest-green and lime palette.",
+        "#F4F1EA",
+        "#D4F34A"
     ),
-    NAVY_BLUE(
-        "navy_blue",
-        "Navy Blue",
-        "Electric blue highlights on a midnight navy background.",
-        "#237BFF",
-        "#092A70"
-    )
+    NIGHT(
+        "night",
+        "Night",
+        "Deep forest surfaces with bright lime highlights.",
+        "#0D1410",
+        "#D4F34A"
+    ),
+    AUTO(
+        "auto",
+        "Auto",
+        "Follow the appearance selected in Android system settings.",
+        "#F4F1EA",
+        "#0D1410"
+    );
+
+    companion object {
+        /**
+         * Unknown and legacy keys safely fall back to Auto.
+         * pink_neon and navy_blue are deliberately not mapped to new fixed modes.
+         */
+        fun fromStoredKey(key: String?): AppTheme = when (key) {
+            "paper" -> PAPER
+            "night" -> NIGHT
+            "auto", "pink_neon", "navy_blue", null -> AUTO
+            else -> AUTO
+        }
+    }
 }
 
 /**
- * Appearance preferences are intentionally stored in their own file. Logging out clears the
- * student session, not the theme a student chose for the app.
+ * The selected appearance is saved independently from student login/session state.
+ * AppCompat's DayNight mode keeps XML resources aligned with Paper, Night or system Auto.
  */
 object AppThemePreferences {
     private const val PREFS_NAME = "superior_student_appearance"
     private const val KEY_THEME = "selected_theme"
 
     fun current(context: Context): AppTheme {
-        val key = context.applicationContext
+        val preferences = context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_THEME, AppTheme.NAVY_BLUE.key)
-        return AppTheme.values().firstOrNull { it.key == key } ?: AppTheme.NAVY_BLUE
+        val storedKey = preferences.getString(KEY_THEME, null)
+        val theme = AppTheme.fromStoredKey(storedKey)
+
+        // Migrate old pink/navy values, missing preferences and corrupt keys to a valid key.
+        if (storedKey != theme.key) {
+            preferences.edit().putString(KEY_THEME, theme.key).apply()
+        }
+        return theme
     }
 
     fun save(context: Context, theme: AppTheme) {
@@ -47,5 +78,26 @@ object AppThemePreferences {
             .edit()
             .putString(KEY_THEME, theme.key)
             .apply()
+    }
+
+    /** Call before Activity super.onCreate, and after a student changes the selector. */
+    fun applyToApp(context: Context) {
+        val desiredMode = when (current(context)) {
+            AppTheme.PAPER -> AppCompatDelegate.MODE_NIGHT_NO
+            AppTheme.NIGHT -> AppCompatDelegate.MODE_NIGHT_YES
+            AppTheme.AUTO -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        if (AppCompatDelegate.getDefaultNightMode() != desiredMode) {
+            AppCompatDelegate.setDefaultNightMode(desiredMode)
+        }
+    }
+
+    fun isNight(context: Context): Boolean = when (current(context)) {
+        AppTheme.PAPER -> false
+        AppTheme.NIGHT -> true
+        AppTheme.AUTO -> {
+            val mask = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+            mask == Configuration.UI_MODE_NIGHT_YES
+        }
     }
 }

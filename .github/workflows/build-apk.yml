@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - 'feature/**'
+      - feature/pachattar-design-foundation-phase-1
 
 permissions:
   contents: read

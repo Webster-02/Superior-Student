@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pachattar% spacing: 4dp grid from tokens.css. -->
+    <dimen name="space_1">4dp</dimen><dimen name="space_2">8dp</dimen>
+    <dimen name="space_3">12dp</dimen><dimen name="space_4">16dp</dimen>
+    <dimen name="space_5">20dp</dimen><dimen name="space_6">24dp</dimen><dimen name="space_7">32dp</dimen>
+    <dimen name="radius_icon">14dp</dimen><dimen name="radius_card">22dp</dimen>
+    <dimen name="radius_bento">24dp</dimen><dimen name="radius_hero">28dp</dimen>
+</resources>

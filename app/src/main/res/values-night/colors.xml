@@ -1,43 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ===== Dark variant: deep indigo night surfaces ===== -->
+    <!-- Pachattar% semantic design tokens from tokens.css. -->
+    <color name="bg">#0D1410</color>
+    <color name="card">#18211C</color>
+    <color name="ink">#F1F5F0</color>
+    <color name="ink2">#93A096</color>
+    <color name="ink3">#6E7B72</color>
+    <color name="line">#14FFFFFF</color>
+    <color name="hero">#D4F34A</color>
+    <color name="hero_ink">#1A2A10</color>
+    <color name="hero_fill">#14201A</color>
+    <color name="hero_track">#3314201A</color>
+    <color name="lime">#D4F34A</color>
+    <color name="lime_ink">#14201A</color>
+    <color name="lav">#2A2542</color>
+    <color name="peach">#3A2A22</color>
+    <color name="sky">#1E2F40</color>
+    <color name="mint">#1D3326</color>
+    <color name="nav">#1B2620</color>
+    <color name="nav_ic">#7E8C83</color>
+    <color name="ok">#4ADE80</color>
+    <color name="ok_bg">#244ADE80</color>
+    <color name="ok_fill">#4ADE80</color>
+    <color name="warn">#FBBF24</color>
+    <color name="warn_bg">#24FBBF24</color>
+    <color name="warn_fill">#FBBF24</color>
+    <color name="bad">#F87171</color>
+    <color name="bad_bg">#26F87171</color>
+    <color name="bad_fill">#F87171</color>
+    <color name="seg">#D4F34A</color>
+    <color name="seg_ink">#14201A</color>
 
-    <color name="brand_primary">#818CF8</color>
-    <color name="brand_primary_dark">#4F46E5</color>
-    <color name="brand_primary_light">#A5B4FC</color>
-    <color name="brand_accent">#22D3EE</color>
-    <color name="brand_accent_deep">#06B6D4</color>
-
-    <color name="surface">#171A2E</color>
-    <color name="surface_alt">#0F1120</color>
-    <color name="surface_stroke">#2A2E4A</color>
-    <color name="scrim">#99000000</color>
-
-    <color name="ink_900">#F3F4F6</color>
-    <color name="ink_700">#D1D5DB</color>
-    <color name="ink_500">#9CA3AF</color>
-    <color name="ink_400">#6B7280</color>
-    <color name="on_brand">#FFFFFF</color>
-
-    <color name="success">#34D399</color>
-    <color name="success_bg">#064E3B</color>
+    <!-- Compatibility resources retained while legacy screens are restyled. -->
+    <color name="brand_primary">#D4F34A</color>
+    <color name="brand_primary_dark">#D4F34A</color>
+    <color name="brand_primary_light">#D4F34A</color>
+    <color name="brand_accent">#D4F34A</color>
+    <color name="brand_accent_deep">#D4F34A</color>
+    <color name="surface">#18211C</color>
+    <color name="surface_alt">#0D1410</color>
+    <color name="surface_stroke">#14FFFFFF</color>
+    <color name="ink_900">#F1F5F0</color>
+    <color name="ink_700">#93A096</color>
+    <color name="ink_500">#93A096</color>
+    <color name="ink_400">#6E7B72</color>
+    <color name="on_brand">#14201A</color>
+    <color name="success">#4ADE80</color>
+    <color name="success_bg">#244ADE80</color>
     <color name="warning">#FBBF24</color>
-    <color name="warning_bg">#78350F</color>
+    <color name="warning_bg">#24FBBF24</color>
     <color name="danger">#F87171</color>
-    <color name="danger_bg">#7F1D1D</color>
-    <color name="info">#60A5FA</color>
-    <color name="info_bg">#1E3A8A</color>
-    <color name="violet">#A78BFA</color>
-    <color name="violet_bg">#4C1D95</color>
-
-    <color name="grad_header_start">#0F1120</color>
-    <color name="grad_header_mid">#1E1B4B</color>
-    <color name="grad_header_end">#312E81</color>
-    <color name="grad_button_start">#4338CA</color>
-    <color name="grad_button_end">#6D28D9</color>
-    <color name="grad_login_start">#0B0D1A</color>
-    <color name="grad_login_end">#1E1B4B</color>
-
-    <color name="splash_background">#0B0D1A</color>
-    <color name="ring_track">#2A2E4A</color>
+    <color name="danger_bg">#26F87171</color>
+    <color name="info">#D4F34A</color>
+    <color name="info_bg">#1E2F40</color>
+    <color name="violet">#2A2542</color>
+    <color name="violet_bg">#2A2542</color>
+    <color name="grad_header_start">#D4F34A</color>
+    <color name="grad_header_mid">#D4F34A</color>
+    <color name="grad_header_end">#D4F34A</color>
+    <color name="grad_button_start">#D4F34A</color>
+    <color name="grad_button_end">#D4F34A</color>
+    <color name="grad_login_start">#D4F34A</color>
+    <color name="grad_login_end">#0D1410</color>
+    <color name="splash_background">#D4F34A</color>
+    <color name="ring_track">#14FFFFFF</color>
 </resources>

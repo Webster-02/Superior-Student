@@ -1,51 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ===== Superior Student — "Midnight Indigo" design system ===== -->
+    <!-- Pachattar% semantic design tokens from tokens.css. -->
+    <color name="bg">#F4F1EA</color>
+    <color name="card">#FFFFFF</color>
+    <color name="ink">#14201A</color>
+    <color name="ink2">#5F6B64</color>
+    <color name="ink3">#8A948D</color>
+    <color name="line">#1714201A</color>
+    <color name="hero">#0B3D2E</color>
+    <color name="hero_ink">#E8EFE3</color>
+    <color name="hero_fill">#D4F34A</color>
+    <color name="hero_track">#2EFFFFFF</color>
+    <color name="lime">#D4F34A</color>
+    <color name="lime_ink">#14201A</color>
+    <color name="lav">#E4DDFB</color>
+    <color name="peach">#FFD9C7</color>
+    <color name="sky">#D3E7FB</color>
+    <color name="mint">#D8F0DE</color>
+    <color name="nav">#14201A</color>
+    <color name="nav_ic">#9AA89F</color>
+    <color name="ok">#1F7A45</color>
+    <color name="ok_bg">#DDF3E4</color>
+    <color name="ok_fill">#2FB36A</color>
+    <color name="warn">#8A5A00</color>
+    <color name="warn_bg">#FBEBC8</color>
+    <color name="warn_fill">#F0A92A</color>
+    <color name="bad">#B42F2F</color>
+    <color name="bad_bg">#FBDEDE</color>
+    <color name="bad_fill">#E25555</color>
+    <color name="seg">#14201A</color>
+    <color name="seg_ink">#D4F34A</color>
 
-    <!-- Brand core -->
-    <color name="brand_primary">#4F46E5</color>        <!-- indigo 600 -->
-    <color name="brand_primary_dark">#3730A3</color>   <!-- indigo 800 -->
-    <color name="brand_primary_light">#818CF8</color>  <!-- indigo 400 -->
-    <color name="brand_accent">#22D3EE</color>         <!-- cyan 400 -->
-    <color name="brand_accent_deep">#0891B2</color>    <!-- cyan 600 -->
-
-    <!-- Surfaces -->
+    <!-- Compatibility resources retained while legacy screens are restyled. -->
+    <color name="brand_primary">#D4F34A</color>
+    <color name="brand_primary_dark">#0B3D2E</color>
+    <color name="brand_primary_light">#D4F34A</color>
+    <color name="brand_accent">#D4F34A</color>
+    <color name="brand_accent_deep">#0B3D2E</color>
     <color name="surface">#FFFFFF</color>
-    <color name="surface_alt">#F4F5FB</color>
-    <color name="surface_stroke">#E4E6F2</color>
-    <color name="scrim">#66000000</color>
-
-    <!-- Ink / text -->
-    <color name="ink_900">#111827</color>
-    <color name="ink_700">#374151</color>
-    <color name="ink_500">#6B7280</color>
-    <color name="ink_400">#9CA3AF</color>
-    <color name="on_brand">#FFFFFF</color>
-
-    <!-- Status palette -->
-    <color name="success">#10B981</color>
-    <color name="success_bg">#D1FAE5</color>
-    <color name="warning">#F59E0B</color>
-    <color name="warning_bg">#FEF3C7</color>
-    <color name="danger">#EF4444</color>
-    <color name="danger_bg">#FEE2E2</color>
-    <color name="info">#3B82F6</color>
-    <color name="info_bg">#DBEAFE</color>
-    <color name="violet">#8B5CF6</color>
-    <color name="violet_bg">#EDE9FE</color>
-
-    <!-- Gradients (start/end) -->
-    <color name="grad_header_start">#312E81</color>
-    <color name="grad_header_mid">#4338CA</color>
-    <color name="grad_header_end">#6D28D9</color>
-    <color name="grad_button_start">#4F46E5</color>
-    <color name="grad_button_end">#7C3AED</color>
-    <color name="grad_login_start">#1E1B4B</color>
-    <color name="grad_login_end">#312E81</color>
-
-    <!-- Splash -->
-    <color name="splash_background">#1E1B4B</color>
-
-    <!-- Attendance ring track -->
-    <color name="ring_track">#E5E7EB</color>
+    <color name="surface_alt">#F4F1EA</color>
+    <color name="surface_stroke">#1714201A</color>
+    <color name="ink_900">#14201A</color>
+    <color name="ink_700">#5F6B64</color>
+    <color name="ink_500">#5F6B64</color>
+    <color name="ink_400">#8A948D</color>
+    <color name="on_brand">#14201A</color>
+    <color name="success">#1F7A45</color>
+    <color name="success_bg">#DDF3E4</color>
+    <color name="warning">#8A5A00</color>
+    <color name="warning_bg">#FBEBC8</color>
+    <color name="danger">#B42F2F</color>
+    <color name="danger_bg">#FBDEDE</color>
+    <color name="info">#0B3D2E</color>
+    <color name="info_bg">#D3E7FB</color>
+    <color name="violet">#E4DDFB</color>
+    <color name="violet_bg">#E4DDFB</color>
+    <color name="grad_header_start">#0B3D2E</color>
+    <color name="grad_header_mid">#0B3D2E</color>
+    <color name="grad_header_end">#0B3D2E</color>
+    <color name="grad_button_start">#D4F34A</color>
+    <color name="grad_button_end">#D4F34A</color>
+    <color name="grad_login_start">#0B3D2E</color>
+    <color name="grad_login_end">#F4F1EA</color>
+    <color name="splash_background">#0B3D2E</color>
+    <color name="ring_track">#1714201A</color>
 </resources>

@@ -136,6 +136,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
         try {
             safeOnCreate(savedInstanceState)
@@ -983,8 +984,8 @@ class MainActivity : AppCompatActivity() {
         applySystemBarStyle(
             statusColor = Palette.surfaceAlt(this),
             navigationColor = Palette.surfaceAlt(this),
-            lightStatusIcons = true,
-            lightNavigationIcons = true
+            lightStatusIcons = Palette.isNight(this),
+            lightNavigationIcons = Palette.isNight(this)
         )
         webView.visibility = View.INVISIBLE
         binding.moduleProgress.visibility = View.VISIBLE
@@ -1249,8 +1250,8 @@ class MainActivity : AppCompatActivity() {
         applySystemBarStyle(
             statusColor = Palette.surfaceAlt(this),
             navigationColor = Palette.surfaceAlt(this),
-            lightStatusIcons = true,
-            lightNavigationIcons = true
+            lightStatusIcons = Palette.isNight(this),
+            lightNavigationIcons = Palette.isNight(this)
         )
         binding.moduleTitle.text = "Attendance Planner"
         binding.moduleSubtitle.text = "Subject attendance and 75% target"
@@ -1914,15 +1915,15 @@ class MainActivity : AppCompatActivity() {
             applySystemBarStyle(
                 statusColor = background,
                 navigationColor = background,
-                lightStatusIcons = true,
-                lightNavigationIcons = true
+                lightStatusIcons = Palette.isNight(this),
+                lightNavigationIcons = Palette.isNight(this)
             )
         } else if (binding.moduleScreen.visibility == View.VISIBLE) {
             applySystemBarStyle(
                 statusColor = background,
                 navigationColor = background,
-                lightStatusIcons = true,
-                lightNavigationIcons = true
+                lightStatusIcons = Palette.isNight(this),
+                lightNavigationIcons = Palette.isNight(this)
             )
         }
     }
@@ -2057,8 +2058,9 @@ class MainActivity : AppCompatActivity() {
             row.setOnClickListener {
                 val changed = AppThemePreferences.current(this) != theme
                 AppThemePreferences.save(this, theme)
-                applySelectedTheme()
                 dialog.dismiss()
+                AppThemePreferences.applyToApp(this)
+                applySelectedTheme()
                 if (changed) {
                     Toast.makeText(this, theme.title + " theme applied", Toast.LENGTH_SHORT).show()
                 }
@@ -2132,8 +2134,8 @@ class MainActivity : AppCompatActivity() {
         applySystemBarStyle(
             statusColor = Palette.surfaceAlt(this),
             navigationColor = Palette.surfaceAlt(this),
-            lightStatusIcons = true,
-            lightNavigationIcons = true
+            lightStatusIcons = Palette.isNight(this),
+            lightNavigationIcons = Palette.isNight(this)
         )
 
         binding.studentName.text =
