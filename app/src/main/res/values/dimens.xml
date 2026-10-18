@@ -6,4 +6,5 @@
     <dimen name="space_5">20dp</dimen><dimen name="space_6">24dp</dimen><dimen name="space_7">32dp</dimen>
     <dimen name="radius_icon">14dp</dimen><dimen name="radius_card">22dp</dimen>
     <dimen name="radius_bento">24dp</dimen><dimen name="radius_hero">28dp</dimen>
+    <dimen name="radius_pill">999dp</dimen>
 </resources>
