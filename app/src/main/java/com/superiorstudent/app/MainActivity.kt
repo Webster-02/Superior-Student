@@ -3,6 +3,7 @@ package com.superiorstudent.app
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
@@ -149,6 +150,13 @@ class MainActivity : AppCompatActivity() {
                     "\n\nPlease send this screen to support."
             )
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The manifest handles uiMode changes without recreating MainActivity.
+        // Re-apply semantic tokens so Auto follows the newly selected system appearance.
+        applySelectedTheme()
     }
 
     private fun safeOnCreate(savedInstanceState: Bundle?) {
