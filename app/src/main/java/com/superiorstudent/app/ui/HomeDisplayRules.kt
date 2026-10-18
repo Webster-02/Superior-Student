@@ -34,7 +34,7 @@ object HomeDisplayRules {
     fun parsePayable(raw: String): Double? {
         if (raw.isBlank()) return null
         val normalized = raw.trim()
-            .replace(Regex("""(?i)\b(?:rs\.?|pkr|usd|eur|gbp)\b"""), "")
+            .replace(Regex("""(?i)\b(?:rs|pkr|usd|eur|gbp)\.?\s*"""), "")
             .replace(Regex("""[₨₹$€£]"""), "")
             .replace(",", "")
             .replace(Regex("""\s+"""), "")
