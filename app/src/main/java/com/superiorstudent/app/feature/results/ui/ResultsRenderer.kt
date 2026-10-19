@@ -203,6 +203,7 @@ class ResultsRenderer(
 
         if (term.courses.isEmpty()) {
             container.addView(EmptyState.create(
+                activity,
                 if (published) "No course rows available" else "Results not published yet",
                 "The ERP did not return separate course records for ${term.term}."
             ))
@@ -218,6 +219,7 @@ class ResultsRenderer(
             }
             if (addedRows > 0) container.addView(list)
             else container.addView(EmptyState.create(
+                activity,
                 "No course details available",
                 "The ERP did not return any readable course names or credit details for ${term.term}."
             ))
@@ -540,7 +542,7 @@ class ResultsRenderer(
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             setColor(color)
-            cornerRadius = dp(radiusDp).toFloat()
+            cornerRadius = dp(radiusDp.roundToInt()).toFloat()
             strokeColor?.let { setStroke(dp(1), it) }
         }
 
