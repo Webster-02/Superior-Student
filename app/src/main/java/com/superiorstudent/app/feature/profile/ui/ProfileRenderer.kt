@@ -64,6 +64,7 @@ class ProfileRenderer(
                     onRetry
                 ))
             }
+            applyTypography(container)
             return
         }
 
@@ -115,6 +116,7 @@ class ProfileRenderer(
         }.take(8).takeIf { it.isNotEmpty() }?.let { extraCards ->
             addFieldSection(container, "Other ERP information", extraCards)
         }
+        applyTypography(container)
     }
 
     private fun List<Pair<String, String>>.firstValue(vararg labels: String): String? =
