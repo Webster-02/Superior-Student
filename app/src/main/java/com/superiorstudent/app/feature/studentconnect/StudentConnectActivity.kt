@@ -63,7 +63,7 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPublicIdFormat
 import com.superiorstudent.app.feature.studentconnect.notifications.StudentConnectNotificationHelper
 
 /**
- * U2U uses a separate, recoverable Firebase identity.
+ * Student Connect uses a separate, recoverable Firebase identity.
  * The university ERP login/session flow remains owned by MainActivity.
  */
 class StudentConnectActivity : AppCompatActivity() {
@@ -154,7 +154,7 @@ class StudentConnectActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (!granted && ::statusText.isInitialized) {
-            statusText.text = "Notifications are disabled. Enable them in Android Settings to receive U2U alerts."
+            statusText.text = "Notifications are disabled. Enable them in Android Settings to receive Student Connect alerts."
         }
     }
     private var currentStudentProfile: StudentProfile? = null
@@ -396,7 +396,7 @@ class StudentConnectActivity : AppCompatActivity() {
         refreshFriendRequestsButton.isEnabled = true
         signOutButton.isEnabled = true
         renderCurrentUser()
-        statusText.text = "Signed out of U2U. Your university login is unchanged."
+        statusText.text = "Signed out of Student Connect. Your university login is unchanged."
     }
 
     private fun requestStudentConnectNotificationPermissionIfNeeded() {
@@ -453,7 +453,7 @@ class StudentConnectActivity : AppCompatActivity() {
         if (!validateCredentials(email, password)) return
 
         setBusy(true)
-        statusText.text = "Creating your separate U2U account…"
+        statusText.text = "Creating your separate Student Connect account…"
         auth.createUserWithEmailAndPassword(email, password)
             .addOnCompleteListener(this) { task ->
                 setBusy(false)
@@ -489,7 +489,7 @@ class StudentConnectActivity : AppCompatActivity() {
         if (!validateCredentials(email, password)) return
 
         setBusy(true)
-        statusText.text = "Signing in to U2U…"
+        statusText.text = "Signing in to Student Connect…"
         auth.signInWithEmailAndPassword(email, password)
             .addOnCompleteListener(this) { task ->
                 setBusy(false)
@@ -500,7 +500,7 @@ class StudentConnectActivity : AppCompatActivity() {
                 }
                 renderCurrentUser()
                 statusText.text = if (auth.currentUser?.isEmailVerified == true) {
-                    "Email verified. Your U2U identity is ready."
+                    "Email verified. Your Student Connect identity is ready."
                 } else {
                     "Please verify your email before continuing. You can resend the verification email below."
                 }
@@ -559,7 +559,7 @@ class StudentConnectActivity : AppCompatActivity() {
                 return@addOnCompleteListener
             }
             statusText.text = if (auth.currentUser?.isEmailVerified == true) {
-                "Email verified. Your U2U identity is ready."
+                "Email verified. Your Student Connect identity is ready."
             } else {
                 "Email not verified yet. Open the email from Firebase, then check again."
             }
@@ -571,7 +571,7 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     /**
-     * Keeps the entire U2U experience on its scoped navy/purple brand.
+     * Keeps the entire Student Connect experience on its scoped navy/purple brand.
      * This affects presentation only; ERP and Firebase sign-in/session logic are unchanged.
      */
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -789,7 +789,7 @@ class StudentConnectActivity : AppCompatActivity() {
             if (!tokenTask.isSuccessful) {
                 profileLoadInProgressFor = null
                 profileLoadedFor = uid
-                statusText.text = "Could not verify your Firebase session. Reopen U2U and try again."
+                statusText.text = "Could not verify your Firebase session. Reopen Student Connect and try again."
                 return@addOnCompleteListener
             }
 
@@ -804,7 +804,7 @@ class StudentConnectActivity : AppCompatActivity() {
                     profileCard.visibility = View.GONE
                     studentSearchPanel.visibility = View.GONE
                     studentSearchResultCard.visibility = View.GONE
-                    statusText.text = "Could not load your profile. Check Firestore and its published security rules, then reopen U2U."
+                    statusText.text = "Could not load your profile. Check Firestore and its published security rules, then reopen Student Connect."
                     return@getOwnProfile
                 }
 
@@ -1009,7 +1009,7 @@ class StudentConnectActivity : AppCompatActivity() {
             row.setOnClickListener {
                 val user = auth.currentUser
                 if (user == null || !user.isEmailVerified || user.uid != uid) {
-                    statusText.text = "Sign in with your verified U2U account before opening a chat."
+                    statusText.text = "Sign in with your verified Student Connect account before opening a chat."
                     return@setOnClickListener
                 }
                 startActivity(
@@ -1572,7 +1572,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun openChatWithConnection(request: FriendRequest) {
         val user = auth.currentUser
         if (user == null || !user.isEmailVerified || currentStudentProfile?.uid != user.uid) {
-            statusText.text = "Sign in with your verified U2U account before opening a chat."
+            statusText.text = "Sign in with your verified Student Connect account before opening a chat."
             return
         }
         if (request.status != FriendRequestStatus.ACCEPTED ||
@@ -1604,7 +1604,7 @@ class StudentConnectActivity : AppCompatActivity() {
     ) {
         val user = auth.currentUser
         if (user == null || !user.isEmailVerified) {
-            statusText.text = "Sign in with your verified U2U account before managing requests."
+            statusText.text = "Sign in with your verified Student Connect account before managing requests."
             return
         }
 
@@ -1659,7 +1659,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun searchStudentByPublicId() {
         val currentUser = auth.currentUser
         if (currentUser == null || !currentUser.isEmailVerified) {
-            statusText.text = "Sign in with your verified U2U account first."
+            statusText.text = "Sign in with your verified Student Connect account first."
             return
         }
 
@@ -1725,7 +1725,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun sendFriendRequest() {
         val sender = auth.currentUser
         if (sender == null || !sender.isEmailVerified) {
-            statusText.text = "Sign in with your verified U2U account first."
+            statusText.text = "Sign in with your verified Student Connect account first."
             return
         }
 

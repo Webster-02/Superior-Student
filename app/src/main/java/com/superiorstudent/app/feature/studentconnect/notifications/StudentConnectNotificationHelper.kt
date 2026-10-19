@@ -26,7 +26,7 @@ object StudentConnectNotificationHelper {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "U2U",
+            "Student Connect",
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = "Friend requests and connection updates"
@@ -54,9 +54,9 @@ object StudentConnectNotificationHelper {
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_white)
+            .setSmallIcon(R.drawable.ic_student_connect_notification)
             .setColor(ContextCompat.getColor(context, R.color.brand_primary))
-            .setContentTitle(title.ifBlank { "U2U" })
+            .setContentTitle(title.ifBlank { "Student Connect" })
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

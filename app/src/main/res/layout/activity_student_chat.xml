@@ -35,7 +35,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.09"
-                android:text="U2U  /  DIRECT MESSAGES"
+                android:text="STUDENT CONNECT  /  DIRECT MESSAGES"
                 android:textColor="@color/sc_lavender"
                 android:textSize="10sp"
                 android:textStyle="bold" />

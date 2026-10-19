@@ -10,10 +10,10 @@ class StudentConnectMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val title = message.data["title"]
             ?: message.notification?.title
-            ?: "U2U"
+            ?: "Student Connect"
         val body = message.data["body"]
             ?: message.notification?.body
-            ?: "You have a new update. Open U2U to view it."
+            ?: "You have a new update. Open Student Connect to view it."
 
         StudentConnectNotificationHelper.show(
             this,

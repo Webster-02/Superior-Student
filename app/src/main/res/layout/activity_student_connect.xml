@@ -50,7 +50,7 @@
                 android:id="@+id/studentConnectBrandLogo"
                 android:layout_width="58dp"
                 android:layout_height="58dp"
-                android:contentDescription="U2U logo"
+                android:contentDescription="Student Connect logo"
                 android:importantForAccessibility="yes"
                 android:src="@drawable/ic_student_connect_brand" />
 
@@ -65,7 +65,7 @@
                     android:id="@+id/studentConnectBrandTitle"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="U2U"
+                    android:text="Student Connect"
                     android:textColor="@color/sc_text_primary"
                     android:textSize="25sp"
                     android:textStyle="bold" />
@@ -122,7 +122,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:padding="10dp"
-                android:text="Checking U2U status…"
+                android:text="Checking Student Connect status…"
                 android:textColor="@color/sc_text_muted"
                 android:textSize="12sp" />
         </com.google.android.material.card.MaterialCardView>
@@ -166,7 +166,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="U2U password"
+                android:text="Student Connect password"
                 android:textColor="@color/sc_text_primary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -194,7 +194,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
                 android:layout_marginTop="20dp"
-                android:text="Create U2U account"
+                android:text="Create Student Connect account"
                 android:textAllCaps="false"
                 android:textColor="@color/sc_text_primary"
                 android:textSize="14sp"
@@ -272,7 +272,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
                 android:layout_marginTop="10dp"
-                android:text="Sign out of U2U"
+                android:text="Sign out of Student Connect"
                 android:textAllCaps="false"
                 android:textColor="@color/sc_danger"
                 android:textSize="14sp"
@@ -782,7 +782,7 @@
             android:layout_marginTop="22dp"
             android:visibility="gone"
             android:lineSpacingExtra="3dp"
-            android:text="Security note: use a different password from your university ERP password. Keep access to this email so you can recover your U2U identity if you change phones."
+            android:text="Security note: use a different password from your university ERP password. Keep access to this email so you can recover your Student Connect identity if you change phones."
             android:textColor="@color/sc_text_muted"
             android:textSize="12sp" />
 
