@@ -1,47 +1,66 @@
 package com.superiorstudent.app.feature.timetable.ui
 
 import android.content.Context
-import android.graphics.Color
+import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.res.ResourcesCompat
+import com.superiorstudent.app.R
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.TimetableRow
 import com.superiorstudent.app.data.parser.TimetableParser
 import com.superiorstudent.app.feature.timetable.domain.NextClassSelector
 import com.superiorstudent.app.ui.Palette
+import com.superiorstudent.app.ui.components.Chip
+import com.superiorstudent.app.ui.components.EmptyState
+import com.superiorstudent.app.ui.components.ErrorState
+import com.superiorstudent.app.ui.components.HeroCard
+import com.superiorstudent.app.ui.components.Skeleton
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Mobile-first timetable agenda. Calendar event records are preferred over
- * surrounding ERP text, and room/location is intentionally not shown because
- * the ERP data supplied for these students does not reliably include it.
+ * Timetable presentation only. ERP extraction and TimetableParser stay unchanged.
+ * Lecturer and room fields are intentionally not presented because those details
+ * are not reliable/available in the student data supplied for this screen.
  */
-class TimetableRenderer(private val activity: Context) {
+class TimetableRenderer(
+    private val activity: Context,
+    private val onRetry: () -> Unit = {}
+) {
+    private val regularTypeface: Typeface
+        get() = ResourcesCompat.getFont(activity, R.font.poppins)
+            ?: Typeface.create("sans-serif", Typeface.NORMAL)
 
-    private val typeface: Typeface
-        get() = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val mediumTypeface: Typeface
+        get() = ResourcesCompat.getFont(activity, R.font.poppins_medium)
+            ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
 
     private val dayOrder = linkedMapOf(
-        "Monday" to 1,
-        "Tuesday" to 2,
-        "Wednesday" to 3,
-        "Thursday" to 4,
-        "Friday" to 5,
-        "Saturday" to 6,
-        "Sunday" to 7
+        "Monday" to Calendar.MONDAY,
+        "Tuesday" to Calendar.TUESDAY,
+        "Wednesday" to Calendar.WEDNESDAY,
+        "Thursday" to Calendar.THURSDAY,
+        "Friday" to Calendar.FRIDAY,
+        "Saturday" to Calendar.SATURDAY,
+        "Sunday" to Calendar.SUNDAY
     )
 
     fun render(container: LinearLayout, data: ModuleData) {
         container.removeAllViews()
+        applyTypography(container)
+
         val rows = TimetableParser.toRows(data.records)
             .distinctBy { it.day + "|" + it.time + "|" + normalizeCourse(it.course) + "|" + it.code }
             .take(60)
@@ -51,70 +70,73 @@ class TimetableRenderer(private val activity: Context) {
                     .thenBy { it.course.lowercase(Locale.US) }
             )
 
-        container.addView(createTimetableToolbar(rows.size))
         if (rows.isEmpty()) {
-            container.addView(
-                createEmptyState(
-                    "Timetable details unavailable",
-                    "The ERP page loaded, but the app could not identify separate class events with a day and time. Tap Refresh to retry the live schedule."
-                )
-            )
-            container.addView(createTimetableInfoCard())
+            val noClassesText = data.lines.firstOrNull {
+                it.contains("no classes", true) ||
+                    it.contains("no timetable", true) ||
+                    it.contains("no schedule", true) ||
+                    it.contains("no records", true)
+            }
+            if (noClassesText != null) {
+                container.addView(EmptyState.create(activity, "No classes today", noClassesText))
+            } else {
+                container.addView(ErrorState.create(
+                    activity,
+                    "Timetable unavailable",
+                    "The ERP did not provide readable class events with a day and time. Refresh to try again.",
+                    onRetry
+                ))
+            }
             return
         }
 
         val now = Calendar.getInstance()
-        val currentDay = dayOrder.entries.firstOrNull {
-            it.value == if (now.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 7
-            else now.get(Calendar.DAY_OF_WEEK) - 1
-        }?.key ?: "Monday"
+        val currentDay = dayName(now.get(Calendar.DAY_OF_WEEK))
         val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val nextClass = NextClassSelector.selectNext(rows, currentDay, currentMinutes)
-        container.addView(
-            nextClass?.let(::createNextClassCard)
-                ?: createNextClassUnavailableCard()
-        )
+        val runningNow = rows.firstOrNull { isRunningNow(it, currentDay, currentMinutes) }
+        val nextClass = runningNow ?: NextClassSelector.selectNext(rows, currentDay, currentMinutes)
 
-        val populatedDays = rows.map { it.day }.filter(String::isNotBlank).toSet()
-        val visibleDays = dayOrder.keys.filter { day ->
-            dayOrder[day]!! <= 5 || day in populatedDays
-        }.toMutableList()
-        if (rows.any { it.day.isBlank() }) visibleDays.add("Schedule details")
-
-        val counts = rows.groupingBy { it.day.ifBlank { "Schedule details" } }.eachCount()
-        var selectedDay = when {
-            currentDay in visibleDays -> currentDay
-            visibleDays.any { counts.getOrDefault(it, 0) > 0 } ->
-                visibleDays.first { counts.getOrDefault(it, 0) > 0 }
-            else -> visibleDays.first()
+        if (nextClass != null && hasCourseLabel(nextClass)) {
+            val start = parseTimes(nextClass.time).first
+            val minutesUntil = if (nextClass.day.equals(currentDay, true) && start != null && start >= currentMinutes && runningNow == null) {
+                start - currentMinutes
+            } else null
+            container.addView(HeroCard.nextClass(
+                activity,
+                displayCourse(nextClass),
+                compactTime(nextClass.time).ifBlank { nextClass.day },
+                minutesUntil
+            ))
         }
 
-        container.addView(
-            createSectionHeading(
-                "YOUR WEEK",
-                "Choose a day to see its classes"
-            )
-        )
+        val dayDates = weekDays(now, rows)
+        val populatedDays = rows.mapNotNull { canonicalDay(it.day) }.toSet()
+        var selectedDay = canonicalDay(currentDay)
+            ?.takeIf { dayDates.containsKey(it) }
+            ?: dayDates.keys.firstOrNull { it in populatedDays }
+            ?: dayDates.keys.firstOrNull()
+            ?: "Monday"
 
-        val dayChips = LinearLayout(activity).apply {
+        val dayStrip = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         val dayScroll = HorizontalScrollView(activity).apply {
             isHorizontalScrollBarEnabled = false
             clipToPadding = false
-            setPadding(dp(8), dp(2), dp(8), dp(2))
-            addView(
-                dayChips,
-                ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
+            overScrollMode = View.OVER_SCROLL_NEVER
+            setPadding(dp(16), dp(2), dp(16), dp(2))
+            addView(dayStrip, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                topMargin = dp(6)
+                bottomMargin = dp(7)
+            }
         }
         container.addView(dayScroll)
 
@@ -128,422 +150,379 @@ class TimetableRenderer(private val activity: Context) {
         container.addView(agenda)
 
         fun renderSelectedDay() {
-            dayChips.removeAllViews()
-            visibleDays.forEach { day ->
-                val dayRows = rows.filter {
-                    if (day == "Schedule details") it.day.isBlank() else it.day.equals(day, true)
-                }
-                dayChips.addView(
-                    createDayChip(
-                        day = day,
-                        count = dayRows.size,
-                        selected = day == selectedDay
-                    ) {
-                        selectedDay = day
-                        renderSelectedDay()
-                    }
-                )
+            dayStrip.removeAllViews()
+            dayDates.forEach { (day, date) ->
+                val hasClasses = rows.any { canonicalDay(it.day) == day }
+                dayStrip.addView(createDayChip(
+                    day = day,
+                    date = date,
+                    hasClasses = hasClasses,
+                    selected = day == selectedDay
+                ) {
+                    selectedDay = day
+                    renderSelectedDay()
+                })
             }
 
             agenda.removeAllViews()
-            val selectedRows = rows.filter {
-                if (selectedDay == "Schedule details") it.day.isBlank()
-                else it.day.equals(selectedDay, true)
-            }.sortedBy { ParsingUtils.timeSortKey(it.time) }
+            val selectedRows = rows.filter { canonicalDay(it.day) == selectedDay }
+                .sortedBy { ParsingUtils.timeSortKey(it.time) }
+            agenda.addView(createAgendaHeader(
+                selectedDay,
+                selectedRows.size,
+                selectedDay.equals(currentDay, true)
+            ))
 
-            agenda.addView(createAgendaHeader(selectedDay, selectedRows.size))
             if (selectedRows.isEmpty()) {
-                agenda.addView(
-                    createEmptyState(
-                        "No classes listed",
-                        "The ERP has no classes recorded for $selectedDay."
-                    )
-                )
+                val message = if (selectedDay.equals(currentDay, true)) {
+                    "There are no class events for today in the current ERP data."
+                } else {
+                    "The ERP has no classes recorded for $selectedDay."
+                }
+                agenda.addView(EmptyState.create(activity, "No classes today", message))
             } else {
-                selectedRows.forEachIndexed { index, row ->
-                    agenda.addView(createScheduleCard(row, index))
+                selectedRows.forEach { row ->
+                    val running = isRunningNow(row, currentDay, currentMinutes)
+                    val startEnd = parseTimes(row.time)
+                    val isPast = dayOrder[selectedDay]?.let { selectedDayOrder ->
+                        val currentOrder = dayOrder[currentDay] ?: Calendar.MONDAY
+                        selectedDayOrder < currentOrder ||
+                            (selectedDayOrder == currentOrder && startEnd.second != null && startEnd.second <= currentMinutes)
+                    } == true && !running
+                    val isNext = !isPast && !running && nextClass != null && sameClass(row, nextClass)
+                    agenda.addView(createScheduleRow(
+                        row = row,
+                        isPast = isPast,
+                        isNext = isNext,
+                        isRunning = running
+                    ))
                 }
             }
         }
+
         renderSelectedDay()
-        container.addView(createTimetableInfoCard())
     }
-
-    private fun createTimetableToolbar(count: Int): View =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = gradientBackground(Color.rgb(49, 46, 129), Color.rgb(109, 40, 217), 24f)
-            elevation = dp(4).toFloat()
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }
-
-            addView(TextView(activity).apply {
-                text = "🗓"
-                gravity = Gravity.CENTER
-                textSize = 21f
-                background = roundedBackground(Color.argb(60, 255, 255, 255), 15f)
-                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48)).apply {
-                    setMargins(0, 0, dp(13), 0)
-                }
-            })
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(activity).apply {
-                    text = "THIS WEEK"
-                    setTextColor(Color.rgb(224, 231, 255))
-                    textSize = 9f
-                    letterSpacing = 0.12f
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(TextView(activity).apply {
-                    text = "Your Class Schedule"
-                    setTextColor(Color.WHITE)
-                    textSize = 20f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setPadding(0, dp(2), 0, dp(1))
-                })
-                addView(TextView(activity).apply {
-                    text = if (count == 1) "1 class synced from ERP" else "$count classes synced from ERP"
-                    setTextColor(Color.argb(220, 255, 255, 255))
-                    textSize = 11f
-                })
-            })
-            addView(TextView(activity).apply {
-                text = "ERP"
-                setTextColor(Color.WHITE)
-                textSize = 9f
-                letterSpacing = 0.12f
-                gravity = Gravity.CENTER
-                setTypeface(typeface, Typeface.BOLD)
-                background = roundedBackground(Color.argb(60, 255, 255, 255), 20f)
-                setPadding(dp(11), dp(7), dp(11), dp(7))
-            })
-        }
-
-    private fun createNextClassCard(row: TimetableRow): View =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            background = gradientBackground(Color.rgb(67, 56, 202), Color.rgb(109, 40, 217), 22f)
-            elevation = dp(4).toFloat()
-            setPadding(dp(17), dp(16), dp(17), dp(16))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
-
-            addView(TextView(activity).apply {
-                text = "NEXT CLASS"
-                setTextColor(Color.rgb(224, 231, 255))
-                textSize = 10f
-                letterSpacing = 0.15f
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            addView(TextView(activity).apply {
-                text = row.course
-                setTextColor(Color.WHITE)
-                textSize = 19f
-                setTypeface(typeface, Typeface.BOLD)
-                maxLines = 3
-                setPadding(0, dp(5), 0, dp(8))
-            })
-            addView(TextView(activity).apply {
-                text = "▦  ${row.day}    ◷  ${compactTime(row.time)}"
-                setTextColor(Color.WHITE)
-                textSize = 12f
-                setPadding(0, 0, 0, dp(6))
-            })
-            compactCourseCode(row.code).takeIf(String::isNotBlank)?.let { code ->
-                addView(TextView(activity).apply {
-                    text = code
-                    setTextColor(Color.WHITE)
-                    textSize = 10f
-                    setTypeface(typeface, Typeface.BOLD)
-                    background = roundedBackground(Color.argb(55, 255, 255, 255), 10f)
-                    setPadding(dp(9), dp(5), dp(9), dp(5))
-                })
-            }
-        }
-
-    private fun createNextClassUnavailableCard(): View =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Palette.infoBg(activity), 18f)
-            setPadding(dp(15), dp(13), dp(15), dp(13))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(6), dp(12), dp(10)) }
-            addView(TextView(activity).apply {
-                text = "◷"
-                textSize = 24f
-                setTextColor(Palette.primary(activity))
-                layoutParams = LinearLayout.LayoutParams(dp(38), ViewGroup.LayoutParams.WRAP_CONTENT)
-            })
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(TextView(activity).apply {
-                    text = "Next class unavailable"
-                    setTextColor(Palette.ink900(activity))
-                    textSize = 14f
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(TextView(activity).apply {
-                    text = "ERP has not provided a reliable weekday and start time for an upcoming class."
-                    setTextColor(Palette.ink700(activity))
-                    textSize = 11f
-                    setPadding(0, dp(3), 0, 0)
-                })
-            })
-        }
-
-    private fun createSectionHeading(title: String, subtitle: String): View =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(16), dp(13), dp(16), dp(6)) }
-            addView(TextView(activity).apply {
-                text = title
-                setTextColor(Palette.ink900(activity))
-                textSize = 14f
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            addView(TextView(activity).apply {
-                text = subtitle
-                setTextColor(Palette.ink500(activity))
-                textSize = 10f
-                setPadding(0, dp(2), 0, 0)
-            })
-        }
 
     private fun createDayChip(
         day: String,
-        count: Int,
+        date: Calendar,
+        hasClasses: Boolean,
         selected: Boolean,
         onClick: () -> Unit
     ): View = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
-        background = roundedBackground(
-            if (selected) Color.rgb(79, 70, 229) else Palette.surfaceAlt(activity),
-            15f
+        background = roundRect(
+            if (selected) Palette.segment(activity) else Palette.card(activity),
+            18f,
+            if (selected) null else Palette.stroke(activity)
         )
-        elevation = if (selected) dp(2).toFloat() else 0f
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        minimumWidth = dp(91)
+        minimumWidth = dp(48)
+        minimumHeight = dp(60)
+        setPadding(dp(2), dp(6), dp(2), dp(4))
         layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+            dp(48),
+            dp(60)
+        ).apply { setMargins(dp(3), dp(2), dp(3), dp(2)) }
         isClickable = true
         isFocusable = true
-        addView(TextView(activity).apply {
-            text = if (day == "Schedule details") "OTHER" else day.take(3).uppercase(Locale.US)
-            gravity = Gravity.CENTER
-            setTextColor(if (selected) Color.WHITE else Palette.ink900(activity))
-            textSize = 11f
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        addView(TextView(activity).apply {
-            text = when {
-                count == 0 -> "No classes"
-                count == 1 -> "1 class"
-                else -> "$count classes"
-            }
-            gravity = Gravity.CENTER
-            setTextColor(if (selected) Color.argb(225, 255, 255, 255) else Palette.ink500(activity))
-            textSize = 10f
-            setPadding(0, dp(4), 0, 0)
+        contentDescription = buildString {
+            append(day)
+            append(", ")
+            append(date.get(Calendar.DAY_OF_MONTH))
+            if (hasClasses) append(", classes scheduled")
+            if (selected) append(", selected")
+        }
+
+        addView(text(day.take(3), 12f, if (selected) Palette.segmentInk(activity) else Palette.ink2(activity), false))
+        addView(text(date.get(Calendar.DAY_OF_MONTH).toString(), 16f, if (selected) Palette.segmentInk(activity) else Palette.ink(activity), true)
+            .apply { setPadding(0, dp(2), 0, 0) })
+        addView(View(activity).apply {
+            background = roundRect(
+                if (selected) Palette.segmentInk(activity) else Palette.ink3(activity),
+                999f
+            )
+            visibility = if (hasClasses) View.VISIBLE else View.INVISIBLE
+            layoutParams = LinearLayout.LayoutParams(dp(5), dp(5)).apply { topMargin = dp(3) }
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         })
         setOnClickListener { onClick() }
     }
 
-    private fun createAgendaHeader(day: String, count: Int): View =
+    private fun createAgendaHeader(day: String, count: Int, isToday: Boolean): View =
         LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(11), dp(16), dp(8))
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(16), dp(13), dp(16), dp(5)) }
-            addView(TextView(activity).apply {
-                text = day + " · " + count + if (count == 1) " class" else " classes"
-                setTextColor(Palette.ink900(activity))
-                textSize = 17f
-                setTypeface(typeface, Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            addView(TextView(activity).apply {
-                text = "ERP"
-                setTextColor(Palette.ink900(activity))
-                textSize = 9f
-                letterSpacing = 0.1f
-                setTypeface(typeface, Typeface.BOLD)
-                background = roundedBackground(Palette.infoBg(activity), 10f)
-                setPadding(dp(9), dp(5), dp(9), dp(5))
-            })
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            addView(text(if (isToday) "Today" else day, 20f, Palette.ink(activity), true),
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(text(
+                if (count == 1) "1 class" else "$count classes",
+                13f,
+                Palette.ink2(activity),
+                false
+            ))
         }
 
-    private fun createScheduleCard(row: TimetableRow, index: Int): View =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Palette.surface(activity), 20f)
-            elevation = dp(2).toFloat()
-            setPadding(dp(10), dp(10), dp(13), dp(10))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
-
-            val accent = when (index % 4) {
-                0 -> Palette.accent(activity)
-                1 -> Palette.violet(activity)
-                2 -> Palette.success(activity)
-                else -> Palette.warning(activity)
-            }
-
+    private fun createScheduleRow(
+        row: TimetableRow,
+        isPast: Boolean,
+        isNext: Boolean,
+        isRunning: Boolean
+    ): View = LinearLayout(activity).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(dp(16), dp(4), dp(16), dp(4)) }
+        val timeParts = parseTimes(row.time)
+        if (timeParts.first != null) {
             addView(LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                background = roundedBackground(tintAlpha(accent, 24), 16f)
-                setPadding(dp(7), dp(12), dp(7), dp(12))
-                minimumHeight = dp(82)
-                layoutParams = LinearLayout.LayoutParams(dp(104), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    setMargins(0, 0, dp(12), 0)
-                }
-                addView(View(activity).apply {
-                    background = roundedBackground(accent, 3f)
-                    layoutParams = LinearLayout.LayoutParams(dp(38), dp(4)).apply {
-                        setMargins(0, 0, 0, dp(7))
-                    }
-                })
-                val formatted = ParsingUtils.formatScheduleTime(row.time)
-                addView(TextView(activity).apply {
-                    text = if (row.time.isBlank()) "Time unavailable" else formatted
-                    gravity = Gravity.CENTER
-                    setTextColor(Palette.ink900(activity))
-                    textSize = if (row.time.contains("-") || row.time.contains("–")) 12f else 13f
-                    setTypeface(typeface, Typeface.BOLD)
-                    maxLines = 3
-                })
-            })
-
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(activity).apply {
-                    text = row.course
-                    setTextColor(Palette.ink900(activity))
-                    textSize = 14f
-                    setTypeface(typeface, Typeface.BOLD)
-                    maxLines = 3
-                })
-                compactCourseCode(row.code).takeIf(String::isNotBlank)?.let { code ->
-                    addView(TextView(activity).apply {
-                        text = code
-                        setTextColor(Palette.ink900(activity))
-                        textSize = 10f
-                        setTypeface(typeface, Typeface.BOLD)
-                        background = roundedBackground(Palette.infoBg(activity), 10f)
-                        setPadding(dp(8), dp(5), dp(8), dp(5))
-                        layoutParams = LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply { setMargins(0, dp(7), 0, 0) }
-                    })
+                gravity = Gravity.CENTER_VERTICAL
+                minimumWidth = dp(56)
+                layoutParams = LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT)
+                    .apply { marginEnd = dp(8) }
+                addView(text(formatClock(timeParts.first!!), 13f, if (isRunning) Palette.heroInk(activity) else Palette.ink(activity), true))
+                if (timeParts.second != null) {
+                    addView(text(formatClock(timeParts.second!!), 12f, if (isRunning) Palette.heroInk(activity) else Palette.ink2(activity), false)
+                        .apply { setPadding(0, dp(3), 0, 0) })
                 }
             })
         }
 
-    private fun createTimetableInfoCard(): View =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = roundedBackground(Palette.infoBg(activity), 18f)
-            setPadding(dp(15), dp(13), dp(15), dp(13))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(13), dp(12), dp(18)) }
-            addView(TextView(activity).apply {
-                text = "ⓘ"
-                setTextColor(Palette.primary(activity))
-                textSize = 22f
-                setTypeface(typeface, Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(dp(32), ViewGroup.LayoutParams.WRAP_CONTENT)
-            })
-            addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                addView(TextView(activity).apply {
-                    text = "Timetable information"
-                    setTextColor(Palette.ink900(activity))
-                    textSize = 12f
-                    setTypeface(typeface, Typeface.BOLD)
-                })
-                addView(TextView(activity).apply {
-                    text = "Class names, days and timings are read from your ERP account. Unavailable details are not guessed."
-                    setTextColor(Palette.ink700(activity))
-                    textSize = 10f
-                    setPadding(0, dp(3), 0, 0)
-                })
-            })
+        val cardBackground = when {
+            isRunning -> Palette.hero(activity)
+            isNext -> Palette.peach(activity)
+            else -> Palette.card(activity)
         }
-
-    private fun createEmptyState(title: String, message: String): View =
-        LinearLayout(activity).apply {
+        val cardText = if (isRunning) Palette.heroInk(activity) else Palette.ink(activity)
+        val secondaryText = if (isRunning) Palette.heroInk(activity) else Palette.ink2(activity)
+        val card = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = roundedBackground(Palette.surface(activity), 18f)
-            elevation = dp(1).toFloat()
-            setPadding(dp(24), dp(28), dp(24), dp(28))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) }
-            addView(TextView(activity).apply {
-                text = title
-                setTextColor(Palette.ink900(activity))
-                textSize = 16f
-                setTypeface(typeface, Typeface.BOLD)
-                gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundRect(
+                cardBackground,
+                22f,
+                if (isRunning || isNext) null else Palette.stroke(activity)
+            )
+            minimumHeight = dp(78)
+            setPadding(dp(16), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            if (isPast) alpha = 0.6f
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(text(
+            displayCourse(row),
+            14f,
+            cardText,
+            true
+        ), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+        when {
+            isRunning -> header.addView(Chip.createCustom(
+                activity, "Now", Palette.lime(activity), Palette.limeInk(activity)
+            ).apply {
+                minHeight = dp(30)
+                setPadding(dp(10), dp(5), dp(10), dp(5))
             })
-            addView(TextView(activity).apply {
-                text = message
-                setTextColor(Palette.ink500(activity))
-                textSize = 12f
-                gravity = Gravity.CENTER
-                setPadding(0, dp(7), 0, 0)
+            isNext -> {
+                val minutes = timeParts.first?.takeIf { selectedDayIsToday(row.day) }
+                    ?.let { start -> start - currentMinuteOfDay() }
+                    ?.takeIf { it >= 0 }
+                header.addView(Chip.createCustom(
+                    activity,
+                    if (minutes != null) "Next · $minutes min" else "Next",
+                    Palette.lime(activity),
+                    Palette.limeInk(activity)
+                ).apply {
+                    minHeight = dp(30)
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                })
+            }
+            isPast -> {
+                header.addView(ImageView(activity).apply {
+                    setImageResource(R.drawable.ic_pt_check)
+                    imageTintList = ColorStateList.valueOf(Palette.success(activity))
+                    contentDescription = "Class finished"
+                    layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+                })
+            }
+        }
+        card.addView(header)
+        compactCourseCode(row.code).takeIf(String::isNotBlank)?.let { code ->
+            card.addView(text(code, 10f, secondaryText, false).apply {
+                setPadding(0, dp(5), 0, 0)
             })
         }
+        if (isRunning) this@TimetableRenderer.applyTypography(card)
+        addView(card)
+        contentDescription = buildString {
+            append(displayCourse(row))
+            append(". ")
+            if (timeParts.first != null) append("Starts at ${formatClock(timeParts.first!!)}. ")
+            if (timeParts.second != null) append("Ends at ${formatClock(timeParts.second!!)}. ")
+            append(when {
+                isRunning -> "Now in progress"
+                isPast -> "Class finished"
+                isNext -> "Next class"
+                else -> "Upcoming class"
+            })
+        }
+    }
+
+    private fun weekDays(now: Calendar, rows: List<TimetableRow>): LinkedHashMap<String, Calendar> {
+        val monday = (now.clone() as Calendar)
+        val daysSinceMonday = when (monday.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.SUNDAY -> 6
+            else -> monday.get(Calendar.DAY_OF_WEEK) - Calendar.MONDAY
+        }
+        monday.add(Calendar.DAY_OF_MONTH, -daysSinceMonday)
+        monday.set(Calendar.HOUR_OF_DAY, 12)
+        monday.set(Calendar.MINUTE, 0)
+        monday.set(Calendar.SECOND, 0)
+        monday.set(Calendar.MILLISECOND, 0)
+
+        val hasSunday = rows.any { canonicalDay(it.day) == "Sunday" }
+        val offsets = if (hasSunday) (0..6) else (0..5)
+        val result = linkedMapOf<String, Calendar>()
+        offsets.forEach { offset ->
+            val date = (monday.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, offset) }
+            result[dayName(date.get(Calendar.DAY_OF_WEEK))] = date
+        }
+        return result
+    }
+
+    private fun parseTimes(value: String): Pair<Int?, Int?> {
+        if (value.isBlank()) return null to null
+        val matches = Regex("""(\d{1,2}):(\d{2})\s*(AM|PM)?""", RegexOption.IGNORE_CASE)
+            .findAll(value)
+            .take(2)
+            .toList()
+        if (matches.isEmpty()) return null to null
+        fun minuteOf(match: MatchResult): Int? {
+            val rawHour = match.groupValues[1].toIntOrNull() ?: return null
+            val minute = match.groupValues[2].toIntOrNull() ?: return null
+            if (minute !in 0..59) return null
+            val marker = match.groupValues[3].uppercase(Locale.US)
+            val hour = when {
+                marker == "AM" && rawHour == 12 -> 0
+                marker == "PM" && rawHour < 12 -> rawHour + 12
+                marker.isNotBlank() && rawHour !in 1..12 -> return null
+                marker.isBlank() && rawHour !in 0..23 -> return null
+                else -> rawHour
+            }
+            return hour * 60 + minute
+        }
+        return minuteOf(matches[0]) to matches.getOrNull(1)?.let(::minuteOf)
+    }
+
+    private fun formatClock(minutes: Int): String {
+        val hour = (minutes / 60).coerceIn(0, 23)
+        return String.format(Locale.US, "%02d:%02d", hour, minutes % 60)
+    }
+
+    private fun compactTime(value: String): String {
+        val (start, end) = parseTimes(value)
+        return when {
+            start != null && end != null -> "${formatClock(start)}–${formatClock(end)}"
+            start != null -> formatClock(start)
+            else -> ""
+        }
+    }
+
+    private fun displayCourse(row: TimetableRow): String =
+        row.course.trim().takeIf(String::isNotBlank) ?: row.code.trim().ifBlank { "Class" }
+
+    private fun hasCourseLabel(row: TimetableRow): Boolean =
+        row.course.isNotBlank() || row.code.isNotBlank()
 
     private fun compactCourseCode(value: String): String {
-        val prefix = Regex("""\b[A-Z]{2,8}[- ]?\d{3,}""", RegexOption.IGNORE_CASE)
+        val prefix = Regex("""\b[A-Z]{2,8}[- ]?\d{3,}[A-Z0-9-]*\b""", RegexOption.IGNORE_CASE)
             .find(value)?.value.orEmpty().replace(" ", "")
         return prefix.ifBlank { value.trim().take(30) }
     }
 
-    private fun compactTime(value: String): String =
-        ParsingUtils.formatScheduleTime(value).replace("\n–\n", " – ").replace("\n", " ")
+    private fun sameClass(first: TimetableRow, second: TimetableRow): Boolean =
+        first.day.equals(second.day, true) &&
+            first.time.equals(second.time, true) &&
+            normalizeCourse(first.course) == normalizeCourse(second.course) &&
+            first.code.equals(second.code, true)
+
+    private fun isRunningNow(row: TimetableRow, today: String, currentMinutes: Int): Boolean {
+        if (!row.day.equals(today, true)) return false
+        val (start, end) = parseTimes(row.time)
+        return start != null && end != null && start <= currentMinutes && currentMinutes < end
+    }
+
+    private fun selectedDayIsToday(day: String): Boolean {
+        val now = Calendar.getInstance()
+        return day.equals(dayName(now.get(Calendar.DAY_OF_WEEK)), true)
+    }
+
+    private fun currentMinuteOfDay(): Int {
+        val now = Calendar.getInstance()
+        return now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+    }
+
+    private fun canonicalDay(value: String): String? =
+        dayOrder.keys.firstOrNull { it.equals(value.trim(), true) }
+
+    private fun dayName(dayOfWeek: Int): String =
+        dayOrder.entries.firstOrNull { it.value == dayOfWeek }?.key ?: "Monday"
 
     private fun normalizeCourse(value: String): String =
         value.lowercase(Locale.US).replace(Regex("""[^a-z0-9]+"""), "")
 
-    private fun roundedBackground(color: Int, radiusDp: Float): GradientDrawable =
+    private fun applyTypography(view: View) {
+        when (view) {
+            is TextView -> {
+                val style = view.typeface?.style ?: Typeface.NORMAL
+                view.typeface = if (style and Typeface.BOLD != 0) {
+                    Typeface.create(mediumTypeface, Typeface.BOLD)
+                } else regularTypeface
+                view.includeFontPadding = false
+            }
+            is ViewGroup -> for (index in 0 until view.childCount) applyTypography(view.getChildAt(index))
+        }
+    }
+
+    private fun text(value: String, size: Float, color: Int, medium: Boolean): TextView =
+        TextView(activity).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            typeface = if (medium) mediumTypeface else regularTypeface
+            includeFontPadding = false
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+
+    private fun roundRect(color: Int, radiusDp: Float, strokeColor: Int?): GradientDrawable =
         GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
             setColor(color)
-            cornerRadius = dp(radiusDp.toInt()).toFloat()
+            cornerRadius = dp(radiusDp).toFloat()
+            strokeColor?.let { setStroke(dp(1), it) }
         }
 
-    private fun gradientBackground(startColor: Int, endColor: Int, radiusDp: Float): GradientDrawable =
-        GradientDrawable().apply {
-            orientation = GradientDrawable.Orientation.TL_BR
-            colors = intArrayOf(startColor, endColor)
-            cornerRadius = dp(radiusDp.toInt()).toFloat()
-        }
+    private fun roundRect(
+        context: Context,
+        color: Int,
+        radiusDp: Float,
+        strokeColor: Int?
+    ): GradientDrawable = roundRect(color, radiusDp, strokeColor)
 
-    private fun tintAlpha(color: Int, alpha: Int): Int =
-        Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
-
-    private fun dp(value: Int): Int =
-        (value * activity.resources.displayMetrics.density).roundToInt()
+    private fun dp(value: Int): Int = (value * activity.resources.displayMetrics.density).roundToInt()
+    private fun dp(value: Float): Int = (value * activity.resources.displayMetrics.density).roundToInt()
 }
