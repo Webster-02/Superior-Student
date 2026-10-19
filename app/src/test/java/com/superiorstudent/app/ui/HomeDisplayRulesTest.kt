@@ -4,6 +4,9 @@ import com.superiorstudent.app.data.model.InvoiceData
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import java.util.Date
 import org.junit.Test
 
 class HomeDisplayRulesTest {
@@ -33,8 +36,14 @@ class HomeDisplayRulesTest {
         assertNull(HomeDisplayRules.feeDue(listOf(invoice("Rs. 500", "12 Nov 2026", "paid"))))
     }
 
+    @Test fun pastDueDetectionComparesCalendarDaysAndFormatsFullDate() {
+        assertTrue(HomeDisplayRules.isPastDue("01 Jan 2020", Date()))
+        assertFalse(HomeDisplayRules.isPastDue("31 Dec 2999", Date()))
+        assertEquals("1 Jan 2020", HomeDisplayRules.dueDateFullLabel("01 Jan 2020"))
+    }
+
     @Test fun feeLabelsNeverInventAnAmountWhenSourceIsInvalid() {
-        assertEquals("45,000", HomeDisplayRules.payableLabel("45000"))
+        assertEquals("Rs. 45,000", HomeDisplayRules.payableLabel("45000"))
         assertEquals("Rs. 45,000", HomeDisplayRules.payableLabel("Rs. 45,000"))
         assertNull(HomeDisplayRules.payableLabel("N/A"))
         assertNull(HomeDisplayRules.parsePayable("INV-45"))

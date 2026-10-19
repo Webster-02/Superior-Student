@@ -2,7 +2,7 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F5F7FB">
+    android:background="@color/bg">
 
         <FrameLayout
         android:id="@+id/loginScroll"
@@ -18,7 +18,7 @@
             android:visibility="gone"
             android:contentDescription="@null"
             android:scaleType="centerCrop"
-            android:src="@drawable/login_background"
+            android:src="@null"
             android:importantForAccessibility="no" />
 
         <ImageView
@@ -802,7 +802,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingBottom="16dp">
+            android:paddingBottom="8dp">
 
             <FrameLayout
                 android:id="@+id/dashboardHeader"
@@ -930,7 +930,7 @@
                         android:fontFamily="@font/poppins_medium"
                         android:letterSpacing="-0.015"
                         android:includeFontPadding="false"
-                        android:maxLines="1"
+                        android:maxLines="2"
                         android:ellipsize="end" />
                     <TextView
                         android:id="@+id/homeNextClassTime"
@@ -1319,8 +1319,8 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="70dp"
-            android:background="#FFFFFF"
-            android:elevation="4dp"
+            android:background="@color/bg"
+            android:elevation="0dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="10dp"

@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
         FeeRenderer(this, ::createSectionHeading, ::createMetricCard, ::createEmptyState, ::downloadInvoicePdf, ::refreshActiveModule)
     }
     private val resultsRenderer by lazy {
-        ResultsRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::selectResultsSemester, ::refreshActiveModule)
+        ResultsRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::selectResultsSemester, ::refreshActiveModule) { profileCache.cgpa }
     }
     private val enrolledCoursesRenderer by lazy {
         EnrolledCoursesRenderer(this, ::attendanceCourseLinks, ::refreshActiveModule)
@@ -151,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         } catch (t: Throwable) {
             android.util.Log.e("MainActivity", "Startup failed before login UI was ready", t)
             showErrorAndFinish(
-                "Superior Student could not start.\n\n" +
+                "Pachattar% could not start.\n\n" +
                     "Error: " + t.javaClass.simpleName + "\n" +
                     (t.message ?: "No additional error details.") +
                     "\n\nPlease send this screen to support."
@@ -2021,11 +2021,6 @@ class MainActivity : AppCompatActivity() {
 
         renderHomeNextClassCard()
 
-        BentoCard.bind(
-            this, binding.cgpaCard, binding.studentCgpaLabel, binding.studentCgpa, binding.studentCgpaCaption,
-            "CGPA", cgpa, "", Palette.lav(this), isLoading, 38f
-        )
-
         val feeData = erpRepository.cachedPayload(StudentModule.FEE)
             ?.let { parseModuleData(it) }
             ?.takeIf { erpRepository.hasUsableData(StudentModule.FEE, it) }
@@ -2033,16 +2028,41 @@ class MainActivity : AppCompatActivity() {
         val dueDate = dueInvoice?.let { HomeDisplayRules.dueDateLabel(it.dueDate) }
         val payable = dueInvoice?.let { HomeDisplayRules.payableLabel(it.payable) }
         val showFeeDue = dueInvoice != null && !dueDate.isNullOrBlank() && !payable.isNullOrBlank()
+        val overdue = showFeeDue && dueInvoice?.let { HomeDisplayRules.isPastDue(it.dueDate) } == true
+        val feeCaption = dueInvoice?.takeIf { showFeeDue }?.let { invoice ->
+            if (overdue) "Overdue since " + HomeDisplayRules.dueDateFullLabel(invoice.dueDate).orEmpty()
+            else "by " + dueDate.orEmpty()
+        }.orEmpty()
         val sgpa = profileCache.sgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
             ?.let { ParsingUtils.validGpa(it) }.orEmpty()
+        // Attendance-free Home already uses the large CGPA hero; put SGPA and (when valid) fees in the bento row.
+        val cgpaHeroShown = !isLoading && attendancePercent == null
+        BentoCard.bind(
+            this, binding.cgpaCard, binding.studentCgpaLabel, binding.studentCgpa, binding.studentCgpaCaption,
+            if (cgpaHeroShown) "SGPA" else "CGPA",
+            if (cgpaHeroShown) sgpa else cgpa,
+            "",
+            if (cgpaHeroShown) Palette.sky(this) else Palette.lav(this),
+            isLoading,
+            38f
+        )
+        binding.cgpaCard.visibility = if (cgpaHeroShown && sgpa.isBlank() && !isLoading) View.GONE else View.VISIBLE
 
         BentoCard.bind(
             this, binding.sgpaCard, binding.studentSgpaLabel, binding.studentSgpa, binding.studentSgpaCaption,
-            if (showFeeDue) "Fee due" else "SGPA",
+            if (showFeeDue) if (overdue) "Overdue" else "Fee due" else "SGPA",
             if (showFeeDue) payable.orEmpty() else sgpa,
-            if (showFeeDue) "by " + dueDate else "",
-            Palette.sky(this), isLoading, if (showFeeDue) 23f else 38f
+            feeCaption,
+            if (overdue) Palette.badBg(this) else Palette.sky(this),
+            isLoading,
+            if (showFeeDue) 23f else 38f
         )
+        binding.sgpaCard.visibility = if (cgpaHeroShown && !showFeeDue && !isLoading) View.GONE else View.VISIBLE
+        if (overdue) {
+            binding.studentSgpaLabel.setTextColor(Palette.bad(this))
+            binding.studentSgpa.setTextColor(Palette.bad(this))
+            binding.studentSgpaCaption.setTextColor(Palette.bad(this))
+        }
 
         ListCard.bind(this, binding.timetableButton, R.drawable.ic_pt_calendar, "Timetable")
         ListCard.bind(this, binding.resultsButton, R.drawable.ic_pt_chart, "Results")
@@ -2089,11 +2109,26 @@ class MainActivity : AppCompatActivity() {
         val minutesUntil = (daysUntil * 1440 + startMinutes - currentMinutes).coerceAtLeast(0)
         val timeText = ParsingUtils.formatScheduleTime(next.time)
             .replace("\n–\n", " – ").replace("\n", " ").trim()
+        val startTimeText = timeText.substringBefore("–").trim().ifBlank { timeText }
+        val dayLabel = when {
+            daysUntil == 0 -> "Today"
+            daysUntil == 1 -> "Tomorrow"
+            else -> next.day.take(3).replaceFirstChar { it.uppercase() }
+        }
+        val nextClassLabel = if (minutesUntil > 100) {
+            "$dayLabel, $startTimeText"
+        } else if (minutesUntil == 0) {
+            "Next class · starting now"
+        } else {
+            "Next class · in $minutesUntil min"
+        }
 
         container.visibility = View.VISIBLE
         container.background = roundedBackground(Palette.peach(this), 24f)
-        binding.nextClassLabel.text = if (minutesUntil == 0) "Next class · starting now" else "Next class · in " + minutesUntil + " min"
+        binding.nextClassLabel.text = nextClassLabel
         binding.homeNextClassTitle.text = ParsingUtils.cleanDisplayText(next.course)
+        binding.homeNextClassTitle.maxLines = 2
+        binding.homeNextClassTitle.isSingleLine = false
         binding.homeNextClassTime.text = timeText
         binding.homeNextClassTitle.setTextColor(Palette.ink(this))
         binding.homeNextClassTitle.typeface =
@@ -2256,7 +2291,9 @@ class MainActivity : AppCompatActivity() {
         binding.refreshButton.imageTintList = ColorStateList.valueOf(Palette.primaryLight(this))
 
         val moduleToolbar = (binding.moduleTitle.parent as? View)?.parent as? View
-        moduleToolbar?.background = themedCard(surface, 0f)
+        // Keep all module headers on the page background, without a white strip or divider.
+        moduleToolbar?.background = android.graphics.drawable.ColorDrawable(background)
+        moduleToolbar?.elevation = 0f
         binding.moduleTitle.setTextColor(Palette.ink(this))
         binding.moduleSubtitle.setTextColor(Palette.ink2(this))
         when (activeModule) {
@@ -2394,6 +2431,8 @@ class MainActivity : AppCompatActivity() {
         binding.sideMenu.setBackgroundColor(Palette.bg(this))
         binding.moreContentColumn.setBackgroundColor(Palette.bg(this))
         binding.moreTitle.setTextColor(Palette.ink(this))
+        binding.moreTitlePercent.setTextColor(Palette.lime(this))
+        binding.moreConnectSubtitle.setTextColor(Palette.ink2(this))
         binding.menuProfileCard.background = themedCard(Palette.card(this), 22f)
         binding.menuProfileAvatar.background = roundedBackground(Palette.lime(this), 999f)
         binding.menuProfileAvatar.setTextColor(Palette.limeInk(this))

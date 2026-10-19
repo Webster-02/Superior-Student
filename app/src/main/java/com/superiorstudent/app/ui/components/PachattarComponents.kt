@@ -309,32 +309,28 @@ object HeroCard {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(px(context, 16f), px(context, 12f), px(context, 16f), 0) }
 
-            if (visibleCgpa != null) {
-                addView(LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(TextView(context).apply {
-                        text = "CGPA"
-                        textSize = 13f
-                        setTextColor(Palette.heroInk(context))
-                        typeface = regularTypeface(context)
-                        includeFontPadding = false
-                    })
-                    addView(TextView(context).apply {
-                        text = visibleCgpa
-                        textSize = 60f
-                        setTextColor(Palette.heroInk(context))
-                        typeface = mediumTypeface(context)
-                        includeFontPadding = false
-                        setFontFeatureSettings("tnum")
-                        letterSpacing = -0.05f
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                    })
-                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            } else {
-                addView(Space(context), LinearLayout.LayoutParams(0, 1, 1f))
-            }
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(TextView(context).apply {
+                    text = "CGPA"
+                    textSize = 13f
+                    setTextColor(Palette.heroInk(context))
+                    typeface = regularTypeface(context)
+                    includeFontPadding = false
+                })
+                addView(TextView(context).apply {
+                    text = visibleCgpa ?: "—"
+                    textSize = 60f
+                    setTextColor(Palette.heroInk(context))
+                    typeface = mediumTypeface(context)
+                    includeFontPadding = false
+                    setFontFeatureSettings("tnum")
+                    letterSpacing = -0.05f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
             val metrics = listOfNotNull(
                 visibleSgpa?.let { "SGPA" to it },
@@ -394,7 +390,7 @@ object HeroCard {
             AttendanceBand.SHORT -> "Short"
         }
         val chipColors = if (Palette.isNight(context)) {
-            Palette.heroTrack(context) to when (band) {
+            Palette.nav(context) to when (band) {
                 AttendanceBand.SAFE -> Palette.ok(context)
                 AttendanceBand.NEAR_LIMIT -> Palette.warn(context)
                 AttendanceBand.SHORT -> Palette.bad(context)

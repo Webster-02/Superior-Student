@@ -67,14 +67,20 @@ object HomeDisplayRules {
             invoice to date
         }.minByOrNull { it.second.time }?.first
 
-    fun dueDateLabel(raw: String): String? = parseDueDate(raw)?.let { SimpleDateFormat("d MMM", Locale.ENGLISH).format(it) }
+    fun isPastDue(raw: String, now: Date = Date()): Boolean {
+        val due = parseDueDate(raw) ?: return false
+        val dayFormat = SimpleDateFormat("yyyyMMdd", Locale.US)
+        return dayFormat.format(due) < dayFormat.format(now)
+    }
+
+    fun dueDateLabel(raw: String): String? =
+        parseDueDate(raw)?.let { SimpleDateFormat("d MMM", Locale.ENGLISH).format(it) }
+
+    fun dueDateFullLabel(raw: String): String? =
+        parseDueDate(raw)?.let { SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(it) }
 
     fun payableLabel(raw: String): String? {
         val amount = parsePayable(raw) ?: return null
-        val value = raw.trim()
-        if (Regex("""(?i)\b(?:rs|pkr|usd|eur|gbp)\b|[₨₹$€£]""").containsMatchIn(value)) {
-            return value.replace(Regex("\\s+"), " ")
-        }
-        return DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.US)).format(amount)
+        return "Rs. " + DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.US)).format(amount)
     }
 }

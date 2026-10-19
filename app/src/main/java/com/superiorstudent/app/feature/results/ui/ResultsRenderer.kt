@@ -34,7 +34,8 @@ class ResultsRenderer(
     private val tableSectionFactory: (String, TableData) -> View,
     private val emptyStateFactory: (String, String) -> View,
     private val onSemesterSelected: (String) -> Unit,
-    private val onRetry: () -> Unit = {}
+    private val onRetry: () -> Unit = {},
+    private val cachedCgpaProvider: () -> String = { "" }
 ) {
     private val regularTypeface: Typeface
         get() = ResourcesCompat.getFont(activity, R.font.poppins)
@@ -176,6 +177,7 @@ class ResultsRenderer(
         selectedStructuredTerm = term.term
         val published = hasPublishedResults(term)
         val cgpa = terms.asReversed().firstNotNullOfOrNull { validGpa(it.cgpa) }
+            ?: validGpa(cachedCgpaProvider())
         val sgpa = validGpa(term.gpa)
         val creditHoursAllTerms = aggregateTotalCredits(terms)
         HeroCard.results(activity, cgpa, sgpa, creditHoursAllTerms)?.let(container::addView)
@@ -185,7 +187,7 @@ class ResultsRenderer(
             if (chosen != term.term) renderStructuredResults(container, terms, chosen)
         })
 
-        createAdditionalMetrics(term)?.let(container::addView)
+        if (published) createAdditionalMetrics(term)?.let(container::addView)
 
         val selectedCredits = termCreditHours(term)
         container.addView(createSemesterHeading(
