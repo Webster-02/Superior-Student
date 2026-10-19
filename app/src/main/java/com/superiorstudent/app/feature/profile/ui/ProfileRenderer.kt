@@ -75,7 +75,7 @@ class ProfileRenderer(
         val registration = fields.firstValue(
             "registration", "registration no", "registration number", "roll no",
             "roll number", "student id", "student code"
-        )
+        ).orEmpty()
 
         if (name.isNotBlank()) container.addView(createProfileHero(name, program, semester, registration))
 
