@@ -203,7 +203,7 @@ class FeeRenderer(
     private fun createInvoiceRow(invoice: InvoiceData): View {
         val paid = invoice.status.equals("paid", true)
         val overdue = !paid && isOverdue(invoice)
-        val hasPdf = invoice.downloadUrl.isNotBlank() && invoice.number.isNotBlank()
+        val hasPdf = invoice.downloadUrl.isNotBlank()
         val statusParts = when {
             paid -> Quad("Paid", ChipTone.OK, Palette.okBg(activity), Palette.ok(activity))
             overdue -> Quad("Overdue", ChipTone.BAD, Palette.badBg(activity), Palette.bad(activity))
