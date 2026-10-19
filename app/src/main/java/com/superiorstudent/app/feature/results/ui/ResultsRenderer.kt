@@ -44,11 +44,15 @@ class ResultsRenderer(
         get() = ResourcesCompat.getFont(activity, R.font.poppins_medium)
             ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
 
+    private var selectedStructuredTerm: String? = null
+    private var selectedLegacyOption: String? = null
+
     fun render(container: LinearLayout, data: ModuleData) {
         container.removeAllViews()
 
         if (data.academicResults.isNotEmpty()) {
-            renderStructuredResults(container, data.academicResults, data.academicResults.last().term)
+            val remembered = selectedStructuredTerm?.takeIf { saved -> data.academicResults.any { it.term == saved } }
+            renderStructuredResults(container, data.academicResults, remembered ?: data.academicResults.last().term)
             return
         }
 
@@ -169,6 +173,7 @@ class ResultsRenderer(
             return
         }
 
+        selectedStructuredTerm = term.term
         val published = hasPublishedResults(term)
         val cgpa = terms.asReversed().firstNotNullOfOrNull { validGpa(it.cgpa) }
         val sgpa = validGpa(term.gpa)
@@ -176,6 +181,7 @@ class ResultsRenderer(
         HeroCard.results(activity, cgpa, sgpa, creditHoursAllTerms)?.let(container::addView)
 
         container.addView(createTermSelector(terms, term.term) { chosen ->
+            selectedStructuredTerm = chosen
             if (chosen != term.term) renderStructuredResults(container, terms, chosen)
         })
 
@@ -279,7 +285,7 @@ class ResultsRenderer(
             ).apply { topMargin = dp(5) }
         }
         val row = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
-        var selectedOption = options.firstOrNull().orEmpty()
+        var selectedOption = selectedLegacyOption?.takeIf { options.contains(it) } ?: options.firstOrNull().orEmpty()
         fun drawOptions() {
             row.removeAllViews()
             options.forEach { option ->
@@ -306,6 +312,7 @@ class ResultsRenderer(
                     ).apply { setMargins(0, 0, dp(8), 0) }
                     setOnClickListener {
                         selectedOption = option
+                        selectedLegacyOption = option
                         drawOptions()
                         onSemesterSelected(option)
                     }
