@@ -161,6 +161,78 @@ private class AttendanceProgressView(context: Context, private val percentage: D
 }
 
 object HeroCard {
+    /** Sky-tinted due summary. All values supplied here come from validated ERP data. */
+    fun invoiceSummary(
+        context: Context,
+        amount: String?,
+        status: String,
+        tone: ChipTone,
+        nextDueDate: String?,
+        allPaid: Boolean
+    ): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        background = roundRect(context, if (allPaid) Palette.okBg(context) else Palette.sky(context), 26f)
+        setPadding(px(context, 18f), px(context, 18f), px(context, 20f), px(context, 18f))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(px(context, 16f), px(context, 10f), px(context, 16f), px(context, 5f)) }
+
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(TextView(context).apply {
+                text = "Total due"
+                textSize = 13f
+                setTextColor(if (allPaid) Palette.ok(context) else Palette.ink2(context))
+                typeface = regularTypeface(context)
+                includeFontPadding = false
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(Chip.create(context, status, tone))
+        })
+        if (allPaid) {
+            addView(TextView(context).apply {
+                text = "All paid"
+                textSize = 30f
+                setTextColor(Palette.ok(context))
+                typeface = mediumTypeface(context)
+                includeFontPadding = false
+                letterSpacing = -0.025f
+                setPadding(0, px(context, 10f), 0, 0)
+            })
+        } else if (!amount.isNullOrBlank()) {
+            addView(TextView(context).apply {
+                text = amount
+                textSize = 40f
+                setTextColor(Palette.ink(context))
+                typeface = mediumTypeface(context)
+                includeFontPadding = false
+                setFontFeatureSettings("tnum")
+                letterSpacing = -0.04f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, px(context, 8f), 0, 0)
+            })
+        }
+        nextDueDate?.takeIf(String::isNotBlank)?.let { date ->
+            addView(TextView(context).apply {
+                text = "Next due date: $date"
+                textSize = 13f
+                setTextColor(if (allPaid) Palette.ok(context) else Palette.ink2(context))
+                typeface = regularTypeface(context)
+                includeFontPadding = false
+                setPadding(0, px(context, 4f), 0, 0)
+            })
+        }
+    }.also {
+        it.contentDescription = if (allPaid) "All invoices paid" else buildString {
+            append("Total due")
+            if (!amount.isNullOrBlank()) append(": $amount")
+            append(". $status")
+            if (!nextDueDate.isNullOrBlank()) append(". Next due date: $nextDueDate")
+        }
+    }
+
     /** Compact, data-backed upcoming-class highlight for Timetable. */
     fun nextClass(context: Context, course: String, timeText: String, minutesUntil: Int?): LinearLayout =
         LinearLayout(context).apply {
@@ -432,6 +504,18 @@ object BentoCard {
 }
 
 object IconBox {
+    fun tinted(
+        context: Context,
+        iconRes: Int,
+        backgroundColor: Int,
+        tint: Int,
+        sizeDp: Int = 40,
+        radiusDp: Float = 14f
+    ): FrameLayout = create(context, iconRes, tint, sizeDp).apply {
+        background = roundRect(context, backgroundColor, radiusDp)
+        contentDescription = null
+    }
+
     fun create(context: Context, iconRes: Int, tint: Int = Palette.ink(context), sizeDp: Int = 24): FrameLayout =
         FrameLayout(context).apply {
             layoutParams = ViewGroup.LayoutParams(px(context, sizeDp.toFloat()), px(context, sizeDp.toFloat()))
@@ -443,6 +527,58 @@ object IconBox {
 }
 
 object ListCard {
+    /** Generic rounded list surface shared by information, course and invoice rows. */
+    fun container(context: Context, radiusDp: Float = 22f): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        background = outlinedCard(context, Palette.card(context), radiusDp)
+        clipToOutline = true
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(px(context, 16f), px(context, 8f), px(context, 16f), 0) }
+    }
+
+    /** Standard profile/key-value row, with optional contact icon. */
+    fun keyValueRow(context: Context, label: String, value: String, iconRes: Int? = null): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(px(context, 16f), px(context, 12f), px(context, 16f), px(context, 12f))
+            minimumHeight = px(context, 54f)
+            if (iconRes != null) {
+                addView(IconBox.create(context, iconRes, Palette.ink2(context), 22).apply {
+                    layoutParams = LinearLayout.LayoutParams(px(context, 22f), px(context, 22f)).apply {
+                        marginEnd = px(context, 12f)
+                    }
+                })
+            }
+            addView(TextView(context).apply {
+                text = label
+                textSize = 13f
+                setTextColor(Palette.ink2(context))
+                typeface = regularTypeface(context)
+                includeFontPadding = false
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                )
+            })
+            addView(TextView(context).apply {
+                text = value
+                textSize = 14f
+                setTextColor(Palette.ink(context))
+                typeface = mediumTypeface(context)
+                includeFontPadding = false
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                maxLines = 3
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f
+                ).apply { marginStart = px(context, 12f) }
+            })
+        }
+
     /** Rounded, hairline-bordered container for a group of related rows. */
     fun resultsContainer(context: Context): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -523,6 +659,40 @@ object ListCard {
 }
 
 object BackHeader {
+    /** Bind the existing Activity header views; keeps the XML view IDs and back listener intact. */
+    fun bindExisting(
+        context: Context,
+        backButton: ImageView,
+        titleView: TextView,
+        subtitleView: TextView,
+        title: String,
+        subtitle: String
+    ) {
+        backButton.setImageResource(R.drawable.ic_pt_arrow_left)
+        backButton.imageTintList = ColorStateList.valueOf(Palette.ink(context))
+        backButton.background = outlinedCard(context, Palette.card(context), 999f)
+        backButton.scaleType = ImageView.ScaleType.CENTER
+        backButton.setPadding(px(context, 13f), px(context, 13f), px(context, 13f), px(context, 13f))
+        backButton.minimumWidth = px(context, 48f)
+        backButton.minimumHeight = px(context, 48f)
+        titleView.text = title
+        titleView.textSize = 26f
+        titleView.setTextColor(Palette.ink(context))
+        titleView.typeface = mediumTypeface(context)
+        titleView.includeFontPadding = false
+        titleView.letterSpacing = -0.023f
+        titleView.maxLines = 1
+        titleView.ellipsize = android.text.TextUtils.TruncateAt.END
+        subtitleView.text = subtitle
+        subtitleView.textSize = 12f
+        subtitleView.setTextColor(Palette.ink2(context))
+        subtitleView.typeface = regularTypeface(context)
+        subtitleView.includeFontPadding = false
+        subtitleView.maxLines = 1
+        subtitleView.ellipsize = android.text.TextUtils.TruncateAt.END
+        subtitleView.visibility = if (subtitle.isBlank()) View.GONE else View.VISIBLE
+    }
+
     fun create(context: Context, title: String, onBack: () -> Unit): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         setPadding(px(context, 8f), px(context, 4f), px(context, 16f), px(context, 4f))
