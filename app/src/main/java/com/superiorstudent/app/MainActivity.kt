@@ -93,15 +93,17 @@ class MainActivity : AppCompatActivity() {
     }
     private val timetableRenderer by lazy { TimetableRenderer(this, ::refreshActiveModule) }
     private val profileRenderer by lazy {
-        ProfileRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState)
+        ProfileRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::refreshActiveModule)
     }
     private val feeRenderer by lazy {
-        FeeRenderer(this, ::createSectionHeading, ::createMetricCard, ::createEmptyState, ::downloadInvoicePdf)
+        FeeRenderer(this, ::createSectionHeading, ::createMetricCard, ::createEmptyState, ::downloadInvoicePdf, ::refreshActiveModule)
     }
     private val resultsRenderer by lazy {
         ResultsRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::selectResultsSemester, ::refreshActiveModule)
     }
-    private val enrolledCoursesRenderer by lazy { EnrolledCoursesRenderer(this) }
+    private val enrolledCoursesRenderer by lazy {
+        EnrolledCoursesRenderer(this, ::attendanceCourseLinks, ::refreshActiveModule)
+    }
 
     private var loginInProgress = false
     private var loginSubmitted = false
@@ -1023,19 +1025,16 @@ class MainActivity : AppCompatActivity() {
                 PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Timetable", timetableDateSubtitle())
             }
             StudentModule.FEE -> {
-                binding.moduleTitle.text = "Invoices"
-                binding.moduleSubtitle.text = "Your invoice history"
+                BackHeader.bindExisting(this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, "Fee invoices", "")
             }
             StudentModule.PROFILE -> {
-                binding.moduleTitle.text = "My Profile"
-                binding.moduleSubtitle.text = "Your student information"
+                BackHeader.bindExisting(this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, "Profile", "")
             }
             StudentModule.RESULTS -> {
                 PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Results", "Academic results")
             }
             StudentModule.ENROLLED_COURSES -> {
-                binding.moduleTitle.text = "Enrolled Courses"
-                binding.moduleSubtitle.text = "Your active subjects and credits"
+                BackHeader.bindExisting(this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, "Enrolled courses", "")
             }
         }
 
@@ -1045,11 +1044,22 @@ class MainActivity : AppCompatActivity() {
         if (cachedData != null) {
             renderModuleData(module, cachedData)
             binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-            binding.moduleProgress.visibility = if (isBatchDesignModule(module)) View.GONE else View.VISIBLE
+            binding.moduleProgress.visibility = if (isRedesignedModule(module)) View.GONE else View.VISIBLE
         } else {
             binding.moduleContent.removeAllViews()
-            if (isBatchDesignModule(module)) {
-                binding.moduleContent.addView(Skeleton.rows(this, if (module == StudentModule.TIMETABLE) 3 else 4, module == StudentModule.TIMETABLE))
+            if (isRedesignedModule(module)) {
+                binding.moduleContent.addView(Skeleton.rows(
+                    this,
+                    when (module) {
+                        StudentModule.TIMETABLE -> 3
+                        StudentModule.RESULTS -> 4
+                        StudentModule.FEE -> 3
+                        StudentModule.PROFILE -> 3
+                        StudentModule.ENROLLED_COURSES -> 4
+                        else -> 3
+                    },
+                    module == StudentModule.TIMETABLE
+                ))
                 binding.moduleProgress.visibility = View.GONE
             } else {
                 binding.moduleProgress.visibility = View.VISIBLE
@@ -1081,11 +1091,22 @@ class MainActivity : AppCompatActivity() {
         if (cachedData != null) {
             renderModuleData(module, cachedData)
             binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-            binding.moduleProgress.visibility = if (isBatchDesignModule(module)) View.GONE else View.VISIBLE
+            binding.moduleProgress.visibility = if (isRedesignedModule(module)) View.GONE else View.VISIBLE
         } else {
             binding.moduleContent.removeAllViews()
-            if (isBatchDesignModule(module)) {
-                binding.moduleContent.addView(Skeleton.rows(this, if (module == StudentModule.TIMETABLE) 3 else 4, module == StudentModule.TIMETABLE))
+            if (isRedesignedModule(module)) {
+                binding.moduleContent.addView(Skeleton.rows(
+                    this,
+                    when (module) {
+                        StudentModule.TIMETABLE -> 3
+                        StudentModule.RESULTS -> 4
+                        StudentModule.FEE -> 3
+                        StudentModule.PROFILE -> 3
+                        StudentModule.ENROLLED_COURSES -> 4
+                        else -> 3
+                    },
+                    module == StudentModule.TIMETABLE
+                ))
                 binding.moduleProgress.visibility = View.GONE
             } else {
                 binding.moduleProgress.visibility = View.VISIBLE
@@ -1127,7 +1148,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 binding.moduleInfo.text = "Connection needs retry"
                 binding.moduleContent.removeAllViews()
-                if (isBatchDesignModule(module)) {
+                if (isRedesignedModule(module)) {
                     binding.moduleContent.addView(ErrorState.create(
                         this,
                         "Couldn't load this page",
@@ -1184,6 +1205,8 @@ class MainActivity : AppCompatActivity() {
         if (module != StudentModule.ENROLLED_COURSES &&
             module != StudentModule.TIMETABLE &&
             module != StudentModule.RESULTS &&
+            module != StudentModule.FEE &&
+            module != StudentModule.PROFILE &&
             (module != StudentModule.ATTENDANCE || data.attendanceDetail == null)) addModuleIntro(module)
         when (module) {
             StudentModule.ATTENDANCE -> renderAttendance(data)
@@ -1374,6 +1397,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderProfile(data: ModuleData) {
+        BackHeader.bindExisting(this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, "Profile", "")
+        applyModuleContentPadding(StudentModule.PROFILE)
         profileRenderer.render(binding.moduleContent, data, profileCache.studentName)
     }
 
@@ -1418,6 +1443,12 @@ class MainActivity : AppCompatActivity() {
     private fun isBatchDesignModule(module: StudentModule): Boolean =
         module == StudentModule.TIMETABLE || module == StudentModule.RESULTS
 
+    private fun isBatchBModule(module: StudentModule): Boolean =
+        module == StudentModule.FEE || module == StudentModule.PROFILE || module == StudentModule.ENROLLED_COURSES
+
+    private fun isRedesignedModule(module: StudentModule): Boolean =
+        isBatchDesignModule(module) || isBatchBModule(module)
+
     private fun timetableDateSubtitle(): String =
         java.text.SimpleDateFormat("EEEE, d MMM", java.util.Locale.ENGLISH).format(java.util.Date())
 
@@ -1438,7 +1469,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun rerenderBatchModuleForTheme() {
         val module = activeModule ?: return
-        if (!isBatchDesignModule(module) || binding.moduleScreen.visibility != View.VISIBLE) return
+        if (!isRedesignedModule(module) || binding.moduleScreen.visibility != View.VISIBLE) return
 
         val cachedData = erpRepository.cachedPayload(module)
             ?.let(::parseModuleData)
@@ -1453,7 +1484,14 @@ class MainActivity : AppCompatActivity() {
             applyModuleContentPadding(module)
             binding.moduleContent.addView(Skeleton.rows(
                 this,
-                if (module == StudentModule.TIMETABLE) 3 else 4,
+                when (module) {
+                    StudentModule.TIMETABLE -> 3
+                    StudentModule.RESULTS -> 4
+                    StudentModule.FEE -> 3
+                    StudentModule.PROFILE -> 3
+                    StudentModule.ENROLLED_COURSES -> 4
+                    else -> 3
+                },
                 module == StudentModule.TIMETABLE
             ))
             binding.moduleProgress.visibility = View.GONE
@@ -1492,7 +1530,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderEnrolledCourses(data: ModuleData) {
+        BackHeader.bindExisting(
+            this,
+            binding.homeButton,
+            binding.moduleTitle,
+            binding.moduleSubtitle,
+            "Enrolled courses",
+            enrolledCoursesRenderer.headerSubtitle(data).orEmpty()
+        )
+        applyModuleContentPadding(StudentModule.ENROLLED_COURSES)
         enrolledCoursesRenderer.render(binding.moduleContent, data)
+    }
+
+    private fun attendanceCourseLinks(): List<AttendanceDetailLink> {
+        val data = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
+            ?.let(::parseModuleData)
+            ?.takeIf { erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) }
+        return data?.attendanceDetailLinks.orEmpty()
     }
 
     private fun selectResultsSemester(label: String) {
@@ -1509,6 +1563,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderFee(data: ModuleData) {
+        BackHeader.bindExisting(
+            this,
+            binding.homeButton,
+            binding.moduleTitle,
+            binding.moduleSubtitle,
+            "Fee invoices",
+            feeRenderer.headerSubtitle(data).orEmpty()
+        )
+        applyModuleContentPadding(StudentModule.FEE)
         feeRenderer.render(binding.moduleContent, data)
     }
 
