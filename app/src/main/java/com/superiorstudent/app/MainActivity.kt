@@ -1386,6 +1386,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Palette.ink500(this@MainActivity))
                 textSize = 11f
                 setPadding(0, dp(3), 0, 0)
+                visibility = if (subtitle.isBlank()) View.GONE else View.VISIBLE
             })
         }
     }
@@ -1925,10 +1926,19 @@ class MainActivity : AppCompatActivity() {
                         } else {
                             binding.moduleInfo.text = "No readable data returned"
                             binding.moduleContent.removeAllViews()
-                            binding.moduleContent.addView(createEmptyState(
-                                "No readable data returned",
-                                "The ERP page loaded, but its data is not ready yet. Tap Refresh to try again."
-                            ))
+                            if (isRedesignedModule(module)) {
+                                binding.moduleContent.addView(ErrorState.create(
+                                    this,
+                                    "No readable data returned",
+                                    "The ERP page loaded, but its data is not ready yet. Retry to try again.",
+                                    ::refreshActiveModule
+                                ))
+                            } else {
+                                binding.moduleContent.addView(createEmptyState(
+                                    "No readable data returned",
+                                    "The ERP page loaded, but its data is not ready yet. Tap Refresh to try again."
+                                ))
+                            }
                         }
                     } else if (!displayWhenReady && preloadingModule == module) {
                         if (moduleReadAttempts < PRELOAD_READ_ATTEMPTS) {
@@ -2159,7 +2169,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.moduleInfo.text = "Connection needs retry"
             binding.moduleContent.removeAllViews()
-            if (isBatchDesignModule(module)) {
+            if (isRedesignedModule(module)) {
                 binding.moduleContent.addView(ErrorState.create(
                     this,
                     "Couldn't connect to the ERP",
