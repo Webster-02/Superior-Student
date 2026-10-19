@@ -61,8 +61,9 @@ class EnrolledCoursesRenderer(
             ))
             return
         }
+        val attendanceLinks = try { attendanceLinksProvider() } catch (_: Exception) { emptyList() }
         courses.forEach { course ->
-            container.addView(createCourseCard(course, resolveAttendancePercentage(course)))
+            container.addView(createCourseCard(course, resolveAttendancePercentage(course, attendanceLinks)))
         }
         container.addView(createInformationNote())
         applyTypography(container)
@@ -82,10 +83,9 @@ class EnrolledCoursesRenderer(
         return formatNumber(sum)
     }
 
-    private fun resolveAttendancePercentage(course: EnrolledCourse): Double? {
+    private fun resolveAttendancePercentage(course: EnrolledCourse, links: List<AttendanceDetailLink>): Double? {
         val code = normalizeCode(course.code)
         if (code.isBlank()) return null
-        val links = try { attendanceLinksProvider() } catch (_: Exception) { emptyList() }
         val matching = links.filter { normalizeCode(it.code) == code }
             .mapNotNull { it.percentage?.takeIf { pct -> pct.isFinite() && pct in 0.0..100.0 } }
         if (matching.isEmpty()) return null
