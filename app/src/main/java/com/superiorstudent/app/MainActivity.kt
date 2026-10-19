@@ -161,7 +161,11 @@ class MainActivity : AppCompatActivity() {
         // The manifest handles uiMode changes without recreating MainActivity.
         // Re-apply semantic tokens so Auto follows the newly selected system appearance.
         applySelectedTheme()
-        if (::binding.isInitialized && binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+        if (::binding.isInitialized && binding.dashboardScroll.visibility == View.VISIBLE) {
+            renderHomeDashboard()
+        } else {
+            rerenderBatchModuleForTheme()
+        }
     }
 
     private fun safeOnCreate(savedInstanceState: Bundle?) {
@@ -1432,6 +1436,40 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun rerenderBatchModuleForTheme() {
+        val module = activeModule ?: return
+        if (!isBatchDesignModule(module) || binding.moduleScreen.visibility != View.VISIBLE) return
+
+        val cachedData = erpRepository.cachedPayload(module)
+            ?.let(::parseModuleData)
+            ?.takeIf { erpRepository.hasUsableData(module, it) }
+        if (cachedData != null) {
+            renderModuleData(module, cachedData)
+            if (moduleFetchInProgress) {
+                binding.moduleInfo.text = "Last synced data • Updating from ERP…"
+            }
+        } else if (moduleFetchInProgress) {
+            binding.moduleContent.removeAllViews()
+            applyModuleContentPadding(module)
+            binding.moduleContent.addView(Skeleton.rows(
+                this,
+                if (module == StudentModule.TIMETABLE) 3 else 4,
+                module == StudentModule.TIMETABLE
+            ))
+            binding.moduleProgress.visibility = View.GONE
+        } else {
+            binding.moduleContent.removeAllViews()
+            applyModuleContentPadding(module)
+            binding.moduleContent.addView(ErrorState.create(
+                this,
+                "Data unavailable",
+                "Refresh to load the latest information from your university account.",
+                ::refreshActiveModule
+            ))
+        }
+        applyModuleNavigation()
+    }
+
     private fun applyModuleNavigation() {
         if (!::binding.isInitialized) return
         val homeActive = binding.dashboardScroll.visibility == View.VISIBLE &&
@@ -2306,6 +2344,7 @@ class MainActivity : AppCompatActivity() {
                 AppThemePreferences.applyToApp(this)
                 applySelectedTheme()
                 renderHomeDashboard()
+                rerenderBatchModuleForTheme()
                 if (changed) showToastAboveNavigation(theme.title + " theme applied", Toast.LENGTH_SHORT)
             }
 
