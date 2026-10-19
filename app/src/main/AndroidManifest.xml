@@ -7,8 +7,8 @@
         android:name=".SuperiorStudentApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="Superior Student"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
         android:largeHeap="true"
@@ -30,14 +30,15 @@
         <activity
             android:name=".feature.studentconnect.StudentChatActivity"
             android:exported="false"
-            android:label="Student Chat"
+            android:label="@string/u2u_name"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
             android:name=".feature.studentconnect.StudentConnectActivity"
             android:exported="false"
-            android:label="Student Connect" />
+            android:label="@string/u2u_name" />
         <activity
             android:name=".MainActivity"
+            android:theme="@style/Theme.SuperiorStudent.Splash"
             android:exported="true"
             android:launchMode="singleTask"
             android:supportsPictureInPicture="false"
