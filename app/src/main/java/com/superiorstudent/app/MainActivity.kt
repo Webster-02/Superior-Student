@@ -62,6 +62,7 @@ import com.superiorstudent.app.data.model.TimetableRow
 import com.superiorstudent.app.data.parser.TimetableParser
 import com.superiorstudent.app.data.repository.ErpRepository
 import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
+import com.superiorstudent.app.feature.attendance.domain.AttendanceSummaryCalculator
 import com.superiorstudent.app.feature.attendance.presentation.AttendanceViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.superiorstudent.app.feature.attendance.ui.AttendanceRenderer
@@ -1768,7 +1769,8 @@ class MainActivity : AppCompatActivity() {
         val attendanceData = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
             ?.let { parseModuleData(it) }
             ?.takeIf { erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) }
-        val attendancePercent = attendanceData?.overallAttendance
+        val attendanceSummary = attendanceData?.let { attendanceRenderer.summaryPercentageForHome(it) }
+        val attendancePercent = attendanceSummary?.percentage
             ?.takeIf { HomeDisplayRules.attendanceBand(it) != null }
         val cgpa = profileCache.cgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
             ?.let { ParsingUtils.validGpa(it) }.orEmpty()
@@ -1778,7 +1780,7 @@ class MainActivity : AppCompatActivity() {
         val hero = when {
             isLoading -> Skeleton.hero(this)
             attendancePercent != null -> {
-                val counts = attendanceData?.let { findOverallAttendanceCounts(it) }
+                val counts = attendanceData?.let { findOverallAttendanceCounts(it, attendancePercent) }
                 val canMiss = counts?.let { pair ->
                     AttendanceCalculator.calculate(pair.first, pair.second)?.safeFutureLeaves
                 }
@@ -1885,7 +1887,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Uses aggregate ERP counts only; a mean of subject percentages is not an overall total. */
-    private fun findOverallAttendanceCounts(data: ModuleData): Pair<Int, Int>? {
+    private fun findOverallAttendanceCounts(data: ModuleData, expectedPercentage: Double): Pair<Int, Int>? {
         var attended: Int? = null
         var conducted: Int? = null
 
@@ -1909,7 +1911,11 @@ class MainActivity : AppCompatActivity() {
         data.lines.forEach { line -> accept(line, line) }
         val present = attended ?: return null
         val total = conducted ?: return null
-        return if (total > 0 && present in 0..total) present to total else null
+        if (total <= 0 || present !in 0..total) return null
+        val computed = present.toDouble() * 100.0 / total
+        // Only attach the miss-count forecast when the aggregate counts agree with the hero percentage.
+        if (kotlin.math.abs(computed - expectedPercentage) > 0.15) return null
+        return present to total
     }
 
     private fun startSessionHeartbeat() {

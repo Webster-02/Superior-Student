@@ -19,6 +19,8 @@ import com.superiorstudent.app.data.model.AttendanceDetailData
 import com.superiorstudent.app.feature.attendance.presentation.AttendanceViewModel
 import com.superiorstudent.app.feature.attendance.domain.AttendanceSubjectMatcher
 import com.superiorstudent.app.feature.attendance.domain.AttendanceCalculator
+import com.superiorstudent.app.feature.attendance.domain.AttendanceSummaryCalculator
+import com.superiorstudent.app.feature.attendance.domain.AttendanceSummarySource
 import com.superiorstudent.app.feature.attendance.domain.AttendanceProjection
 import com.superiorstudent.app.feature.attendance.domain.AttendanceSubjectRowMapper
 import com.superiorstudent.app.data.model.AttendanceDetailLink
@@ -46,6 +48,34 @@ class AttendanceRenderer(
     fun render(container: LinearLayout, data: ModuleData) {
         content = container
         renderAttendance(data)
+    }
+
+    /**
+     * Returns exactly the Attendance summary percentage for Home, using the same
+     * authoritative subject links/fallback rows as the on-screen Attendance renderer.
+     */
+    fun summaryPercentageForHome(data: ModuleData): com.superiorstudent.app.feature.attendance.domain.AttendanceSummaryValue? {
+        // A single subject detail page is not an overall summary and must not replace Home's figure.
+        if (data.attendanceDetail != null) return null
+
+        val linkedRows = AttendanceSubjectRowMapper.fromLinks(data.attendanceDetailLinks).map { link ->
+            AttendanceRow(
+                course = link.course,
+                code = link.code,
+                percent = link.percentage,
+                present = "",
+                total = "",
+                detailUrl = link.url
+            )
+        }
+        val rows = if (data.attendanceDetailLinks.isNotEmpty()) {
+            linkedRows.take(20)
+        } else {
+            data.records.mapNotNull(::toAttendanceRow)
+                .distinctBy { it.course + "|" + it.code }
+                .take(20)
+        }
+        return AttendanceSummaryCalculator.calculate(data.overallAttendance, rows.mapNotNull { it.percent })
     }
 
     private enum class HistoryFilter(val label: String) {
@@ -735,18 +765,17 @@ class AttendanceRenderer(
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(12), dp(6), dp(12), dp(12)) }
 
-            val validPercentages = percentages.filter { it.isFinite() && it in 0.0..100.0 }
-            val display = overall?.takeIf { it.isFinite() && it in 0.0..100.0 }
-                ?: validPercentages.takeIf { it.isNotEmpty() }?.average()
+            val summary = AttendanceSummaryCalculator.calculate(overall, percentages)
+            val display = summary?.percentage
             addView(LinearLayout(activityContext).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
 
                 addView(TextView(activityContext).apply {
-                    text = when {
-                        overall != null && display != null -> "OVERALL ATTENDANCE"
-                        display != null -> "SUBJECT AVERAGE"
-                        else -> "ATTENDANCE SUMMARY"
+                    text = when (summary?.source) {
+                        AttendanceSummarySource.OFFICIAL_OVERALL -> "OVERALL ATTENDANCE"
+                        AttendanceSummarySource.SUBJECT_AVERAGE -> "SUBJECT AVERAGE"
+                        null -> "ATTENDANCE SUMMARY"
                     }
                     setTextColor(Color.argb(230, 255, 255, 255))
                     textSize = 10f
@@ -761,10 +790,10 @@ class AttendanceRenderer(
                     setPadding(0, dp(4), 0, 0)
                 })
                 addView(TextView(activityContext).apply {
-                    text = when {
-                        overall != null && display != null -> "$count subjects • official overall percentage"
-                        display != null -> "$count subjects • simple average of listed subjects; not weighted by class counts"
-                        else -> "$count subjects • percentage shown per subject"
+                    text = when (summary?.source) {
+                        AttendanceSummarySource.OFFICIAL_OVERALL -> "$count subjects • official overall percentage"
+                        AttendanceSummarySource.SUBJECT_AVERAGE -> "$count subjects • simple average of listed subjects; not weighted by class counts"
+                        null -> "$count subjects • percentage shown per subject"
                     }
                     setTextColor(Color.argb(210, 255, 255, 255))
                     textSize = 11f
