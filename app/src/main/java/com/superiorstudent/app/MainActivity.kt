@@ -382,20 +382,28 @@ class MainActivity : AppCompatActivity() {
 
         val keepFocusedFieldVisible = View.OnFocusChangeListener { view, hasFocus ->
             if (hasFocus) {
-                // Wait for adjustResize to report the keyboard-reduced viewport height.
+                // Wait for adjustResize, then keep the focused field and submit action in view
+                // whenever both fit into the available keyboard-reduced viewport.
                 loginViewport.postDelayed({
                     if (!view.isFocused || binding.loginScroll.visibility != View.VISIBLE) return@postDelayed
-                    val rect = android.graphics.Rect()
-                    view.getDrawingRect(rect)
-                    loginViewport.offsetDescendantRectToMyCoords(view, rect)
+                    val fieldRect = android.graphics.Rect()
+                    view.getDrawingRect(fieldRect)
+                    loginViewport.offsetDescendantRectToMyCoords(view, fieldRect)
+
+                    val buttonRect = android.graphics.Rect()
+                    binding.loginButton.getDrawingRect(buttonRect)
+                    loginViewport.offsetDescendantRectToMyCoords(binding.loginButton, buttonRect)
 
                     val visibleTop = loginViewport.scrollY + dp(14)
                     val visibleBottom = loginViewport.scrollY + loginViewport.height - dp(24)
+                    val fitsTogether = buttonRect.bottom - fieldRect.top <= loginViewport.height - dp(38)
                     when {
-                        rect.bottom > visibleBottom ->
-                            loginViewport.smoothScrollBy(0, rect.bottom - visibleBottom)
-                        rect.top < visibleTop ->
-                            loginViewport.smoothScrollTo(0, (rect.top - dp(14)).coerceAtLeast(0))
+                        fitsTogether && buttonRect.bottom > visibleBottom ->
+                            loginViewport.smoothScrollBy(0, buttonRect.bottom - visibleBottom)
+                        fieldRect.bottom > visibleBottom ->
+                            loginViewport.smoothScrollBy(0, fieldRect.bottom - visibleBottom)
+                        fieldRect.top < visibleTop ->
+                            loginViewport.smoothScrollTo(0, (fieldRect.top - dp(14)).coerceAtLeast(0))
                     }
                 }, 260L)
             }
@@ -2261,7 +2269,7 @@ class MainActivity : AppCompatActivity() {
         binding.moduleInfo.setTextColor(Palette.primaryLight(this))
         binding.moduleProgress.indeterminateTintList = ColorStateList.valueOf(primary)
 
-        binding.loginButton.background = gradientBackground(Palette.lime(this), Palette.lime(this), 14f)
+        binding.loginButton.background = gradientBackground(Palette.lime(this), Palette.lime(this), 16f)
         binding.loginButton.setTextColor(Palette.limeInk(this))
         binding.passwordVisibilityToggle.setTextColor(Palette.ink(this))
         if (binding.sideMenuOverlay.visibility == View.VISIBLE) applyMoreNavigation()
