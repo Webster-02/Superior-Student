@@ -161,6 +161,65 @@ private class AttendanceProgressView(context: Context, private val percentage: D
 }
 
 object HeroCard {
+    /** Compact, data-backed upcoming-class highlight for Timetable. */
+    fun nextClass(context: Context, course: String, timeText: String, minutesUntil: Int?): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundRect(context, Palette.peach(context), 22f)
+            setPadding(px(context, 16f), px(context, 12f), px(context, 16f), px(context, 12f))
+            minimumHeight = px(context, 68f)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(px(context, 16f), px(context, 5f), px(context, 16f), px(context, 5f)) }
+
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(TextView(context).apply {
+                    text = "NEXT CLASS"
+                    textSize = 9f
+                    letterSpacing = 0.07f
+                    setTextColor(Palette.ink2(context))
+                    typeface = mediumTypeface(context)
+                    includeFontPadding = false
+                })
+                addView(TextView(context).apply {
+                    text = course
+                    textSize = 14f
+                    setTextColor(Palette.ink(context))
+                    typeface = mediumTypeface(context)
+                    includeFontPadding = false
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, px(context, 2f), 0, 0)
+                })
+                addView(TextView(context).apply {
+                    text = timeText
+                    textSize = 11f
+                    setTextColor(Palette.ink2(context))
+                    typeface = regularTypeface(context)
+                    includeFontPadding = false
+                    setPadding(0, px(context, 2f), 0, 0)
+                })
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+            addView(Chip.createCustom(
+                context,
+                if (minutesUntil != null && minutesUntil >= 0) "Next · $minutesUntil min" else "Next",
+                Palette.lime(context),
+                Palette.limeInk(context)
+            ).apply {
+                textSize = 11f
+                setPadding(px(context, 10f), px(context, 6f), px(context, 10f), px(context, 6f))
+                minHeight = px(context, 32f)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = px(context, 8f) }
+            })
+        }
+
     /** Academic results hero. Only metrics backed by real values are included. */
     fun results(context: Context, cgpa: String?, sgpa: String?, creditHours: String?): LinearLayout? {
         val visibleCgpa = cgpa?.takeIf(String::isNotBlank)
@@ -522,9 +581,10 @@ object Skeleton {
     fun rows(context: Context, count: Int = 3, timetable: Boolean = false): LinearLayout =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, px(context, 74f))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setPadding(px(context, 0f), 0, px(context, 0f), px(context, 74f)) }
+            )
             val skeletonFill = Palette.stroke(context)
             repeat(count.coerceIn(1, 6)) {
                 addView(LinearLayout(context).apply {
