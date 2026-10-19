@@ -195,8 +195,8 @@ class MainActivity : AppCompatActivity() {
             username = binding.usernameInput.text.toString().trim()
             password = binding.passwordInput.text.toString()
             if (username.isBlank() || password.isBlank()) {
-                binding.loginStatus.setTextColor(Palette.danger(this@MainActivity))
                 binding.loginStatus.text = "Please enter your university username and password."
+                styleLoginStatus()
                 return@setOnClickListener
             }
             if (!ensureWebView()) return@setOnClickListener
@@ -215,8 +215,8 @@ class MainActivity : AppCompatActivity() {
             homePreloadComplete = false
             erpRepository.clearCache()
             binding.loginButton.isEnabled = false
-            binding.loginStatus.setTextColor(Palette.ink500(this@MainActivity))
             binding.loginStatus.text = "Signing in securely…"
+            styleLoginStatus()
             webView.visibility = View.GONE
             webView.loadUrl(ErpConfig.LOGIN_URL)
         }
@@ -237,20 +237,22 @@ class MainActivity : AppCompatActivity() {
         binding.menuButton.setOnClickListener { openSideMenu() }
         binding.closeMenuButton.setOnClickListener { closeSideMenu() }
         binding.menuScrim.setOnClickListener { closeSideMenu() }
+        binding.menuProfileCard.setOnClickListener { closeSideMenu(); loadModule(StudentModule.PROFILE) }
         binding.menuProfileButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.PROFILE) }
-        binding.menuStudentConnectButton.setOnClickListener {
-            closeSideMenu()
-            if (!loggedIn) {
-                Toast.makeText(this, "Please sign in to your university account first.", Toast.LENGTH_LONG).show()
-            } else {
-                startActivity(Intent(this, com.superiorstudent.app.feature.studentconnect.StudentConnectActivity::class.java))
-            }
-        }
+        binding.menuStudentConnectButton.setOnClickListener { closeSideMenu(); openStudentConnectFromMenu() }
+        binding.moreConnectCard.setOnClickListener { closeSideMenu(); openStudentConnectFromMenu() }
         binding.menuResultsButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.RESULTS) }
+        binding.menuResultsRow.setOnClickListener { closeSideMenu(); loadModule(StudentModule.RESULTS) }
         binding.menuInvoicesButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.FEE) }
+        binding.menuInvoicesRow.setOnClickListener { closeSideMenu(); loadModule(StudentModule.FEE) }
         binding.menuEnrolledCoursesButton.setOnClickListener { closeSideMenu(); loadModule(StudentModule.ENROLLED_COURSES) }
+        binding.menuCoursesRow.setOnClickListener { closeSideMenu(); loadModule(StudentModule.ENROLLED_COURSES) }
         binding.menuSettingsButton.setOnClickListener { closeSideMenu(); showThemePicker() }
-        binding.menuLogoutButton.setOnClickListener { closeSideMenu(); logout() }
+        binding.menuLogoutButton.setOnClickListener { closeSideMenu(); showLogoutConfirmation() }
+        binding.moreLogoutCard.setOnClickListener { closeSideMenu(); showLogoutConfirmation() }
+        binding.themePaperButton.setOnClickListener { selectAppearance(AppTheme.PAPER) }
+        binding.themeNightButton.setOnClickListener { selectAppearance(AppTheme.NIGHT) }
+        binding.themeAutoButton.setOnClickListener { selectAppearance(AppTheme.AUTO) }
 
         // Design-system touches: press-scale feedback on dashboard action cards.
         attachPressFeedback(binding.attendanceButton)
@@ -372,12 +374,8 @@ class MainActivity : AppCompatActivity() {
      * the soft keyboard on short screens and when the keyboard is open.
      */
     private fun configureLoginLayoutAndKeyboard() {
-        val screenHeightDp = resources.configuration.screenHeightDp
-        val topSpacerDp = (screenHeightDp * 0.39f).roundToInt().coerceIn(270, 365)
-        binding.loginTopSpacer.layoutParams = binding.loginTopSpacer.layoutParams.apply {
-            height = dp(topSpacerDp)
-        }
-
+        binding.loginTopSpacer.layoutParams = binding.loginTopSpacer.layoutParams.apply { height = 0 }
+        binding.loginTopSpacer.visibility = View.GONE
         val loginViewport = binding.loginContentScroll
         loginViewport.isSmoothScrollingEnabled = true
         loginViewport.post { loginViewport.scrollTo(0, 0) }
@@ -403,16 +401,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Force a strong text/hint contrast independently of device-specific theme defaults.
+        // Presentation only. Retain field input behavior, values and bindings.
         binding.usernameInput.apply {
-            setTextColor(Color.rgb(23, 32, 51))
-            setHintTextColor(Color.rgb(102, 112, 133))
+            setTextColor(Palette.ink(this@MainActivity))
+            setHintTextColor(Palette.ink3(this@MainActivity))
             alpha = 1f
             isEnabled = true
         }
         binding.passwordInput.apply {
-            setTextColor(Color.rgb(23, 32, 51))
-            setHintTextColor(Color.rgb(102, 112, 133))
+            setTextColor(Palette.ink(this@MainActivity))
+            setHintTextColor(Palette.ink3(this@MainActivity))
             alpha = 1f
             isEnabled = true
         }
@@ -657,8 +655,8 @@ class MainActivity : AppCompatActivity() {
             true
         } catch (t: Throwable) {
             android.util.Log.e("MainActivity", "Could not initialize university portal WebView", t)
-            binding.loginStatus.setTextColor(Palette.danger(this))
             binding.loginStatus.text = "University sign-in is unavailable. Update Android System WebView and Chrome, then try again."
+            styleLoginStatus()
             false
         }
     }
@@ -836,6 +834,7 @@ class MainActivity : AppCompatActivity() {
             if (result == "\"SUBMITTED\"") {
                 loginSubmitted = true
                 binding.loginStatus.text = "Verifying your account…"
+                                styleLoginStatus()
             } else {
                 scheduleLoginInjection(view)
             }
@@ -855,6 +854,7 @@ class MainActivity : AppCompatActivity() {
         sessionStore.username = username
         CookieManager.getInstance().flush()
         binding.loginStatus.text = ""
+        styleLoginStatus()
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
         password = ""
@@ -1976,6 +1976,7 @@ class MainActivity : AppCompatActivity() {
 
         val fullName = profileCache.studentName.takeIf { ParsingUtils.isValidStudentName(it) }.orEmpty()
         PageHeader.bind(this, binding.homeDateLine, binding.studentName, binding.studentAvatarInitial, fullName)
+        renderMoreProfileCard()
 
         val attendanceData = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
             ?.let { parseModuleData(it) }
@@ -2209,6 +2210,7 @@ class MainActivity : AppCompatActivity() {
         val primary = Palette.primary(this)
 
         binding.root.setBackgroundColor(background)
+        applyLoginThemeStyles()
         binding.dashboardScroll.setBackgroundColor(background)
         binding.dashboardScreen.setBackgroundColor(background)
         binding.dashboardHeader.setBackgroundColor(background)
@@ -2235,17 +2237,7 @@ class MainActivity : AppCompatActivity() {
 
         applyModuleNavigation()
 
-        binding.sideMenu.setBackgroundColor(surface)
-        styleTextAndIcons(binding.sideMenu)
-        val menuRowBackground = roundedBackground(background, 12f)
-        binding.menuProfileButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
-        binding.menuStudentConnectButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
-        binding.menuEnrolledCoursesButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
-        binding.menuResultsButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
-        binding.menuInvoicesButton.background = menuRowBackground.constantState?.newDrawable()?.mutate()
-        binding.menuSettingsButton.background = themedCard(tintAlpha(primary, 22), 13f)
-        binding.menuLogoutButton.background = roundedBackground(tintAlpha(Palette.danger(this), 30), 13f)
-        binding.closeMenuButton.background = themedCard(tintAlpha(primary, 22), 15f)
+        applyMoreThemeStyles()
 
         binding.menuButton.background = themedCard(tintAlpha(primary, 30), 15f)
         binding.menuButton.imageTintList = ColorStateList.valueOf(Palette.ink(this))
@@ -2271,7 +2263,8 @@ class MainActivity : AppCompatActivity() {
 
         binding.loginButton.background = gradientBackground(Palette.lime(this), Palette.lime(this), 14f)
         binding.loginButton.setTextColor(Palette.limeInk(this))
-        binding.passwordVisibilityToggle.setTextColor(Palette.lime(this))
+        binding.passwordVisibilityToggle.setTextColor(Palette.ink(this))
+        if (binding.sideMenuOverlay.visibility == View.VISIBLE) applyMoreNavigation()
 
         if (binding.dashboardScroll.visibility == View.VISIBLE || binding.moduleScreen.visibility == View.VISIBLE) {
             applySystemBarStyle(
@@ -2333,6 +2326,231 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    private fun topRoundedBackground(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable {
+        val radius = dp(radiusDp).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+            setStroke(dp(1f), Palette.line(this@MainActivity))
+        }
+    }
+
+    private fun applyLoginThemeStyles() {
+        if (!::binding.isInitialized) return
+        binding.loginScroll.setBackgroundColor(Color.rgb(11, 61, 46))
+        binding.loginBackground.visibility = View.GONE
+        binding.loginFormCard.background = topRoundedBackground(Palette.bg(this), 32f)
+        binding.loginHeading.setTextColor(Palette.ink(this))
+        binding.loginSubtitle.setTextColor(Palette.ink2(this))
+        binding.loginFooterNotice.setTextColor(Palette.ink3(this))
+        binding.loginFooterCredit.setTextColor(Palette.ink2(this))
+        binding.loginSecureText.setTextColor(Palette.ink2(this))
+        binding.loginSecureIcon.imageTintList = ColorStateList.valueOf(Palette.ink2(this))
+        binding.usernameInput.setTextColor(Palette.ink(this))
+        binding.usernameInput.setHintTextColor(Palette.ink3(this))
+        binding.usernameInput.background = themedCard(Palette.card(this), 16f)
+        binding.usernameInput.compoundDrawableTintList = ColorStateList.valueOf(Palette.ink2(this))
+        binding.passwordInput.setTextColor(Palette.ink(this))
+        binding.passwordInput.setHintTextColor(Palette.ink3(this))
+        binding.passwordInput.background = themedCard(Palette.card(this), 16f)
+        binding.passwordInput.compoundDrawableTintList = ColorStateList.valueOf(Palette.ink2(this))
+        binding.passwordVisibilityToggle.setTextColor(Palette.ink(this))
+        binding.loginButton.background = roundedBackground(Palette.lime(this), 16f)
+        binding.loginButton.setTextColor(Palette.limeInk(this))
+        binding.loginButton.minHeight = dp(54)
+        binding.loginButton.minimumHeight = dp(54)
+        styleLoginStatus()
+    }
+
+    private fun styleLoginStatus() {
+        if (!::binding.isInitialized) return
+        val status = binding.loginStatus
+        val message = status.text?.toString()?.trim().orEmpty()
+        val error = message.isNotBlank() &&
+            !message.startsWith("Signing in", ignoreCase = true) &&
+            !message.startsWith("Verifying your account", ignoreCase = true)
+        status.setTextColor(if (error) Palette.bad(this) else Palette.ink2(this))
+        status.background = if (error) roundedBackground(Palette.badBg(this), 10f)
+            else android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+        val horizontal = if (error) dp(12) else 0
+        val vertical = if (error) dp(9) else 0
+        status.setPadding(horizontal, vertical, horizontal, vertical)
+    }
+
+    private fun applyMoreThemeStyles() {
+        if (!::binding.isInitialized) return
+        binding.sideMenu.setBackgroundColor(Palette.bg(this))
+        binding.moreContentColumn.setBackgroundColor(Palette.bg(this))
+        binding.moreTitle.setTextColor(Palette.ink(this))
+        binding.menuProfileCard.background = themedCard(Palette.card(this), 22f)
+        binding.menuProfileAvatar.background = roundedBackground(Palette.lime(this), 999f)
+        binding.menuProfileAvatar.setTextColor(Palette.limeInk(this))
+        binding.menuProfileChevron.imageTintList = ColorStateList.valueOf(Palette.ink3(this))
+        binding.moreAccountCard.background = themedCard(Palette.card(this), 22f)
+        binding.moreConnectCard.background = themedCard(Palette.card(this), 22f)
+        binding.moreLogoutCard.background = themedCard(Palette.card(this), 16f)
+        binding.themeSelector.background = themedCard(Palette.card(this), 22f)
+        binding.menuInvoicesIconBox.background = roundedBackground(Palette.sky(this), 12f)
+        binding.menuCoursesIconBox.background = roundedBackground(Palette.peach(this), 12f)
+        binding.menuResultsIconBox.background = roundedBackground(Palette.lav(this), 12f)
+        binding.menuStudentConnectIconBox.background = roundedBackground(Palette.mint(this), 12f)
+        listOf(
+            binding.menuInvoicesIcon, binding.menuCoursesIcon, binding.menuResultsIcon,
+            binding.menuStudentConnectIcon
+        ).forEach { it.imageTintList = ColorStateList.valueOf(Palette.ink2(this)) }
+        binding.menuLogoutIcon.imageTintList = ColorStateList.valueOf(Palette.bad(this))
+        binding.moreDividerInvoice.setBackgroundColor(Palette.line(this))
+        binding.moreDividerCourses.setBackgroundColor(Palette.line(this))
+        binding.menuSettingsButton.visibility = View.GONE
+
+        styleTextAndIcons(binding.sideMenu)
+        binding.menuProfileAvatar.background = roundedBackground(Palette.lime(this), 999f)
+        binding.menuProfileAvatar.setTextColor(Palette.limeInk(this))
+        binding.menuProfileButton.setTextColor(Palette.ink(this))
+        binding.menuProfileSubtitle.setTextColor(Palette.ink2(this))
+        binding.menuStudentConnectButton.setTextColor(Palette.ink(this))
+        binding.menuEnrolledCoursesButton.setTextColor(Palette.ink(this))
+        binding.menuInvoicesButton.setTextColor(Palette.ink(this))
+        binding.menuResultsButton.setTextColor(Palette.ink(this))
+        binding.menuLogoutButton.setTextColor(Palette.bad(this))
+        binding.menuLogoutIcon.imageTintList = ColorStateList.valueOf(Palette.bad(this))
+        binding.closeMenuButton.background = themedCard(Palette.card(this), 15f)
+        binding.closeMenuButton.imageTintList = ColorStateList.valueOf(Palette.ink(this))
+
+        val selectedTheme = AppThemePreferences.current(this)
+        val buttons = listOf(
+            binding.themePaperButton to AppTheme.PAPER,
+            binding.themeNightButton to AppTheme.NIGHT,
+            binding.themeAutoButton to AppTheme.AUTO
+        )
+        buttons.forEach { (button, theme) ->
+            val selected = selectedTheme == theme
+            button.background = if (selected) roundedBackground(Palette.segment(this), 18f)
+                else roundedBackground(Color.TRANSPARENT, 18f)
+            button.setTextColor(if (selected) Palette.segmentInk(this) else Palette.ink2(this))
+            button.contentDescription = if (selected) theme.title + ", selected appearance" else "Use " + theme.title + " appearance"
+        }
+    }
+
+    private fun renderMoreProfileCard() {
+        if (!::binding.isInitialized) return
+        val fullName = profileCache.studentName
+            .takeIf { ParsingUtils.isValidStudentName(it) }.orEmpty()
+        binding.menuProfileButton.text = fullName.ifBlank { "My Profile" }
+        val studentId = username.trim()
+        binding.menuProfileSubtitle.text = studentId
+        binding.menuProfileSubtitle.visibility = if (studentId.isBlank()) View.GONE else View.VISIBLE
+        val parts = fullName.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        val initials = when {
+            parts.size >= 2 -> parts.first().first().toString() + parts.last().first().toString()
+            parts.size == 1 -> parts.first().take(1)
+            else -> "S"
+        }.uppercase(java.util.Locale.getDefault())
+        binding.menuProfileAvatar.text = initials
+        binding.menuProfileAvatar.contentDescription = if (fullName.isBlank()) "Student profile" else fullName + " initials"
+        binding.menuProfileChevron.imageTintList = ColorStateList.valueOf(Palette.ink3(this))
+    }
+
+    private fun updateMoreContentInsets() {
+        if (!::binding.isInitialized) return
+        val bottomInset = ViewCompat.getRootWindowInsets(binding.root)
+            ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+        val side = dp(16)
+        binding.moreContentColumn.setPadding(side, 0, side, dp(74) + bottomInset)
+    }
+
+    private fun applyMoreNavigation() {
+        if (!::binding.isInitialized) return
+        FloatingNav.apply(this, binding.dashboardBottomNav, listOf(
+            FloatingNavItem(binding.navHomeButton, R.drawable.ic_pt_home, "Home", false),
+            FloatingNavItem(binding.navTimetableButton, R.drawable.ic_pt_calendar, "Timetable", false),
+            FloatingNavItem(binding.navAttendanceButton, R.drawable.ic_pt_clipboard, "Attendance", false),
+            FloatingNavItem(binding.navResultsButton, R.drawable.ic_pt_chart, "Results", false),
+            FloatingNavItem(binding.navMoreButton, R.drawable.ic_pt_menu, "More", true)
+        ))
+        binding.dashboardBottomNav.visibility = View.VISIBLE
+        binding.dashboardBottomNav.bringToFront()
+    }
+
+    private fun openStudentConnectFromMenu() {
+        if (!loggedIn) {
+            Toast.makeText(this, "Please sign in to your university account first.", Toast.LENGTH_LONG).show()
+        } else {
+            startActivity(Intent(this, com.superiorstudent.app.feature.studentconnect.StudentConnectActivity::class.java))
+        }
+    }
+
+    private fun selectAppearance(theme: AppTheme) {
+        val changed = AppThemePreferences.current(this) != theme
+        AppThemePreferences.save(this, theme)
+        AppThemePreferences.applyToApp(this)
+        applySelectedTheme()
+        renderHomeDashboard()
+        rerenderBatchModuleForTheme()
+        if (binding.sideMenuOverlay.visibility == View.VISIBLE) {
+            renderMoreProfileCard()
+            updateMoreContentInsets()
+            applyMoreThemeStyles()
+            applyMoreNavigation()
+        }
+        if (changed) showToastAboveNavigation(theme.title + " theme applied", Toast.LENGTH_SHORT)
+    }
+
+    private fun showLogoutConfirmation() {
+        val dialog = android.app.Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(22), dp(22), dp(18))
+            background = themedCard(Palette.card(this@MainActivity), 24f)
+        }
+        fun label(textValue: String, size: Float, color: Int, medium: Boolean = false): TextView =
+            TextView(this).apply {
+                text = textValue
+                textSize = size
+                setTextColor(color)
+                includeFontPadding = false
+                typeface = androidx.core.content.res.ResourcesCompat.getFont(
+                    this@MainActivity, if (medium) R.font.poppins_medium else R.font.poppins
+                )
+            }
+        content.addView(label("Log out?", 21f, Palette.ink(this), true))
+        content.addView(label(
+            "You’ll need to sign in again to access your student account.",
+            13f, Palette.ink2(this)
+        ).apply { setPadding(0, dp(8), 0, dp(18)) })
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val cancel = label("Cancel", 14f, Palette.ink(this), true).apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(48)
+            background = roundedBackground(Palette.bg(this@MainActivity), 14f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { dialog.dismiss() }
+        }
+        val confirm = label("Log out", 14f, Palette.bad(this), true).apply {
+            gravity = Gravity.CENTER
+            minHeight = dp(48)
+            background = roundedBackground(Palette.badBg(this@MainActivity), 14f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { dialog.dismiss(); logout() }
+        }
+        actions.addView(cancel, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        actions.addView(confirm, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(8) })
+        content.addView(actions)
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        dialog.window?.setDimAmount(0.46f)
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(dp(320), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun showThemePicker() {
@@ -2448,17 +2666,35 @@ class MainActivity : AppCompatActivity() {
     private fun openSideMenu() {
         if (!loggedIn || binding.dashboardScroll.visibility != View.VISIBLE) return
         try {
+            renderMoreProfileCard()
+            updateMoreContentInsets()
             binding.sideMenuOverlay.bringToFront()
             binding.sideMenuOverlay.visibility = View.VISIBLE
             binding.sideMenu.bringToFront()
+            applyMoreNavigation()
+            applySystemBarStyle(
+                statusColor = Palette.bg(this),
+                navigationColor = Palette.bg(this),
+                lightStatusIcons = Palette.isNight(this),
+                lightNavigationIcons = Palette.isNight(this)
+            )
         } catch (t: Throwable) {
-            android.util.Log.e("MainActivity", "Side menu failed to open", t)
+            android.util.Log.e("MainActivity", "More destination failed to open", t)
             try { binding.sideMenuOverlay.visibility = View.GONE } catch (ignored: Throwable) { }
         }
     }
 
     private fun closeSideMenu() {
-        if (::binding.isInitialized) binding.sideMenuOverlay.visibility = View.GONE
+        if (::binding.isInitialized) {
+            binding.sideMenuOverlay.visibility = View.GONE
+            applyModuleNavigation()
+            applySystemBarStyle(
+                statusColor = Palette.bg(this),
+                navigationColor = Palette.bg(this),
+                lightStatusIcons = Palette.isNight(this),
+                lightNavigationIcons = Palette.isNight(this)
+            )
+        }
     }
 
     private fun showDashboard() {
@@ -2535,14 +2771,15 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.VISIBLE
         binding.sideMenuOverlay.visibility = View.GONE
         applySystemBarStyle(
-            statusColor = Color.rgb(7, 20, 38),
-            navigationColor = Color.rgb(7, 20, 38),
+            statusColor = Color.rgb(11, 61, 46),
+            navigationColor = Palette.bg(this),
             lightStatusIcons = true,
-            lightNavigationIcons = true
+            lightNavigationIcons = Palette.isNight(this)
         )
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
         binding.loginStatus.text = ""
+        styleLoginStatus()
     }
 
     private fun logout() {
@@ -2568,8 +2805,8 @@ class MainActivity : AppCompatActivity() {
         password = ""
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
-        binding.loginStatus.setTextColor(Palette.danger(this@MainActivity))
         binding.loginStatus.text = message
+        styleLoginStatus()
     }
 
     /** Full-screen readable error for fatal startup conditions (e.g. no WebView provider). */
