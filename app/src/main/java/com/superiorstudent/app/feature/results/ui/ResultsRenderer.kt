@@ -445,11 +445,12 @@ class ResultsRenderer(
     private fun validGpa(value: String): String? {
         val number = value.replace(",", "").trim().toDoubleOrNull() ?: return null
         if (!number.isFinite() || number <= 0.0 || number > 4.0) return null
-        return formatNumber(number)
+        return String.format(Locale.US, "%.2f", number).trimEnd('0').trimEnd('.')
     }
 
     private fun validPositiveNumber(value: String): Double? {
-        val number = value.replace(",", "").trim().toDoubleOrNull() ?: return null
+        val numeric = Regex("""\d+(?:\.\d+)?""").find(value.replace(",", ""))?.value ?: return null
+        val number = numeric.toDoubleOrNull() ?: return null
         return number.takeIf { it.isFinite() && it > 0.0 }
     }
 
@@ -463,25 +464,33 @@ class ResultsRenderer(
 
     private fun aggregateTotalCredits(terms: List<AcademicTermResult>): String? {
         if (terms.isEmpty()) return null
+        val coursesByTerm = terms.map { it.courses }
+        if (coursesByTerm.all { it.isNotEmpty() }) {
+            val credits = coursesByTerm.flatten().map { it.credits.replace(",", "").trim().toDoubleOrNull() }
+            if (credits.all { it != null && it.isFinite() && it >= 0.0 }) {
+                return formatNumber(credits.filterNotNull().sum()).takeIf { it != "0" }
+            }
+        }
+        // Fall back only to actual per-term summary values when they are all available.
         val totals = terms.map { it.totalCredits.replace(",", "").trim().toDoubleOrNull() }
         if (totals.all { it != null && it.isFinite() && it >= 0.0 }) {
             return formatNumber(totals.filterNotNull().sum()).takeIf { it != "0" }
         }
-        val courses = terms.flatMap { it.courses }
-        if (courses.isEmpty()) return null
-        val credits = courses.map { it.credits.replace(",", "").trim().toDoubleOrNull() }
-        if (!credits.all { it != null && it.isFinite() && it >= 0.0 }) return null
-        return formatNumber(credits.filterNotNull().sum()).takeIf { it != "0" }
+        return null
     }
 
     private fun termCreditHours(term: AcademicTermResult): String? {
+        if (term.courses.isNotEmpty()) {
+            val credits = term.courses.map { it.credits.replace(",", "").trim().toDoubleOrNull() }
+            if (credits.all { it != null && it.isFinite() && it >= 0.0 }) {
+                val sum = formatNumber(credits.filterNotNull().sum())
+                if (sum != "0") return sum
+            }
+        }
         validNonNegativeMetric(term.totalCredits)?.let { value ->
             if ((value.replace(",", "").toDoubleOrNull() ?: 0.0) > 0.0) return value
         }
-        if (term.courses.isEmpty()) return null
-        val credits = term.courses.map { it.credits.replace(",", "").trim().toDoubleOrNull() }
-        if (!credits.all { it != null && it.isFinite() && it >= 0.0 }) return null
-        return formatNumber(credits.filterNotNull().sum()).takeIf { it != "0" }
+        return null
     }
 
     private fun formatNumber(value: Double): String =
