@@ -338,16 +338,34 @@
                 android:paddingStart="20dp"
                 android:paddingEnd="16dp">
 
+                <ImageView
+                    android:id="@+id/moreBrandLogo"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="10dp"
+                    android:contentDescription="@null"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_pachattar_mark" />
+
                 <TextView
                     android:id="@+id/moreTitle"
-                    android:layout_width="0dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:fontFamily="@font/poppins_medium"
                     android:includeFontPadding="false"
-                    android:text="More"
+                    android:text="Pachattar"
                     android:textColor="#14201A"
-                    android:textSize="26sp" />
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:id="@+id/moreTitlePercent"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="@font/poppins_medium"
+                    android:includeFontPadding="false"
+                    android:text="%"
+                    android:textColor="#D4F34A"
+                    android:textSize="18sp" />
 
                 <ImageButton
                     android:id="@+id/closeMenuButton"
@@ -687,7 +705,7 @@
                         android:layout_marginBottom="8dp"
                         android:fontFamily="@font/poppins_medium"
                         android:includeFontPadding="false"
-                        android:text="Connect"
+                        android:text="Student tools"
                         android:textColor="#14201A"
                         android:textSize="16sp" />
 
@@ -714,21 +732,39 @@
                                 android:src="@drawable/ic_pachattar_messages" />
                         </FrameLayout>
 
-                        <TextView
-                            android:id="@+id/menuStudentConnectButton"
+                        <LinearLayout
                             android:layout_width="0dp"
-                            android:layout_height="68dp"
+                            android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:background="@android:color/transparent"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:fontFamily="@font/poppins_medium"
-                            android:gravity="center_vertical"
-                            android:includeFontPadding="false"
+                            android:orientation="vertical"
                             android:paddingStart="12dp"
-                            android:text="Student Connect"
-                            android:textColor="#14201A"
-                            android:textSize="14sp" />
+                            android:paddingTop="10dp"
+                            android:paddingBottom="10dp">
+                            <TextView
+                                android:id="@+id/menuStudentConnectButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:background="@android:color/transparent"
+                                android:clickable="true"
+                                android:focusable="true"
+                                android:fontFamily="@font/poppins_medium"
+                                android:gravity="center_vertical"
+                                android:includeFontPadding="false"
+                                android:text="@string/u2u_name"
+                                android:textColor="#14201A"
+                                android:textSize="14sp" />
+                            <TextView
+                                android:id="@+id/moreConnectSubtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:fontFamily="@font/poppins"
+                                android:includeFontPadding="false"
+                                android:maxLines="2"
+                                android:text="Chat and share files with classmates"
+                                android:textColor="#5F6B64"
+                                android:textSize="11sp" />
+                        </LinearLayout>
 
                         <ImageView
                             android:layout_width="20dp"
