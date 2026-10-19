@@ -444,7 +444,7 @@ class FeeRenderer(
     private fun rounded(color: Int, radiusDp: Float, strokeColor: Int? = null): GradientDrawable =
         GradientDrawable().apply {
             setColor(color)
-            cornerRadius = dp(radiusDp).toFloat()
+            cornerRadius = dp(radiusDp.roundToInt()).toFloat()
             strokeColor?.let { setStroke(dp(1), it) }
         }
 
