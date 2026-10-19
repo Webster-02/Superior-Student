@@ -104,10 +104,14 @@ class TimetableRenderer(
             val minutesUntil = if (nextClass.day.equals(currentDay, true) && start != null && start >= currentMinutes) {
                 start - currentMinutes
             } else null
+            val nextClassTime = buildString {
+                if (!nextClass.day.equals(currentDay, true)) append(nextClass.day + " · ")
+                append(compactTime(nextClass.time))
+            }.ifBlank { nextClass.day }
             container.addView(HeroCard.nextClass(
                 activity,
                 displayCourse(nextClass),
-                compactTime(nextClass.time).ifBlank { nextClass.day },
+                nextClassTime,
                 minutesUntil
             ))
         }
@@ -397,7 +401,8 @@ class TimetableRenderer(
         monday.set(Calendar.SECOND, 0)
         monday.set(Calendar.MILLISECOND, 0)
 
-        val hasSunday = rows.any { canonicalDay(it.day) == "Sunday" }
+        val hasSunday = now.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY ||
+            rows.any { canonicalDay(it.day) == "Sunday" }
         val offsets = if (hasSunday) (0..6) else (0..5)
         val result = linkedMapOf<String, Calendar>()
         offsets.forEach { offset ->
