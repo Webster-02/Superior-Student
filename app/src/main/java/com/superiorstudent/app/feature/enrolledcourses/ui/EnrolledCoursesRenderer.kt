@@ -107,7 +107,7 @@ class EnrolledCoursesRenderer(
 
             val prefix = codePrefix(course.code)
             val tintIndex = if (prefix.isBlank()) 0 else (abs(prefix.hashCode()) % tintPalette.size)
-            addView(TextView(context).apply {
+            if (prefix.isNotBlank()) addView(TextView(context).apply {
                 text = prefix
                 gravity = Gravity.CENTER
                 setTextColor(Palette.ink(context))
@@ -116,7 +116,7 @@ class EnrolledCoursesRenderer(
                 includeFontPadding = false
                 background = roundedCard(tintPalette[tintIndex], tintPalette[tintIndex], 16f)
                 layoutParams = LinearLayout.LayoutParams(dp(46), dp(46)).apply { marginEnd = dp(12) }
-                contentDescription = if (prefix.isNotBlank()) "Course code prefix $prefix" else "Course code prefix unavailable"
+                contentDescription = "Course code prefix $prefix"
             })
 
             val details = LinearLayout(context).apply {
