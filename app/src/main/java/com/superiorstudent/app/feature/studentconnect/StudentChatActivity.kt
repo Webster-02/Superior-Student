@@ -53,7 +53,7 @@ import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
 
-/** One-to-one text chat for two students with an accepted Student Connect relationship. */
+/** One-to-one text chat for two students with an accepted U2U relationship. */
 class StudentChatActivity : AppCompatActivity() {
 
     private lateinit var auth: FirebaseAuth
@@ -269,7 +269,7 @@ class StudentChatActivity : AppCompatActivity() {
         val user = auth.currentUser
         when {
             user == null || !user.isEmailVerified -> showFatalError(
-                "Sign in to your verified Student Connect account before opening a chat."
+                "Sign in to your verified U2U account before opening a chat."
             )
             otherUid.isBlank() || otherUid == user.uid -> showFatalError(
                 "This chat link is invalid. Go back and open a chat from My Connections."
@@ -387,7 +387,7 @@ class StudentChatActivity : AppCompatActivity() {
         profileRepository.getOwnProfile(uid) { profile, profileError ->
             if (!isCurrentUser(uid)) return@getOwnProfile
             if (profileError != null || profile == null) {
-                showFatalError("Could not load your Student Connect profile. Go back and try again.")
+                showFatalError("Could not load your U2U profile. Go back and try again.")
                 return@getOwnProfile
             }
 
