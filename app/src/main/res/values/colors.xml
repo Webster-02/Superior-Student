@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Pachattar% semantic design tokens from tokens.css. -->
+    <color name="pachattar_lime">#D4F34A</color>
     <color name="bg">#F4F1EA</color>
     <color name="card">#FFFFFF</color>
     <color name="ink">#14201A</color>

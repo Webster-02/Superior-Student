@@ -27,8 +27,8 @@
     <!-- Splash screen theme with branded window background -->
     <style name="Theme.SuperiorStudent.Splash" parent="Theme.SuperiorStudent.Base">
         <item name="android:windowBackground">@drawable/bg_splash</item>
-        <item name="android:statusBarColor">@color/splash_background</item>
-        <item name="android:navigationBarColor">@color/splash_background</item>
+        <item name="android:statusBarColor">@color/pachattar_lime</item>
+        <item name="android:navigationBarColor">@color/pachattar_lime</item>
     </style>
 
     <!-- Shared component styles -->

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.SuperiorStudent.Splash" parent="Theme.SuperiorStudent.Base">
+        <item name="android:windowBackground">@drawable/bg_splash</item>
+        <item name="android:statusBarColor">@color/pachattar_lime</item>
+        <item name="android:navigationBarColor">@color/pachattar_lime</item>
+        <item name="android:windowSplashScreenBackground">@color/pachattar_lime</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_pachattar_mark</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/pachattar_lime</item>
+    </style>
+</resources>

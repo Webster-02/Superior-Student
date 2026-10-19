@@ -1,9 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <gradient
-        android:angle="135"
-        android:startColor="@color/grad_login_start"
-        android:centerColor="@color/grad_header_start"
-        android:endColor="@color/grad_header_end"
-        android:type="linear" />
-</shape>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/pachattar_lime" />
+    <item android:drawable="@drawable/ic_pachattar_mark"
+        android:width="112dp" android:height="112dp" android:gravity="center" />
+</layer-list>
