@@ -691,6 +691,22 @@ object BackHeader {
         subtitleView.maxLines = 1
         subtitleView.ellipsize = android.text.TextUtils.TruncateAt.END
         subtitleView.visibility = if (subtitle.isBlank()) View.GONE else View.VISIBLE
+
+        // The existing toolbar refresh action is styled in the same circular outline system.
+        val toolbar = backButton.parent as? ViewGroup
+        if (toolbar != null) {
+            for (index in 0 until toolbar.childCount) {
+                val refresh = toolbar.getChildAt(index) as? ImageView ?: continue
+                if (refresh === backButton) continue
+                refresh.setImageResource(R.drawable.ic_pt_refresh)
+                refresh.imageTintList = ColorStateList.valueOf(Palette.ink(context))
+                refresh.background = outlinedCard(context, Palette.card(context), 999f)
+                refresh.scaleType = ImageView.ScaleType.CENTER
+                refresh.setPadding(px(context, 13f), px(context, 13f), px(context, 13f), px(context, 13f))
+                refresh.minimumWidth = px(context, 48f)
+                refresh.minimumHeight = px(context, 48f)
+            }
+        }
     }
 
     fun create(context: Context, title: String, onBack: () -> Unit): LinearLayout = LinearLayout(context).apply {
