@@ -2415,6 +2415,22 @@ class MainActivity : AppCompatActivity() {
         binding.menuSettingsButton.visibility = View.GONE
 
         styleTextAndIcons(binding.sideMenu)
+
+        // Restore semantic icon colours after the generic fallback styling pass.
+        val menuIconTint = ColorStateList.valueOf(Palette.ink(this))
+        val menuChevronTint = ColorStateList.valueOf(Palette.ink3(this))
+        listOf(
+            binding.menuInvoicesIcon, binding.menuCoursesIcon,
+            binding.menuResultsIcon, binding.menuStudentConnectIcon
+        ).forEach { it.imageTintList = menuIconTint }
+        binding.menuProfileChevron.imageTintList = menuChevronTint
+        listOf(
+            binding.menuInvoicesRow, binding.menuCoursesRow,
+            binding.menuResultsRow, binding.moreConnectCard
+        ).forEach { row ->
+            (row.getChildAt(row.childCount - 1) as? ImageView)?.imageTintList = menuChevronTint
+        }
+
         binding.menuProfileAvatar.background = roundedBackground(Palette.lime(this), 999f)
         binding.menuProfileAvatar.setTextColor(Palette.limeInk(this))
         binding.menuProfileButton.setTextColor(Palette.ink(this))
