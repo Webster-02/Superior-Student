@@ -2337,12 +2337,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun topRoundedBackground(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable {
-        val radius = dp(radiusDp).toFloat()
+        val radius = radiusDp * resources.displayMetrics.density
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             setColor(color)
             cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
-            setStroke(dp(1f), Palette.line(this@MainActivity))
+            setStroke(dp(1), Palette.line(this@MainActivity))
         }
     }
 
