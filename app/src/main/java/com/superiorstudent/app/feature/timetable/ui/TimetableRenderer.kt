@@ -191,9 +191,10 @@ class TimetableRenderer(
                 selectedRows.forEach { row ->
                     val running = isRunningNow(row, currentDay, currentMinutes)
                     val startEnd = parseTimes(row.time)
+                    val endingMinute = startEnd.second
                     val isPast = !running && (
                         dayRank(selectedDay) < dayRank(currentDay) ||
-                            (selectedDay.equals(currentDay, true) && startEnd.second != null && startEnd.second <= currentMinutes)
+                            (selectedDay.equals(currentDay, true) && endingMinute != null && endingMinute <= currentMinutes)
                     )
                     val isNext = !isPast && !running && nextClass != null && sameClass(row, nextClass)
                     agenda.addView(createScheduleRow(
@@ -248,7 +249,8 @@ class TimetableRenderer(
         addView(View(activity).apply {
             background = roundRect(
                 if (selected) Palette.segmentInk(activity) else Palette.ink3(activity),
-                999f
+                999f,
+                null
             )
             visibility = if (hasClasses) View.VISIBLE else View.INVISIBLE
             layoutParams = LinearLayout.LayoutParams(dp(5), dp(5)).apply { topMargin = dp(3) }
