@@ -91,7 +91,7 @@ class MainActivity : AppCompatActivity() {
     private val attendanceRenderer by lazy {
         AttendanceRenderer(this, attendanceViewModel, ::openAttendanceDetail, ::showAttendanceSummary)
     }
-    private val timetableRenderer by lazy { TimetableRenderer(this) }
+    private val timetableRenderer by lazy { TimetableRenderer(this, ::refreshActiveModule) }
     private val profileRenderer by lazy {
         ProfileRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState)
     }
@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity() {
         FeeRenderer(this, ::createSectionHeading, ::createMetricCard, ::createEmptyState, ::downloadInvoicePdf)
     }
     private val resultsRenderer by lazy {
-        ResultsRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::selectResultsSemester)
+        ResultsRenderer(this, ::createSectionHeading, ::createTableSection, ::createEmptyState, ::selectResultsSemester, ::refreshActiveModule)
     }
     private val enrolledCoursesRenderer by lazy { EnrolledCoursesRenderer(this) }
 
@@ -997,6 +997,8 @@ class MainActivity : AppCompatActivity() {
         binding.dashboardScroll.visibility = View.GONE
         binding.dashboardBottomNav.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
+        applyModuleNavigation()
+        applyModuleContentPadding(module)
         applySystemBarStyle(
             statusColor = Palette.surfaceAlt(this),
             navigationColor = Palette.surfaceAlt(this),
@@ -1014,8 +1016,7 @@ class MainActivity : AppCompatActivity() {
                 binding.moduleSubtitle.text = "Your attendance"
             }
             StudentModule.TIMETABLE -> {
-                binding.moduleTitle.text = "Timetable"
-                binding.moduleSubtitle.text = "Your class schedule"
+                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Timetable", timetableDateSubtitle())
             }
             StudentModule.FEE -> {
                 binding.moduleTitle.text = "Invoices"
@@ -1026,8 +1027,7 @@ class MainActivity : AppCompatActivity() {
                 binding.moduleSubtitle.text = "Your student information"
             }
             StudentModule.RESULTS -> {
-                binding.moduleTitle.text = "Results"
-                binding.moduleSubtitle.text = "Your academic results"
+                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Results", "Academic results")
             }
             StudentModule.ENROLLED_COURSES -> {
                 binding.moduleTitle.text = "Enrolled Courses"
@@ -1041,10 +1041,15 @@ class MainActivity : AppCompatActivity() {
         if (cachedData != null) {
             renderModuleData(module, cachedData)
             binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-            binding.moduleProgress.visibility = View.VISIBLE
+            binding.moduleProgress.visibility = if (isBatchDesignModule(module)) View.GONE else View.VISIBLE
         } else {
             binding.moduleContent.removeAllViews()
-            binding.moduleProgress.visibility = View.VISIBLE
+            if (isBatchDesignModule(module)) {
+                binding.moduleContent.addView(Skeleton.rows(this, if (module == StudentModule.TIMETABLE) 3 else 4, module == StudentModule.TIMETABLE))
+                binding.moduleProgress.visibility = View.GONE
+            } else {
+                binding.moduleProgress.visibility = View.VISIBLE
+            }
             binding.moduleInfo.text = "Syncing your latest information…"
         }
 
@@ -1072,10 +1077,15 @@ class MainActivity : AppCompatActivity() {
         if (cachedData != null) {
             renderModuleData(module, cachedData)
             binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-            binding.moduleProgress.visibility = View.VISIBLE
+            binding.moduleProgress.visibility = if (isBatchDesignModule(module)) View.GONE else View.VISIBLE
         } else {
             binding.moduleContent.removeAllViews()
-            binding.moduleProgress.visibility = View.VISIBLE
+            if (isBatchDesignModule(module)) {
+                binding.moduleContent.addView(Skeleton.rows(this, if (module == StudentModule.TIMETABLE) 3 else 4, module == StudentModule.TIMETABLE))
+                binding.moduleProgress.visibility = View.GONE
+            } else {
+                binding.moduleProgress.visibility = View.VISIBLE
+            }
             binding.moduleInfo.text = "Syncing the latest information…"
         }
 
@@ -1113,10 +1123,19 @@ class MainActivity : AppCompatActivity() {
             } else {
                 binding.moduleInfo.text = "Connection needs retry"
                 binding.moduleContent.removeAllViews()
-                binding.moduleContent.addView(createEmptyState(
-                    "Couldn't load this page",
-                    "The ERP took too long to respond. Check your connection and tap Refresh to try again."
-                ))
+                if (isBatchDesignModule(module)) {
+                    binding.moduleContent.addView(ErrorState.create(
+                        this,
+                        "Couldn't load this page",
+                        "The ERP took too long to respond. Check your connection and tap Retry to try again.",
+                        ::refreshActiveModule
+                    ))
+                } else {
+                    binding.moduleContent.addView(createEmptyState(
+                        "Couldn't load this page",
+                        "The ERP took too long to respond. Check your connection and tap Refresh to try again."
+                    ))
+                }
             }
         }, MODULE_LOAD_FALLBACK_MS)
     }
@@ -1157,7 +1176,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderModuleData(module: StudentModule, data: ModuleData) {
         binding.moduleContent.removeAllViews()
+        applyModuleContentPadding(module)
         if (module != StudentModule.ENROLLED_COURSES &&
+            module != StudentModule.TIMETABLE &&
+            module != StudentModule.RESULTS &&
             (module != StudentModule.ATTENDANCE || data.attendanceDetail == null)) addModuleIntro(module)
         when (module) {
             StudentModule.ATTENDANCE -> renderAttendance(data)
@@ -1342,6 +1364,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderTimetable(data: ModuleData) {
+        PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Timetable", timetableDateSubtitle())
+        applyModuleContentPadding(StudentModule.TIMETABLE)
         timetableRenderer.render(binding.moduleContent, data)
     }
 
@@ -1350,7 +1374,83 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderResults(data: ModuleData) {
+        PageHeader.bindPage(
+            this,
+            binding.moduleTitle,
+            binding.moduleSubtitle,
+            "Results",
+            if (hasPublishedResultsForHeader(data)) "Published results" else "Results not published yet"
+        )
+        applyModuleContentPadding(StudentModule.RESULTS)
         resultsRenderer.render(binding.moduleContent, data)
+    }
+
+    private fun hasPublishedResultsForHeader(data: ModuleData): Boolean {
+        fun positive(value: String): Boolean =
+            Regex("""\d+(?:\.\d+)?""").find(value.replace(",", ""))?.value
+                ?.toDoubleOrNull()?.let { it > 0.0 } == true
+
+        if (data.academicResults.any { term ->
+            positive(term.gradePoints) || positive(term.gpa) || positive(term.cgpa) ||
+                term.courses.any { course ->
+                    course.finalGrade.isNotBlank() || course.midGrade.isNotBlank() ||
+                        positive(course.marksObtained) || positive(course.gradePoints)
+                }
+        }) return true
+
+        return data.tables.any { table ->
+            table.headers.any { it.contains("grade", true) || it.contains("marks", true) } &&
+                table.rows.any { row -> row.any { value ->
+                    value.isNotBlank() && (positive(value) || value.any { char -> char.isLetter() })
+                } }
+        } || data.records.any { record ->
+            record.headers.any { it.contains("grade", true) || it.contains("marks", true) } &&
+                record.values.any { value ->
+                    value.isNotBlank() && (positive(value) || value.any { char -> char.isLetter() })
+                }
+        }
+    }
+
+    private fun isBatchDesignModule(module: StudentModule): Boolean =
+        module == StudentModule.TIMETABLE || module == StudentModule.RESULTS
+
+    private fun timetableDateSubtitle(): String =
+        java.text.SimpleDateFormat("EEEE, d MMM", java.util.Locale.ENGLISH).format(java.util.Date())
+
+    private fun applyModuleContentPadding(module: StudentModule?) {
+        if (!::binding.isInitialized) return
+        val bottom = if (module != null && isBatchDesignModule(module)) {
+            val systemInset = ViewCompat.getRootWindowInsets(binding.root)
+                ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+            dp(58 + 16) + systemInset
+        } else dp(24)
+        binding.moduleContent.setPadding(
+            binding.moduleContent.paddingLeft,
+            binding.moduleContent.paddingTop,
+            binding.moduleContent.paddingRight,
+            bottom
+        )
+    }
+
+    private fun applyModuleNavigation() {
+        if (!::binding.isInitialized) return
+        val homeActive = binding.dashboardScroll.visibility == View.VISIBLE &&
+            binding.moduleScreen.visibility != View.VISIBLE
+        val timetableActive = binding.moduleScreen.visibility == View.VISIBLE && activeModule == StudentModule.TIMETABLE
+        val attendanceActive = binding.moduleScreen.visibility == View.VISIBLE && activeModule == StudentModule.ATTENDANCE
+        val resultsActive = binding.moduleScreen.visibility == View.VISIBLE && activeModule == StudentModule.RESULTS
+
+        FloatingNav.apply(this, binding.dashboardBottomNav, listOf(
+            FloatingNavItem(binding.navHomeButton, R.drawable.ic_pt_home, "Home", homeActive),
+            FloatingNavItem(binding.navTimetableButton, R.drawable.ic_pt_calendar, "Timetable", timetableActive),
+            FloatingNavItem(binding.navAttendanceButton, R.drawable.ic_pt_clipboard, "Attendance", attendanceActive),
+            FloatingNavItem(binding.navResultsButton, R.drawable.ic_pt_chart, "Results", resultsActive),
+            FloatingNavItem(binding.navMoreButton, R.drawable.ic_pt_menu, "More", false)
+        ))
+
+        val showNav = homeActive || timetableActive || resultsActive
+        binding.dashboardBottomNav.visibility = if (showNav) View.VISIBLE else View.GONE
+        if (timetableActive || resultsActive) binding.dashboardBottomNav.bringToFront()
     }
 
     private fun renderEnrolledCourses(data: ModuleData) {
@@ -1958,10 +2058,19 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.moduleInfo.text = "Connection needs retry"
             binding.moduleContent.removeAllViews()
-            binding.moduleContent.addView(createEmptyState(
-                "Couldn't connect to the ERP",
-                message
-            ))
+            if (isBatchDesignModule(module)) {
+                binding.moduleContent.addView(ErrorState.create(
+                    this,
+                    "Couldn't connect to the ERP",
+                    message,
+                    ::refreshActiveModule
+                ))
+            } else {
+                binding.moduleContent.addView(createEmptyState(
+                    "Couldn't connect to the ERP",
+                    message
+                ))
+            }
         }
     }
 
@@ -2013,13 +2122,7 @@ class MainActivity : AppCompatActivity() {
         binding.homeNextClassTitle.setTextColor(Palette.ink(this))
         binding.homeNextClassTime.setTextColor(Palette.ink2(this))
 
-        FloatingNav.apply(this, binding.dashboardBottomNav, listOf(
-            FloatingNavItem(binding.navHomeButton, R.drawable.ic_pt_home, "Home", true),
-            FloatingNavItem(binding.navTimetableButton, R.drawable.ic_pt_calendar, "Timetable", false),
-            FloatingNavItem(binding.navAttendanceButton, R.drawable.ic_pt_clipboard, "Attendance", false),
-            FloatingNavItem(binding.navResultsButton, R.drawable.ic_pt_chart, "Results", false),
-            FloatingNavItem(binding.navMoreButton, R.drawable.ic_pt_menu, "More", false)
-        ))
+        applyModuleNavigation()
 
         binding.sideMenu.setBackgroundColor(surface)
         styleTextAndIcons(binding.sideMenu)
@@ -2044,6 +2147,13 @@ class MainActivity : AppCompatActivity() {
         moduleToolbar?.background = themedCard(surface, 0f)
         binding.moduleTitle.setTextColor(Palette.ink(this))
         binding.moduleSubtitle.setTextColor(Palette.ink2(this))
+        when (activeModule) {
+            StudentModule.TIMETABLE ->
+                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Timetable", timetableDateSubtitle())
+            StudentModule.RESULTS ->
+                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Results", binding.moduleSubtitle.text?.toString().orEmpty().ifBlank { "Academic results" })
+            else -> Unit
+        }
         binding.moduleInfo.background = themedCard(Palette.infoBg(this), 12f)
         binding.moduleInfo.setTextColor(Palette.primaryLight(this))
         binding.moduleProgress.indeterminateTintList = ColorStateList.valueOf(primary)
