@@ -13,6 +13,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.core.content.res.ResourcesCompat
+import com.superiorstudent.app.R
 import com.superiorstudent.app.core.config.ErpConfig
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.data.model.AttendanceDetailData
@@ -29,6 +31,8 @@ import com.superiorstudent.app.data.model.ModuleData
 import com.superiorstudent.app.data.model.ModuleRecord
 import com.superiorstudent.app.data.model.TableData
 import com.superiorstudent.app.ui.Palette
+import com.superiorstudent.app.ui.components.Chip
+import com.superiorstudent.app.ui.components.ProgressBar as PachattarProgressBar
 import kotlin.math.roundToInt
 
 /**
@@ -42,12 +46,33 @@ class AttendanceRenderer(
     private val onShowSummary: () -> Unit
 ) {
     private lateinit var content: LinearLayout
+    private val regularTypeface: Typeface
+        get() = ResourcesCompat.getFont(activity, R.font.poppins)
+            ?: Typeface.create("sans-serif", Typeface.NORMAL)
     private val typeface: Typeface
-        get() = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        get() = ResourcesCompat.getFont(activity, R.font.poppins_medium)
+            ?: Typeface.create("sans-serif-medium", Typeface.NORMAL)
 
     fun render(container: LinearLayout, data: ModuleData) {
         content = container
         renderAttendance(data)
+        applyTypography(container)
+    }
+
+    private fun applyTypography(view: View) {
+        if (view is TextView) {
+            val existingStyle = view.typeface?.style ?: Typeface.NORMAL
+            view.typeface = if (existingStyle and Typeface.BOLD != 0) {
+                Typeface.create(typeface, Typeface.BOLD)
+            } else {
+                regularTypeface
+            }
+            view.includeFontPadding = false
+        } else if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                applyTypography(view.getChildAt(index))
+            }
+        }
     }
 
     /**
@@ -145,6 +170,10 @@ class AttendanceRenderer(
                     Palette.dangerBg(activity)
                 ))
             }
+            content.addView(createSectionHeading(
+                "Your subjects",
+                "Select a subject to open class history and its 75% attendance planner"
+            ))
             rows.forEachIndexed { index, row -> content.addView(createAttendanceCard(row, index + 1)) }
         } else if (data.attendanceDetailLinks.isNotEmpty()) {
             content.addView(createEmptyState(
@@ -212,10 +241,17 @@ class AttendanceRenderer(
 
         val back = TextView(activity).apply {
             text = "‹  All subjects"
-            setTextColor(Palette.primary(activity))
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(14), dp(10), dp(12), dp(10))
+            setTextColor(Palette.ink(activity))
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER_VERTICAL
+            background = outlinedBackground(Palette.surface(activity), 999f)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(8), 0, dp(6)) }
+            minHeight = dp(38)
             isClickable = true
             isFocusable = true
             setOnClickListener { onShowSummary() }
@@ -224,37 +260,97 @@ class AttendanceRenderer(
 
         val hero = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            background = gradientBackground(Palette.primaryDark(activity), Palette.primary(activity), 22f)
-            elevation = dp(3).toFloat()
-            setPadding(dp(18), dp(18), dp(18), dp(18))
+            background = roundedBackground(Palette.hero(activity), 26f)
+            elevation = 0f
+            setPadding(dp(20), dp(20), dp(20), dp(18))
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(4), dp(12), dp(10)) }
-            addView(TextView(activity).apply {
-                text = detail.course.ifBlank { "Subject attendance" }
-                setTextColor(Color.WHITE)
-                textSize = 19f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-            })
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(2), dp(12), dp(10)) }
+
+            val top = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(TextView(activity).apply {
+                    text = detail.course.ifBlank { "Subject attendance" }
+                    setTextColor(Palette.heroInk(activity))
+                    textSize = 17f
+                    setTypeface(typeface, Typeface.BOLD)
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    includeFontPadding = false
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                if (percent != null) addView(Chip.createCustom(
+                    activity,
+                    attendanceBandLabel(percent),
+                    Palette.heroTrack(activity),
+                    Palette.heroInk(activity)
+                ))
+            }
+            addView(top)
+
             if (detail.code.isNotBlank()) addView(TextView(activity).apply {
                 text = detail.code
-                setTextColor(Color.argb(215, 255, 255, 255))
+                setTextColor(Palette.heroInk(activity))
+                alpha = 0.82f
                 textSize = 10f
-                setPadding(0, dp(4), 0, 0)
+                setPadding(0, dp(5), 0, 0)
+                includeFontPadding = false
             })
+
+            val valueRow = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.BOTTOM
+                setPadding(0, dp(8), 0, dp(3))
+                addView(TextView(activity).apply {
+                    text = percent?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
+                    setTextColor(Palette.heroInk(activity))
+                    textSize = 58f
+                    setTypeface(typeface, Typeface.BOLD)
+                    letterSpacing = -0.035f
+                    includeFontPadding = false
+                    setFontFeatureSettings("tnum")
+                })
+                if (percent != null) addView(TextView(activity).apply {
+                    text = "%"
+                    setTextColor(Palette.heroInk(activity))
+                    textSize = 25f
+                    setTypeface(typeface, Typeface.BOLD)
+                    includeFontPadding = false
+                    setPadding(dp(3), 0, 0, dp(7))
+                })
+            }
+            addView(valueRow)
+
+            if (percent != null) addView(
+                PachattarProgressBar.create(activity, percent),
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(40)
+                ).apply { topMargin = dp(1) }
+            )
+
             addView(TextView(activity).apply {
-                text = percent?.let { String.format(java.util.Locale.US, "%.1f%% attendance", it) }
-                    ?: "Attendance percentage unavailable"
-                setTextColor(Color.WHITE)
-                textSize = 25f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setPadding(0, dp(12), 0, dp(3))
+                text = if (countsValid) {
+                    "$present of $conducted classes attended"
+                } else if (percent != null) {
+                    "ERP percentage available • class predictions need valid class counts"
+                } else {
+                    "Attendance percentage and class counts are unavailable"
+                }
+                setTextColor(Palette.heroInk(activity))
+                alpha = 0.88f
+                textSize = 11f
+                setPadding(0, dp(4), 0, 0)
+                includeFontPadding = false
             })
-            if (countsValid) addView(TextView(activity).apply {
-                text = present.toString() + " of " + conducted + " classes attended"
-                setTextColor(Color.argb(225, 255, 255, 255))
-                textSize = 12f
-            })
+        }.also {
+            it.contentDescription = buildString {
+                append(detail.course.ifBlank { "Subject attendance" })
+                append(". ")
+                append(percent?.let { value -> String.format(java.util.Locale.US, "%.1f percent attendance", value) } ?: "Attendance percentage unavailable")
+                if (countsValid) append(". $present of $conducted classes attended.")
+            }
         }
         content.addView(hero)
 
@@ -421,6 +517,8 @@ class AttendanceRenderer(
                         historyContainer.addView(createAttendanceSessionCard(session, index + 1))
                     }
                 }
+                applyTypography(filterRow)
+                applyTypography(historyContainer)
             }
             renderHistory(HistoryFilter.ALL)
         } else {
@@ -723,9 +821,9 @@ class AttendanceRenderer(
 
     private fun attendanceStatus(percent: Double): Pair<Int, String> {
         return when {
-            percent >= 85.0 -> Palette.success(activity) to "Good standing"
-            percent >= 75.0 -> Palette.warning(activity) to "Needs attention"
-            else -> Palette.danger(activity) to "Low attendance"
+            percent >= 80.0 -> Palette.success(activity) to "Safe zone"
+            percent >= 75.0 -> Palette.warning(activity) to "Near limit"
+            else -> Palette.danger(activity) to "Below 75%"
         }
     }
 
@@ -753,139 +851,209 @@ class AttendanceRenderer(
     }
 
     private fun createAttendanceSummary(overall: Double?, percentages: List<Double>, count: Int): View {
-        val activityContext = activity
-        return LinearLayout(activityContext).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = gradientBackground(Palette.primary(activity), Palette.violet(activity), 22f)
-            elevation = dp(4).toFloat()
-            setPadding(dp(20), dp(18), dp(20), dp(18))
+        val summary = AttendanceSummaryCalculator.calculate(overall, percentages)
+        val display = summary?.percentage
+        val sourceLabel = when (summary?.source) {
+            AttendanceSummarySource.OFFICIAL_OVERALL -> "OVERALL ATTENDANCE"
+            AttendanceSummarySource.SUBJECT_AVERAGE -> "SUBJECT AVERAGE"
+            null -> "ATTENDANCE OVERVIEW"
+        }
+        val sourceDescription = when (summary?.source) {
+            AttendanceSummarySource.OFFICIAL_OVERALL ->
+                "$count subjects • official percentage supplied by the university ERP"
+            AttendanceSummarySource.SUBJECT_AVERAGE ->
+                "$count subjects • simple average of listed percentages; not weighted by class counts"
+            null ->
+                "$count subjects • no valid overall percentage is available yet"
+        }
+
+        return LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedBackground(Palette.hero(activity), 26f)
+            elevation = 0f
+            setPadding(dp(20), dp(20), dp(20), dp(18))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(12), dp(6), dp(12), dp(12)) }
+            ).apply { setMargins(dp(12), dp(7), dp(12), dp(14)) }
 
-            val summary = AttendanceSummaryCalculator.calculate(overall, percentages)
-            val display = summary?.percentage
-            addView(LinearLayout(activityContext).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-
-                addView(TextView(activityContext).apply {
-                    text = when (summary?.source) {
-                        AttendanceSummarySource.OFFICIAL_OVERALL -> "OVERALL ATTENDANCE"
-                        AttendanceSummarySource.SUBJECT_AVERAGE -> "SUBJECT AVERAGE"
-                        null -> "ATTENDANCE SUMMARY"
-                    }
-                    setTextColor(Color.argb(230, 255, 255, 255))
+            val header = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(TextView(activity).apply {
+                    text = sourceLabel
+                    setTextColor(Palette.heroInk(activity))
                     textSize = 10f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    letterSpacing = 0.10f
-                })
-                addView(TextView(activityContext).apply {
-                    text = display?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
-                    setTextColor(Color.WHITE)
-                    textSize = 34f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    setPadding(0, dp(4), 0, 0)
-                })
-                addView(TextView(activityContext).apply {
-                    text = when (summary?.source) {
-                        AttendanceSummarySource.OFFICIAL_OVERALL -> "$count subjects • official overall percentage"
-                        AttendanceSummarySource.SUBJECT_AVERAGE -> "$count subjects • simple average of listed subjects; not weighted by class counts"
-                        null -> "$count subjects • percentage shown per subject"
-                    }
-                    setTextColor(Color.argb(210, 255, 255, 255))
-                    textSize = 11f
-                })
-            })
+                    letterSpacing = 0.09f
+                    setTypeface(typeface, Typeface.BOLD)
+                    includeFontPadding = false
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                if (display != null) {
+                    addView(Chip.createCustom(
+                        activity,
+                        attendanceBandLabel(display),
+                        Palette.heroTrack(activity),
+                        Palette.heroInk(activity)
+                    ))
+                }
+            }
+            addView(header)
 
-            if (display != null) {
-                // Animated-feel progress ring with centered label on the gradient card.
-                addView(LinearLayout(activityContext).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER
-                    setPadding(dp(10), 0, 0, 0)
-                    addView(createProgressRing(display, 74, 8, Color.WHITE))
-                    addView(TextView(activityContext).apply {
-                        text = attendanceStatus(display).second.uppercase(java.util.Locale.US)
-                        setTextColor(Color.argb(220, 255, 255, 255))
-                        textSize = 9f
-                        setTypeface(typeface, android.graphics.Typeface.BOLD)
-                        letterSpacing = 0.08f
-                        setPadding(0, dp(6), 0, 0)
-                        gravity = Gravity.CENTER
-                    })
+            val valueRow = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.BOTTOM
+                setPadding(0, dp(8), 0, dp(3))
+                addView(TextView(activity).apply {
+                    text = display?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "—"
+                    setTextColor(Palette.heroInk(activity))
+                    textSize = 60f
+                    setTypeface(typeface, Typeface.BOLD)
+                    letterSpacing = -0.035f
+                    includeFontPadding = false
+                    setFontFeatureSettings("tnum")
+                })
+                if (display != null) addView(TextView(activity).apply {
+                    text = "%"
+                    setTextColor(Palette.heroInk(activity))
+                    textSize = 25f
+                    setTypeface(typeface, Typeface.BOLD)
+                    includeFontPadding = false
+                    setPadding(dp(3), 0, 0, dp(7))
                 })
             }
+            addView(valueRow)
+
+            if (display != null) {
+                addView(
+                    PachattarProgressBar.create(activity, display),
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(40)
+                    ).apply { topMargin = dp(2) }
+                )
+            }
+
+            addView(TextView(activity).apply {
+                text = sourceDescription
+                setTextColor(Palette.heroInk(activity))
+                alpha = 0.88f
+                textSize = 11f
+                setPadding(0, dp(4), 0, dp(1))
+                includeFontPadding = false
+            })
+            if (display != null) addView(TextView(activity).apply {
+                text = "75% is the minimum attendance target"
+                setTextColor(Palette.heroInk(activity))
+                alpha = 0.82f
+                textSize = 10f
+                setPadding(0, dp(6), 0, 0)
+                includeFontPadding = false
+            })
+        }.also {
+            it.contentDescription = display?.let {
+                "Attendance summary ${String.format(java.util.Locale.US, "%.1f", it)} percent. ${attendanceBandLabel(it)}."
+            } ?: "Attendance summary percentage unavailable"
         }
     }
 
     private fun createAttendanceCard(row: AttendanceRow, position: Int): View {
         val percent = row.percent
-        val statusColor = when {
-            percent == null -> Palette.ink500(activity)
-            percent >= 85.0 -> Palette.success(activity)
-            percent >= 75.0 -> Palette.warning(activity)
-            else -> Palette.danger(activity)
+        val statusColor = percent?.let { Palette.attendanceColor(activity, it) }
+            ?: Palette.ink2(activity)
+        val statusFill = percent?.let { attendanceBandFill(it) }
+            ?: Palette.surfaceAlt(activity)
+        val statusLabel = percent?.let(::attendanceBandLabel) ?: "Unavailable"
+        val avatarFill = when ((position - 1) % 4) {
+            0 -> Palette.sky(activity)
+            1 -> Palette.lav(activity)
+            2 -> Palette.mint(activity)
+            else -> Palette.peach(activity)
         }
+        val initials = row.course.split(" ")
+            .filter { it.isNotBlank() }
+            .take(2)
+            .joinToString("") { it.take(1).uppercase(java.util.Locale.US) }
+            .ifBlank { position.toString().padStart(2, '0') }
 
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedBackground(Palette.surface(activity), 18f)
-            elevation = dp(2).toFloat()
-            setPadding(dp(16), dp(15), dp(16), dp(15))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
+            background = outlinedBackground(Palette.surface(activity), 22f)
+            elevation = 0f
+            setPadding(dp(16), dp(15), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(12), dp(5), dp(12), dp(5)) }
 
             val header = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-            }
-            header.addView(TextView(activity).apply {
-                text = position.toString().padStart(2, '0')
-                gravity = Gravity.CENTER
-                setTextColor(Palette.primary(activity))
-                textSize = 10f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                background = roundedBackground(Palette.infoBg(activity), 11f)
-                minWidth = dp(38)
-                minHeight = dp(34)
-            })
-            header.addView(LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { setPadding(dp(12), 0, dp(8), 0) }
                 addView(TextView(activity).apply {
-                    text = row.course
-                    setTextColor(Palette.ink900(activity))
-                    textSize = 14f
-                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    text = initials
+                    gravity = Gravity.CENTER
+                    setTextColor(Palette.ink(activity))
+                    textSize = 12f
+                    setTypeface(typeface, Typeface.BOLD)
+                    background = roundedBackground(avatarFill, 14f)
+                    minWidth = dp(42)
+                    minHeight = dp(42)
+                    includeFontPadding = false
                 })
-                if (row.code.isNotBlank()) addView(TextView(activity).apply {
-                    text = row.code
-                    setTextColor(Palette.ink500(activity))
-                    textSize = 10f
-                    setPadding(0, dp(3), 0, 0)
+
+                addView(LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        1f
+                    ).apply { setPadding(dp(12), 0, dp(8), 0) }
+                    addView(TextView(activity).apply {
+                        text = row.course.ifBlank { "Subject $position" }
+                        setTextColor(Palette.ink(activity))
+                        textSize = 14f
+                        setTypeface(typeface, Typeface.BOLD)
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        includeFontPadding = false
+                    })
+                    if (row.code.isNotBlank()) addView(TextView(activity).apply {
+                        text = row.code
+                        setTextColor(Palette.ink2(activity))
+                        textSize = 10f
+                        setPadding(0, dp(4), 0, 0)
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        includeFontPadding = false
+                    })
                 })
-            })
-            header.addView(TextView(activity).apply {
-                text = percent?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "N/A"
-                setTextColor(statusColor)
-                textSize = 19f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                gravity = Gravity.CENTER
-                minWidth = dp(64)
-            })
+
+                addView(LinearLayout(activity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                    addView(TextView(activity).apply {
+                        text = percent?.let { String.format(java.util.Locale.US, "%.1f%%", it) } ?: "—"
+                        setTextColor(statusColor)
+                        textSize = 21f
+                        setTypeface(typeface, Typeface.BOLD)
+                        gravity = Gravity.END
+                        includeFontPadding = false
+                        setFontFeatureSettings("tnum")
+                    })
+                    addView(Chip.createCustom(activity, statusLabel, statusFill, statusColor).apply {
+                        setPadding(dp(8), dp(3), dp(8), dp(3))
+                        textSize = 9f
+                        minHeight = dp(21)
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { topMargin = dp(4) }
+                    })
+                })
+            }
             addView(header)
 
-            if (percent != null) addView(ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal).apply {
-                max = 100
-                progress = percent.roundToInt()
-                progressTintList = ColorStateList.valueOf(statusColor)
-                progressBackgroundTintList = ColorStateList.valueOf(Palette.ringTrack(activity))
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(7)).apply { topMargin = dp(12) }
-            })
+            if (percent != null) addView(createSubjectProgress(percent, statusColor))
 
             val stats = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -901,20 +1069,108 @@ class AttendanceRenderer(
                 }
             }
             if (stats.childCount > 0) addView(stats)
+
+            addView(View(activity).apply {
+                setBackgroundColor(Palette.stroke(activity))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(1)
+                ).apply {
+                    topMargin = dp(12)
+                    bottomMargin = dp(9)
+                }
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            })
             addView(TextView(activity).apply {
                 text = if (row.detailUrl.isNotBlank()) {
-                    "Tap to view class history and 75% planner  ›"
+                    "View class history and 75% planner  ›"
                 } else {
-                    "Tap to find this subject's class history and 75% planner  ›"
+                    "Open class history and 75% planner  ›"
                 }
                 setTextColor(Palette.primary(activity))
                 textSize = 11f
-                setPadding(0, dp(9), 0, 0)
+                setTypeface(typeface, Typeface.BOLD)
+                includeFontPadding = false
             })
+
             isClickable = true
             isFocusable = true
+            contentDescription = buildString {
+                append(row.course.ifBlank { "Subject $position" })
+                append(". ")
+                append(percent?.let { String.format(java.util.Locale.US, "%.1f percent attendance", it) } ?: "Attendance percentage unavailable")
+                append(". ")
+                append(statusLabel)
+                append(". Open class history and attendance planner.")
+            }
             setOnClickListener { onOpenDetail(row.detailUrl, row.course, row.code) }
         }
+    }
+
+    private fun createSubjectProgress(percent: Double, statusColor: Int): View =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(11) }
+
+            val barFrame = FrameLayout(activity).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(16)
+                )
+            }
+            barFrame.addView(ProgressBar(
+                activity,
+                null,
+                android.R.attr.progressBarStyleHorizontal
+            ).apply {
+                max = 100
+                progress = percent.coerceIn(0.0, 100.0).roundToInt()
+                progressTintList = ColorStateList.valueOf(statusColor)
+                progressBackgroundTintList = ColorStateList.valueOf(Palette.stroke(activity))
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(7),
+                Gravity.CENTER_VERTICAL
+            ))
+            val marker = View(activity).apply {
+                setBackgroundColor(Palette.ink2(activity))
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            barFrame.addView(marker, FrameLayout.LayoutParams(
+                dp(2),
+                dp(16),
+                Gravity.TOP or Gravity.START
+            ))
+            barFrame.post {
+                val maximum = (barFrame.width - marker.width).coerceAtLeast(0)
+                marker.translationX = (barFrame.width * 0.75f - marker.width / 2f)
+                    .coerceIn(0f, maximum.toFloat())
+            }
+            addView(barFrame)
+            addView(TextView(activity).apply {
+                text = "75% minimum target"
+                textSize = 9f
+                setTextColor(Palette.ink2(activity))
+                gravity = Gravity.END
+                setPadding(0, dp(1), 0, 0)
+                includeFontPadding = false
+            })
+        }
+
+    private fun attendanceBandLabel(percent: Double): String = when {
+        percent >= 80.0 -> "Safe zone"
+        percent >= 75.0 -> "Near limit"
+        else -> "Below 75%"
+    }
+
+    private fun attendanceBandFill(percent: Double): Int = when {
+        percent >= 80.0 -> Palette.successBg(activity)
+        percent >= 75.0 -> Palette.warningBg(activity)
+        else -> Palette.dangerBg(activity)
     }
 
     private fun addStat(container: LinearLayout, label: String, value: String) {
@@ -1024,6 +1280,11 @@ class AttendanceRenderer(
         android.graphics.drawable.GradientDrawable().apply {
             setColor(color)
             cornerRadius = dp(radiusDp.toInt()).toFloat()
+        }
+
+    private fun outlinedBackground(color: Int, radiusDp: Float): android.graphics.drawable.GradientDrawable =
+        roundedBackground(color, radiusDp).apply {
+            setStroke(dp(1), Palette.stroke(activity))
         }
 
     private fun gradientBackground(
