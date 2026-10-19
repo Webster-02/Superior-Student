@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="432" android:viewportHeight="432">
-    <path android:fillColor="@android:color/transparent" android:strokeColor="#A8CB44" android:strokeWidth="48" android:pathData="M218.7,105.3 A81,81 0 1 1 218.7,267.3 A81,81 0 1 1 218.7,105.3" />
-    <group android:pivotX="218.7" android:pivotY="186.3" android:rotation="-90">
-        <path android:fillColor="@android:color/transparent" android:strokeColor="#0B3D2E" android:strokeWidth="48" android:strokeLineCap="round" android:strokeDashArray="381.8,127.2" android:pathData="M218.7,105.3 A81,81 0 1 1 218.7,267.3 A81,81 0 1 1 218.7,105.3" />
-    </group>
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#A8CB44" android:strokeWidth="48"
+        android:pathData="M218.7,105.3 A81,81 0 1 1 218.7,267.3 A81,81 0 1 1 218.7,105.3" />
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#0B3D2E" android:strokeWidth="48" android:strokeLineCap="round"
+        android:pathData="M218.7,105.3 A81,81 0 1 1 137.7,186.3" />
     <path android:fillColor="#0B3D2E" android:pathData="M137.7,81 A27,27 0 0 1 164.7,108 L164.7,321.3 A27,27 0 0 1 110.7,321.3 L110.7,108 A27,27 0 0 1 137.7,81 Z" />
     <path android:fillColor="#FF6B4A" android:pathData="M240.3,324 A24.3,24.3 0 1 1 191.7,324 A24.3,24.3 0 1 1 240.3,324 Z" />
 </vector>

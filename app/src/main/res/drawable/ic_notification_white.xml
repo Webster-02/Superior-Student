@@ -3,11 +3,8 @@
     android:width="24dp" android:height="24dp" android:viewportWidth="160" android:viewportHeight="160">
     <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFFFFFF" android:strokeWidth="18"
         android:pathData="M81,39 A30,30 0 1 1 81,99 A30,30 0 1 1 81,39" />
-    <group android:pivotX="81" android:pivotY="69" android:rotation="-90">
-        <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFFFFFF" android:strokeWidth="18"
-            android:strokeLineCap="round" android:strokeDashArray="141.4,47.1"
-            android:pathData="M81,39 A30,30 0 1 1 81,99 A30,30 0 1 1 81,39" />
-    </group>
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFFFFFF" android:strokeWidth="18" android:strokeLineCap="round"
+        android:pathData="M81,39 A30,30 0 1 1 51,69" />
     <path android:fillColor="#FFFFFFFF" android:pathData="M51,30 A10,10 0 0 1 61,40 L61,119 A10,10 0 0 1 41,119 L41,40 A10,10 0 0 1 51,30 Z" />
     <path android:fillColor="#FFFFFFFF" android:pathData="M89,120 A9,9 0 1 1 71,120 A9,9 0 1 1 89,120 Z" />
 </vector>
