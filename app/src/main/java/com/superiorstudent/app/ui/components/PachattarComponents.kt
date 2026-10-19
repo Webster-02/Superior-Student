@@ -80,6 +80,26 @@ object Avatar {
 }
 
 object PageHeader {
+    /** Styles an existing page-title/subtitle pair without replacing its view IDs or listeners. */
+    fun bindPage(context: Context, titleView: TextView, subtitleView: TextView, title: String, subtitle: String) {
+        titleView.text = title
+        titleView.textSize = 26f
+        titleView.setTextColor(Palette.ink(context))
+        titleView.typeface = mediumTypeface(context)
+        titleView.letterSpacing = -0.023f
+        titleView.includeFontPadding = false
+        titleView.maxLines = 1
+        titleView.ellipsize = android.text.TextUtils.TruncateAt.END
+
+        subtitleView.text = subtitle
+        subtitleView.textSize = 12f
+        subtitleView.setTextColor(Palette.ink2(context))
+        subtitleView.typeface = regularTypeface(context)
+        subtitleView.includeFontPadding = false
+        subtitleView.maxLines = 1
+        subtitleView.ellipsize = android.text.TextUtils.TruncateAt.END
+    }
+
     fun bind(context: Context, dateView: TextView, greetingView: TextView, avatarView: TextView, fullName: String) {
         dateView.text = SimpleDateFormat("EEEE, d MMM", Locale.ENGLISH).format(Date())
         dateView.textSize = 12f
@@ -141,6 +161,100 @@ private class AttendanceProgressView(context: Context, private val percentage: D
 }
 
 object HeroCard {
+    /** Academic results hero. Only metrics backed by real values are included. */
+    fun results(context: Context, cgpa: String?, sgpa: String?, creditHours: String?): LinearLayout? {
+        val visibleCgpa = cgpa?.takeIf(String::isNotBlank)
+        val visibleSgpa = sgpa?.takeIf(String::isNotBlank)
+        val visibleCredits = creditHours?.takeIf(String::isNotBlank)
+        if (visibleCgpa == null && visibleSgpa == null && visibleCredits == null) return null
+
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundRect(context, Palette.hero(context), 28f)
+            setPadding(px(context, 20f), px(context, 18f), px(context, 20f), px(context, 18f))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(px(context, 16f), px(context, 12f), px(context, 16f), 0) }
+
+            if (visibleCgpa != null) {
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(TextView(context).apply {
+                        text = "CGPA"
+                        textSize = 13f
+                        setTextColor(Palette.heroInk(context))
+                        typeface = regularTypeface(context)
+                        includeFontPadding = false
+                    })
+                    addView(TextView(context).apply {
+                        text = visibleCgpa
+                        textSize = 60f
+                        setTextColor(Palette.heroInk(context))
+                        typeface = mediumTypeface(context)
+                        includeFontPadding = false
+                        setFontFeatureSettings("tnum")
+                        letterSpacing = -0.05f
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    })
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            } else {
+                addView(Space(context), LinearLayout.LayoutParams(0, 1, 1f))
+            }
+
+            val metrics = listOfNotNull(
+                visibleSgpa?.let { "SGPA" to it },
+                visibleCredits?.let { "Credit hrs" to it }
+            )
+            if (metrics.isNotEmpty()) {
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.END
+                    metrics.forEachIndexed { index, (label, value) ->
+                        addView(LinearLayout(context).apply {
+                            orientation = LinearLayout.VERTICAL
+                            gravity = Gravity.END
+                            background = roundRect(context, Palette.heroTrack(context), 16f)
+                            setPadding(px(context, 14f), px(context, 8f), px(context, 14f), px(context, 8f))
+                            minimumWidth = px(context, 82f)
+                            addView(TextView(context).apply {
+                                text = label
+                                textSize = 11f
+                                setTextColor(Palette.heroInk(context))
+                                typeface = regularTypeface(context)
+                                includeFontPadding = false
+                            })
+                            addView(TextView(context).apply {
+                                text = value
+                                textSize = 20f
+                                setTextColor(Palette.heroInk(context))
+                                typeface = mediumTypeface(context)
+                                includeFontPadding = false
+                                setFontFeatureSettings("tnum")
+                                letterSpacing = -0.01f
+                            })
+                            if (index > 0) setPadding(px(context, 14f), px(context, 8f), px(context, 14f), px(context, 8f))
+                        }.also {
+                            it.layoutParams = LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT
+                            ).apply { if (index > 0) topMargin = px(context, 8f) }
+                        })
+                    }
+                })
+            }
+        }.also {
+            it.contentDescription = buildString {
+                if (visibleCgpa != null) append("CGPA $visibleCgpa. ")
+                if (visibleSgpa != null) append("SGPA $visibleSgpa. ")
+                if (visibleCredits != null) append("$visibleCredits total credit hours.")
+            }
+        }
+    }
+
     fun attendance(context: Context, percentage: Double, safeLeaves: Int?): LinearLayout {
         val band = HomeDisplayRules.attendanceBand(percentage) ?: AttendanceBand.SHORT
         val statusText = when (band) {
@@ -270,6 +384,70 @@ object IconBox {
 }
 
 object ListCard {
+    /** Rounded, hairline-bordered container for a group of related rows. */
+    fun resultsContainer(context: Context): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        background = outlinedCard(context, Palette.card(context), 22f)
+        clipToOutline = true
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { setMargins(px(context, 16f), px(context, 8f), px(context, 16f), 0) }
+    }
+
+    /** A non-interactive course result row, with optional neutral grade badge. */
+    fun resultRow(context: Context, course: String, detail: String, grade: String?): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(px(context, 16f), px(context, 12f), px(context, 16f), px(context, 12f))
+            minimumHeight = px(context, 64f)
+
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(TextView(context).apply {
+                    text = course
+                    textSize = 14f
+                    setTextColor(Palette.ink(context))
+                    typeface = mediumTypeface(context)
+                    includeFontPadding = false
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                if (detail.isNotBlank()) addView(TextView(context).apply {
+                    text = detail
+                    textSize = 12f
+                    setTextColor(Palette.ink2(context))
+                    typeface = regularTypeface(context)
+                    includeFontPadding = false
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, px(context, 3f), 0, 0)
+                })
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+            grade?.takeIf(String::isNotBlank)?.let { value ->
+                addView(Chip.createCustom(
+                    context, value, Palette.lav(context), Palette.ink(context)
+                ).apply {
+                    textSize = 13f
+                    setPadding(px(context, 12f), px(context, 5f), px(context, 12f), px(context, 5f))
+                    minHeight = px(context, 32f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { marginStart = px(context, 10f) }
+                })
+            }
+        }
+
+    fun divider(context: Context): View = View(context).apply {
+        setBackgroundColor(Palette.stroke(context))
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(context, 1f))
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
     fun bind(context: Context, root: LinearLayout, iconRes: Int, label: String) {
         root.removeAllViews(); root.orientation = LinearLayout.VERTICAL; root.gravity = Gravity.CENTER
         root.setPadding(px(context, 2f), px(context, 10f), px(context, 2f), px(context, 10f))
@@ -340,6 +518,54 @@ object FloatingNav {
 }
 
 object Skeleton {
+    /** Neutral loading rows for module pages while the ERP response is being read. */
+    fun rows(context: Context, count: Int = 3, timetable: Boolean = false): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setPadding(px(context, 0f), 0, px(context, 0f), px(context, 74f)) }
+            val skeletonFill = Palette.stroke(context)
+            repeat(count.coerceIn(1, 6)) {
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    background = outlinedCard(context, Palette.card(context), 22f)
+                    setPadding(px(context, 14f), px(context, 14f), px(context, 14f), px(context, 14f))
+                    minimumHeight = px(context, if (timetable) 84f else 68f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(px(context, 16f), px(context, 5f), px(context, 16f), px(context, 5f)) }
+
+                    if (timetable) {
+                        addView(View(context).apply {
+                            background = roundRect(context, skeletonFill, 7f)
+                            layoutParams = LinearLayout.LayoutParams(px(context, 38f), px(context, 44f))
+                        })
+                    }
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(View(context).apply {
+                            background = roundRect(context, skeletonFill, 7f)
+                            layoutParams = LinearLayout.LayoutParams(px(context, if (timetable) 148f else 186f), px(context, 14f))
+                        })
+                        addView(View(context).apply {
+                            background = roundRect(context, skeletonFill, 7f)
+                            layoutParams = LinearLayout.LayoutParams(px(context, if (timetable) 102f else 132f), px(context, 10f)).apply {
+                                topMargin = px(context, 9f)
+                            }
+                        })
+                    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        if (timetable) marginStart = px(context, 12f)
+                    })
+                    addView(View(context).apply {
+                        background = roundRect(context, skeletonFill, 999f)
+                        layoutParams = LinearLayout.LayoutParams(px(context, 44f), px(context, 22f))
+                    })
+                })
+            }
+        }
+
     fun hero(context: Context): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL; setPadding(px(context, 20f), px(context, 20f), px(context, 20f), px(context, 20f))
         background = roundRect(context, Palette.hero(context), 28f); minimumHeight = px(context, 204f)
@@ -366,8 +592,35 @@ object EmptyState {
         stateCard(context, title, message, Palette.card(context), Palette.ink(context), Palette.ink2(context))
 }
 object ErrorState {
-    fun create(context: Context, title: String, message: String): LinearLayout =
-        stateCard(context, title, message, Palette.badBg(context), Palette.bad(context), Palette.ink(context))
+    fun create(
+        context: Context,
+        title: String,
+        message: String,
+        onRetry: (() -> Unit)? = null
+    ): LinearLayout = stateCard(context, title, message, Palette.badBg(context), Palette.bad(context), Palette.ink(context)).apply {
+        onRetry?.let { retry ->
+            addView(TextView(context).apply {
+                text = "Retry"
+                textSize = 13f
+                setTextColor(Palette.segmentInk(context))
+                typeface = mediumTypeface(context)
+                includeFontPadding = false
+                gravity = Gravity.CENTER
+                minHeight = px(context, 48f)
+                minWidth = px(context, 88f)
+                setPadding(px(context, 16f), px(context, 10f), px(context, 16f), px(context, 10f))
+                background = roundRect(context, Palette.segment(context), 999f)
+                isClickable = true
+                isFocusable = true
+                contentDescription = "Retry loading $title"
+                setOnClickListener { retry() }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = px(context, 12f) }
+            })
+        }
+    }
 }
 private fun stateCard(context: Context, title: String, message: String, backgroundColor: Int, titleColor: Int, bodyColor: Int): LinearLayout =
     LinearLayout(context).apply {
