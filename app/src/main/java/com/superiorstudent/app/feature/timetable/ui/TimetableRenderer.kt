@@ -62,6 +62,7 @@ class TimetableRenderer(
         applyTypography(container)
 
         val rows = TimetableParser.toRows(data.records)
+            .filter(::hasCourseLabel)
             .distinctBy { it.day + "|" + it.time + "|" + normalizeCourse(it.course) + "|" + it.code }
             .take(60)
             .sortedWith(
@@ -87,6 +88,8 @@ class TimetableRenderer(
                     onRetry
                 ))
             }
+            container.addView(createTimetableInfoCard())
+            applyTypography(container)
             return
         }
 
@@ -94,11 +97,11 @@ class TimetableRenderer(
         val currentDay = dayName(now.get(Calendar.DAY_OF_WEEK))
         val currentMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
         val runningNow = rows.firstOrNull { isRunningNow(it, currentDay, currentMinutes) }
-        val nextClass = runningNow ?: NextClassSelector.selectNext(rows, currentDay, currentMinutes)
+        val nextClass = NextClassSelector.selectNext(rows, currentDay, currentMinutes)
 
         if (nextClass != null && hasCourseLabel(nextClass)) {
             val start = parseTimes(nextClass.time).first
-            val minutesUntil = if (nextClass.day.equals(currentDay, true) && start != null && start >= currentMinutes && runningNow == null) {
+            val minutesUntil = if (nextClass.day.equals(currentDay, true) && start != null && start >= currentMinutes) {
                 start - currentMinutes
             } else null
             container.addView(HeroCard.nextClass(
@@ -184,11 +187,10 @@ class TimetableRenderer(
                 selectedRows.forEach { row ->
                     val running = isRunningNow(row, currentDay, currentMinutes)
                     val startEnd = parseTimes(row.time)
-                    val isPast = dayOrder[selectedDay]?.let { selectedDayOrder ->
-                        val currentOrder = dayOrder[currentDay] ?: Calendar.MONDAY
-                        selectedDayOrder < currentOrder ||
-                            (selectedDayOrder == currentOrder && startEnd.second != null && startEnd.second <= currentMinutes)
-                    } == true && !running
+                    val isPast = !running && (
+                        dayRank(selectedDay) < dayRank(currentDay) ||
+                            (selectedDay.equals(currentDay, true) && startEnd.second != null && startEnd.second <= currentMinutes)
+                    )
                     val isNext = !isPast && !running && nextClass != null && sameClass(row, nextClass)
                     agenda.addView(createScheduleRow(
                         row = row,
@@ -201,6 +203,8 @@ class TimetableRenderer(
         }
 
         renderSelectedDay()
+        container.addView(createTimetableInfoCard())
+        applyTypography(container)
     }
 
     private fun createDayChip(
@@ -288,9 +292,9 @@ class TimetableRenderer(
                 minimumWidth = dp(56)
                 layoutParams = LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.MATCH_PARENT)
                     .apply { marginEnd = dp(8) }
-                addView(text(formatClock(timeParts.first!!), 13f, if (isRunning) Palette.heroInk(activity) else Palette.ink(activity), true))
+                addView(text(formatClock(timeParts.first!!), 13f, Palette.ink(activity), true))
                 if (timeParts.second != null) {
-                    addView(text(formatClock(timeParts.second!!), 12f, if (isRunning) Palette.heroInk(activity) else Palette.ink2(activity), false)
+                    addView(text(formatClock(timeParts.second!!), 12f, Palette.ink2(activity), false)
                         .apply { setPadding(0, dp(3), 0, 0) })
                 }
             })
@@ -478,11 +482,50 @@ class TimetableRenderer(
     private fun canonicalDay(value: String): String? =
         dayOrder.keys.firstOrNull { it.equals(value.trim(), true) }
 
+    private fun dayRank(day: String): Int = when (canonicalDay(day)) {
+        "Monday" -> 1
+        "Tuesday" -> 2
+        "Wednesday" -> 3
+        "Thursday" -> 4
+        "Friday" -> 5
+        "Saturday" -> 6
+        "Sunday" -> 7
+        else -> 99
+    }
+
     private fun dayName(dayOfWeek: Int): String =
         dayOrder.entries.firstOrNull { it.value == dayOfWeek }?.key ?: "Monday"
 
     private fun normalizeCourse(value: String): String =
         value.lowercase(Locale.US).replace(Regex("""[^a-z0-9]+"""), "")
+
+    private fun createTimetableInfoCard(): View =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = roundRect(Palette.card(activity), 18f, Palette.stroke(activity))
+            setPadding(dp(15), dp(13), dp(15), dp(13))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(16), dp(12), dp(16), dp(4)) }
+            addView(ImageView(activity).apply {
+                setImageResource(R.drawable.ic_pt_clock)
+                imageTintList = ColorStateList.valueOf(Palette.ink2(activity))
+                contentDescription = null
+                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(12) }
+            })
+            addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(text("Timetable information", 12f, Palette.ink(activity), true))
+                addView(text(
+                    "Class names, weekdays and timings come from your ERP account. Missing details are not guessed.",
+                    11f,
+                    Palette.ink2(activity),
+                    false
+                ).apply { setPadding(0, dp(4), 0, 0) })
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
 
     private fun applyTypography(view: View) {
         when (view) {
