@@ -581,7 +581,6 @@ object Skeleton {
     fun rows(context: Context, count: Int = 3, timetable: Boolean = false): LinearLayout =
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, px(context, 74f))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
