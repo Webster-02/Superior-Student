@@ -1,8 +1,11 @@
 package com.superiorstudent.app.feature.transfer
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -64,6 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class P2pNearbyTransferActivity : AppCompatActivity() {
 
     private enum class NearbyUiStage { HUB, DISCOVERY, VERIFY, TRANSFER, COMPLETE }
+    private enum class NearbyPermissionAction { SEND, RECEIVE }
 
     private lateinit var statusText: TextView
     private lateinit var sendButton: Button
@@ -117,6 +121,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     @Volatile private var preparedOutgoing: PreparedOutgoing? = null
     @Volatile private var peerPromptShown = false
     @Volatile private var temporaryDownload: File? = null
+    private var pendingNearbyPermissionAction: NearbyPermissionAction? = null
 
     private data class PreparedOutgoing(
         val metadata: P2pTransferFileMetadata,
@@ -162,6 +167,18 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             else showStatus("Save location selected. Comparing the security code…")
         }
 
+    private val nearbyWifiPermissionRequest =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val action = pendingNearbyPermissionAction
+            pendingNearbyPermissionAction = null
+            if (granted) {
+                action?.let(::performNearbyPermissionAction)
+            } else {
+                setUiStage(NearbyUiStage.HUB)
+                showStatus("Nearby Wi-Fi permission is needed to find or connect to phones on the same Wi-Fi.")
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
@@ -170,10 +187,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         when (intent.getStringExtra(EXTRA_INITIAL_MODE)) {
             MODE_SEND -> window.decorView.post {
                 if (!isFinishing && !isDestroyed && !sending.get() && !receiving.get()) {
-                    outgoingFilePicker.launch(arrayOf("*/*"))
+                    requestNearbyWifiPermission(NearbyPermissionAction.SEND)
                 }
             }
-            MODE_RECEIVE -> startReceiving()
+            MODE_RECEIVE -> requestNearbyWifiPermission(NearbyPermissionAction.RECEIVE)
         }
     }
 
@@ -290,10 +307,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         })
 
         sendButton = makeButton("Send a file", primary = true) {
-            if (!sending.get() && !receiving.get()) outgoingFilePicker.launch(arrayOf("*/*"))
+            if (!sending.get() && !receiving.get()) {
+                requestNearbyWifiPermission(NearbyPermissionAction.SEND)
+            }
         }
         receiveButton = makeButton("Receive a nearby file", primary = false) {
-            startReceiving()
+            requestNearbyWifiPermission(NearbyPermissionAction.RECEIVE)
         }
         hubPanel.addView(sendButton, fullWidthParams())
         hubPanel.addView(receiveButton, fullWidthParams(top = 8))
@@ -558,6 +577,25 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         return card
     }
 
+    private fun requestNearbyWifiPermission(action: NearbyPermissionAction) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            performNearbyPermissionAction(action)
+            return
+        }
+        pendingNearbyPermissionAction = action
+        nearbyWifiPermissionRequest.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+    }
+
+    private fun performNearbyPermissionAction(action: NearbyPermissionAction) {
+        when (action) {
+            NearbyPermissionAction.SEND -> outgoingFilePicker.launch(arrayOf("*/*"))
+            NearbyPermissionAction.RECEIVE -> startReceiving()
+        }
+    }
+
     private fun setUiStage(stage: NearbyUiStage) {
         mainHandler.post {
             if (!isFinishing && !isDestroyed && ::hubPanel.isInitialized) {
@@ -739,7 +777,19 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                         override fun onPeerLost(serviceName: String) = Unit
                         override fun onAdvertised(serviceName: String) = Unit
                         override fun onError(operation: String, errorCode: Int) {
-                            if (sending.get()) showStatus("Nearby discovery is unavailable. Keep both phones on the same Wi-Fi and try again.")
+                            if (!sending.get()) return
+                            if (operation == "discover") {
+                                cancelCurrentAction()
+                                showStatus(
+                                    "Nearby transfer cancelled. Discovery failed (code $errorCode). " +
+                                        "Use the same non-guest Wi-Fi on both phones and ensure device/client isolation is off, then try again."
+                                )
+                            } else {
+                                showStatus(
+                                    "A nearby service could not be resolved (code $errorCode). " +
+                                        "Still searching for a receiver on the same Wi-Fi…"
+                                )
+                            }
                         }
                     }
                 )
@@ -1045,7 +1095,15 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                             showStatus("Ready. Keep this screen open while the sender chooses your phone.")
                         }
                         override fun onError(operation: String, errorCode: Int) {
-                            if (receiving.get()) showStatus("Local receiver discovery failed. Stop and start reception again.")
+                            if (!receiving.get()) return
+                            if (operation == "advertise") {
+                                failReceiverAdvertising(
+                                    "Could not advertise this phone on local Wi-Fi (code $errorCode). " +
+                                        "Use the same non-guest Wi-Fi on both phones and ensure device/client isolation is off."
+                                )
+                            } else {
+                                showStatus("Local receiver discovery reported an issue (code $errorCode). Keep this screen open and try again if no sender appears.")
+                            }
                         }
                     }
                 )
@@ -1053,8 +1111,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (receiving.get()) {
                         if (!discovery.advertise(sessionId, server.localPort, "StudentReceiver")) {
-                            showStatus("Could not advertise this phone on the local Wi-Fi.")
-                            stopReceiving()
+                            failReceiverAdvertising(
+                                "Could not advertise this phone on local Wi-Fi. " +
+                                    "Use the same non-guest Wi-Fi on both phones and ensure device/client isolation is off."
+                            )
                         } else {
                             showStatus("Waiting for a nearby sender. Internet is not required for this transfer.")
                         }
@@ -1670,6 +1730,20 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         activeSocket = null
         finishSending()
         showStatus("Nearby transfer cancelled.")
+    }
+
+    private fun failReceiverAdvertising(message: String) {
+        receiving.set(false)
+        runCatching { advertisingDiscovery?.close() }
+        advertisingDiscovery = null
+        runCatching { serverSocket?.close() }
+        serverSocket = null
+        runCatching { activeSocket?.close() }
+        activeSocket = null
+        setReceiveUi(false)
+        setUiStage(NearbyUiStage.HUB)
+        showStatus(message)
+        // Keep resumable checkpoints intact; an advertising failure is not a user-requested reset.
     }
 
     private fun stopReceiving() {
