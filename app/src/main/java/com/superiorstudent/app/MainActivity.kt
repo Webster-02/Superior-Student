@@ -1327,9 +1327,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Recovery logs stay disabled in normal builds unless Android log filtering enables DEBUG. */
+    /** Recovery logs are silent by default and can be enabled per tag through logcat properties. */
     private fun isRecoveryDebugEnabled(): Boolean =
-        android.util.Log.isLoggable("PachattarRecovery", android.util.Log.DEBUG)
+        android.util.Log.isLoggable("AppLifecycle", android.util.Log.DEBUG) ||
+            android.util.Log.isLoggable("SessionRecovery", android.util.Log.DEBUG) ||
+            android.util.Log.isLoggable("WebViewRecovery", android.util.Log.DEBUG) ||
+            android.util.Log.isLoggable("UiRecovery", android.util.Log.DEBUG)
 
     private fun setModuleLoaderVisible(visible: Boolean, reason: String) {
         if (!::binding.isInitialized) return
