@@ -37,6 +37,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.superiorstudent.app.R
 import com.superiorstudent.app.ui.AppThemePreferences
+import com.superiorstudent.app.ui.U2UDesignTokens
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -226,6 +227,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
         renderScreen()
+        U2UDesignTokens.applyTypographyTree(rootLayout)
         restoreResumableDownloads()
         when (intent.getStringExtra(EXTRA_INITIAL_MODE)) {
             MODE_SEND -> window.decorView.post {
@@ -609,8 +611,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         includeFontPadding = false
         typeface = ResourcesCompat.getFont(
             this@P2pNearbyTransferActivity,
-            if (medium) R.font.poppins_medium else R.font.poppins
+            if (medium) R.font.poppins_medium else R.font.poppins_regular
         )
+        U2UDesignTokens.applyLegacyTextStyle(this, sourceSizeSp = sizeSp, mediumOverride = medium)
     }
 
     private fun makeCard(backgroundResource: Int, radiusDp: Int): MaterialCardView =
