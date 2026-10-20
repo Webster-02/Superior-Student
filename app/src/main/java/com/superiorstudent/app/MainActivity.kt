@@ -1635,6 +1635,16 @@ class MainActivity : AppCompatActivity() {
         activeBlockingDialog = null
         setModuleLoaderVisible(false, reason)
         binding.modulePullRefresh.isRefreshing = false
+
+        // Cancel a partially completed subject lookup before restoring a stable screen.
+        if (pendingAttendanceResolution) {
+            cancelSessionOperationTimeout()
+            pendingAttendanceResolution = false
+            pendingAttendanceCourse = ""
+            pendingAttendanceCode = ""
+            if (activeModule == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
+        }
+
         if (moduleFetchInProgress) {
             moduleReadRequestId++
             moduleFetchInProgress = false
@@ -1642,6 +1652,7 @@ class MainActivity : AppCompatActivity() {
         if (profileFetchInProgress) {
             profileFetchGeneration++
             profileFetchInProgress = false
+            cancelSessionOperationTimeout()
         }
         if (restoringSession && !silentReloginInProgress) restoringSession = false
 
