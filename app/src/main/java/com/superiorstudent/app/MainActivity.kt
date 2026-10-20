@@ -597,6 +597,10 @@ class MainActivity : AppCompatActivity() {
                             keepCachedSessionAfterTransientFailure(
                                 "The secure connection could not be verified. Saved data is still available."
                             )
+                        } else if (profileFetchInProgress && loggedIn) {
+                            keepCachedSessionAfterTransientFailure(
+                                "The secure connection could not be verified. Showing saved student data."
+                            )
                         } else if (preloadingModule != null) {
                             handleSequentialPreloadFailure("ssl_error")
                         } else if (activeModule != null) {
@@ -617,6 +621,9 @@ class MainActivity : AppCompatActivity() {
                                     "The university portal could not be reached. Saved data is still available."
                                 )
                             }
+                            profileFetchInProgress && loggedIn -> keepCachedSessionAfterTransientFailure(
+                                "The university portal could not be reached. Showing saved student data."
+                            )
                             preloadingModule != null -> handleSequentialPreloadFailure("network_error")
                             activeModule != null -> handleModuleLoadFailure(
                                 "Unable to reach the ERP. Check your internet connection and tap Refresh to try again."
@@ -654,6 +661,10 @@ class MainActivity : AppCompatActivity() {
                             keepCachedSessionAfterTransientFailure(
                                 "The university server is temporarily unavailable. Showing saved data."
                             )
+                        } else if (transientSignal && profileFetchInProgress && loggedIn) {
+                            keepCachedSessionAfterTransientFailure(
+                                "The university server is temporarily unavailable. Showing saved student data."
+                            )
                         } else if (transientSignal && preloadingModule != null) {
                             handleSequentialPreloadFailure("http_$status")
                         } else if (transientSignal && activeModule != null) {
@@ -670,7 +681,7 @@ class MainActivity : AppCompatActivity() {
                             activeAttendanceDetailUrl = url
                         }
         
-                        if (!loginInProgress && !profileFetchInProgress &&
+                        if (!loginInProgress &&
                             com.superiorstudent.app.core.session.SessionRejectionClassifier.classify(finalUrl = url) ==
                                 com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.REJECTED) {
                             handleSessionExpired()
@@ -904,6 +915,7 @@ class MainActivity : AppCompatActivity() {
             password = ""
         }
         moduleFetchInProgress = false
+        if (profileFetchInProgress) profileFetchGeneration++
         profileFetchInProgress = false
         webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
@@ -1234,9 +1246,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun extractAndApplyProfile(view: WebView) {
         if (!loggedIn || !profileFetchInProgress) return
+        val requestGeneration = profileFetchGeneration
 
         profileReadAttempts++
         view.evaluateJavascript(Scripts.studentProfileText) { result ->
+            if (!loggedIn || !profileFetchInProgress || requestGeneration != profileFetchGeneration) {
+                return@evaluateJavascript
+            }
             val payload = ParsingUtils.decodeJavascriptString(result)
             var name = ""
             var cgpa = ""
@@ -3019,6 +3035,10 @@ class MainActivity : AppCompatActivity() {
         if (!hasInternetAvailable()) {
             keepCachedSessionAfterTransientFailure("Offline - showing saved data")
             return
+        }
+        if (profileFetchInProgress) {
+            profileFetchInProgress = false
+            profileFetchGeneration++
         }
         if (silentReloginInProgress) return
         if (sessionRetryAttempted) {
