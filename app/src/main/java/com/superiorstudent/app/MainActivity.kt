@@ -282,6 +282,7 @@ class MainActivity : AppCompatActivity() {
             binding.usernameInput.clearFocus()
             binding.passwordInput.clearFocus()
             loginInProgress = true
+            scheduleSessionOperationTimeout("manual_login")
             loginSubmitted = false
             restoringSession = false
             loggedIn = false
@@ -959,6 +960,7 @@ class MainActivity : AppCompatActivity() {
         restoringSession = true
         webView.stopLoading()
         webView.visibility = View.INVISIBLE
+        scheduleSessionOperationTimeout("session_revalidation")
         webView.loadUrl(ErpConfig.DASHBOARD_URL)
     }
 
@@ -1025,6 +1027,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun keepCachedSessionAfterTransientFailure(message: String) {
+        cancelSessionOperationTimeout()
         val hadSavedSession = sessionStore.sessionActive || loggedIn || restoringSession
         loginInProgress = false
         loginSubmitted = false
@@ -1095,10 +1098,12 @@ class MainActivity : AppCompatActivity() {
         password = savedPassword
         webView.stopLoading()
         webView.visibility = View.INVISIBLE
+        scheduleSessionOperationTimeout("silent_relogin")
         webView.loadUrl(ErpConfig.LOGIN_URL)
     }
 
     private fun rejectSilentRelogin() {
+        cancelSessionOperationTimeout()
         silentReloginInProgress = false
         sessionRetryAttempted = false
         loginInProgress = false
@@ -1231,6 +1236,192 @@ class MainActivity : AppCompatActivity() {
         startSessionHeartbeat()
     }
 
+    private fun setModuleLoaderVisible(visible: Boolean, reason: String) {
+        if (!::binding.isInitialized) return
+        val wasVisible = binding.moduleProgress.visibility == View.VISIBLE
+        binding.moduleProgress.visibility = if (visible) View.VISIBLE else View.GONE
+        if (wasVisible != visible && BuildConfig.DEBUG) {
+            android.util.Log.d(
+                "UiRecovery",
+                "module_loader " + (if (visible) "shown" else "dismissed") +
+                    " reason=" + reason + " at_ms=" + System.currentTimeMillis()
+            )
+        }
+    }
+
+    private fun cancelSessionOperationTimeout() {
+        sessionOperationGeneration++
+        sessionOperationTimeoutRunnable?.let(handler::removeCallbacks)
+        sessionOperationTimeoutRunnable = null
+    }
+
+    private fun scheduleSessionOperationTimeout(operation: String) {
+        cancelSessionOperationTimeout()
+        val generation = ++sessionOperationGeneration
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        val runnable = Runnable {
+            if (generation != sessionOperationGeneration || !activityResumed) return@Runnable
+            sessionOperationTimeoutRunnable = null
+            if (BuildConfig.DEBUG) android.util.Log.w(
+                "SessionRecovery",
+                "request_timeout operation=" + operation +
+                    " elapsed_ms=" + (android.os.SystemClock.elapsedRealtime() - startedAt)
+            )
+            when {
+                restoringSession || silentReloginInProgress ->
+                    keepCachedSessionAfterTransientFailure(
+                        "The university portal took too long to respond. Saved data is still available."
+                    )
+                loginInProgress ->
+                    failLogin("University sign-in took too long. Check your connection and try again.")
+                profileFetchInProgress && loggedIn ->
+                    keepCachedSessionAfterTransientFailure(
+                        "The student profile check timed out. Showing saved data."
+                    )
+                else -> Unit
+            }
+        }
+        sessionOperationTimeoutRunnable = runnable
+        handler.postDelayed(runnable, ResumeRecoveryPolicy.SESSION_OPERATION_TIMEOUT_MS)
+        if (BuildConfig.DEBUG) android.util.Log.d("SessionRecovery", "request_started operation=" + operation)
+    }
+
+    private fun cancelSessionHeartbeatTimeout() {
+        sessionHeartbeatGeneration++
+        sessionHeartbeatTimeoutRunnable?.let(handler::removeCallbacks)
+        sessionHeartbeatTimeoutRunnable = null
+    }
+
+    private fun scheduleSessionHeartbeatTimeout(generation: Int) {
+        sessionHeartbeatTimeoutRunnable?.let(handler::removeCallbacks)
+        val timeout = Runnable {
+            if (generation != sessionHeartbeatGeneration) return@Runnable
+            sessionHeartbeatTimeoutRunnable = null
+            if (BuildConfig.DEBUG) android.util.Log.w(
+                "SessionRecovery",
+                "request_timeout operation=session_heartbeat"
+            )
+            // A missing JavaScript callback is not proof the session expired; preserve the cache.
+        }
+        sessionHeartbeatTimeoutRunnable = timeout
+        handler.postDelayed(timeout, SESSION_HEARTBEAT_TIMEOUT_MS)
+    }
+
+    private fun handleWebViewRendererGone(view: WebView, crashed: Boolean) {
+        if (BuildConfig.DEBUG) android.util.Log.w(
+            "WebViewRecovery",
+            "renderer_gone crashed=" + crashed + " at_ms=" + System.currentTimeMillis()
+        )
+        if (view === webView) {
+            webViewNeedsRecreation = true
+            webViewReady = false
+        }
+        cancelSessionOperationTimeout()
+        cancelSessionHeartbeatTimeout()
+        moduleReadRequestId++
+        moduleFetchInProgress = false
+        if (profileFetchInProgress) profileFetchGeneration++
+        profileFetchInProgress = false
+        restoringSession = false
+        silentReloginInProgress = false
+        sessionRetryAttempted = false
+        preloadingModule = null
+        preloadQueue.clear()
+        parallelPrefetchBatchId = null
+        parallelPrefetchPollRunnable?.let(handler::removeCallbacks)
+        parallelPrefetchPollRunnable = null
+        parallelPrefetchModules.clear()
+        parallelPrefetchProcessedModules.clear()
+        parallelPrefetchSucceededModules.clear()
+        parallelPrefetchGenerations.clear()
+        try { (view.parent as? ViewGroup)?.removeView(view) } catch (_: Throwable) { }
+        try { view.destroy() } catch (_: Throwable) { }
+
+        if (::binding.isInitialized) {
+            binding.sideMenuOverlay.visibility = View.GONE
+            setModuleLoaderVisible(false, "WebView renderer gone")
+            binding.modulePullRefresh.isRefreshing = false
+            restoreNativeScreenForResume("WebView renderer gone")
+        }
+        resumeRecoveryNeeded = true
+        if (activityResumed) {
+            handler.postDelayed({
+                if (!activityResumed || isFinishing || isDestroyed) return@postDelayed
+                if (ensureWebView()) recoverSessionAfterBackground()
+                else keepCachedSessionAfterTransientFailure(
+                    "The university portal needs to reconnect. Saved data is still available."
+                )
+            }, RESUME_NETWORK_START_DELAY_MS)
+        }
+    }
+
+    private fun restoreNativeScreenForResume(reason: String) {
+        if (!::binding.isInitialized) return
+        if (binding.sideMenuOverlay.visibility == View.VISIBLE) {
+            binding.sideMenuOverlay.visibility = View.GONE
+            applyModuleNavigation()
+        }
+        if (activeBlockingDialog?.isShowing == true) {
+            try { activeBlockingDialog?.dismiss() } catch (_: Throwable) { }
+        }
+        activeBlockingDialog = null
+        setModuleLoaderVisible(false, reason)
+        binding.modulePullRefresh.isRefreshing = false
+        if (moduleFetchInProgress) {
+            moduleReadRequestId++
+            moduleFetchInProgress = false
+        }
+        if (profileFetchInProgress) {
+            profileFetchGeneration++
+            profileFetchInProgress = false
+        }
+        if (restoringSession && !silentReloginInProgress) restoringSession = false
+
+        if (loggedIn || sessionStore.sessionActive) {
+            if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
+                val module = activeModule!!
+                val hasSkeleton = (0 until binding.moduleContent.childCount).any {
+                    binding.moduleContent.getChildAt(it).tag == "pachattar_loading_skeleton_rows"
+                }
+                if (binding.moduleContent.childCount == 0 || hasSkeleton) {
+                    val cached = erpRepository.cachedPayload(module)
+                        ?.let(::parseModuleData)
+                        ?.takeIf { erpRepository.hasUsableData(module, it) }
+                        ?.takeIf {
+                            module != StudentModule.ATTENDANCE ||
+                                ((activeAttendanceDetailUrl != null) == (it.attendanceDetail != null))
+                        }
+                    if (cached != null) {
+                        renderModuleData(module, cached)
+                        binding.moduleInfo.text = "Showing saved data"
+                    } else {
+                        binding.moduleContent.removeAllViews()
+                        binding.moduleContent.addView(ErrorState.create(
+                            this,
+                            "Saved data is unavailable",
+                            "Your session is still saved. Retry to refresh this section.",
+                            ::refreshActiveModule
+                        ))
+                    }
+                }
+                binding.moduleScreen.visibility = View.VISIBLE
+                binding.dashboardScroll.visibility = View.GONE
+                binding.loginScroll.visibility = View.GONE
+                applyModuleNavigation()
+                applyModuleContentPadding(module)
+            } else {
+                activeModule = null
+                binding.moduleScreen.visibility = View.GONE
+                binding.loginScroll.visibility = View.GONE
+                binding.dashboardScroll.visibility = View.VISIBLE
+                binding.dashboardBottomNav.visibility = View.VISIBLE
+                if (binding.dashboardScreen.childCount == 0) renderHomeDashboard()
+                applyModuleNavigation()
+            }
+        }
+        if (BuildConfig.DEBUG) android.util.Log.d("UiRecovery", "native_surface_restored reason=" + reason)
+    }
+
     /**
      * Fallback for portal redirects whose URL doesn't identify the login route.
      * It checks the visible ERP DOM instead of assuming one fixed login pathname.
@@ -1293,6 +1484,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun completeLogin() {
+        cancelSessionOperationTimeout()
         loginInProgress = false
         loginSubmitted = false
         loginProbeInProgress = false
@@ -3405,9 +3597,15 @@ class MainActivity : AppCompatActivity() {
             revalidateSessionQuietly()
             return
         }
+        val generation = ++sessionHeartbeatGeneration
+        scheduleSessionHeartbeatTimeout(generation)
         webView.evaluateJavascript(Scripts.sessionHeartbeat) { result ->
+            if (generation != sessionHeartbeatGeneration) return@evaluateJavascript
+            sessionHeartbeatTimeoutRunnable?.let(handler::removeCallbacks)
+            sessionHeartbeatTimeoutRunnable = null
             if (!loggedIn) return@evaluateJavascript
             val state = ParsingUtils.decodeJavascriptString(result)
+            if (BuildConfig.DEBUG) android.util.Log.d("SessionRecovery", "session_validity result=" + state.ifBlank { "UNKNOWN" })
             when (state) {
                 "EXPIRED" -> handleSessionExpired()
                 "OK" -> setOfflineMode(false)
@@ -4146,6 +4344,7 @@ class MainActivity : AppCompatActivity() {
     private fun isAuthenticatedUrl(url: String): Boolean = ErpConfig.isAuthenticatedUrl(url)
 
     private fun failLogin(message: String) {
+        cancelSessionOperationTimeout()
         if (silentReloginInProgress) {
             keepCachedSessionAfterTransientFailure(message)
             return
