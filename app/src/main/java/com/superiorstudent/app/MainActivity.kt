@@ -3278,6 +3278,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val WEBVIEW_WARMUP_DELAY_MS = 350L
                                 private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
         private const val MAX_LOGIN_PROBE_ATTEMPTS = 20
