@@ -826,7 +826,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         lastStartedAtMs = System.currentTimeMillis()
-        if (BuildConfig.DEBUG) {
+        if (isRecoveryDebugEnabled()) {
             android.util.Log.d("AppLifecycle", "onStart at_ms=" + lastStartedAtMs +
                 " restored_session=" + (loggedIn || sessionStore.sessionActive))
         }
@@ -834,7 +834,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
-        if (BuildConfig.DEBUG) {
+        if (isRecoveryDebugEnabled()) {
             android.util.Log.d("AppLifecycle", "onStop at_ms=" + System.currentTimeMillis() +
                 " resumed_at_ms=" + lastResumeAtMs + " last_pause_ms=" + lastPausedAt)
         }
@@ -1124,7 +1124,7 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE)
             .edit().remove(RESUME_LAST_PAUSE_MS).apply()
         activityResumed = true
-        if (BuildConfig.DEBUG) {
+        if (isRecoveryDebugEnabled()) {
             android.util.Log.d("AppLifecycle", "onResume at_ms=" + resumedAt +
                 " time_in_background_ms=" + pausedFor +
                 " logged_in=" + loggedIn + " saved_session=" + sessionStore.sessionActive)
@@ -1138,7 +1138,7 @@ class MainActivity : AppCompatActivity() {
                 webView.onResume()
                 webView.resumeTimers()
             } catch (error: Throwable) {
-                if (BuildConfig.DEBUG) android.util.Log.w("WebViewRecovery", "WebView resume failed", error)
+                if (isRecoveryDebugEnabled()) android.util.Log.w("WebViewRecovery", "WebView resume failed", error)
                 webViewNeedsRecreation = true
                 webViewReady = false
             }
@@ -1192,7 +1192,7 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE)
             .edit().putLong(RESUME_LAST_PAUSE_MS, lastPausedAt).apply()
         activityResumed = false
-        if (BuildConfig.DEBUG) android.util.Log.d("AppLifecycle", "onPause at_ms=" + lastPausedAt)
+        if (isRecoveryDebugEnabled()) android.util.Log.d("AppLifecycle", "onPause at_ms=" + lastPausedAt)
         stopSessionHeartbeat()
         cancelParallelPrefetch()
 
@@ -1280,7 +1280,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         startSessionHeartbeat()
-        if (BuildConfig.DEBUG) {
+        if (isRecoveryDebugEnabled()) {
             android.util.Log.d("SessionRecovery", "background_recovery scheduled screen=" +
                 (module?.name ?: "HOME") + " background_ms=" + pausedForMs + " cache_first=true")
         }
@@ -1316,17 +1316,21 @@ class MainActivity : AppCompatActivity() {
             ))
             logModuleFirstRender(module, "empty", false)
         }
-        if (BuildConfig.DEBUG) {
+        if (isRecoveryDebugEnabled()) {
             android.util.Log.w("SessionRecovery", "request_timeout operation=module:" + module.name +
                 " outcome=" + outcome)
         }
     }
 
+    /** Recovery logs stay disabled in normal builds unless Android log filtering enables DEBUG. */
+    private fun isRecoveryDebugEnabled(): Boolean =
+        android.util.Log.isLoggable("PachattarRecovery", android.util.Log.DEBUG)
+
     private fun setModuleLoaderVisible(visible: Boolean, reason: String) {
         if (!::binding.isInitialized) return
         val wasVisible = binding.moduleProgress.visibility == View.VISIBLE
         binding.moduleProgress.visibility = if (visible) View.VISIBLE else View.GONE
-        if (wasVisible != visible && BuildConfig.DEBUG) {
+        if (wasVisible != visible && isRecoveryDebugEnabled()) {
             android.util.Log.d(
                 "UiRecovery",
                 "module_loader " + (if (visible) "shown" else "dismissed") +
@@ -1348,7 +1352,7 @@ class MainActivity : AppCompatActivity() {
         val runnable = Runnable {
             if (generation != sessionOperationGeneration || !activityResumed) return@Runnable
             sessionOperationTimeoutRunnable = null
-            if (BuildConfig.DEBUG) android.util.Log.w(
+            if (isRecoveryDebugEnabled()) android.util.Log.w(
                 "SessionRecovery",
                 "request_timeout operation=" + operation +
                     " elapsed_ms=" + (android.os.SystemClock.elapsedRealtime() - startedAt)
@@ -1369,7 +1373,7 @@ class MainActivity : AppCompatActivity() {
         }
         sessionOperationTimeoutRunnable = runnable
         handler.postDelayed(runnable, ResumeRecoveryPolicy.SESSION_OPERATION_TIMEOUT_MS)
-        if (BuildConfig.DEBUG) android.util.Log.d("SessionRecovery", "request_started operation=" + operation)
+        if (isRecoveryDebugEnabled()) android.util.Log.d("SessionRecovery", "request_started operation=" + operation)
     }
 
     private fun cancelSessionHeartbeatTimeout() {
@@ -1383,7 +1387,7 @@ class MainActivity : AppCompatActivity() {
         val timeout = Runnable {
             if (generation != sessionHeartbeatGeneration) return@Runnable
             sessionHeartbeatTimeoutRunnable = null
-            if (BuildConfig.DEBUG) android.util.Log.w(
+            if (isRecoveryDebugEnabled()) android.util.Log.w(
                 "SessionRecovery",
                 "request_timeout operation=session_heartbeat"
             )
@@ -1394,7 +1398,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleWebViewRendererGone(view: WebView, crashed: Boolean) {
-        if (BuildConfig.DEBUG) android.util.Log.w(
+        if (isRecoveryDebugEnabled()) android.util.Log.w(
             "WebViewRecovery",
             "renderer_gone crashed=" + crashed + " at_ms=" + System.currentTimeMillis()
         )
@@ -1450,7 +1454,7 @@ class MainActivity : AppCompatActivity() {
             binding.dashboardScroll.visibility = View.GONE
             binding.moduleScreen.visibility = View.GONE
             binding.dashboardBottomNav.visibility = View.GONE
-            if (BuildConfig.DEBUG) android.util.Log.w("SessionRecovery", "saved session had no username; showing login")
+            if (isRecoveryDebugEnabled()) android.util.Log.w("SessionRecovery", "saved session had no username; showing login")
             return
         }
         erpRepository.activateAccount(username)
@@ -1543,7 +1547,7 @@ class MainActivity : AppCompatActivity() {
         )
         setOfflineMode(offlineMode)
         resumeRecoveryNeeded = true
-        if (BuildConfig.DEBUG) {
+        if (isRecoveryDebugEnabled()) {
             android.util.Log.d(
                 "SessionRecovery",
                 "native_session_restored source=" + (if (savedInstanceState == null) "cold_start" else "saved_instance") +
@@ -1584,7 +1588,7 @@ class MainActivity : AppCompatActivity() {
                 !binding.dashboardScroll.isShown && !binding.moduleScreen.isShown
             if (!stuckOverlay && !stuckLoader && !missingNavigation && !screenMissing && !webViewNeedsRecreation) return@postDelayed
 
-            if (BuildConfig.DEBUG) android.util.Log.w(
+            if (isRecoveryDebugEnabled()) android.util.Log.w(
                 "UiRecovery",
                 "resume_watchdog triggered overlay=" + stuckOverlay + " loader=" + stuckLoader +
                     " nav_missing=" + missingNavigation + " screen_missing=" + screenMissing +
@@ -1669,7 +1673,7 @@ class MainActivity : AppCompatActivity() {
                 applyModuleNavigation()
             }
         }
-        if (BuildConfig.DEBUG) android.util.Log.d("UiRecovery", "native_surface_restored reason=" + reason)
+        if (isRecoveryDebugEnabled()) android.util.Log.d("UiRecovery", "native_surface_restored reason=" + reason)
     }
 
     /**
@@ -3860,7 +3864,7 @@ class MainActivity : AppCompatActivity() {
             sessionHeartbeatTimeoutRunnable = null
             if (!loggedIn) return@evaluateJavascript
             val state = ParsingUtils.decodeJavascriptString(result)
-            if (BuildConfig.DEBUG) android.util.Log.d("SessionRecovery", "session_validity result=" + state.ifBlank { "UNKNOWN" })
+            if (isRecoveryDebugEnabled()) android.util.Log.d("SessionRecovery", "session_validity result=" + state.ifBlank { "UNKNOWN" })
             when (state) {
                 "EXPIRED" -> handleSessionExpired()
                 "OK" -> setOfflineMode(false)
@@ -4712,8 +4716,6 @@ class MainActivity : AppCompatActivity() {
         private const val STATE_HOME_SCROLL_Y = "pachattar_state_home_scroll_y"
         private const val STATE_ATTENDANCE_DETAIL_URL = "pachattar_state_attendance_detail_url"
         private const val STATE_LAST_PAUSED_AT = "pachattar_state_last_paused_at"
-        private const val RESUME_RECOVERY_PREFS = "pachattar_resume_recovery"
-        private const val RESUME_LAST_PAUSE_MS = "last_pause_wall_clock_ms"
         private const val RESUME_RECOVERY_PREFS = "pachattar_resume_recovery"
         private const val RESUME_LAST_PAUSE_MS = "last_pause_wall_clock_ms"
 
