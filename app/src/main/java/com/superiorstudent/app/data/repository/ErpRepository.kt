@@ -127,7 +127,11 @@ class ErpRepository private constructor(private val cacheFile: File?) {
         var changed = false
         synchronized(lock) {
             val oldUsername = cacheOwnerUsername
-            if (oldUsername.isNotBlank() && !oldUsername.equals(username, ignoreCase = true)) {
+            val hasUnownedSnapshot = oldUsername.isBlank() &&
+                (cachedPayloads.isNotEmpty() || profileSnapshot != null)
+            val accountChanged = oldUsername.isNotBlank() &&
+                !oldUsername.equals(username, ignoreCase = true)
+            if (hasUnownedSnapshot || accountChanged) {
                 cachedPayloads.clear()
                 moduleLastUpdated.clear()
                 latestFetchGeneration.clear()
