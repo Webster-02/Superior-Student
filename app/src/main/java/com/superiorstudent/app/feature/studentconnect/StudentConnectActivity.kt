@@ -689,6 +689,7 @@ class StudentConnectActivity : AppCompatActivity() {
         U2UDesignTokens.applyTypographyTree(root)
         U2UDesignTokens.applyHomeTileRules(root)
         U2UDesignTokens.applySurfaceDepth(root)
+        U2UDesignTokens.applyInteractionFeedback(root)
     }
 
     private fun applyStudentConnectWindowInsets() {

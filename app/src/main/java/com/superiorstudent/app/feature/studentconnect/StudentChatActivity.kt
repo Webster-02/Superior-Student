@@ -296,6 +296,8 @@ class StudentChatActivity : AppCompatActivity() {
             clearSelectedFile()
             statusText.text = "Selected file removed."
         }
+        // Re-run after listeners are attached; chat message bubbles remain excluded by the shared helper.
+        U2UDesignTokens.applyInteractionFeedback(chatRoot)
 
         val user = auth.currentUser
         when {

@@ -36,6 +36,14 @@ class U2UDesignTokensTest {
     }
 
     @Test
+    fun interactionFeedbackUsesRestrainedMotionValues() {
+        assertEquals(0.985f, U2UDesignTokens.PRESS_FEEDBACK_SCALE, 0f)
+        assertEquals(0.92f, U2UDesignTokens.PRESS_FEEDBACK_ALPHA, 0f)
+        assertEquals(85L, U2UDesignTokens.PRESS_FEEDBACK_DOWN_DURATION_MS)
+        assertEquals(150L, U2UDesignTokens.PRESS_FEEDBACK_RELEASE_DURATION_MS)
+    }
+
+    @Test
     fun geometryUsesFourDpGridAndSharedRadiusScale() {
         assertEquals(4, U2UDesignTokens.GRID_UNIT_DP)
         assertEquals(24, U2UDesignTokens.ICON_SIZE_DP)

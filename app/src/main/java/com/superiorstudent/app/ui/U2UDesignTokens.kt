@@ -5,8 +5,11 @@ import android.os.Build
 import android.text.Layout
 import android.text.TextUtils
 import android.util.TypedValue
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -39,6 +42,86 @@ object U2UDesignTokens {
     const val FLAT_SURFACE_ELEVATION_DP = 0f
     const val FLOATING_SURFACE_ELEVATION_DP = 12f
     const val COMPOSER_SURFACE_ELEVATION_DP = 8f
+
+    // Restrained motion values for consistent feedback on existing interactive controls.
+    const val PRESS_FEEDBACK_SCALE = 0.985f
+    const val PRESS_FEEDBACK_ALPHA = 0.92f
+    const val PRESS_FEEDBACK_DOWN_DURATION_MS = 85L
+    const val PRESS_FEEDBACK_RELEASE_DURATION_MS = 150L
+
+    /**
+     * Applies a restrained press animation and system-respecting haptic tick to existing controls.
+     * Click listeners and normal touch/ripple dispatch are preserved. Text inputs and chat bubbles
+     * are excluded; chat bubbles already have their own double-tap/reply gesture handling.
+     */
+    fun applyInteractionFeedback(root: View) {
+        fun hasClickableDescendant(view: View): Boolean {
+            val group = view as? ViewGroup ?: return false
+            for (index in 0 until group.childCount) {
+                val child = group.getChildAt(index)
+                if (child.isClickable || hasClickableDescendant(child)) return true
+            }
+            return false
+        }
+
+        fun release(view: View) {
+            view.animate().cancel()
+            view.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .alpha(1f)
+                .setDuration(PRESS_FEEDBACK_RELEASE_DURATION_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+
+        fun visit(view: View) {
+            // Preserve specialised double-tap and long-press interactions on message/file bubbles.
+            if (view.id == R.id.studentChatMessagesContainer) return
+
+            val isActionLeaf = view.isClickable &&
+                view !is EditText &&
+                !(view is ViewGroup && hasClickableDescendant(view))
+            if (isActionLeaf) {
+                var gestureStarted = false
+                view.isHapticFeedbackEnabled = true
+                view.setOnTouchListener { touched, event ->
+                    if (!touched.isEnabled) return@setOnTouchListener false
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            gestureStarted = true
+                            touched.animate().cancel()
+                            touched.animate()
+                                .scaleX(PRESS_FEEDBACK_SCALE)
+                                .scaleY(PRESS_FEEDBACK_SCALE)
+                                .alpha(PRESS_FEEDBACK_ALPHA)
+                                .setDuration(PRESS_FEEDBACK_DOWN_DURATION_MS)
+                                .setInterpolator(DecelerateInterpolator())
+                                .start()
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            val shouldHaptic = gestureStarted && touched.isPressed
+                            gestureStarted = false
+                            release(touched)
+                            if (shouldHaptic) {
+                                touched.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                            }
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            gestureStarted = false
+                            release(touched)
+                        }
+                    }
+                    false
+                }
+            }
+
+            val group = view as? ViewGroup ?: return
+            for (index in 0 until group.childCount) visit(group.getChildAt(index))
+        }
+
+        visit(root)
+    }
 
     /**
      * Applies the shared U2U surface hierarchy without replacing backgrounds, radii, or view IDs.

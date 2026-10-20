@@ -228,6 +228,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         renderScreen()
         U2UDesignTokens.applyTypographyTree(rootLayout)
+        U2UDesignTokens.applyInteractionFeedback(rootLayout)
         restoreResumableDownloads()
         when (intent.getStringExtra(EXTRA_INITIAL_MODE)) {
             MODE_SEND -> window.decorView.post {
@@ -830,6 +831,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             }
         }
         refreshTransferActions()
+        U2UDesignTokens.applyInteractionFeedback(rootLayout)
     }
 
     private fun refreshTransferActions() {
@@ -926,6 +928,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         row.addView(connect, LinearLayout.LayoutParams(dp(100), dp(42)))
         rowCard.addView(row)
         peerListContainer.addView(rowCard, fullWidthParams(top = 8))
+        U2UDesignTokens.applyInteractionFeedback(rootLayout)
         discoveryHeading.text = "Nearby phone found"
         showStatus("Nearby phone found. Tap Connect to establish a local connection.")
     }
