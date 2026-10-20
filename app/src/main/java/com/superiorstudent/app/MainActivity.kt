@@ -597,6 +597,8 @@ class MainActivity : AppCompatActivity() {
                             keepCachedSessionAfterTransientFailure(
                                 "The secure connection could not be verified. Saved data is still available."
                             )
+                        } else if (preloadingModule != null) {
+                            handleSequentialPreloadFailure("ssl_error")
                         } else if (activeModule != null) {
                             handleModuleLoadFailure("The secure connection to the university portal failed. Check your internet and try again.")
                         }
@@ -615,6 +617,7 @@ class MainActivity : AppCompatActivity() {
                                     "The university portal could not be reached. Saved data is still available."
                                 )
                             }
+                            preloadingModule != null -> handleSequentialPreloadFailure("network_error")
                             activeModule != null -> handleModuleLoadFailure(
                                 "Unable to reach the ERP. Check your internet connection and tap Refresh to try again."
                             )
@@ -651,6 +654,8 @@ class MainActivity : AppCompatActivity() {
                             keepCachedSessionAfterTransientFailure(
                                 "The university server is temporarily unavailable. Showing saved data."
                             )
+                        } else if (transientSignal && preloadingModule != null) {
+                            handleSequentialPreloadFailure("http_$status")
                         } else if (transientSignal && activeModule != null) {
                             handleModuleLoadFailure("The university server is temporarily unavailable. Showing saved data where available.")
                         }
@@ -1590,8 +1595,36 @@ class MainActivity : AppCompatActivity() {
         preloadingModule = preloadQueue.removeAt(0)
         moduleReadAttempts = 0
         webView.visibility = View.INVISIBLE
-        beginModuleFetch(preloadingModule!!)
-        webView.loadUrl(ErpConfig.moduleUrl(preloadingModule!!.path))
+        val module = preloadingModule!!
+        val requestId = moduleReadRequestId
+        beginModuleFetch(module)
+        webView.loadUrl(ErpConfig.moduleUrl(module.path))
+        schedulePreloadModuleFallback(module, requestId)
+    }
+
+    private fun schedulePreloadModuleFallback(module: StudentModule, requestId: Int) {
+        handler.postDelayed({
+            if (!loggedIn || !activityResumed || preloadingModule != module ||
+                requestId != moduleReadRequestId) return@postDelayed
+            val currentUrl = webView.url.orEmpty()
+            val pageMatches = try {
+                ErpConfig.belongsToErp(currentUrl) &&
+                    module.acceptsPath(java.net.URI(currentUrl).path.orEmpty())
+            } catch (_: Exception) { false }
+            if (pageMatches) {
+                readModuleData(webView, module, false)
+            } else {
+                handleSequentialPreloadFailure("timeout")
+            }
+        }, MODULE_LOAD_FALLBACK_MS)
+    }
+
+    private fun handleSequentialPreloadFailure(outcome: String) {
+        val module = preloadingModule ?: return
+        logModuleFetchOutcome(module, outcome)
+        preloadingModule = null
+        moduleReadAttempts = 0
+        preloadNextModule()
     }
 
     private fun loadModule(module: StudentModule) {
@@ -1599,6 +1632,7 @@ class MainActivity : AppCompatActivity() {
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
         closeSideMenu()
         cancelParallelPrefetch()
+        binding.modulePullRefresh.isRefreshing = false
         firstRenderPendingModule = module
         firstRenderStartedAtMs = android.os.SystemClock.elapsedRealtime()
         firstRenderSource = "network"
@@ -1700,6 +1734,7 @@ class MainActivity : AppCompatActivity() {
             }
             binding.moduleProgress.visibility = View.GONE
             binding.moduleInfo.text = if (cachedData != null) "Offline - showing saved data" else "Offline - no saved data yet"
+            if (cachedData == null) logModuleFirstRender(module, "empty", false)
             return
         }
         val needsRefresh = cachedData == null || erpRepository.needsRefresh(module)
@@ -1843,6 +1878,7 @@ class MainActivity : AppCompatActivity() {
                         "The ERP took too long to respond. Check your connection and tap Refresh to try again."
                     ))
                 }
+                logModuleFirstRender(module, "empty", false)
             }
         }, MODULE_LOAD_FALLBACK_MS)
     }
@@ -2601,7 +2637,7 @@ class MainActivity : AppCompatActivity() {
                             else erpRepository.cachePayload(module, payload)
                         }
                         if (!cacheAccepted) {
-                            android.util.Log.w("ERPPerf", "module_fetch module=@@{module.name} source=network outcome=stale_response_rejected")
+                            android.util.Log.w("ERPPerf", "module_fetch module=${module.name} source=network outcome=stale_response_rejected")
                             if (displayWhenReady && activeModule == module) {
                                 moduleFetchInProgress = false
                                 binding.moduleProgress.visibility = View.GONE
@@ -2610,6 +2646,7 @@ class MainActivity : AppCompatActivity() {
                                     ?.let(::parseModuleData)
                                     ?.takeIf { erpRepository.hasUsableData(module, it) }
                                 if (cachedData != null) {
+                                    firstRenderSource = "cache"
                                     renderModuleData(module, cachedData)
                                     binding.moduleInfo.text = "Showing last synced data"
                                 } else {
@@ -2959,11 +2996,18 @@ class MainActivity : AppCompatActivity() {
                     message
                 ))
             }
+            logModuleFirstRender(module, "empty", false)
         }
     }
 
     private fun handleSessionExpired() {
         cancelParallelPrefetch()
+        if (preloadingModule != null || preloadQueue.isNotEmpty()) {
+            preloadingModule?.let { logModuleFetchOutcome(it, "session_rejected") }
+            preloadingModule = null
+            preloadQueue.clear()
+            moduleReadRequestId++
+        }
         if (!(loggedIn || restoringSession || sessionStore.sessionActive)) return
         if (!hasInternetAvailable()) {
             keepCachedSessionAfterTransientFailure("Offline - showing saved data")
