@@ -25,15 +25,18 @@
         </service>
         <activity
             android:name=".feature.transfer.P2pNearbyTransferActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"
             android:label="Nearby file transfer" />
         <activity
             android:name=".feature.studentconnect.StudentChatActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"
             android:label="@string/u2u_name"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
             android:name=".feature.studentconnect.StudentConnectActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"
             android:label="@string/u2u_name" />
         <activity

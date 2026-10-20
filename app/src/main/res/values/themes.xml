@@ -31,6 +31,22 @@
         <item name="android:navigationBarColor">@color/pachattar_lime</item>
     </style>
 
+    <!-- U2U shares the main app's Paper/Night palette and local Poppins fonts. -->
+    <style name="Theme.SuperiorStudent.U2U" parent="Theme.SuperiorStudent">
+        <item name="android:fontFamily">@font/poppins</item>
+        <item name="materialButtonStyle">@style/Widget.SuperiorStudent.U2U.Button</item>
+    </style>
+
+    <style name="Widget.SuperiorStudent.U2U.Button" parent="Widget.MaterialComponents.Button">
+        <item name="cornerRadius">16dp</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">@font/poppins_medium</item>
+        <item name="backgroundTint">@color/sc_purple</item>
+        <item name="android:textColor">@color/sc_button_primary_text</item>
+    </style>
+
     <!-- Shared component styles -->
     <style name="Widget.Superior.Button" parent="Widget.MaterialComponents.Button">
         <item name="cornerRadius">14dp</item>

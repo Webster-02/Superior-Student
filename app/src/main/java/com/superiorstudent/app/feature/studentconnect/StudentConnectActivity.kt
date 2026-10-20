@@ -616,9 +616,9 @@ class StudentConnectActivity : AppCompatActivity() {
             val selected = index == selectedIndex
             item.setBackgroundResource(if (selected) R.drawable.bg_student_connect_nav_selected else android.R.color.transparent)
             navIcons[index].imageTintList = android.content.res.ColorStateList.valueOf(
-                ContextCompat.getColor(this, if (selected) R.color.sc_text_primary else R.color.sc_text_muted)
+                ContextCompat.getColor(this, if (selected) R.color.sc_button_primary_text else R.color.sc_nav_icon)
             )
-            navLabels[index].setTextColor(ContextCompat.getColor(this, if (selected) R.color.sc_lavender else R.color.sc_text_muted))
+            navLabels[index].setTextColor(ContextCompat.getColor(this, if (selected) R.color.sc_button_primary_text else R.color.sc_nav_icon))
             navLabels[index].setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
 
@@ -693,25 +693,29 @@ class StudentConnectActivity : AppCompatActivity() {
         studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
         findViewById<TextView>(R.id.studentConnectBackButton)
             .setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
-        findViewById<TextView>(R.id.studentConnectBrandTitle)
-            .setTextColor(ContextCompat.getColor(this, R.color.sc_text_primary))
+        findViewById<TextView>(R.id.studentConnectBrandTitle).apply {
+            text = if (hasStudentProfile) "U2U" else "Join U2U"
+            setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_primary))
+        }
         findViewById<TextView>(R.id.studentConnectBrandTagline)
             .setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
-        findViewById<TextView>(R.id.studentConnectBrandPromise)
-            .setTextColor(ContextCompat.getColor(this, R.color.sc_purple))
+        findViewById<TextView>(R.id.studentConnectBrandPromise).apply {
+            setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_purple))
+            visibility = View.GONE
+        }
         findViewById<MaterialCardView>(R.id.studentConnectStatusCard).apply {
-            setCardBackgroundColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_card))
-            setStrokeColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_border))
+            setCardBackgroundColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_navy))
+            setStrokeColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_navy))
         }
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
         val hasStudentProfile = currentStudentProfile != null && auth.currentUser?.isEmailVerified == true
         findViewById<TextView>(R.id.studentConnectBrandTagline).visibility = if (hasStudentProfile) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.studentConnectBrandPromise).visibility = if (hasStudentProfile) View.GONE else View.VISIBLE
-        findViewById<TextView>(R.id.studentConnectBrandTitle).textSize = if (hasStudentProfile) 21f else 25f
+        findViewById<TextView>(R.id.studentConnectBrandTitle).textSize = if (hasStudentProfile) 16f else 22f
         val brandLogo = findViewById<ImageView>(R.id.studentConnectBrandLogo)
         brandLogo.layoutParams = brandLogo.layoutParams.apply {
-            width = dp(if (hasStudentProfile) 44 else 58)
-            height = dp(if (hasStudentProfile) 44 else 58)
+            width = dp(40)
+            height = dp(40)
         }
     }
 
