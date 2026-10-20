@@ -129,6 +129,20 @@ class MainActivity : AppCompatActivity() {
     private var loginProbeAttempts = 0
     private var preloadingModule: StudentModule? = null
     private val preloadQueue = mutableListOf<StudentModule>()
+    private var parallelPrefetchBatchId: String? = null
+    private var parallelPrefetchStartedAtMs = 0L
+    private var parallelPrefetchPollRunnable: Runnable? = null
+    private val parallelPrefetchModules = mutableListOf<StudentModule>()
+    private val parallelPrefetchProcessedModules = mutableSetOf<StudentModule>()
+    private val parallelPrefetchSucceededModules = mutableSetOf<StudentModule>()
+    private val parallelPrefetchGenerations = mutableMapOf<StudentModule, Long>()
+    private val moduleFetchGenerations = mutableMapOf<StudentModule, Long>()
+    private val moduleFetchStartedAtMs = mutableMapOf<StudentModule, Long>()
+    private val lastModuleFetchAttemptAtElapsedMs = mutableMapOf<StudentModule, Long>()
+    private var firstRenderPendingModule: StudentModule? = null
+    private var firstRenderStartedAtMs = 0L
+    private var firstRenderSource = "network"
+    private var profileFetchStartedAtMs = 0L
     private var moduleFetchInProgress = false
     private var moduleReadRequestId = 0
     private var activeAttendanceDetailUrl: String? = null
@@ -615,21 +629,29 @@ class MainActivity : AppCompatActivity() {
                         super.onReceivedHttpError(view, request, errorResponse)
                         if (!request.isForMainFrame) return
                         val status = errorResponse.statusCode
+                        val rejectionSignal = com.superiorstudent.app.core.session.SessionRejectionClassifier
+                            .classify(statusCode = status)
+                        val transientSignal = rejectionSignal ==
+                            com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.TRANSIENT
                         if (loginInProgress) {
-                            if (silentReloginInProgress && (status == 401 || status == 403)) {
+                            if (silentReloginInProgress && rejectionSignal ==
+                                com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.REJECTED) {
                                 rejectSilentRelogin()
-                            } else if (!silentReloginInProgress && (status == 401 || status == 403)) {
+                            } else if (!silentReloginInProgress && rejectionSignal ==
+                                com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.REJECTED) {
                                 failLogin("Login failed. Check your university username and password.")
                             }
                             return
                         }
-                        if ((status == 401 || status == 403) && (loggedIn || restoringSession)) {
+                        if (rejectionSignal ==
+                            com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.REJECTED &&
+                            (loggedIn || restoringSession)) {
                             handler.post { if (!silentReloginInProgress) handleSessionExpired() }
-                        } else if (status >= 500 && restoringSession) {
+                        } else if (transientSignal && restoringSession) {
                             keepCachedSessionAfterTransientFailure(
                                 "The university server is temporarily unavailable. Showing saved data."
                             )
-                        } else if (status >= 500 && activeModule != null) {
+                        } else if (transientSignal && activeModule != null) {
                             handleModuleLoadFailure("The university server is temporarily unavailable. Showing saved data where available.")
                         }
                     }
@@ -643,7 +665,9 @@ class MainActivity : AppCompatActivity() {
                             activeAttendanceDetailUrl = url
                         }
         
-                        if (!loginInProgress && !profileFetchInProgress && ErpConfig.isLoginUrl(url)) {
+                        if (!loginInProgress && !profileFetchInProgress &&
+                            com.superiorstudent.app.core.session.SessionRejectionClassifier.classify(finalUrl = url) ==
+                                com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.REJECTED) {
                             handleSessionExpired()
                             return
                         }
@@ -793,6 +817,7 @@ class MainActivity : AppCompatActivity() {
         ) return
         if (!(loggedIn || sessionStore.sessionActive)) return
         if (!::webView.isInitialized && !ensureWebView()) return
+        cancelParallelPrefetch()
         restoringSession = true
         webView.stopLoading()
         webView.visibility = View.INVISIBLE
@@ -1019,6 +1044,7 @@ class MainActivity : AppCompatActivity() {
         lastPausedAt = System.currentTimeMillis()
         activityResumed = false
         stopSessionHeartbeat()
+        cancelParallelPrefetch()
 
         if (::webView.isInitialized) {
             // Preload navigation has no user-visible value while app is backgrounded.
@@ -1038,6 +1064,7 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn || !activityResumed) return
 
         val module = activeModule
+        cancelParallelPrefetch()
         if (::webView.isInitialized) {
             webView.stopLoading()
             webView.visibility = View.INVISIBLE
@@ -1160,6 +1187,9 @@ class MainActivity : AppCompatActivity() {
         binding.loginButton.isEnabled = true
         binding.passwordInput.text?.clear()
         password = ""
+        // Prevent dashboard entry from starting a module preload before the
+        // profile request takes ownership of the single main WebView.
+        profileFetchInProgress = true
         showDashboard()
         fetchStudentProfile()
     }
@@ -1168,7 +1198,9 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn) return
         profileFetchGeneration++
         profileFetchInProgress = true
+        profileFetchStartedAtMs = android.os.SystemClock.elapsedRealtime()
         profileReadAttempts = 0
+        android.util.Log.i("ERPPerf", "module_fetch_start module=PROFILE source=network")
         // Keep the WebView attached while waiting for the visual DOM state.
         // This makes postVisualStateCallback reliable even though the ERP page is not shown to the user.
         webView.visibility = View.INVISIBLE
@@ -1228,6 +1260,8 @@ class MainActivity : AppCompatActivity() {
             val ready = ParsingUtils.isValidStudentName(name) && (cgpa.isNotBlank() || sgpa.isNotBlank())
             if (ready || (hasUsefulProfileFields && ParsingUtils.isValidStudentName(name))) {
                 profileFetchInProgress = false
+                val elapsed = (android.os.SystemClock.elapsedRealtime() - profileFetchStartedAtMs).coerceAtLeast(0L)
+                android.util.Log.i("ERPPerf", "module_fetch module=PROFILE elapsed_ms=$elapsed source=network outcome=success")
                 preloadAllModules()
                 return@evaluateJavascript
             }
@@ -1236,6 +1270,8 @@ class MainActivity : AppCompatActivity() {
                 handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_RETRY_DELAY_MS)
             } else {
                 profileFetchInProgress = false
+                val elapsed = (android.os.SystemClock.elapsedRealtime() - profileFetchStartedAtMs).coerceAtLeast(0L)
+                android.util.Log.w("ERPPerf", "module_fetch module=PROFILE elapsed_ms=$elapsed source=network outcome=unusable_response")
                 preloadAllModules()
             }
         }
@@ -1256,37 +1292,305 @@ class MainActivity : AppCompatActivity() {
     
 
     private fun preloadAllModules() {
-        if (!loggedIn || !activityResumed || profileFetchInProgress || preloadingModule != null) return
+        if (!loggedIn || !activityResumed || profileFetchInProgress ||
+            preloadingModule != null || parallelPrefetchBatchId != null || activeModule != null
+        ) return
         if (offlineMode || !hasInternetAvailable()) {
             homePreloadComplete = true
             setOfflineMode(true)
             return
         }
+
+        val staleModules = StudentModule.values().filter(::shouldAutoRefreshModule)
         preloadQueue.clear()
-        preloadQueue.addAll(StudentModule.values().filter { module ->
-            val cached = erpRepository.cachedPayload(module)?.let { parseModuleData(it) }
-            cached == null || !erpRepository.hasUsableData(module, cached)
-        })
-        homePreloadComplete = preloadQueue.isEmpty()
-        if (!homePreloadComplete && binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+        homePreloadComplete = staleModules.isEmpty()
+        if (staleModules.isEmpty()) {
+            if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+            return
+        }
+        if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+
+        // Parallel prefetch uses authenticated, same-origin iframes and never
+        // navigates the primary WebView while the dashboard is displayed.
+        if (startParallelPrefetch(staleModules)) return
+
+        // Conservative fallback for a provider/page where frame-based prefetch
+        // cannot start. Keep the established one-WebView-at-a-time behaviour.
+        preloadQueue.addAll(staleModules)
         preloadNextModule()
+    }
+
+    private fun shouldAutoRefreshModule(module: StudentModule): Boolean {
+        val data = erpRepository.cachedPayload(module)?.let(::parseModuleData)
+        val hasUsableCache = data != null && erpRepository.hasUsableData(module, data)
+        val needsRefresh = !hasUsableCache || erpRepository.needsRefresh(module)
+        if (!needsRefresh) return false
+        val now = android.os.SystemClock.elapsedRealtime()
+        val lastAttempt = lastModuleFetchAttemptAtElapsedMs[module]
+        return lastAttempt == null || now - lastAttempt >= ErpRepository.CACHE_TTL_MS
+    }
+
+    private fun beginModuleFetch(module: StudentModule): Long {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val generation = erpRepository.beginFetch(module)
+        moduleFetchGenerations[module] = generation
+        moduleFetchStartedAtMs[module] = now
+        lastModuleFetchAttemptAtElapsedMs[module] = now
+        android.util.Log.i("ERPPerf", "module_fetch_start module=${module.name} source=network")
+        return generation
+    }
+
+    private fun logModuleFetchOutcome(module: StudentModule, outcome: String) {
+        val startedAt = moduleFetchStartedAtMs.remove(module)
+        val elapsed = if (startedAt == null) -1L
+            else (android.os.SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
+        android.util.Log.i(
+            "ERPPerf",
+            "module_fetch module=${module.name} elapsed_ms=$elapsed source=network outcome=$outcome"
+        )
+    }
+
+    private fun logModuleFirstRender(module: StudentModule, source: String, success: Boolean) {
+        if (firstRenderPendingModule != module) return
+        val elapsed = (android.os.SystemClock.elapsedRealtime() - firstRenderStartedAtMs).coerceAtLeast(0L)
+        android.util.Log.i(
+            "ERPPerf",
+            "screen_first_render module=${module.name} elapsed_ms=$elapsed source=$source success=$success"
+        )
+        firstRenderPendingModule = null
+    }
+
+    private fun startParallelPrefetch(modules: List<StudentModule>): Boolean {
+        if (modules.size < 2 || !::webView.isInitialized || !webViewReady) return false
+        val currentUrl = webView.url.orEmpty()
+        if (!ErpConfig.belongsToErp(currentUrl) || ErpConfig.isLoginUrl(currentUrl)) return false
+
+        val batchId = java.util.UUID.randomUUID().toString()
+        val jobs = org.json.JSONArray()
+        parallelPrefetchModules.clear()
+        parallelPrefetchProcessedModules.clear()
+        parallelPrefetchSucceededModules.clear()
+        parallelPrefetchGenerations.clear()
+
+        modules.forEach { module ->
+            val targetUrl = ErpConfig.moduleUrl(module.path)
+            if (!ErpConfig.belongsToErp(targetUrl) || ErpConfig.isLoginUrl(targetUrl)) return@forEach
+            val generation = beginModuleFetch(module)
+            parallelPrefetchGenerations[module] = generation
+            parallelPrefetchModules.add(module)
+            jobs.put(
+                JSONObject()
+                    .put("key", module.name)
+                    .put("url", targetUrl)
+                    .put("script", Scripts.moduleDataFor(module, targetUrl))
+                    .put("fallback", Scripts.moduleData)
+                    .put("timeoutMs", PARALLEL_PREFETCH_JOB_TIMEOUT_MS)
+            )
+        }
+        if (jobs.length() < 2) {
+            parallelPrefetchModules.forEach {
+                moduleFetchStartedAtMs.remove(it)
+                moduleFetchGenerations.remove(it)
+                lastModuleFetchAttemptAtElapsedMs.remove(it)
+            }
+            parallelPrefetchModules.clear()
+            parallelPrefetchGenerations.clear()
+            return false
+        }
+
+        parallelPrefetchBatchId = batchId
+        parallelPrefetchStartedAtMs = android.os.SystemClock.elapsedRealtime()
+        homePreloadComplete = false
+        android.util.Log.i("ERPPerf", "parallel_prefetch_start modules=${parallelPrefetchModules.joinToString(",") { it.name }}")
+
+        return try {
+            webView.evaluateJavascript(Scripts.parallelPrefetchScript(batchId, jobs.toString())) { raw ->
+                if (parallelPrefetchBatchId != batchId) return@evaluateJavascript
+                val reply = ParsingUtils.decodeJavascriptString(raw)
+                if (reply != "STARTED") {
+                    android.util.Log.w("ERPPerf", "parallel_prefetch_start_failed")
+                    finishParallelPrefetch(batchId, retryFailed = true, cancelInPage = true)
+                } else {
+                    scheduleParallelPrefetchPoll(batchId, PARALLEL_PREFETCH_POLL_INTERVAL_MS)
+                }
+            }
+            true
+        } catch (error: Exception) {
+            android.util.Log.w("ERPPerf", "parallel_prefetch_start_failed error=${error.javaClass.simpleName}")
+            cancelParallelPrefetch()
+            false
+        }
+    }
+
+    private fun scheduleParallelPrefetchPoll(batchId: String, delayMs: Long) {
+        val poll = Runnable {
+            if (parallelPrefetchBatchId != batchId) return@Runnable
+            if (!loggedIn || !activityResumed || !hasInternetAvailable() || activeModule != null) {
+                cancelParallelPrefetch()
+                return@Runnable
+            }
+            val elapsed = android.os.SystemClock.elapsedRealtime() - parallelPrefetchStartedAtMs
+            if (elapsed >= PARALLEL_PREFETCH_TOTAL_TIMEOUT_MS) {
+                finishParallelPrefetch(batchId, retryFailed = true, cancelInPage = true)
+                return@Runnable
+            }
+
+            try {
+                webView.evaluateJavascript(Scripts.parallelPrefetchStatusScript(batchId)) { raw ->
+                    if (parallelPrefetchBatchId != batchId) return@evaluateJavascript
+                    val statusJson = ParsingUtils.decodeJavascriptString(raw)
+                    val state = try {
+                        if (statusJson.isBlank()) null else JSONObject(statusJson)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (state == null) {
+                        finishParallelPrefetch(batchId, retryFailed = true, cancelInPage = true)
+                        return@evaluateJavascript
+                    }
+
+                    val results = state.optJSONObject("results")
+                    parallelPrefetchModules.toList().forEach { module ->
+                        if (module in parallelPrefetchProcessedModules) return@forEach
+                        val result = results?.optJSONObject(module.name) ?: return@forEach
+                        parallelPrefetchProcessedModules.add(module)
+                        val resultStatus = result.optString("status", "error")
+                        if (resultStatus == "auth") {
+                            android.util.Log.w("ERPPerf", "parallel_prefetch_session_rejected")
+                            cancelParallelPrefetch()
+                            handleSessionExpired()
+                            return@evaluateJavascript
+                        }
+
+                        val generation = parallelPrefetchGenerations[module]
+                        var accepted = false
+                        if (resultStatus == "done" && generation != null) {
+                            val payload = result.optString("payload", "")
+                            accepted = payload.isNotBlank() &&
+                                erpRepository.cachePayload(module, payload, generation)
+                            if (!accepted) {
+                                val fallback = result.optString("fallbackPayload", "")
+                                accepted = fallback.isNotBlank() &&
+                                    erpRepository.cachePayload(module, fallback, generation)
+                            }
+                        }
+                        if (accepted) {
+                            parallelPrefetchSucceededModules.add(module)
+                            logModuleFetchOutcome(module, "success")
+                            android.util.Log.i(
+                                "ERPPerf",
+                                "parallel_prefetch_item module=${module.name} elapsed_ms=${result.optLong("durationMs", -1L)} outcome=success"
+                            )
+                            if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+                        } else {
+                            logModuleFetchOutcome(module, if (resultStatus == "done") "unusable_response" else resultStatus)
+                            android.util.Log.w(
+                                "ERPPerf",
+                                "parallel_prefetch_item module=${module.name} elapsed_ms=${result.optLong("durationMs", -1L)} outcome=${resultStatus}"
+                            )
+                        }
+                    }
+
+                    val pending = state.optInt("pending", -1)
+                    if (pending <= 0 || parallelPrefetchProcessedModules.size >= parallelPrefetchModules.size) {
+                        finishParallelPrefetch(batchId, retryFailed = true, cancelInPage = false)
+                    } else {
+                        scheduleParallelPrefetchPoll(batchId, PARALLEL_PREFETCH_POLL_INTERVAL_MS)
+                    }
+                }
+            } catch (error: Exception) {
+                android.util.Log.w("ERPPerf", "parallel_prefetch_poll_failed error=${error.javaClass.simpleName}")
+                finishParallelPrefetch(batchId, retryFailed = true, cancelInPage = true)
+            }
+        }
+        parallelPrefetchPollRunnable = poll
+        handler.postDelayed(poll, delayMs)
+    }
+
+    private fun finishParallelPrefetch(batchId: String, retryFailed: Boolean, cancelInPage: Boolean) {
+        if (parallelPrefetchBatchId != batchId) return
+        parallelPrefetchPollRunnable?.let(handler::removeCallbacks)
+
+        val modules = parallelPrefetchModules.toList()
+        val failed = modules.filter { it !in parallelPrefetchSucceededModules }
+        modules.filter { it !in parallelPrefetchProcessedModules }.forEach {
+            logModuleFetchOutcome(it, "timeout_or_missing_result")
+        }
+        val elapsed = (android.os.SystemClock.elapsedRealtime() - parallelPrefetchStartedAtMs).coerceAtLeast(0L)
+        if (cancelInPage && ::webView.isInitialized && ErpConfig.belongsToErp(webView.url.orEmpty())) {
+            try {
+                webView.evaluateJavascript(Scripts.cancelParallelPrefetchScript(batchId), null)
+            } catch (_: Exception) { }
+        }
+
+        parallelPrefetchBatchId = null
+        parallelPrefetchPollRunnable = null
+        parallelPrefetchModules.clear()
+        parallelPrefetchProcessedModules.clear()
+        parallelPrefetchSucceededModules.clear()
+        parallelPrefetchGenerations.clear()
+        homePreloadComplete = failed.isEmpty()
+        android.util.Log.i(
+            "ERPPerf",
+            "parallel_prefetch_complete elapsed_ms=$elapsed success_count=${modules.size - failed.size} failed_count=${failed.size}"
+        )
+
+        if (retryFailed && failed.isNotEmpty() && loggedIn && activityResumed &&
+            hasInternetAvailable() && activeModule == null
+        ) {
+            preloadQueue.clear()
+            preloadQueue.addAll(failed)
+            homePreloadComplete = false
+            preloadNextModule()
+            return
+        }
+
+        if (activeModule == null) {
+            if (failed.isNotEmpty()) homePreloadComplete = false
+            if (::webView.isInitialized) webView.visibility = View.GONE
+            if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+        }
+    }
+
+    private fun cancelParallelPrefetch() {
+        val batchId = parallelPrefetchBatchId ?: return
+        parallelPrefetchPollRunnable?.let(handler::removeCallbacks)
+        if (::webView.isInitialized && ErpConfig.belongsToErp(webView.url.orEmpty())) {
+            try {
+                webView.evaluateJavascript(Scripts.cancelParallelPrefetchScript(batchId), null)
+            } catch (_: Exception) { }
+        }
+        parallelPrefetchModules.forEach { module ->
+            moduleFetchStartedAtMs.remove(module)
+            moduleFetchGenerations.remove(module)
+            lastModuleFetchAttemptAtElapsedMs.remove(module)
+        }
+        parallelPrefetchBatchId = null
+        parallelPrefetchPollRunnable = null
+        parallelPrefetchModules.clear()
+        parallelPrefetchProcessedModules.clear()
+        parallelPrefetchSucceededModules.clear()
+        parallelPrefetchGenerations.clear()
+        homePreloadComplete = false
+        android.util.Log.i("ERPPerf", "parallel_prefetch_cancelled")
     }
 
     private fun preloadNextModule() {
         if (!loggedIn || !activityResumed) return
-        // Each preloaded module owns a new generation; late JS callbacks from
-        // the prior URL must not write data under the next module's cache key.
+        // Each sequential fallback gets a new fetch generation; delayed callbacks
+        // from an earlier module may not overwrite newer cache snapshots.
         moduleReadRequestId++
         if (preloadQueue.isEmpty()) {
             preloadingModule = null
             homePreloadComplete = true
             webView.visibility = View.GONE
-            updateNextClassPreview()
+            if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
         moduleReadAttempts = 0
         webView.visibility = View.INVISIBLE
+        beginModuleFetch(preloadingModule!!)
         webView.loadUrl(ErpConfig.moduleUrl(preloadingModule!!.path))
     }
 
@@ -1294,6 +1598,10 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn) return
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
         closeSideMenu()
+        cancelParallelPrefetch()
+        firstRenderPendingModule = module
+        firstRenderStartedAtMs = android.os.SystemClock.elapsedRealtime()
+        firstRenderSource = "network"
 
         // Cancel hidden preload before the tapped module becomes active.
         // Incrementing the generation invalidates callbacks already in flight.
@@ -1349,9 +1657,15 @@ class MainActivity : AppCompatActivity() {
             ?.let { parseModuleData(it) }
             ?.takeIf { erpRepository.hasUsableData(module, it) }
         if (cachedData != null) {
+            firstRenderSource = "cache"
             renderModuleData(module, cachedData)
-            binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-            binding.moduleProgress.visibility = if (isRedesignedModule(module)) View.GONE else View.VISIBLE
+            binding.moduleInfo.text = if (erpRepository.needsRefresh(module)) {
+                "Last synced data • Updating in background…"
+            } else {
+                "Showing saved data"
+            }
+            // Existing usable content remains interactive while stale data refreshes.
+            binding.moduleProgress.visibility = View.GONE
         } else {
             binding.moduleContent.removeAllViews()
             if (isRedesignedModule(module)) {
@@ -1388,7 +1702,32 @@ class MainActivity : AppCompatActivity() {
             binding.moduleInfo.text = if (cachedData != null) "Offline - showing saved data" else "Offline - no saved data yet"
             return
         }
+        val needsRefresh = cachedData == null || erpRepository.needsRefresh(module)
+        if (!needsRefresh) {
+            moduleFetchInProgress = false
+            binding.moduleProgress.visibility = View.GONE
+            binding.modulePullRefresh.isRefreshing = false
+            return
+        }
+        if (!shouldAutoRefreshModule(module)) {
+            moduleFetchInProgress = false
+            binding.moduleProgress.visibility = View.GONE
+            binding.modulePullRefresh.isRefreshing = false
+            if (cachedData == null) {
+                binding.moduleContent.removeAllViews()
+                binding.moduleContent.addView(createEmptyState(
+                    "No saved data yet",
+                    "Automatic retries are limited to once every five minutes. Tap Refresh to try again."
+                ))
+                binding.moduleInfo.text = "No saved data yet"
+                logModuleFirstRender(module, "empty", false)
+            } else {
+                binding.moduleInfo.text = "Showing saved data • Automatic refresh is throttled"
+            }
+            return
+        }
         moduleFetchInProgress = true
+        beginModuleFetch(module)
         webView.loadUrl(ErpConfig.moduleUrl(module.path))
         scheduleModuleLoadFallback(module, moduleReadRequestId)
     }
@@ -1396,6 +1735,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshActiveModule() {
         val module = activeModule ?: return
         if (!hasInternetAvailable() || offlineMode) {
+            binding.modulePullRefresh.isRefreshing = false
             setOfflineMode(true)
             val cached = erpRepository.cachedPayload(module)
                 ?.let(::parseModuleData)
@@ -1419,6 +1759,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
 
+        cancelParallelPrefetch()
         if (::webView.isInitialized) webView.stopLoading()
         moduleFetchInProgress = false
         moduleReadAttempts = 0
@@ -1454,6 +1795,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.visibility = View.INVISIBLE
         moduleFetchInProgress = true
+        beginModuleFetch(module)
         webView.loadUrl(ErpConfig.moduleUrl(module.path))
         scheduleModuleLoadFallback(module, moduleReadRequestId)
     }
@@ -1478,6 +1820,8 @@ class MainActivity : AppCompatActivity() {
 
             moduleFetchInProgress = false
             binding.moduleProgress.visibility = View.GONE
+            binding.modulePullRefresh.isRefreshing = false
+            logModuleFetchOutcome(module, "timeout")
             val hasCachedContent = erpRepository.cachedPayload(module)
                 ?.let { parseModuleData(it) }
                 ?.let { erpRepository.hasUsableData(module, it) } == true
@@ -1555,7 +1899,12 @@ class MainActivity : AppCompatActivity() {
             StudentModule.ENROLLED_COURSES -> renderEnrolledCourses(data)
         }
         binding.moduleProgress.visibility = View.GONE
-        binding.moduleInfo.text = "Updated from your student account"
+        binding.moduleInfo.text = if (offlineMode || !hasInternetAvailable()) {
+            "Offline - showing saved data"
+        } else {
+            "Updated from your student account"
+        }
+        logModuleFirstRender(module, firstRenderSource, success = true)
     }
 
     private fun renderAttendance(data: ModuleData) {
@@ -1695,6 +2044,9 @@ class MainActivity : AppCompatActivity() {
         val summary = erpRepository.cachedPayload(StudentModule.ATTENDANCE)?.let(::parseModuleData)
         if (summary != null && summary.attendanceDetail == null) {
             activeModule = StudentModule.ATTENDANCE
+            firstRenderPendingModule = StudentModule.ATTENDANCE
+            firstRenderStartedAtMs = android.os.SystemClock.elapsedRealtime()
+            firstRenderSource = "cache"
             binding.moduleScreen.visibility = View.VISIBLE
             binding.loginScroll.visibility = View.GONE
             binding.dashboardScroll.visibility = View.GONE
@@ -2240,12 +2592,48 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     if (usable && data != null) {
-                        if (module != StudentModule.ATTENDANCE || data.attendanceDetail == null) {
-                            erpRepository.cachePayload(module, payload)
+                        val isAttendanceDetail = module == StudentModule.ATTENDANCE && data.attendanceDetail != null
+                        val cacheAccepted = if (isAttendanceDetail) {
+                            true
+                        } else {
+                            val generation = moduleFetchGenerations[module]
+                            if (generation != null) erpRepository.cachePayload(module, payload, generation)
+                            else erpRepository.cachePayload(module, payload)
                         }
+                        if (!cacheAccepted) {
+                            android.util.Log.w("ERPPerf", "module_fetch module=@@{module.name} source=network outcome=stale_response_rejected")
+                            if (displayWhenReady && activeModule == module) {
+                                moduleFetchInProgress = false
+                                binding.moduleProgress.visibility = View.GONE
+                                binding.modulePullRefresh.isRefreshing = false
+                                val cachedData = erpRepository.cachedPayload(module)
+                                    ?.let(::parseModuleData)
+                                    ?.takeIf { erpRepository.hasUsableData(module, it) }
+                                if (cachedData != null) {
+                                    renderModuleData(module, cachedData)
+                                    binding.moduleInfo.text = "Showing last synced data"
+                                } else {
+                                    binding.moduleContent.removeAllViews()
+                                    binding.moduleContent.addView(createEmptyState(
+                                        "Couldn't refresh this section",
+                                        "The latest response was older than a newer saved result. Tap Refresh to try again."
+                                    ))
+                                    logModuleFirstRender(module, "empty", false)
+                                }
+                            } else if (!displayWhenReady && preloadingModule == module) {
+                                preloadingModule = null
+                                preloadNextModule()
+                            }
+                            return
+                        }
+                        logModuleFetchOutcome(module, "success")
                         if (displayWhenReady && activeModule == module) {
                             moduleFetchInProgress = false
+                            binding.modulePullRefresh.isRefreshing = false
                             renderModuleData(module, data)
+                        } else if (!displayWhenReady && preloadingModule == module) {
+                            preloadingModule = null
+                            preloadNextModule()
                         }
                     } else if (displayWhenReady && activeModule == module) {
                         if (moduleReadAttempts < MAX_MODULE_READ_ATTEMPTS) {
@@ -2256,6 +2644,8 @@ class MainActivity : AppCompatActivity() {
 
                         moduleFetchInProgress = false
                         binding.moduleProgress.visibility = View.GONE
+                        binding.modulePullRefresh.isRefreshing = false
+                        logModuleFetchOutcome(module, "unusable_response")
                         val cachedData = erpRepository.cachedPayload(module)
                             ?.let { parseModuleData(it) }
                             ?.takeIf { erpRepository.hasUsableData(module, it) }
@@ -2283,6 +2673,7 @@ class MainActivity : AppCompatActivity() {
                             handler.postDelayed({ readModuleData(view, module, false) }, MODULE_RETRY_DELAY_MS)
                             return
                         }
+                        logModuleFetchOutcome(module, "unusable_response")
                         preloadingModule = null
                         preloadNextModule()
                     }
@@ -2543,6 +2934,8 @@ class MainActivity : AppCompatActivity() {
         val module = activeModule ?: return
         moduleFetchInProgress = false
         binding.moduleProgress.visibility = View.GONE
+        binding.modulePullRefresh.isRefreshing = false
+        logModuleFetchOutcome(module, "network_error")
         val cachedData = erpRepository.cachedPayload(module)
             ?.let { parseModuleData(it) }
             ?.takeIf { erpRepository.hasUsableData(module, it) }
@@ -2570,6 +2963,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleSessionExpired() {
+        cancelParallelPrefetch()
         if (!(loggedIn || restoringSession || sessionStore.sessionActive)) return
         if (!hasInternetAvailable()) {
             keepCachedSessionAfterTransientFailure("Offline - showing saved data")
@@ -3121,6 +3515,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDashboardInternal() {
+        cancelParallelPrefetch()
         activeAttendanceDetailUrl = null
         activeModule = null
         if (::webView.isInitialized) webView.stopLoading()
@@ -3141,9 +3536,15 @@ class MainActivity : AppCompatActivity() {
             lightStatusIcons = Palette.isNight(this),
             lightNavigationIcons = Palette.isNight(this)
         )
+        val dashboardRenderStartedAt = android.os.SystemClock.elapsedRealtime()
         renderHomeDashboard()
+        val dashboardRenderElapsed = (android.os.SystemClock.elapsedRealtime() - dashboardRenderStartedAt).coerceAtLeast(0L)
+        android.util.Log.i(
+            "ERPPerf",
+            "screen_first_render module=DASHBOARD elapsed_ms=$dashboardRenderElapsed source=cache_or_native success=true"
+        )
         setOfflineMode(offlineMode || !hasInternetAvailable())
-        // If opening a module interrupted a previous preload, resume missing ERP modules on return.
+        // If opening a module interrupted a previous preload, resume missing or stale ERP modules on return.
         preloadAllModules()
     }
 
@@ -3162,6 +3563,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLogin() {
+        cancelParallelPrefetch()
         closeSideMenu()
         stopSessionHeartbeat()
         activeAttendanceDetailUrl = null
@@ -3196,6 +3598,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun logout() {
+        cancelParallelPrefetch()
+        moduleFetchGenerations.clear()
+        moduleFetchStartedAtMs.clear()
+        lastModuleFetchAttemptAtElapsedMs.clear()
         savedCredentialsStore.clear()
         sessionStore.clear()
         profileCache.clear()
@@ -3279,7 +3685,10 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val WEBVIEW_WARMUP_DELAY_MS = 350L
-                                private const val LOGIN_INJECTION_DELAY_MS = 500L
+        private const val PARALLEL_PREFETCH_POLL_INTERVAL_MS = 300L
+        private const val PARALLEL_PREFETCH_JOB_TIMEOUT_MS = 18000
+        private const val PARALLEL_PREFETCH_TOTAL_TIMEOUT_MS = 23000L
+        private const val LOGIN_INJECTION_DELAY_MS = 500L
         private const val MAX_LOGIN_INJECTION_ATTEMPTS = 20
         private const val MAX_LOGIN_PROBE_ATTEMPTS = 20
         private const val PROFILE_READ_DELAY_MS = 1200L
