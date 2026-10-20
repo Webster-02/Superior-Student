@@ -748,19 +748,19 @@
             android:id="@+id/studentConnectSearchPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="12dp"
             android:orientation="vertical"
             android:visibility="gone">
 
-            <TextView
+            <TextView android:id="@+id/studentConnectSearchHeadline"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Find Students"
+                android:text="Find a classmate"
                 android:textColor="@color/sc_text_primary"
                 android:textSize="20sp"
                 android:textStyle="bold" />
 
-            <TextView
+            <TextView android:id="@+id/studentConnectSearchDescription"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
@@ -773,27 +773,31 @@
                 android:id="@+id/studentConnectSearchInput"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="16dp"
                 android:background="@drawable/bg_student_connect_input"
+                android:drawableStart="@drawable/ic_sc_search"
+                android:drawablePadding="12dp"
+                android:drawableTint="@color/sc_text_muted"
+                android:gravity="center_vertical"
                 android:hint="UNI-XXXXXXX"
                 android:inputType="textCapCharacters"
                 android:maxLength="11"
                 android:maxLines="1"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:textColor="@color/sc_text_primary"
                 android:textColorHint="@color/sc_text_muted"
-                android:textSize="16sp" />
+                android:textSize="14sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectSearchButton"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
                 android:text="Search by student ID"
                 android:textAllCaps="false"
                 android:textColor="@color/sc_button_primary_text"
-                android:textSize="14sp"
+                android:textSize="15sp"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="@dimen/radius_control" />
 
@@ -801,13 +805,13 @@
                 android:id="@+id/studentConnectSearchResultCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="18dp"
                 android:orientation="vertical"
-                android:padding="16dp"
+                android:padding="14dp"
                 android:background="@drawable/bg_student_connect_auth_card"
                 android:visibility="gone">
 
-                <TextView
+                <TextView android:id="@+id/studentConnectSearchResultLabel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Student found"
@@ -818,19 +822,23 @@
                     android:id="@+id/studentConnectSearchResultName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
+                    android:layout_marginTop="4dp"
                     android:textColor="@color/sc_text_primary"
-                    android:textSize="17sp"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/studentConnectSearchResultId"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:letterSpacing="0.06"
-                    android:textColor="@color/sc_purple"
-                    android:textSize="15sp" />
+                    android:background="@drawable/bg_student_connect_nav_selected"
+                    android:paddingStart="10dp"
+                    android:paddingTop="3dp"
+                    android:paddingEnd="10dp"
+                    android:paddingBottom="3dp"
+                    android:textColor="@color/sc_button_primary_text"
+                    android:textSize="13sp" />
 
                 <!-- Friend-request controls are intentionally hidden until the next tested wiring step. -->
                 <com.google.android.material.button.MaterialButton
@@ -850,9 +858,9 @@
                 android:id="@+id/studentConnectSearchPrivacyNote"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="12dp"
                 app:cardBackgroundColor="@color/sc_sky"
-                app:cardCornerRadius="@dimen/radius_card"
+                app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/sc_sky"
                 app:strokeWidth="1dp">
@@ -862,25 +870,25 @@
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:padding="12dp">
+                    android:padding="14dp">
 
                     <ImageView
-                        android:layout_width="18dp"
-                        android:layout_height="18dp"
-                        android:layout_marginEnd="8dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginEnd="12dp"
                         android:contentDescription="@null"
                         android:importantForAccessibility="no"
-                        android:src="@drawable/ic_pt_shield"
+                        android:src="@drawable/ic_pt_info_circle"
                         android:tint="@color/sc_text_primary" />
 
-                    <TextView
+                    <TextView android:id="@+id/studentConnectSearchPrivacyText"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:lineSpacingExtra="2dp"
                         android:text="Ask your classmate to share their ID from their U2U profile."
                         android:textColor="@color/sc_text_primary"
-                        android:textSize="11sp"
+                        android:textSize="12sp"
                         android:fontFamily="@font/poppins" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>

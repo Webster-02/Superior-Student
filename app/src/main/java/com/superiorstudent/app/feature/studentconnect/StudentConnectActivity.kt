@@ -692,6 +692,7 @@ class StudentConnectActivity : AppCompatActivity() {
         U2UDesignTokens.applyHomeTileRules(root)
         U2UDesignTokens.applySurfaceDepth(root)
         applyHomeDashboardPolish(root)
+        applyFindStudentsPolish(root)
         U2UDesignTokens.applyInteractionFeedback(root)
     }
 
@@ -761,6 +762,55 @@ class StudentConnectActivity : AppCompatActivity() {
                 typeface = ResourcesCompat.getFont(this@StudentConnectActivity, R.font.poppins_medium)
                 includeFontPadding = false
             }
+        }
+    }
+
+    /** Applies reference-aligned typography and icon treatment to the existing Find Students screen. */
+    private fun applyFindStudentsPolish(root: View) {
+        fun styleText(id: Int, sizeSp: Float, medium: Boolean, letterSpacing: Float = 0f) {
+            root.findViewById<TextView>(id)?.apply {
+                setTextSize(sizeSp)
+                includeFontPadding = false
+                typeface = ResourcesCompat.getFont(
+                    this@StudentConnectActivity,
+                    if (medium) R.font.poppins_medium else R.font.poppins_regular
+                )
+                this.letterSpacing = letterSpacing
+            }
+        }
+
+        styleText(R.id.studentConnectSearchHeadline, 22f, true, -0.02f)
+        styleText(R.id.studentConnectSearchDescription, 13f, false)
+        styleText(R.id.studentConnectSearchButton, 15f, true)
+        styleText(R.id.studentConnectSearchResultLabel, 12f, false)
+        styleText(R.id.studentConnectSearchResultName, 15f, true)
+        styleText(R.id.studentConnectSearchResultId, 13f, true)
+        styleText(R.id.studentConnectSearchPrivacyText, 12f, false)
+
+        root.findViewById<EditText>(R.id.studentConnectSearchInput)?.apply {
+            setTextSize(14f)
+            includeFontPadding = false
+            typeface = ResourcesCompat.getFont(this@StudentConnectActivity, R.font.poppins_regular)
+        }
+
+        if (currentScreen == StudentConnectScreen.SEARCH) {
+            root.findViewById<TextView>(R.id.studentConnectBrandTitle)?.apply {
+                setTextSize(20f)
+                letterSpacing = -0.02f
+            }
+            root.findViewById<TextView>(R.id.studentConnectBrandTagline)?.apply {
+                setTextSize(12f)
+            }
+            root.findViewById<TextView>(R.id.studentConnectBackButton)?.apply {
+                text = ""
+                val arrow = ContextCompat.getDrawable(this@StudentConnectActivity, R.drawable.ic_pt_arrow_left)
+                    ?.mutate()
+                    ?.apply { setTint(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_primary)) }
+                setCompoundDrawablesWithIntrinsicBounds(arrow, null, null, null)
+                gravity = android.view.Gravity.CENTER
+            }
+        } else {
+            root.findViewById<TextView>(R.id.studentConnectBackButton)?.setCompoundDrawables(null, null, null, null)
         }
     }
 
