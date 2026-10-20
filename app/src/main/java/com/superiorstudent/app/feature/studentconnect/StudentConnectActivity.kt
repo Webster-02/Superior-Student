@@ -160,6 +160,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private val friendRequestRepository by lazy { FriendRequestRepository() }
     private val studentChatRepository by lazy { StudentChatRepository() }
     private val localCache by lazy { StudentConnectLocalCache.get(applicationContext) }
+    private val localChatClearState by lazy { StudentChatLocalClearState(applicationContext) }
     private val notificationTokenRepository by lazy { StudentNotificationTokenRepository() }
     private val studentNotificationRepository by lazy { StudentNotificationRepository() }
     private var notificationListener: ListenerRegistration? = null
@@ -1308,13 +1309,22 @@ class StudentConnectActivity : AppCompatActivity() {
             row.findViewById<TextView>(R.id.studentChatSummaryAvatar).text = summary.otherDisplayName
                 .trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
                 .joinToString("") { it.take(1).uppercase(Locale.getDefault()) }
-            val preview = summary.lastMessageText?.let { message ->
-                val prefix = if (summary.lastMessageSenderUid == uid) "You: " else ""
-                (prefix + message).take(92).let { if ((prefix + message).length > 92) "$it…" else it }
-            } ?: "No messages yet. Say hello!"
+            val clearBeforeMillis = localChatClearState.cutoffMillis(uid, summary.conversationId)
+            val lastMessageMillis = summary.lastMessageAt?.toDate()?.time
+            val isLocallyCleared = StudentChatLocalClearPolicy.isSummaryHidden(
+                lastMessageMillis, clearBeforeMillis
+            )
+            val preview = if (isLocallyCleared) {
+                "Chat cleared for you"
+            } else {
+                summary.lastMessageText?.let { message ->
+                    val prefix = if (summary.lastMessageSenderUid == uid) "You: " else ""
+                    (prefix + message).take(92).let { if ((prefix + message).length > 92) "$it…" else it }
+                } ?: "No messages yet. Say hello!"
+            }
             row.findViewById<TextView>(R.id.studentChatSummaryPreview).text = preview
             row.findViewById<TextView>(R.id.studentChatSummaryTime).text =
-                formatChatSummaryTime(summary.lastMessageAt ?: summary.updatedAt)
+                if (isLocallyCleared) "Cleared" else formatChatSummaryTime(summary.lastMessageAt ?: summary.updatedAt)
             val unreadBadge = row.findViewById<TextView>(R.id.studentChatSummaryUnreadBadge)
             if (summary.unreadCount > 0) {
                 unreadBadge.text = if (summary.unreadCount > 99) "99+" else summary.unreadCount.toString()

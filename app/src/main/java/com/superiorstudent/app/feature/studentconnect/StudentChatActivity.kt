@@ -171,6 +171,7 @@ class StudentChatActivity : AppCompatActivity() {
     private var reactionRecords: List<StudentChatMessageReaction> = emptyList()
     private var reactionListening = false
     private var displayedMessages: List<StudentChatMessage> = emptyList()
+    private lateinit var localChatClearState: StudentChatLocalClearState
     private var displayedTransferOffers: List<P2pTransferOffer> = emptyList()
     private var liveMessagesSnapshotReceived = false
     private var replyToMessage: StudentChatMessage? = null
@@ -237,6 +238,7 @@ class StudentChatActivity : AppCompatActivity() {
 
         setContentView(R.layout.activity_student_chat)
         auth = FirebaseAuth.getInstance()
+        localChatClearState = StudentChatLocalClearState(applicationContext)
         bindViews()
         applyChatWindowInsets()
 
@@ -250,6 +252,18 @@ class StudentChatActivity : AppCompatActivity() {
         contactInitialsText.text = initialsForName(otherDisplayName)
 
         findViewById<TextView>(R.id.studentChatBackButton).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.studentChatOptionsButton).setOnClickListener { anchor ->
+            PopupMenu(this, anchor).apply {
+                val clearItem = menu.add(0, MENU_CLEAR_CHAT_FOR_ME, 0, "Clear chat for me")
+                clearItem.isEnabled = conversation != null
+                setOnMenuItemClickListener { item ->
+                    if (item.itemId == MENU_CLEAR_CHAT_FOR_ME) {
+                        confirmClearChatForMe()
+                    }
+                    true
+                }
+            }.show()
+        }
         clearReplyButton.setOnClickListener {
             clearReplyTarget()
             statusText.text = "Reply cancelled."
@@ -537,10 +551,11 @@ class StudentChatActivity : AppCompatActivity() {
                 return@listenMessages
             }
             liveMessagesSnapshotReceived = true
-            localCache.saveMessages(uid, opened.id, otherUid, messages)
-            renderMessages(uid, messages)
+            val visibleMessages = localChatClearState.filterMessages(uid, opened.id, messages)
+            localCache.saveMessages(uid, opened.id, otherUid, visibleMessages)
+            renderMessages(uid, visibleMessages)
             statusText.text = ""
-            startMessageReactionsListeners(uid, messages)
+            startMessageReactionsListeners(uid, visibleMessages)
             chatRepository.markConversationRead(opened.id, uid) { readError ->
                 if (!isCurrentUser(uid)) return@markConversationRead
                 if (readError != null) {
@@ -551,20 +566,61 @@ class StudentChatActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun confirmClearChatForMe() {
+        val user = auth.currentUser
+        val activeConversation = conversation
+        if (user == null || !user.isEmailVerified || activeConversation == null) {
+            statusText.text = "Open a verified U2U conversation before clearing messages."
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Clear chat for me?")
+            .setMessage(
+                "This hides existing text messages on this device only. The other person will keep their messages. " +
+                    "Server messages are not deleted, and file transfer cards or saved files are not removed."
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Clear for me") { _, _ ->
+                val priorCutoff = localChatClearState.cutoffMillis(user.uid, activeConversation.id)
+                val newestMessageTime = displayedMessages.mapNotNull {
+                    it.createdAt?.toDate()?.time
+                }.maxOrNull()
+                val cutoffMillis = listOfNotNull(priorCutoff, newestMessageTime).maxOrNull()
+                    ?: System.currentTimeMillis()
+
+                localChatClearState.clearBefore(user.uid, activeConversation.id, cutoffMillis)
+                clearReplyTarget()
+                localCache.saveMessages(user.uid, activeConversation.id, otherUid, emptyList())
+                startMessageReactionsListeners(user.uid, emptyList())
+                renderMessages(user.uid, emptyList())
+                statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+                statusText.text = "Text messages cleared on this device."
+            }
+            .show()
+    }
+
     private fun renderMessages(uid: String, messages: List<StudentChatMessage>) {
-        displayedMessages = messages
+        val conversationId = conversation?.id ?: runCatching {
+            StudentChatIds.conversationId(uid, otherUid)
+        }.getOrNull()
+        val visibleMessages = if (conversationId == null) messages else {
+            localChatClearState.filterMessages(uid, conversationId, messages)
+        }
+        displayedMessages = visibleMessages
         outgoingReceiptViews.clear()
         messageReactionSummaryViews.clear()
         messagesContainer.removeAllViews()
         messageBubbleViews.clear()
-        emptyStateText.visibility = if (messages.isEmpty() && displayedTransferOffers.isEmpty()) {
+        emptyStateText.visibility = if (visibleMessages.isEmpty() && displayedTransferOffers.isEmpty()) {
             View.VISIBLE
         } else {
             View.GONE
         }
 
-        val timelineItems = ArrayList<ChatTimelineItem>(messages.size + displayedTransferOffers.size)
-        messages.forEach { timelineItems.add(ChatTimelineItem.Message(it)) }
+        val timelineItems = ArrayList<ChatTimelineItem>(visibleMessages.size + displayedTransferOffers.size)
+        visibleMessages.forEach { timelineItems.add(ChatTimelineItem.Message(it)) }
         displayedTransferOffers.forEach { timelineItems.add(ChatTimelineItem.Transfer(it)) }
         timelineItems.sortBy { it.timestampMillis }
 
@@ -1532,6 +1588,7 @@ class StudentChatActivity : AppCompatActivity() {
         const val EXTRA_OTHER_UID = "student_chat_other_uid"
         const val EXTRA_OTHER_DISPLAY_NAME = "student_chat_other_display_name"
         private const val TAG = "StudentChatTyping"
+        private const val MENU_CLEAR_CHAT_FOR_ME = 2
         private const val TYPING_IDLE_MS = 1_500L
         private const val TYPING_HEARTBEAT_MS = 4_000L
         private const val TYPING_STALE_AFTER_MS = 9_000L

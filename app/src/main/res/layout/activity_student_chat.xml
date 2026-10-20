@@ -139,7 +139,22 @@
                         android:textStyle="bold"
                         android:visibility="gone" />
                 </LinearLayout>
-            </LinearLayout>
+            
+                <TextView
+                    android:id="@+id/studentChatOptionsButton"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/bg_student_connect_dashboard_tile"
+                    android:clickable="true"
+                    android:contentDescription="Chat options"
+                    android:focusable="true"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:text="⋮"
+                    android:textColor="@color/sc_lavender"
+                    android:textSize="22sp" />
+</LinearLayout>
 
             <View
                 android:layout_width="match_parent"
