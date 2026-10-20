@@ -84,6 +84,16 @@ import com.superiorstudent.app.feature.timetable.domain.NextClassSelector
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
+    private data class ModuleScreenSnapshot(
+        val content: LinearLayout,
+        val scrollY: Int,
+        val title: String,
+        val subtitle: String,
+        val infoText: String,
+        val infoVisibility: Int,
+        val attendanceDetailUrl: String?
+    )
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var webView: WebView
     private var statusBarScrim: View? = null
@@ -94,6 +104,8 @@ class MainActivity : AppCompatActivity() {
     private var homeHeroNight: Boolean? = null
     private var homeHeroAttendancePercentage: Double? = null
     private var homeHeroSafeLeaves: Int? = null
+    private val moduleScreenSnapshots = mutableMapOf<StudentModule, ModuleScreenSnapshot>()
+    private var attendanceSummarySnapshot: ModuleScreenSnapshot? = null
     private var homePreloadComplete = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
@@ -284,7 +296,9 @@ class MainActivity : AppCompatActivity() {
         binding.navResultsButton.setOnClickListener { loadModule(StudentModule.RESULTS) }
         binding.navMoreButton.setOnClickListener { openSideMenu() }
         binding.refreshButton.setOnClickListener { refreshActiveModule() }
-        binding.homeButton.setOnClickListener { showDashboard() }
+        binding.homeButton.setOnClickListener {
+            if (isAttendanceDetailOpen()) returnToAttendanceSummary() else showDashboard()
+        }
         binding.menuButton.setOnClickListener { openSideMenu() }
         binding.closeMenuButton.setOnClickListener { closeSideMenu() }
         binding.menuScrim.setOnClickListener { closeSideMenu() }
@@ -1657,8 +1671,152 @@ class MainActivity : AppCompatActivity() {
         preloadNextModule()
     }
 
+    private fun bindModuleHeader(
+        module: StudentModule,
+        title: String,
+        subtitle: String,
+        showBack: Boolean
+    ) {
+        if (showBack) {
+            binding.homeButton.visibility = View.VISIBLE
+            BackHeader.bindExisting(
+                this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, title, subtitle
+            )
+        } else {
+            binding.homeButton.visibility = View.GONE
+            PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, title, subtitle)
+        }
+    }
+
+    private fun detachCurrentModuleScreenSnapshot(): ModuleScreenSnapshot? {
+        val module = activeModule ?: return null
+        if (!::binding.isInitialized || binding.moduleScreen.visibility != View.VISIBLE) return null
+        if (binding.moduleContent.childCount == 0) return null
+        if ((0 until binding.moduleContent.childCount).any {
+                binding.moduleContent.getChildAt(it).tag == "pachattar_loading_skeleton_rows"
+            }
+        ) return null
+
+        val contentHolder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        while (binding.moduleContent.childCount > 0) {
+            val child = binding.moduleContent.getChildAt(0)
+            binding.moduleContent.removeViewAt(0)
+            contentHolder.addView(child)
+        }
+        return ModuleScreenSnapshot(
+            content = contentHolder,
+            scrollY = binding.moduleScroll.scrollY,
+            title = binding.moduleTitle.text?.toString().orEmpty(),
+            subtitle = binding.moduleSubtitle.text?.toString().orEmpty(),
+            infoText = binding.moduleInfo.text?.toString().orEmpty(),
+            infoVisibility = binding.moduleInfo.visibility,
+            attendanceDetailUrl = activeAttendanceDetailUrl
+        )
+    }
+
+    private fun saveCurrentModuleScreen() {
+        val module = activeModule ?: return
+        detachCurrentModuleScreenSnapshot()?.let { snapshot ->
+            moduleScreenSnapshots[module] = snapshot
+        }
+    }
+
+    private fun restoreModuleScreenSnapshot(module: StudentModule, snapshot: ModuleScreenSnapshot) {
+        activeModule = module
+        activeAttendanceDetailUrl = snapshot.attendanceDetailUrl
+        pendingAttendanceResolution = false
+        pendingAttendanceCourse = ""
+        pendingAttendanceCode = ""
+        moduleFetchInProgress = false
+        moduleReadAttempts = 0
+        binding.loginScroll.visibility = View.GONE
+        binding.dashboardScroll.visibility = View.GONE
+        binding.moduleScreen.visibility = View.VISIBLE
+        binding.moduleProgress.visibility = View.GONE
+        binding.modulePullRefresh.isRefreshing = false
+        binding.moduleContent.removeAllViews()
+        while (snapshot.content.childCount > 0) {
+            val child = snapshot.content.getChildAt(0)
+            snapshot.content.removeViewAt(0)
+            binding.moduleContent.addView(child)
+        }
+        val isAttendanceDetail = module == StudentModule.ATTENDANCE &&
+            (snapshot.attendanceDetailUrl != null || snapshot.title == "Attendance Planner")
+        bindModuleHeader(
+            module,
+            snapshot.title,
+            snapshot.subtitle,
+            showBack = isAttendanceDetail ||
+                module == StudentModule.FEE ||
+                module == StudentModule.PROFILE ||
+                module == StudentModule.ENROLLED_COURSES
+        )
+        binding.moduleInfo.text = snapshot.infoText
+        binding.moduleInfo.visibility = snapshot.infoVisibility
+        webView.visibility = View.INVISIBLE
+        applyModuleContentPadding(module)
+        applyModuleNavigation()
+        applySystemBarStyle(
+            statusColor = Palette.surfaceAlt(this),
+            navigationColor = Palette.surfaceAlt(this),
+            lightStatusIcons = Palette.isNight(this),
+            lightNavigationIcons = Palette.isNight(this)
+        )
+        binding.moduleScroll.post { binding.moduleScroll.scrollTo(0, snapshot.scrollY) }
+    }
+
+    private fun isAttendanceDetailOpen(): Boolean =
+        activeModule == StudentModule.ATTENDANCE &&
+            (activeAttendanceDetailUrl != null || pendingAttendanceResolution ||
+                binding.moduleTitle.text?.toString() == "Attendance Planner")
+
+    private fun returnToAttendanceSummary() {
+        if (activeModule != StudentModule.ATTENDANCE) return
+        val summarySnapshot = attendanceSummarySnapshot
+        attendanceSummarySnapshot = null
+        // The main Attendance tab and a subject detail are two states within the same tab.
+        moduleScreenSnapshots.remove(StudentModule.ATTENDANCE)
+        activeAttendanceDetailUrl = null
+        pendingAttendanceResolution = false
+        pendingAttendanceCourse = ""
+        pendingAttendanceCode = ""
+        moduleReadRequestId++
+        moduleFetchInProgress = false
+        if (::webView.isInitialized) webView.stopLoading()
+        webView.visibility = View.INVISIBLE
+        if (summarySnapshot != null && summarySnapshot.content.childCount > 0) {
+            restoreModuleScreenSnapshot(StudentModule.ATTENDANCE, summarySnapshot)
+            return
+        }
+        val cachedSummary = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
+            ?.let { parseModuleData(it) }
+            ?.takeIf { erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) }
+        if (cachedSummary == null) {
+            activeModule = null
+            loadModule(StudentModule.ATTENDANCE)
+            return
+        }
+        activeModule = StudentModule.ATTENDANCE
+        bindModuleHeader(StudentModule.ATTENDANCE, "Attendance", "Your attendance", showBack = false)
+        binding.moduleContent.removeAllViews()
+        renderModuleData(StudentModule.ATTENDANCE, cachedSummary)
+        binding.moduleInfo.text = "Showing saved attendance data"
+        binding.moduleProgress.visibility = View.GONE
+        binding.modulePullRefresh.isRefreshing = false
+        applyModuleNavigation()
+    }
+
     private fun loadModule(module: StudentModule) {
         if (!loggedIn) return
+        if (module == activeModule && binding.moduleScreen.visibility == View.VISIBLE) {
+            if (module == StudentModule.ATTENDANCE && isAttendanceDetailOpen()) {
+                returnToAttendanceSummary()
+            }
+            return
+        }
+        if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
+            saveCurrentModuleScreen()
+        }
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
         closeSideMenu()
         cancelParallelPrefetch()
@@ -1680,7 +1838,6 @@ class MainActivity : AppCompatActivity() {
         activeModule = module
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
-        binding.dashboardBottomNav.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
         applyModuleNavigation()
         applyModuleContentPadding(module)
@@ -1696,25 +1853,24 @@ class MainActivity : AppCompatActivity() {
         binding.moduleInfo.text = "Syncing your latest information…"
 
         when (module) {
-            StudentModule.ATTENDANCE -> {
-                binding.moduleTitle.text = "Attendance"
-                binding.moduleSubtitle.text = "Your attendance"
-            }
-            StudentModule.TIMETABLE -> {
-                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Timetable", timetableDateSubtitle())
-            }
-            StudentModule.FEE -> {
-                BackHeader.bindExisting(this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, "Fee invoices", "")
-            }
-            StudentModule.PROFILE -> {
-                BackHeader.bindExisting(this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, "Profile", "")
-            }
-            StudentModule.RESULTS -> {
-                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Results", "Academic results")
-            }
-            StudentModule.ENROLLED_COURSES -> {
-                BackHeader.bindExisting(this, binding.homeButton, binding.moduleTitle, binding.moduleSubtitle, "Enrolled courses", "")
-            }
+            StudentModule.ATTENDANCE ->
+                bindModuleHeader(module, "Attendance", "Your attendance", showBack = false)
+            StudentModule.TIMETABLE ->
+                bindModuleHeader(module, "Timetable", timetableDateSubtitle(), showBack = false)
+            StudentModule.FEE ->
+                bindModuleHeader(module, "Fee invoices", "", showBack = true)
+            StudentModule.PROFILE ->
+                bindModuleHeader(module, "Profile", "", showBack = true)
+            StudentModule.RESULTS ->
+                bindModuleHeader(module, "Results", "Academic results", showBack = false)
+            StudentModule.ENROLLED_COURSES ->
+                bindModuleHeader(module, "Enrolled courses", "", showBack = true)
+        }
+
+        val savedSnapshot = moduleScreenSnapshots.remove(module)
+        if (savedSnapshot != null && savedSnapshot.content.childCount > 0) {
+            restoreModuleScreenSnapshot(module, savedSnapshot)
+            return
         }
 
         val cachedData = erpRepository.cachedPayload(module)
@@ -2054,6 +2210,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun beginAttendanceDetailNavigation(url: String?) {
+        if (activeModule == StudentModule.ATTENDANCE && activeAttendanceDetailUrl.isNullOrBlank()) {
+            attendanceSummarySnapshot = detachCurrentModuleScreenSnapshot()
+            moduleScreenSnapshots.remove(StudentModule.ATTENDANCE)
+        }
         activeModule = StudentModule.ATTENDANCE
         activeAttendanceDetailUrl = url
         preloadingModule = null
@@ -2064,15 +2224,20 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
-        binding.dashboardBottomNav.visibility = View.GONE
+        applyModuleNavigation()
+        applyModuleContentPadding(StudentModule.ATTENDANCE)
         applySystemBarStyle(
             statusColor = Palette.surfaceAlt(this),
             navigationColor = Palette.surfaceAlt(this),
             lightStatusIcons = Palette.isNight(this),
             lightNavigationIcons = Palette.isNight(this)
         )
-        binding.moduleTitle.text = "Attendance Planner"
-        binding.moduleSubtitle.text = "Subject attendance and 75% target"
+        bindModuleHeader(
+            StudentModule.ATTENDANCE,
+            "Attendance Planner",
+            "Subject attendance and 75% target",
+            showBack = true
+        )
         binding.moduleContent.removeAllViews()
         binding.moduleProgress.visibility = View.VISIBLE
         binding.moduleInfo.text = "Finding this subject's attendance detail in ERP…"
@@ -2211,11 +2376,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyModuleContentPadding(module: StudentModule?) {
         if (!::binding.isInitialized) return
-        val bottom = if (module != null && isBatchDesignModule(module)) {
-            val systemInset = ViewCompat.getRootWindowInsets(binding.root)
-                ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
-            dp(58 + 16) + systemInset
-        } else dp(24)
+        val systemInset = ViewCompat.getRootWindowInsets(binding.root)
+            ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+        val bottom = dp(58 + 16) + systemInset
         binding.moduleContent.setPadding(
             binding.moduleContent.paddingLeft,
             binding.moduleContent.paddingTop,
@@ -2281,9 +2444,9 @@ class MainActivity : AppCompatActivity() {
             FloatingNavItem(binding.navMoreButton, R.drawable.ic_pt_menu, "More", false)
         ))
 
-        val showNav = homeActive || timetableActive || resultsActive
+        val showNav = homeActive || binding.moduleScreen.visibility == View.VISIBLE
         binding.dashboardBottomNav.visibility = if (showNav) View.VISIBLE else View.GONE
-        if (timetableActive || resultsActive) binding.dashboardBottomNav.bringToFront()
+        if (showNav) binding.dashboardBottomNav.bringToFront()
     }
 
     private fun renderEnrolledCourses(data: ModuleData) {
@@ -3190,11 +3353,25 @@ class MainActivity : AppCompatActivity() {
         binding.moduleTitle.setTextColor(Palette.ink(this))
         binding.moduleSubtitle.setTextColor(Palette.ink2(this))
         when (activeModule) {
+            StudentModule.ATTENDANCE -> {
+                if (isAttendanceDetailOpen()) {
+                    bindModuleHeader(activeModule!!, binding.moduleTitle.text?.toString().orEmpty().ifBlank { "Attendance Planner" },
+                        binding.moduleSubtitle.text?.toString().orEmpty(), showBack = true)
+                } else {
+                    bindModuleHeader(StudentModule.ATTENDANCE, "Attendance", "Your attendance", showBack = false)
+                }
+            }
             StudentModule.TIMETABLE ->
-                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Timetable", timetableDateSubtitle())
+                bindModuleHeader(StudentModule.TIMETABLE, "Timetable", timetableDateSubtitle(), showBack = false)
             StudentModule.RESULTS ->
-                PageHeader.bindPage(this, binding.moduleTitle, binding.moduleSubtitle, "Results", binding.moduleSubtitle.text?.toString().orEmpty().ifBlank { "Academic results" })
-            else -> Unit
+                bindModuleHeader(StudentModule.RESULTS, "Results", binding.moduleSubtitle.text?.toString().orEmpty().ifBlank { "Academic results" }, showBack = false)
+            StudentModule.FEE ->
+                bindModuleHeader(StudentModule.FEE, "Fee invoices", binding.moduleSubtitle.text?.toString().orEmpty(), showBack = true)
+            StudentModule.PROFILE ->
+                bindModuleHeader(StudentModule.PROFILE, "Profile", binding.moduleSubtitle.text?.toString().orEmpty(), showBack = true)
+            StudentModule.ENROLLED_COURSES ->
+                bindModuleHeader(StudentModule.ENROLLED_COURSES, "Enrolled courses", binding.moduleSubtitle.text?.toString().orEmpty(), showBack = true)
+            null -> Unit
         }
         binding.moduleInfo.background = themedCard(Palette.infoBg(this), 12f)
         binding.moduleInfo.setTextColor(Palette.primaryLight(this))
@@ -3621,7 +3798,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSideMenu() {
-        if (!loggedIn || binding.dashboardScroll.visibility != View.VISIBLE) return
+        if (!loggedIn || (binding.dashboardScroll.visibility != View.VISIBLE &&
+            binding.moduleScreen.visibility != View.VISIBLE)
+        ) return
         try {
             renderMoreProfileCard()
             updateMoreContentInsets()
@@ -3666,6 +3845,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showDashboardInternal() {
         cancelParallelPrefetch()
+        if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
+            saveCurrentModuleScreen()
+        }
         activeAttendanceDetailUrl = null
         activeModule = null
         if (::webView.isInitialized) webView.stopLoading()
@@ -3714,6 +3896,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun showLogin() {
         cancelParallelPrefetch()
+        moduleScreenSnapshots.clear()
+        attendanceSummarySnapshot = null
         closeSideMenu()
         stopSessionHeartbeat()
         activeAttendanceDetailUrl = null
@@ -3749,6 +3933,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun logout() {
         cancelParallelPrefetch()
+        moduleScreenSnapshots.clear()
+        attendanceSummarySnapshot = null
         homeHeroType = null
         homeHeroNight = null
         homeHeroAttendancePercentage = null

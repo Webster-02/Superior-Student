@@ -845,6 +845,7 @@ object Skeleton {
     /** Neutral loading rows for module pages while the ERP response is being read. */
     fun rows(context: Context, count: Int = 3, timetable: Boolean = false): LinearLayout =
         LinearLayout(context).apply {
+            tag = "pachattar_loading_skeleton_rows"
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
