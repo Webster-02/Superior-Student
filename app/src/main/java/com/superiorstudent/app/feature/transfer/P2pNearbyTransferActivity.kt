@@ -1,6 +1,7 @@
 package com.superiorstudent.app.feature.transfer
 
 import android.Manifest
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
@@ -9,6 +10,7 @@ import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
@@ -59,7 +61,10 @@ import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
 import java.util.Collections
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
@@ -74,7 +79,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class P2pNearbyTransferActivity : AppCompatActivity() {
 
-    private enum class NearbyUiStage { HUB, DISCOVERY, VERIFY, TRANSFER, COMPLETE }
+    private enum class NearbyUiStage { HUB, DISCOVERY, VERIFY, TRANSFER, COMPLETE, HISTORY }
     private enum class NearbyPermissionAction { SEND, RECEIVE }
 
     private lateinit var statusText: TextView
@@ -98,6 +103,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var statusCard: MaterialCardView
     private lateinit var retryButton: MaterialButton
+    private lateinit var historyPanel: LinearLayout
+    private lateinit var historyItemsContainer: LinearLayout
+    private lateinit var queueSummaryText: TextView
     private lateinit var transferActions: LinearLayout
 
     @Volatile private var uiStage = NearbyUiStage.HUB
@@ -115,6 +123,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private val activeIncomingSocket = AtomicBoolean(false)
     private val resumableDownloads = ConcurrentHashMap<String, ResumableDownloadState>()
     private val checkpointStore by lazy { P2pNearbyCheckpointStore(applicationContext) }
+    private val transferHistoryStore by lazy { P2pNearbyTransferHistoryStore(applicationContext) }
     private val outgoingPaused = AtomicBoolean(false)
     private val outgoingStreamActive = AtomicBoolean(false)
     private val senderDataFinished = AtomicBoolean(false)
@@ -133,6 +142,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private var pendingNearbyPermissionAction: NearbyPermissionAction? = null
     private var lastNearbyAction: NearbyPermissionAction? = null
     private var lastStatusAllowsRetry = false
+    private var outgoingQueueUris: List<Uri> = emptyList()
+    private var outgoingQueueFileNames: List<String> = emptyList()
+    private var outgoingQueueIndex = 0
+    private var outgoingQueueActive = false
+    @Volatile private var lastSendSucceeded = false
 
     private data class PreparedOutgoing(
         val metadata: P2pTransferFileMetadata,
@@ -160,8 +174,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private data class Packet(val kind: Int, val payload: ByteArray)
 
     private val outgoingFilePicker =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-            if (uri != null) prepareOutgoingFile(uri)
+        registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { selectedUris: List<Uri> ->
+            if (selectedUris.isNotEmpty()) prepareOutgoingQueue(selectedUris)
             else showStatus("File selection cancelled.")
         }
 
@@ -170,6 +184,14 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             val pending = pendingIncomingSession
             if (pending == null) return@registerForActivityResult
             pending.destinationUri = uri
+            if (uri != null) {
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                }
+            }
             pending.resumeState?.destinationUri = uri
             pending.accepted = uri != null
             pending.selectionReady.countDown()
@@ -263,7 +285,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             background = getDrawable(R.drawable.bg_student_connect_dashboard_tile)
             setPadding(0, 0, 0, dp(3))
             contentDescription = "Back"
-            setOnClickListener { finish() }
+            setOnClickListener {
+                if (uiStage == NearbyUiStage.HISTORY) setUiStage(NearbyUiStage.HUB) else finish()
+            }
         }
         header.addView(back, LinearLayout.LayoutParams(dp(40), dp(40)))
         val titleBlock = LinearLayout(this).apply {
@@ -341,6 +365,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             makeButton("Connection check", primary = false) { runConnectionCheck() },
             fullWidthParams(top = 8)
         )
+        hubPanel.addView(
+            makeButton("Transfer history", primary = false) { openTransferHistory() },
+            fullWidthParams(top = 8)
+        )
 
         val hubNote = makeInfoCard(
             "Files go directly phone to phone. Nothing is uploaded to the internet or Firebase. You will compare a six-digit code before anything is sent.",
@@ -348,6 +376,25 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         )
         hubPanel.addView(hubNote, fullWidthParams(top = 16))
         content.addView(hubPanel, fullWidthParams())
+
+        historyPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        historyPanel.addView(makeText("Completed transfers", 18f, R.color.sc_text_primary, medium = true).apply {
+            setPadding(0, 0, 0, dp(5))
+        })
+        historyPanel.addView(makeText(
+            "Stored only on this phone. Open or share a file, or remove a history entry. Received files can also be deleted after confirmation.",
+            12f, R.color.sc_text_muted
+        ).apply { setLineSpacing(dp(2).toFloat(), 1f); setPadding(0, 0, 0, dp(12)) })
+        historyItemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        historyPanel.addView(historyItemsContainer, fullWidthParams())
+        historyPanel.addView(
+            makeButton("Back to Nearby Share", primary = false) { setUiStage(NearbyUiStage.HUB) },
+            fullWidthParams(top = 12)
+        )
+        content.addView(historyPanel, fullWidthParams())
 
         // Discovery — sender can connect to a discovered receiver. Receiver advertises locally and waits.
         discoveryPanel = LinearLayout(this).apply {
@@ -381,6 +428,13 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         discoveryPanel.addView(peerListContainer, fullWidthParams())
+        queueSummaryText = makeText("", 11f, R.color.sc_text_muted).apply {
+            setLineSpacing(dp(3).toFloat(), 1f)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            visibility = View.GONE
+            background = getDrawable(R.drawable.bg_student_connect_inline_surface)
+        }
+        discoveryPanel.addView(queueSummaryText, fullWidthParams(top = 10))
         discoveryPanel.addView(
             makeInfoCard("No internet signaling is used for nearby transfer. Keep this screen open until the connection is ready.", R.color.sc_sky),
             fullWidthParams(top = 14)
@@ -739,6 +793,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private fun applyUiStage(stage: NearbyUiStage) {
         uiStage = stage
         hubPanel.visibility = if (stage == NearbyUiStage.HUB) View.VISIBLE else View.GONE
+        historyPanel.visibility = if (stage == NearbyUiStage.HISTORY) View.VISIBLE else View.GONE
         discoveryPanel.visibility = if (stage == NearbyUiStage.DISCOVERY) View.VISIBLE else View.GONE
         verifyPanel.visibility = if (stage == NearbyUiStage.VERIFY) View.VISIBLE else View.GONE
         progressPanel.visibility = if (stage == NearbyUiStage.TRANSFER || stage == NearbyUiStage.COMPLETE) {
@@ -765,6 +820,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             NearbyUiStage.TRANSFER, NearbyUiStage.COMPLETE -> {
                 headerTitle.text = if (transferIsOutgoing) "Sending" else "Receiving"
                 headerSubtitle.text = "Step 3 of 3 · Transfer"
+            }
+            NearbyUiStage.HISTORY -> {
+                headerTitle.text = "Transfer history"
+                headerSubtitle.text = "Completed files · stored locally"
             }
         }
         refreshTransferActions()
@@ -868,9 +927,42 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         showStatus("Nearby phone found. Tap Connect to establish a local connection.")
     }
 
+    private fun prepareOutgoingQueue(selectedUris: List<Uri>) {
+        val uniqueUris = selectedUris.distinctBy { it.toString() }
+        if (uniqueUris.isEmpty()) {
+            showStatus("No files were selected.")
+            return
+        }
+        if (uniqueUris.size > MAX_QUEUE_FILES) {
+            showStatus("Select up to $MAX_QUEUE_FILES files per nearby transfer queue.")
+            return
+        }
+        val metadata = uniqueUris.map { uri ->
+            runCatching { P2pTransferFileMetadataReader.read(this, uri) }.getOrNull()
+        }
+        val invalidIndex = metadata.indexOfFirst { it == null || it.sizeBytes <= 0L }
+        if (invalidIndex >= 0) {
+            clearOutgoingQueue()
+            showStatus("Could not read file ${invalidIndex + 1}. Choose non-empty, readable files and retry.")
+            return
+        }
+        uniqueUris.forEach { uri ->
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        outgoingQueueUris = uniqueUris
+        outgoingQueueFileNames = metadata.map { it!!.fileName }
+        outgoingQueueIndex = 0
+        outgoingQueueActive = true
+        refreshOutgoingQueueSummary()
+        prepareOutgoingFile(uniqueUris.first())
+    }
+
     private fun prepareOutgoingFile(uri: Uri) {
         val metadata = P2pTransferFileMetadataReader.read(this, uri)
         if (metadata == null || metadata.sizeBytes <= 0L) {
+            clearOutgoingQueue()
             showStatus("Could not read this file or its size is unknown. Choose a non-empty file.")
             return
         }
@@ -881,7 +973,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         transferIsOutgoing = true
         setUiStage(NearbyUiStage.DISCOVERY)
         setOperationUi(true)
-        showStatus("Checking file integrity and preparing encrypted transfer…")
+        val queuePrefix = if (outgoingQueueActive) {
+            "Queue file ${outgoingQueueIndex + 1} of ${outgoingQueueUris.size}: ${metadata.fileName}. "
+        } else ""
+        showStatus(queuePrefix + "Checking file integrity and preparing encrypted transfer…")
+        refreshOutgoingQueueSummary()
 
         ioExecutor.execute {
             try {
@@ -944,6 +1040,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 }
             } catch (error: Exception) {
                 if (sending.get()) showStatus("Could not prepare this file: " + safeMessage(error))
+                clearOutgoingQueue()
                 finishSending()
             }
         }
@@ -953,6 +1050,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
 
     private fun sendToPeer(peer: P2pLanDiscovery.Peer, prepared: PreparedOutgoing) {
         val transferId = UUID.randomUUID().toString()
+        lastSendSucceeded = false
         var lastError: Exception? = null
         try {
             for (attempt in 0..MAX_RECONNECT_ATTEMPTS) {
@@ -966,6 +1064,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                                 candidate.port in 1..65535
                         } ?: peer
                     sendOneNearbyAttempt(refreshedPeer, prepared, transferId)
+                    lastSendSucceeded = true
                     lastError = null
                     break
                 } catch (cancelled: NearbyUserCancelledException) {
@@ -1001,7 +1100,35 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             updatePauseResumeButton(enabled = false, paused = false)
             runCatching { activeSocket?.close() }
             activeSocket = null
+            val queueCount = outgoingQueueUris.size
+            val completedIndex = outgoingQueueIndex
+            val wasQueueActive = outgoingQueueActive
+            val queueItemSucceeded = lastSendSucceeded
+            val nextUri = if (
+                wasQueueActive && queueItemSucceeded && sending.get() && completedIndex + 1 < queueCount
+            ) outgoingQueueUris[completedIndex + 1] else null
+            val nextIndex = completedIndex + 1
+            if (wasQueueActive) {
+                if (nextUri != null) {
+                    outgoingQueueIndex = nextIndex
+                    refreshOutgoingQueueSummary()
+                } else {
+                    clearOutgoingQueue()
+                }
+            }
             finishSending()
+            if (nextUri != null) {
+                mainHandler.postDelayed({
+                    if (!isFinishing && !isDestroyed) {
+                        showStatus("File ${completedIndex + 1} of $queueCount verified. Preparing file ${nextIndex + 1} of $queueCount…")
+                        prepareOutgoingFile(nextUri)
+                    }
+                }, 500L)
+            } else if (wasQueueActive && queueItemSucceeded) {
+                mainHandler.post {
+                    showStatus("All $queueCount queued file(s) sent and SHA-256 verified.")
+                }
+            }
         }
     }
 
@@ -1182,7 +1309,23 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             ) {
                 throw IOException("The receiver did not confirm the expected SHA-256 digest.")
             }
-            showStatus("File sent and SHA-256 verified by the nearby receiver: " + offer.fileName)
+            val historySaved = runCatching {
+                transferHistoryStore.add(
+                    P2pNearbyTransferHistoryRecord(
+                        transferId = transferId,
+                        fileName = prepared.metadata.fileName,
+                        mimeType = prepared.metadata.mimeType,
+                        sizeBytes = prepared.metadata.sizeBytes,
+                        completedAtEpochMillis = System.currentTimeMillis(),
+                        direction = P2pNearbyTransferHistoryRecord.SENT,
+                        contentUri = prepared.metadata.uri.toString()
+                    )
+                )
+            }.isSuccess
+            showStatus(
+                "File sent and SHA-256 verified by the nearby receiver: " + offer.fileName +
+                    if (historySaved) "" else " (local transfer history could not be saved)."
+            )
             runOnUiThread {
                 Toast.makeText(this, "Nearby transfer completed", Toast.LENGTH_LONG).show()
             }
@@ -1491,7 +1634,23 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             completed = true
             resumableDownloads.remove(offer.transferId, resumeState)
             checkpointStore.remove(offer.transferId)
-            showStatus("File received and SHA-256 verified over local Wi-Fi: " + offer.fileName)
+            val historySaved = runCatching {
+                transferHistoryStore.add(
+                    P2pNearbyTransferHistoryRecord(
+                        transferId = offer.transferId,
+                        fileName = offer.fileName,
+                        mimeType = offer.mimeType,
+                        sizeBytes = offer.sizeBytes,
+                        completedAtEpochMillis = System.currentTimeMillis(),
+                        direction = P2pNearbyTransferHistoryRecord.RECEIVED,
+                        contentUri = destinationUri.toString()
+                    )
+                )
+            }.isSuccess
+            showStatus(
+                "File received and SHA-256 verified over local Wi-Fi: " + offer.fileName +
+                    if (historySaved) "" else " (local transfer history could not be saved)."
+            )
             runOnUiThread {
                 Toast.makeText(this, "Nearby file received and verified", Toast.LENGTH_LONG).show()
             }
@@ -1849,6 +2008,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
 
     private fun cancelCurrentAction() {
         mainHandler.removeCallbacks(senderDiscoveryTimeout)
+        clearOutgoingQueue()
         transferInProgress.set(false)
         refreshTransferActions()
         if (receiving.get()) {
@@ -1997,6 +2157,189 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
     }
 
+    private fun clearOutgoingQueue() {
+        outgoingQueueUris = emptyList()
+        outgoingQueueFileNames = emptyList()
+        outgoingQueueIndex = 0
+        outgoingQueueActive = false
+        refreshOutgoingQueueSummary()
+    }
+
+    private fun refreshOutgoingQueueSummary() {
+        if (!::queueSummaryText.isInitialized) return
+        mainHandler.post {
+            if (isFinishing || isDestroyed || !::queueSummaryText.isInitialized) return@post
+            if (!outgoingQueueActive || outgoingQueueFileNames.isEmpty()) {
+                queueSummaryText.visibility = View.GONE
+                queueSummaryText.text = ""
+                return@post
+            }
+            queueSummaryText.visibility = View.VISIBLE
+            queueSummaryText.text = buildString {
+                append("TRANSFER QUEUE · ")
+                append(outgoingQueueFileNames.size)
+                append(if (outgoingQueueFileNames.size == 1) " file" else " files")
+                outgoingQueueFileNames.forEachIndexed { index, fileName ->
+                    append("\n")
+                    append(when {
+                        index < outgoingQueueIndex -> "✓ "
+                        index == outgoingQueueIndex -> "› "
+                        else -> "○ "
+                    })
+                    append(fileName)
+                    append(" · ")
+                    append(when {
+                        index < outgoingQueueIndex -> "verified"
+                        index == outgoingQueueIndex -> "current"
+                        else -> "waiting"
+                    })
+                }
+                if (outgoingQueueUris.size > 1) {
+                    append("\nEach file is sent and verified separately; tap Connect for each queued file and compare its security code.")
+                }
+            }
+        }
+    }
+
+    private fun openTransferHistory() {
+        renderTransferHistory()
+        setUiStage(NearbyUiStage.HISTORY)
+    }
+
+    private fun renderTransferHistory() {
+        if (!::historyItemsContainer.isInitialized) return
+        historyItemsContainer.removeAllViews()
+        val records = runCatching { transferHistoryStore.list() }.getOrDefault(emptyList())
+        if (records.isEmpty()) {
+            historyItemsContainer.addView(makeInfoCard(
+                "No completed nearby transfers yet. Successfully sent and received files will appear here.",
+                R.color.sc_sky
+            ), fullWidthParams())
+            return
+        }
+        records.forEach { record ->
+            val card = makeCard(R.color.sc_card, 18).apply {
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+            }
+            val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            column.addView(makeText(record.fileName, 13f, R.color.sc_text_primary, medium = true))
+            val date = runCatching {
+                SimpleDateFormat("dd MMM yyyy, h:mm a", Locale.getDefault())
+                    .format(Date(record.completedAtEpochMillis))
+            }.getOrDefault("Completed transfer")
+            val direction = if (record.direction == P2pNearbyTransferHistoryRecord.SENT) "Sent" else "Received"
+            column.addView(makeText(
+                "$direction · ${P2pTransferFileMetadataReader.formatBytes(record.sizeBytes)} · $date",
+                10f, R.color.sc_text_muted
+            ).apply { setPadding(0, dp(4), 0, dp(9)) })
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val open = makeButton("Open", primary = true) { openHistoryRecord(record) }
+            val share = makeButton("Share", primary = false) { shareHistoryRecord(record) }
+            val deleteLabel = if (record.direction == P2pNearbyTransferHistoryRecord.RECEIVED) "Delete" else "Remove"
+            val delete = makeButton(deleteLabel, primary = false) { confirmDeleteHistoryRecord(record) }
+            listOf(open, share, delete).forEachIndexed { index, button ->
+                actions.addView(button, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                    if (index > 0) marginStart = dp(6)
+                })
+            }
+            column.addView(actions)
+            card.addView(column)
+            historyItemsContainer.addView(card, fullWidthParams(top = 8))
+        }
+    }
+
+    private fun openHistoryRecord(record: P2pNearbyTransferHistoryRecord) {
+        try {
+            val uri = Uri.parse(record.contentUri)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, record.mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                clipData = ClipData.newUri(contentResolver, record.fileName, uri)
+            }
+            startActivity(intent)
+        } catch (error: Exception) {
+            AlertDialog.Builder(this)
+                .setTitle("Could not open file")
+                .setMessage("The file may have been moved, deleted, or its document permission may have expired. ${safeMessage(error)}")
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun shareHistoryRecord(record: P2pNearbyTransferHistoryRecord) {
+        try {
+            val uri = Uri.parse(record.contentUri)
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = record.mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                clipData = ClipData.newUri(contentResolver, record.fileName, uri)
+            }
+            startActivity(Intent.createChooser(sendIntent, "Share ${record.fileName}"))
+        } catch (error: Exception) {
+            AlertDialog.Builder(this)
+                .setTitle("Could not share file")
+                .setMessage("The file may have been moved, deleted, or its document permission may have expired. ${safeMessage(error)}")
+                .setPositiveButton("OK", null)
+                .show()
+        }
+    }
+
+    private fun confirmDeleteHistoryRecord(record: P2pNearbyTransferHistoryRecord) {
+        if (record.direction == P2pNearbyTransferHistoryRecord.RECEIVED) {
+            AlertDialog.Builder(this)
+                .setTitle("Delete received file?")
+                .setMessage("Choose whether to delete the saved document from its storage provider or only remove this history entry.")
+                .setPositiveButton("Delete file and history") { _, _ -> removeHistoryRecord(record, deleteSavedFile = true) }
+                .setNeutralButton("History only") { _, _ -> removeHistoryRecord(record, deleteSavedFile = false) }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else {
+            AlertDialog.Builder(this)
+                .setTitle("Remove transfer history?")
+                .setMessage("The original sent file belongs to its existing storage location. This only removes its local history entry.")
+                .setPositiveButton("Remove entry") { _, _ -> removeHistoryRecord(record, deleteSavedFile = false) }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    private fun removeHistoryRecord(record: P2pNearbyTransferHistoryRecord, deleteSavedFile: Boolean) {
+        if (deleteSavedFile) {
+            val uri = Uri.parse(record.contentUri)
+            val deleted = try {
+                if (DocumentsContract.isDocumentUri(this, uri)) {
+                    DocumentsContract.deleteDocument(contentResolver, uri)
+                } else {
+                    contentResolver.delete(uri, null, null) > 0
+                }
+            } catch (_: Exception) {
+                false
+            }
+            if (!deleted) {
+                AlertDialog.Builder(this)
+                    .setTitle("File was not deleted")
+                    .setMessage("Android's storage provider could not delete this document. The file is still kept; you can remove only the history entry instead.")
+                    .setPositiveButton("Remove history only") { _, _ -> removeHistoryRecord(record, deleteSavedFile = false) }
+                    .setNegativeButton("Keep entry", null)
+                    .show()
+                return
+            }
+        }
+        val removed = runCatching { transferHistoryStore.remove(record.transferId) }.isSuccess
+        renderTransferHistory()
+        showStatus(
+            when {
+                !removed -> "The file action finished, but the local history entry could not be removed."
+                deleteSavedFile -> "Saved file deleted and history entry removed."
+                else -> "Transfer history entry removed."
+            }
+        )
+    }
+
     private fun refreshRetryActionVisibility() {
         if (!::retryButton.isInitialized) return
         retryButton.visibility = if (
@@ -2052,6 +2395,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         const val HANDSHAKE_TIMEOUT_MS = 3 * 60 * 1000
         const val SOCKET_READ_TIMEOUT_MS = 2 * 60 * 1000
         const val DISCOVERY_TIMEOUT_MS = 30_000L
+        const val MAX_QUEUE_FILES = 20
         const val USER_DECISION_TIMEOUT_MINUTES = 3L
         const val CONFIRMATION_TIMEOUT_MINUTES = 3L
         const val STATUS_UPDATE_BYTES = 1024L * 1024L
