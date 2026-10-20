@@ -1697,6 +1697,8 @@ class MainActivity : AppCompatActivity() {
             }
         ) return null
 
+        // Capture scroll before detaching children; an empty ScrollView may reset its own Y.
+        val savedScrollY = binding.moduleScroll.scrollY
         val contentHolder = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         while (binding.moduleContent.childCount > 0) {
             val child = binding.moduleContent.getChildAt(0)
@@ -1705,7 +1707,7 @@ class MainActivity : AppCompatActivity() {
         }
         return ModuleScreenSnapshot(
             content = contentHolder,
-            scrollY = binding.moduleScroll.scrollY,
+            scrollY = savedScrollY,
             title = binding.moduleTitle.text?.toString().orEmpty(),
             subtitle = binding.moduleSubtitle.text?.toString().orEmpty(),
             infoText = binding.moduleInfo.text?.toString().orEmpty(),
