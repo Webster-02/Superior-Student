@@ -596,10 +596,12 @@ class StudentChatActivity : AppCompatActivity() {
             val body = TextView(this).apply {
                 text = message.text
                 textSize = 14f
-                setTextColor(ContextCompat.getColor(
-                    this@StudentChatActivity,
-                    if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_text_primary
-                ))
+                includeFontPadding = false
+                isSingleLine = false
+                setHorizontallyScrolling(false)
+                // Keep long messages within the bubble width and allow long unbroken text to wrap.
+                breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
+                hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NORMAL
                 maxWidth = (resources.displayMetrics.widthPixels * 0.78f - dp(20)).toInt().coerceAtLeast(dp(150))
                 setLineSpacing(dp(2).toFloat(), 1f)
             }
