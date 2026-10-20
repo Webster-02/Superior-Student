@@ -874,12 +874,15 @@ class MainActivity : AppCompatActivity() {
             silentReloginInProgress = false
             sessionRetryAttempted = false
         }
-        if (loginInProgress && !loggedIn) {
+        if (loginInProgress) {
+            val sessionStillSaved = loggedIn || sessionStore.sessionActive
             loginInProgress = false
             loginSubmitted = false
-            binding.loginButton.isEnabled = true
-            binding.loginStatus.text = "Sign-in paused. Tap Sign in to try again."
-            styleLoginStatus()
+            if (!sessionStillSaved) {
+                binding.loginButton.isEnabled = true
+                binding.loginStatus.text = "Sign-in paused. Tap Sign in to try again."
+                styleLoginStatus()
+            }
         }
         super.onStop()
     }
@@ -975,7 +978,7 @@ class MainActivity : AppCompatActivity() {
                 ?.let(::parseModuleData)
                 ?.let { erpRepository.hasUsableData(module, it) } == true
             binding.moduleInfo.text = if (cached) "Offline - showing saved data" else "Offline - no saved data yet"
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
         }
         if (offline && binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
     }
@@ -1035,8 +1038,10 @@ class MainActivity : AppCompatActivity() {
         moduleFetchInProgress = false
         if (profileFetchInProgress) profileFetchGeneration++
         profileFetchInProgress = false
-        webView.visibility = View.GONE
-        binding.moduleProgress.visibility = View.GONE
+        if (::webView.isInitialized && !webViewNeedsRecreation) {
+            try { webView.visibility = View.GONE } catch (_: Throwable) { }
+        }
+        setModuleLoaderVisible(false, "cached session after transient failure")
 
         if (!hadSavedSession) {
             setOfflineMode(!hasInternetAvailable())
@@ -1637,23 +1642,29 @@ class MainActivity : AppCompatActivity() {
                 val hasSkeleton = (0 until binding.moduleContent.childCount).any {
                     binding.moduleContent.getChildAt(it).tag == "pachattar_loading_skeleton_rows"
                 }
-                if (binding.moduleContent.childCount == 0 || hasSkeleton) {
+                if (binding.moduleContent.childCount == 0 || hasSkeleton || activeRenderedModuleData == null) {
                     val cached = erpRepository.cachedPayload(module)
                         ?.let(::parseModuleData)
                         ?.takeIf { erpRepository.hasUsableData(module, it) }
-                        ?.takeIf {
-                            module != StudentModule.ATTENDANCE ||
-                                ((activeAttendanceDetailUrl != null) == (it.attendanceDetail != null))
-                        }
-                    if (cached != null) {
+                    val cachedMatchesScreen = cached != null &&
+                        (module != StudentModule.ATTENDANCE ||
+                            ((activeAttendanceDetailUrl != null) == (cached.attendanceDetail != null)))
+                    if (cachedMatchesScreen && cached != null) {
                         renderModuleData(module, cached)
                         binding.moduleInfo.text = "Showing saved data"
+                    } else if (module == StudentModule.ATTENDANCE && activeAttendanceDetailUrl != null &&
+                        cached != null && cached.attendanceDetail == null) {
+                        // Subject history is not persisted separately; safely return to the cached summary.
+                        activeAttendanceDetailUrl = null
+                        bindModuleHeader(module, "Attendance", "Your attendance", showBack = false)
+                        renderModuleData(module, cached)
+                        binding.moduleInfo.text = "Showing saved attendance data"
                     } else {
                         binding.moduleContent.removeAllViews()
                         binding.moduleContent.addView(ErrorState.create(
                             this,
                             "Saved data is unavailable",
-                            "Your session is still saved. Retry to refresh this section.",
+                            "The session is still saved. Retry to refresh this section.",
                             ::refreshActiveModule
                         ))
                     }
@@ -2274,7 +2285,7 @@ class MainActivity : AppCompatActivity() {
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
-        binding.moduleProgress.visibility = View.GONE
+        setModuleLoaderVisible(false, "state transition")
         binding.modulePullRefresh.isRefreshing = false
         binding.moduleContent.removeAllViews()
 
@@ -2376,7 +2387,7 @@ class MainActivity : AppCompatActivity() {
         binding.moduleContent.removeAllViews()
         renderModuleData(StudentModule.ATTENDANCE, cachedSummary)
         binding.moduleInfo.text = "Showing saved attendance data"
-        binding.moduleProgress.visibility = View.GONE
+        setModuleLoaderVisible(false, "state transition")
         binding.modulePullRefresh.isRefreshing = false
         applyModuleNavigation()
     }
@@ -2429,7 +2440,7 @@ class MainActivity : AppCompatActivity() {
             lightNavigationIcons = Palette.isNight(this)
         )
         webView.visibility = View.INVISIBLE
-        binding.moduleProgress.visibility = View.VISIBLE
+        setModuleLoaderVisible(true, "request in progress")
         binding.moduleContent.removeAllViews()
         binding.moduleInfo.text = "Syncing your latest information…"
 
@@ -2466,7 +2477,7 @@ class MainActivity : AppCompatActivity() {
                 "Showing saved data"
             }
             // Existing usable content remains interactive while stale data refreshes.
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
         } else {
             binding.moduleContent.removeAllViews()
             if (isRedesignedModule(module)) {
@@ -2482,9 +2493,9 @@ class MainActivity : AppCompatActivity() {
                     },
                     module == StudentModule.TIMETABLE
                 ))
-                binding.moduleProgress.visibility = View.GONE
+                setModuleLoaderVisible(false, "state transition")
             } else {
-                binding.moduleProgress.visibility = View.VISIBLE
+                setModuleLoaderVisible(true, "request in progress")
             }
             binding.moduleInfo.text = "Syncing your latest information…"
         }
@@ -2499,7 +2510,7 @@ class MainActivity : AppCompatActivity() {
                     "Connect to the internet once to load this section."
                 ))
             }
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
             binding.moduleInfo.text = if (cachedData != null) "Offline - showing saved data" else "Offline - no saved data yet"
             if (cachedData == null) logModuleFirstRender(module, "empty", false)
             return
@@ -2507,13 +2518,13 @@ class MainActivity : AppCompatActivity() {
         val needsRefresh = cachedData == null || erpRepository.needsRefresh(module)
         if (!needsRefresh) {
             moduleFetchInProgress = false
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
             binding.modulePullRefresh.isRefreshing = false
             return
         }
         if (!shouldAutoRefreshModule(module)) {
             moduleFetchInProgress = false
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
             binding.modulePullRefresh.isRefreshing = false
             if (cachedData == null) {
                 binding.moduleContent.removeAllViews()
@@ -2545,7 +2556,7 @@ class MainActivity : AppCompatActivity() {
                 ?.let(::parseModuleData)
                 ?.takeIf { erpRepository.hasUsableData(module, it) }
             moduleFetchInProgress = false
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
             if (cached != null) renderModuleData(module, cached) else {
                 binding.moduleContent.removeAllViews()
                 binding.moduleContent.addView(createEmptyState(
@@ -2574,7 +2585,7 @@ class MainActivity : AppCompatActivity() {
         if (cachedData != null) {
             renderModuleData(module, cachedData)
             binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-            binding.moduleProgress.visibility = if (isRedesignedModule(module)) View.GONE else View.VISIBLE
+            setModuleLoaderVisible(!isRedesignedModule(module), "module refresh")
         } else {
             binding.moduleContent.removeAllViews()
             if (isRedesignedModule(module)) {
@@ -2590,9 +2601,9 @@ class MainActivity : AppCompatActivity() {
                     },
                     module == StudentModule.TIMETABLE
                 ))
-                binding.moduleProgress.visibility = View.GONE
+                setModuleLoaderVisible(false, "state transition")
             } else {
-                binding.moduleProgress.visibility = View.VISIBLE
+                setModuleLoaderVisible(true, "request in progress")
             }
             binding.moduleInfo.text = "Syncing the latest information…"
         }
@@ -2628,7 +2639,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             moduleFetchInProgress = false
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
             binding.modulePullRefresh.isRefreshing = false
             logModuleFetchOutcome(module, "timeout")
             val hasCachedContent = erpRepository.cachedPayload(module)
@@ -2711,7 +2722,7 @@ class MainActivity : AppCompatActivity() {
             StudentModule.RESULTS -> renderResults(data)
             StudentModule.ENROLLED_COURSES -> renderEnrolledCourses(data)
         }
-        binding.moduleProgress.visibility = View.GONE
+        setModuleLoaderVisible(false, "state transition")
         binding.moduleInfo.text = if (offlineMode || !hasInternetAvailable()) {
             "Offline - showing saved data"
         } else {
@@ -2832,7 +2843,7 @@ class MainActivity : AppCompatActivity() {
             showBack = true
         )
         binding.moduleContent.removeAllViews()
-        binding.moduleProgress.visibility = View.VISIBLE
+        setModuleLoaderVisible(true, "request in progress")
         binding.moduleInfo.text = "Finding this subject's attendance detail in ERP…"
         webView.visibility = View.INVISIBLE
         if (!url.isNullOrBlank()) webView.loadUrl(url)
@@ -2845,7 +2856,7 @@ class MainActivity : AppCompatActivity() {
         moduleFetchInProgress = false
         moduleReadAttempts = 0
         moduleReadRequestId++
-        binding.moduleProgress.visibility = View.GONE
+        setModuleLoaderVisible(false, "state transition")
         binding.moduleInfo.text = "Subject detail unavailable"
         binding.moduleContent.removeAllViews()
         binding.moduleContent.addView(ErrorState.create(
@@ -3057,7 +3068,7 @@ class MainActivity : AppCompatActivity() {
                     ::refreshActiveModule
                 ))
             }
-            binding.moduleProgress.visibility = View.GONE
+            setModuleLoaderVisible(false, "state transition")
         }
         applyModuleNavigation()
     }
@@ -3105,7 +3116,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun selectResultsSemester(label: String) {
         val script = Scripts.semesterSelectScript(label)
-        binding.moduleProgress.visibility = View.VISIBLE
+        setModuleLoaderVisible(true, "request in progress")
         binding.moduleInfo.text = "Loading $label…"
         webView.evaluateJavascript(script) {
             handler.postDelayed({
@@ -3474,7 +3485,7 @@ class MainActivity : AppCompatActivity() {
                             android.util.Log.w("ERPPerf", "module_fetch module=${module.name} source=network outcome=stale_response_rejected")
                             if (displayWhenReady && activeModule == module) {
                                 moduleFetchInProgress = false
-                                binding.moduleProgress.visibility = View.GONE
+                                setModuleLoaderVisible(false, "state transition")
                                 binding.modulePullRefresh.isRefreshing = false
                                 val cachedData = erpRepository.cachedPayload(module)
                                     ?.let(::parseModuleData)
@@ -3516,7 +3527,7 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         moduleFetchInProgress = false
-                        binding.moduleProgress.visibility = View.GONE
+                        setModuleLoaderVisible(false, "state transition")
                         binding.modulePullRefresh.isRefreshing = false
                         logModuleFetchOutcome(module, "unusable_response")
                         val cachedData = erpRepository.cachedPayload(module)
@@ -3879,7 +3890,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleModuleLoadFailure(message: String) {
         val module = activeModule ?: return
         moduleFetchInProgress = false
-        binding.moduleProgress.visibility = View.GONE
+        setModuleLoaderVisible(false, "state transition")
         binding.modulePullRefresh.isRefreshing = false
         logModuleFetchOutcome(module, "network_error")
         val cachedData = erpRepository.cachedPayload(module)
@@ -4496,7 +4507,7 @@ class MainActivity : AppCompatActivity() {
         activeRenderedModuleData = null
         if (::webView.isInitialized) webView.stopLoading()
         webView.visibility = View.GONE
-        binding.moduleProgress.visibility = View.GONE
+        setModuleLoaderVisible(false, "state transition")
         binding.moduleScreen.visibility = View.GONE
         binding.moduleContent.removeAllViews()
         moduleFetchInProgress = false
@@ -4558,7 +4569,7 @@ class MainActivity : AppCompatActivity() {
         preloadQueue.clear()
         webView.stopLoading()
         webView.visibility = View.GONE
-        binding.moduleProgress.visibility = View.GONE
+        setModuleLoaderVisible(false, "state transition")
         binding.moduleScreen.visibility = View.GONE
         binding.dashboardBottomNav.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
