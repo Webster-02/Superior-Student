@@ -2783,7 +2783,10 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn || activeModule != StudentModule.ATTENDANCE) return
         binding.moduleInfo.text = "Finding this subject's class history…"
         view.evaluateJavascript(Scripts.attendanceSubjectResolverScript(course, code)) { result ->
-            if (!loggedIn || activeModule != StudentModule.ATTENDANCE) return@evaluateJavascript
+            if (!loggedIn || activeModule != StudentModule.ATTENDANCE ||
+                !pendingAttendanceResolution ||
+                pendingAttendanceCourse != course || pendingAttendanceCode != code
+            ) return@evaluateJavascript
 
             val payload = ParsingUtils.decodeJavascriptString(result)
             val resolution = try {
@@ -2800,6 +2803,7 @@ class MainActivity : AppCompatActivity() {
                         !resolvedUrl.contains("/student/attendancedetail", ignoreCase = true)) {
                         failAttendanceDetailResolution()
                     } else {
+                        pendingAttendanceResolution = false
                         pendingAttendanceCourse = ""
                         pendingAttendanceCode = ""
                         activeAttendanceDetailUrl = resolvedUrl
@@ -2808,7 +2812,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 clicked -> handler.postDelayed({
-                    if (!loggedIn || activeModule != StudentModule.ATTENDANCE) return@postDelayed
+                    if (!loggedIn || activeModule != StudentModule.ATTENDANCE ||
+                        !pendingAttendanceResolution ||
+                        pendingAttendanceCourse != course || pendingAttendanceCode != code
+                    ) return@postDelayed
                     val currentUrl = webView.url.orEmpty()
                     if (ErpConfig.belongsToErp(currentUrl) &&
                         currentUrl.contains("/student/attendancedetail", ignoreCase = true)) {
