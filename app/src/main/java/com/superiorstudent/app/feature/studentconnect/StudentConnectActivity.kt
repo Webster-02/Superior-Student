@@ -28,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -77,6 +78,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private enum class StudentConnectScreen { HOME, SEARCH, CHATS, REQUESTS, CONNECTIONS, NOTIFICATIONS, PROFILE }
     private var currentScreen = StudentConnectScreen.HOME
+    private val screenBackStack = StudentConnectBackStack(StudentConnectScreen.HOME)
     private var heroFloatAnimator: ObjectAnimator? = null
     private var heroTiltAnimator: ObjectAnimator? = null
     private var heroOrbAnimator: ObjectAnimator? = null
@@ -218,6 +220,11 @@ class StudentConnectActivity : AppCompatActivity() {
         setContentView(R.layout.activity_student_connect)
         auth = FirebaseAuth.getInstance()
         bindViews()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                handleU2UBack()
+            }
+        })
         applyStudentConnectWindowInsets()
         arrangeProfileSection()
         renderCurrentUser()
@@ -363,7 +370,7 @@ class StudentConnectActivity : AppCompatActivity() {
         navIcons = listOf(findViewById(R.id.studentConnectNavHomeIcon), findViewById(R.id.studentConnectNavSearchIcon), findViewById(R.id.studentConnectNavChatsIcon), findViewById(R.id.studentConnectNavRequestsIcon), findViewById(R.id.studentConnectNavProfileIcon))
         navLabels = listOf(findViewById(R.id.studentConnectNavHomeLabel), findViewById(R.id.studentConnectNavSearchLabel), findViewById(R.id.studentConnectNavChatsLabel), findViewById(R.id.studentConnectNavRequestsLabel), findViewById(R.id.studentConnectNavProfileLabel))
 
-        findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
+        findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { handleU2UBack() }
         chatFilterAll.setOnClickListener {
             filterUnreadChatsOnly = false
             updateChatFilterTabs()
@@ -382,24 +389,24 @@ class StudentConnectActivity : AppCompatActivity() {
             showOutgoingRequestsOnly = true
             updateRequestTabs()
         }
-        headerNotificationsButton.setOnClickListener { showStudentConnectScreen(StudentConnectScreen.NOTIFICATIONS) }
-        findViewById<View>(R.id.studentConnectHomeFindCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
-        findViewById<View>(R.id.studentConnectHeroFindButton).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
-        findViewById<View>(R.id.studentConnectHomeRequestsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.REQUESTS) }
-        findViewById<View>(R.id.studentConnectHomeConnectionsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CONNECTIONS) }
-        findViewById<View>(R.id.studentConnectHomeProfileCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.PROFILE) }
+        headerNotificationsButton.setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.NOTIFICATIONS) }
+        findViewById<View>(R.id.studentConnectHomeFindCard).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.SEARCH) }
+        findViewById<View>(R.id.studentConnectHeroFindButton).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.SEARCH) }
+        findViewById<View>(R.id.studentConnectHomeRequestsCard).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.REQUESTS) }
+        findViewById<View>(R.id.studentConnectHomeConnectionsCard).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.CONNECTIONS) }
+        findViewById<View>(R.id.studentConnectHomeProfileCard).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.PROFILE) }
         findViewById<View>(R.id.studentConnectHomeNearbySendButton).setOnClickListener {
             openNearbyShare("send")
         }
         findViewById<View>(R.id.studentConnectHomeNearbyReceiveButton).setOnClickListener {
             openNearbyShare("receive")
         }
-        findViewById<View>(R.id.studentConnectSeeAllChats).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CHATS) }
-        navItems[0].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.HOME) }
-        navItems[1].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
-        navItems[2].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CHATS) }
-        navItems[3].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.REQUESTS) }
-        navItems[4].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.PROFILE) }
+        findViewById<View>(R.id.studentConnectSeeAllChats).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.CHATS) }
+        navItems[0].setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.HOME) }
+        navItems[1].setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.SEARCH) }
+        navItems[2].setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.CHATS) }
+        navItems[3].setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.REQUESTS) }
+        navItems[4].setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.PROFILE) }
         createAccountButton.setOnClickListener { createAccount() }
         signInButton.setOnClickListener { signIn() }
         resendVerificationButton.setOnClickListener { resendVerificationEmail() }
@@ -473,6 +480,7 @@ class StudentConnectActivity : AppCompatActivity() {
         connectionPresenceCache.clear()
         connectionPresenceViews.clear()
         auth.currentUser?.uid?.let(localCache::clearAccount)
+        screenBackStack.clear()
         auth.signOut()
         passwordInput.text?.clear()
         profileLoadInProgressFor = null
@@ -722,6 +730,45 @@ class StudentConnectActivity : AppCompatActivity() {
         securityNoteText.visibility = if (auth.currentUser == null || auth.currentUser?.isEmailVerified != true) View.VISIBLE else View.GONE
     }
 
+    private fun navigateToStudentConnectScreen(screen: StudentConnectScreen) {
+        if (currentStudentProfile == null || auth.currentUser?.isEmailVerified != true) return
+        if (screen == StudentConnectScreen.HOME) {
+            screenBackStack.clear()
+            if (currentScreen != screen) showStudentConnectScreen(screen)
+            return
+        }
+        if (currentScreen == screen) return
+        screenBackStack.navigate(currentScreen, screen)
+        showStudentConnectScreen(screen)
+    }
+
+    private fun handleU2UBack() {
+        val canUseWorkspace = currentStudentProfile != null && auth.currentUser?.isEmailVerified == true
+        if (!canUseWorkspace || currentScreen == StudentConnectScreen.HOME) {
+            screenBackStack.clear()
+            finish()
+            return
+        }
+        showStudentConnectScreen(screenBackStack.back(currentScreen))
+    }
+
+    /** Chat is a child of Chats, and Chats is a child of U2U Home. */
+    private fun prepareChatReturnDestination() {
+        screenBackStack.reset(StudentConnectScreen.HOME, StudentConnectScreen.CHATS)
+        if (currentScreen != StudentConnectScreen.CHATS) {
+            showStudentConnectScreen(StudentConnectScreen.CHATS)
+        }
+    }
+
+    private fun launchStudentChat(otherUid: String, otherDisplayName: String) {
+        prepareChatReturnDestination()
+        startActivity(
+            Intent(this, StudentChatActivity::class.java)
+                .putExtra(StudentChatActivity.EXTRA_OTHER_UID, otherUid)
+                .putExtra(StudentChatActivity.EXTRA_OTHER_DISPLAY_NAME, otherDisplayName)
+        )
+    }
+
     private fun showStudentConnectScreen(screen: StudentConnectScreen) {
         if (currentStudentProfile == null || auth.currentUser?.isEmailVerified != true) return
         currentScreen = screen
@@ -951,6 +998,7 @@ class StudentConnectActivity : AppCompatActivity() {
             notificationsContainer.removeAllViews()
             cachedStudentNotifications = emptyList()
             currentStudentProfile = null
+            screenBackStack.clear()
             searchedStudentProfile = null
             sendFriendRequestButton.visibility = View.GONE
             friendRequestsPanel.visibility = View.GONE
@@ -1146,6 +1194,7 @@ class StudentConnectActivity : AppCompatActivity() {
         profilePublicId.text = profile.publicId
         homeGreetingText.text = "Hi, " + profile.displayName.substringBefore(" ").ifBlank { profile.displayName } + "!"
         applyStudentConnectBranding()
+        screenBackStack.clear()
         showStudentConnectScreen(StudentConnectScreen.HOME)
         if (!cachedOnly) refreshFriendRequests(showLoadingMessage = false)
     }
@@ -1279,11 +1328,7 @@ class StudentConnectActivity : AppCompatActivity() {
                     statusText.text = "Sign in with your verified U2U account before opening a chat."
                     return@setOnClickListener
                 }
-                startActivity(
-                    Intent(this, StudentChatActivity::class.java)
-                        .putExtra(StudentChatActivity.EXTRA_OTHER_UID, summary.otherUid)
-                        .putExtra(StudentChatActivity.EXTRA_OTHER_DISPLAY_NAME, summary.otherDisplayName)
-                )
+                launchStudentChat(summary.otherUid, summary.otherDisplayName)
             }
             chatListContainer.addView(row)
         }
@@ -1464,7 +1509,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
         cachedFriendRequests = requests
         renderFriendRequestLists(uid, requests)
-        showStudentConnectScreen(if (target == StudentNotificationTarget.INCOMING_REQUEST) StudentConnectScreen.REQUESTS else StudentConnectScreen.CONNECTIONS)
+        navigateToStudentConnectScreen(if (target == StudentNotificationTarget.INCOMING_REQUEST) StudentConnectScreen.REQUESTS else StudentConnectScreen.CONNECTIONS)
         val targetContainer = when (target) {
             StudentNotificationTarget.INCOMING_REQUEST -> incomingRequestsContainer
             StudentNotificationTarget.CONNECTION -> connectionsContainer
@@ -1498,7 +1543,7 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     private fun scrollToNotificationSection(target: StudentNotificationTarget) {
-        showStudentConnectScreen(if (target == StudentNotificationTarget.INCOMING_REQUEST) StudentConnectScreen.REQUESTS else StudentConnectScreen.CONNECTIONS)
+        navigateToStudentConnectScreen(if (target == StudentNotificationTarget.INCOMING_REQUEST) StudentConnectScreen.REQUESTS else StudentConnectScreen.CONNECTIONS)
         val sectionView = when (target) {
             StudentNotificationTarget.INCOMING_REQUEST -> findViewById(R.id.studentConnectIncomingRequestsHeading)
             StudentNotificationTarget.CONNECTION -> connectionsTitleText
@@ -1878,11 +1923,7 @@ class StudentConnectActivity : AppCompatActivity() {
             return
         }
 
-        startActivity(
-            Intent(this, StudentChatActivity::class.java)
-                .putExtra(StudentChatActivity.EXTRA_OTHER_UID, otherUid)
-                .putExtra(StudentChatActivity.EXTRA_OTHER_DISPLAY_NAME, otherName)
-        )
+        launchStudentChat(otherUid, otherName)
     }
 
     private fun updateFriendRequestStatus(
