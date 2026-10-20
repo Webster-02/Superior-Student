@@ -106,6 +106,17 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var chatListTitleText: TextView
     private lateinit var chatListContainer: LinearLayout
     private lateinit var chatListEmptyText: TextView
+    private lateinit var chatFilters: View
+    private lateinit var chatFilterAll: TextView
+    private lateinit var chatFilterUnread: TextView
+    private lateinit var seeAllChatsButton: View
+    private lateinit var requestsIncomingTab: TextView
+    private lateinit var requestsSentTab: TextView
+    private lateinit var incomingRequestsHeading: TextView
+    private lateinit var outgoingRequestsHeading: TextView
+    private lateinit var profileAvatar: TextView
+    private var filterUnreadChatsOnly = false
+    private var showOutgoingRequestsOnly = false
     private lateinit var connectionsContainer: LinearLayout
     private lateinit var connectionsSearchInput: EditText
     private lateinit var connectionsTitleText: TextView
@@ -246,6 +257,19 @@ class StudentConnectActivity : AppCompatActivity() {
         emailInput = findViewById(R.id.studentConnectEmailInput)
         passwordInput = findViewById(R.id.studentConnectPasswordInput)
         statusText = findViewById(R.id.studentConnectStatus)
+        val statusCard = findViewById<View>(R.id.studentConnectStatusCard)
+        statusCard.visibility = View.GONE
+        statusText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val message = s?.toString()?.trim().orEmpty()
+                val placeholder = message == "Checking U2U status…" ||
+                    message.startsWith("Create a separate account or sign in.") ||
+                    message.startsWith("Email verified. Checking your student profile")
+                statusCard.visibility = if (message.isBlank() || placeholder) View.GONE else View.VISIBLE
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
         studentConnectScrollView = findViewById(R.id.studentConnectScrollView)
         authForm = findViewById(R.id.studentConnectAuthForm)
         signedInPanel = findViewById(R.id.studentConnectSignedInPanel)
@@ -259,6 +283,7 @@ class StudentConnectActivity : AppCompatActivity() {
         profileNameInput = findViewById(R.id.studentConnectDisplayNameInput)
         createProfileButton = findViewById(R.id.studentConnectCreateProfileButton)
         profileCard = findViewById(R.id.studentConnectProfileCard)
+        profileAvatar = findViewById(R.id.studentConnectProfileAvatar)
         profileDisplayName = findViewById(R.id.studentConnectProfileDisplayName)
         profilePublicId = findViewById(R.id.studentConnectProfilePublicId)
         copyPublicIdButton = findViewById(R.id.studentConnectCopyPublicIdButton)
@@ -274,6 +299,14 @@ class StudentConnectActivity : AppCompatActivity() {
         chatListTitleText = findViewById(R.id.studentConnectChatListTitle)
         chatListContainer = findViewById(R.id.studentConnectChatListContainer)
         chatListEmptyText = findViewById(R.id.studentConnectChatListEmpty)
+        chatFilters = findViewById(R.id.studentConnectChatFilters)
+        chatFilterAll = findViewById(R.id.studentConnectChatFilterAll)
+        chatFilterUnread = findViewById(R.id.studentConnectChatFilterUnread)
+        seeAllChatsButton = findViewById(R.id.studentConnectSeeAllChats)
+        requestsIncomingTab = findViewById(R.id.studentConnectRequestsIncomingTab)
+        requestsSentTab = findViewById(R.id.studentConnectRequestsSentTab)
+        incomingRequestsHeading = findViewById(R.id.studentConnectIncomingRequestsHeading)
+        outgoingRequestsHeading = findViewById(R.id.studentConnectOutgoingRequestsHeading)
         connectionsContainer = findViewById(R.id.studentConnectConnectionsContainer)
         connectionsSearchInput = findViewById(R.id.studentConnectConnectionsSearchInput)
         connectionsTitleText = findViewById(R.id.studentConnectConnectionsTitle)
@@ -305,6 +338,24 @@ class StudentConnectActivity : AppCompatActivity() {
         navLabels = listOf(findViewById(R.id.studentConnectNavHomeLabel), findViewById(R.id.studentConnectNavSearchLabel), findViewById(R.id.studentConnectNavChatsLabel), findViewById(R.id.studentConnectNavRequestsLabel), findViewById(R.id.studentConnectNavProfileLabel))
 
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
+        chatFilterAll.setOnClickListener {
+            filterUnreadChatsOnly = false
+            updateChatFilterTabs()
+            auth.currentUser?.uid?.let { uid -> renderChatList(uid, cachedChatSummaries) }
+        }
+        chatFilterUnread.setOnClickListener {
+            filterUnreadChatsOnly = true
+            updateChatFilterTabs()
+            auth.currentUser?.uid?.let { uid -> renderChatList(uid, cachedChatSummaries) }
+        }
+        requestsIncomingTab.setOnClickListener {
+            showOutgoingRequestsOnly = false
+            updateRequestTabs()
+        }
+        requestsSentTab.setOnClickListener {
+            showOutgoingRequestsOnly = true
+            updateRequestTabs()
+        }
         headerNotificationsButton.setOnClickListener { showStudentConnectScreen(StudentConnectScreen.NOTIFICATIONS) }
         findViewById<View>(R.id.studentConnectHomeFindCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
         findViewById<View>(R.id.studentConnectHeroFindButton).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
@@ -610,6 +661,8 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun showStudentConnectScreen(screen: StudentConnectScreen) {
         if (currentStudentProfile == null || auth.currentUser?.isEmailVerified != true) return
         currentScreen = screen
+        if (screen == StudentConnectScreen.HOME) filterUnreadChatsOnly = false
+        applyStudentConnectBranding()
         homeDashboard.visibility = if (screen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
         chatSection.visibility = if (screen == StudentConnectScreen.HOME || screen == StudentConnectScreen.CHATS) View.VISIBLE else View.GONE
         studentSearchPanel.visibility = if (screen == StudentConnectScreen.SEARCH) View.VISIBLE else View.GONE
@@ -621,6 +674,9 @@ class StudentConnectActivity : AppCompatActivity() {
         profileSetupPanel.visibility = View.GONE
         bottomNavigation.visibility = View.VISIBLE
         securityNoteText.visibility = if (screen == StudentConnectScreen.PROFILE) View.VISIBLE else View.GONE
+        chatFilters.visibility = if (screen == StudentConnectScreen.CHATS) View.VISIBLE else View.GONE
+        chatListTitleText.visibility = if (screen == StudentConnectScreen.CHATS) View.GONE else View.VISIBLE
+        seeAllChatsButton.visibility = if (screen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
 
         val selectedIndex = when (screen) {
             StudentConnectScreen.HOME -> 0
@@ -640,6 +696,11 @@ class StudentConnectActivity : AppCompatActivity() {
             navLabels[index].setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
 
+        updateChatFilterTabs()
+        updateRequestTabs()
+        if (screen == StudentConnectScreen.CHATS || screen == StudentConnectScreen.HOME) {
+            auth.currentUser?.uid?.let { uid -> renderChatList(uid, cachedChatSummaries) }
+        }
         studentConnectScrollView.scrollTo(0, 0)
         syncVisibleConnectionPresence()
         if (screen == StudentConnectScreen.HOME) {
@@ -689,40 +750,113 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private fun applyStudentConnectBranding() {
         studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
-        findViewById<TextView>(R.id.studentConnectBackButton).apply {
+        val user = auth.currentUser
+        val hasStudentProfile = currentStudentProfile != null && user?.isEmailVerified == true
+        val backButton = findViewById<TextView>(R.id.studentConnectBackButton)
+        val brandLogo = findViewById<ImageView>(R.id.studentConnectBrandLogo)
+        val brandTitle = findViewById<TextView>(R.id.studentConnectBrandTitle)
+        val brandTagline = findViewById<TextView>(R.id.studentConnectBrandTagline)
+        val notificationContainer = headerNotificationsButton.parent as? View
+
+        val screenTitle = when {
+            !hasStudentProfile -> "Join U2U"
+            currentScreen == StudentConnectScreen.HOME -> "U2U"
+            currentScreen == StudentConnectScreen.SEARCH -> "Find students"
+            currentScreen == StudentConnectScreen.CHATS -> "Chats"
+            currentScreen == StudentConnectScreen.REQUESTS -> "Friend requests"
+            currentScreen == StudentConnectScreen.CONNECTIONS -> "My connections"
+            currentScreen == StudentConnectScreen.PROFILE -> "Your profile"
+            currentScreen == StudentConnectScreen.NOTIFICATIONS -> "Notifications"
+            else -> "U2U"
+        }
+        val screenSubtitle = when {
+            !hasStudentProfile -> "Same campus. Real people.\nNew opportunities."
+            currentScreen == StudentConnectScreen.HOME -> "Chat and share with classmates"
+            currentScreen == StudentConnectScreen.SEARCH -> "Search by public ID"
+            currentScreen == StudentConnectScreen.CHATS -> "Your connections"
+            currentScreen == StudentConnectScreen.REQUESTS -> "Manage who can chat with you"
+            currentScreen == StudentConnectScreen.CONNECTIONS -> "Your campus circle"
+            currentScreen == StudentConnectScreen.PROFILE -> "Visible to your connections"
+            currentScreen == StudentConnectScreen.NOTIFICATIONS -> "Requests and updates"
+            else -> "Chat and share with classmates"
+        }
+
+        backButton.apply {
+            text = "‹"
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_lavender))
-            visibility = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) View.GONE else View.VISIBLE
+            visibility = if (hasStudentProfile && currentScreen == StudentConnectScreen.HOME) View.GONE else View.VISIBLE
         }
-        findViewById<TextView>(R.id.studentConnectBrandTitle).apply {
-            text = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) "U2U" else "Join U2U"
+        brandLogo.visibility = if (!hasStudentProfile || currentScreen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
+        brandTitle.apply {
+            text = screenTitle
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_primary))
+            textSize = if (!hasStudentProfile) 22f else if (currentScreen == StudentConnectScreen.HOME) 20f else 18f
+            maxLines = 1
         }
-        findViewById<TextView>(R.id.studentConnectBrandTagline).apply {
+        brandTagline.apply {
+            text = screenSubtitle
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_muted))
-            text = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) {
-                "Chat and share with classmates"
-            } else {
-                "Same campus. Real people.\nNew opportunities."
-            }
+            visibility = View.VISIBLE
+            textSize = 11f
+            maxLines = 2
         }
-        findViewById<TextView>(R.id.studentConnectBrandPromise).apply {
-            setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_purple))
-            visibility = View.GONE
-        }
+        findViewById<TextView>(R.id.studentConnectBrandPromise).visibility = View.GONE
+        notificationContainer?.visibility =
+            if (hasStudentProfile && currentScreen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
+
         findViewById<MaterialCardView>(R.id.studentConnectStatusCard).apply {
-            setCardBackgroundColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_navy))
-            setStrokeColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_navy))
+            setCardBackgroundColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_card))
+            setStrokeColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_border))
         }
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
-        val hasStudentProfile = currentStudentProfile != null && auth.currentUser?.isEmailVerified == true
-        findViewById<TextView>(R.id.studentConnectBrandTagline).visibility = View.VISIBLE
-        findViewById<TextView>(R.id.studentConnectBrandPromise).visibility = View.GONE
-        findViewById<TextView>(R.id.studentConnectBrandTitle).textSize = if (hasStudentProfile) 20f else 22f
-        val brandLogo = findViewById<ImageView>(R.id.studentConnectBrandLogo)
+        findViewById<View>(R.id.studentConnectPasswordSafetyNote).visibility =
+            if (user == null) View.VISIBLE else View.GONE
         brandLogo.layoutParams = brandLogo.layoutParams.apply {
             width = dp(40)
             height = dp(40)
         }
+        updateChatFilterTabs()
+        updateRequestTabs()
+    }
+
+    private fun updateChatFilterTabs() {
+        if (!::chatFilterAll.isInitialized || !::chatFilterUnread.isInitialized) return
+        chatFilterAll.setBackgroundResource(
+            if (!filterUnreadChatsOnly) R.drawable.bg_student_connect_segment_selected else android.R.color.transparent
+        )
+        chatFilterUnread.setBackgroundResource(
+            if (filterUnreadChatsOnly) R.drawable.bg_student_connect_segment_selected else android.R.color.transparent
+        )
+        chatFilterAll.setTextColor(ContextCompat.getColor(
+            this, if (!filterUnreadChatsOnly) R.color.sc_segment_ink else R.color.sc_text_primary
+        ))
+        chatFilterUnread.setTextColor(ContextCompat.getColor(
+            this, if (filterUnreadChatsOnly) R.color.sc_segment_ink else R.color.sc_text_primary
+        ))
+    }
+
+    private fun updateRequestTabs() {
+        if (!::requestsIncomingTab.isInitialized || !::requestsSentTab.isInitialized) return
+        requestsIncomingTab.setBackgroundResource(
+            if (!showOutgoingRequestsOnly) R.drawable.bg_student_connect_segment_selected else android.R.color.transparent
+        )
+        requestsSentTab.setBackgroundResource(
+            if (showOutgoingRequestsOnly) R.drawable.bg_student_connect_segment_selected else android.R.color.transparent
+        )
+        requestsIncomingTab.setTextColor(ContextCompat.getColor(
+            this, if (!showOutgoingRequestsOnly) R.color.sc_segment_ink else R.color.sc_text_primary
+        ))
+        requestsSentTab.setTextColor(ContextCompat.getColor(
+            this, if (showOutgoingRequestsOnly) R.color.sc_segment_ink else R.color.sc_text_primary
+        ))
+        incomingRequestsHeading.visibility = if (showOutgoingRequestsOnly) View.GONE else View.VISIBLE
+        incomingRequestsContainer.visibility = if (showOutgoingRequestsOnly) View.GONE else View.VISIBLE
+        incomingRequestsEmptyText.visibility =
+            if (!showOutgoingRequestsOnly && incomingRequestsContainer.childCount == 0) View.VISIBLE else View.GONE
+        outgoingRequestsHeading.visibility = if (showOutgoingRequestsOnly) View.VISIBLE else View.GONE
+        outgoingRequestsContainer.visibility = if (showOutgoingRequestsOnly) View.VISIBLE else View.GONE
+        outgoingRequestsEmptyText.visibility =
+            if (showOutgoingRequestsOnly && outgoingRequestsContainer.childCount == 0) View.VISIBLE else View.GONE
     }
 
     private fun renderCurrentUser() {
@@ -915,6 +1049,10 @@ class StudentConnectActivity : AppCompatActivity() {
         studentSearchPanel.visibility = View.VISIBLE
         friendRequestsPanel.visibility = View.VISIBLE
         profileDisplayName.text = profile.displayName
+        profileAvatar.text = profile.displayName.trim()
+            .split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
+            .joinToString("") { it.take(1).uppercase(Locale.getDefault()) }
+            .ifBlank { profile.displayName.take(2).uppercase(Locale.getDefault()) }
         profilePublicId.text = profile.publicId
         homeGreetingText.text = "Hi, " + profile.displayName.substringBefore(" ").ifBlank { profile.displayName } + "!"
         applyStudentConnectBranding()
@@ -992,14 +1130,19 @@ class StudentConnectActivity : AppCompatActivity() {
         chatListContainer.removeAllViews()
         val unreadCount = summaries.sumOf { it.unreadCount }
         chatListTitleText.text = if (unreadCount > 0) "Recent chats ($unreadCount unread)" else "Recent chats"
-        chatListEmptyText.text = if (summaries.isEmpty()) {
-            "No chats yet. Open Message from My Connections to start a conversation."
-        } else {
-            ""
+        val visibleSummaries = if (currentScreen == StudentConnectScreen.CHATS && filterUnreadChatsOnly) {
+            summaries.filter { it.unreadCount > 0 }
+        } else summaries
+        chatListEmptyText.text = when {
+            summaries.isEmpty() -> "No chats yet. Open Message from My Connections to start a conversation."
+            currentScreen == StudentConnectScreen.CHATS && filterUnreadChatsOnly && visibleSummaries.isEmpty() ->
+                "No unread chats. You're all caught up."
+            else -> ""
         }
-        chatListEmptyText.visibility = if (summaries.isEmpty()) View.VISIBLE else View.GONE
+        chatListEmptyText.visibility = if (visibleSummaries.isEmpty()) View.VISIBLE else View.GONE
+        if (currentScreen == StudentConnectScreen.CHATS) updateChatFilterTabs()
 
-        summaries.forEach { summary ->
+        visibleSummaries.forEach { summary ->
             val row = layoutInflater.inflate(R.layout.item_student_chat_summary, chatListContainer, false)
             row.findViewById<TextView>(R.id.studentChatSummaryName).text = summary.otherDisplayName
             row.findViewById<TextView>(R.id.studentChatSummaryAvatar).text = summary.otherDisplayName
@@ -1479,8 +1622,11 @@ class StudentConnectActivity : AppCompatActivity() {
 
         incomingRequestsEmptyText.text = "No incoming friend requests yet."
         outgoingRequestsEmptyText.text = "You haven't sent any friend requests yet."
+        requestsIncomingTab.text = "Incoming " + incoming.size
+        requestsSentTab.text = "Sent " + outgoing.size
         incomingRequestsEmptyText.visibility = if (incoming.isEmpty()) View.VISIBLE else View.GONE
         outgoingRequestsEmptyText.visibility = if (outgoing.isEmpty()) View.VISIBLE else View.GONE
+        updateRequestTabs()
     }
 
     private fun addFriendRequestRow(
