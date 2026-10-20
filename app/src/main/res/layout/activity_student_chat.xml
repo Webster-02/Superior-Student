@@ -410,7 +410,7 @@
                     android:textColor="@color/sc_text_primary"
                     android:textSize="22sp"
                     app:backgroundTint="@color/sc_chat_status"
-                    app:cornerRadius="24dp"
+                    app:cornerRadius="@dimen/radius_card"
                     app:strokeColor="@color/sc_border"
                     app:strokeWidth="1dp" />
 
