@@ -1203,6 +1203,15 @@ class MainActivity : AppCompatActivity() {
             preloadingModule != null || parallelPrefetchBatchId != null ||
             sessionOperationTimeoutRunnable != null
         if (interruptedWork && (loggedIn || sessionStore.sessionActive)) resumeRecoveryNeeded = true
+        if (loggedIn || sessionStore.sessionActive) {
+            getSharedPreferences(NATIVE_UI_STATE_PREFS, MODE_PRIVATE).edit()
+                .putBoolean(STATE_MODULE_VISIBLE, binding.moduleScreen.visibility == View.VISIBLE)
+                .putString(STATE_ACTIVE_MODULE, activeModule?.name)
+                .putInt(STATE_MODULE_SCROLL_Y, binding.moduleScroll.scrollY)
+                .putInt(STATE_HOME_SCROLL_Y, binding.dashboardScroll.scrollY)
+                .putString(STATE_ATTENDANCE_DETAIL_URL, activeAttendanceDetailUrl)
+                .apply()
+        }
         activityResumed = false
         if (isRecoveryDebugEnabled()) android.util.Log.d("AppLifecycle", "onPause at_ms=" + lastPausedAt)
         stopSessionHeartbeat()
@@ -1525,17 +1534,29 @@ class MainActivity : AppCompatActivity() {
         pendingAttendanceCode = ""
         binding.sideMenuOverlay.visibility = View.GONE
 
-        val wantsModule = savedInstanceState?.getBoolean(STATE_MODULE_VISIBLE, false) == true
-        val restoredModule = savedInstanceState?.getString(STATE_ACTIVE_MODULE)
+        val nativeStatePrefs = getSharedPreferences(NATIVE_UI_STATE_PREFS, MODE_PRIVATE)
+        val wantsModule = savedInstanceState?.getBoolean(
+            STATE_MODULE_VISIBLE,
+            nativeStatePrefs.getBoolean(STATE_MODULE_VISIBLE, false)
+        ) ?: nativeStatePrefs.getBoolean(STATE_MODULE_VISIBLE, false)
+        val savedModuleName = savedInstanceState?.getString(STATE_ACTIVE_MODULE)
+            ?: nativeStatePrefs.getString(STATE_ACTIVE_MODULE, null)
+        val restoredModule = savedModuleName
             ?.let { saved -> StudentModule.values().firstOrNull { it.name == saved } }
             .takeIf { wantsModule }
-        val requestedDetailUrl = savedInstanceState?.getString(STATE_ATTENDANCE_DETAIL_URL)
+        val requestedDetailUrl = (savedInstanceState?.getString(STATE_ATTENDANCE_DETAIL_URL)
+            ?: nativeStatePrefs.getString(STATE_ATTENDANCE_DETAIL_URL, null))
             ?.takeIf { it.isNotBlank() }
-        val savedPause = savedInstanceState?.getLong(STATE_LAST_PAUSED_AT, 0L) ?: 0L
+        val savedPause = savedInstanceState?.getLong(
+            STATE_LAST_PAUSED_AT,
+            getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE).getLong(RESUME_LAST_PAUSE_MS, 0L)
+        ) ?: getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE).getLong(RESUME_LAST_PAUSE_MS, 0L)
         if (savedPause > 0L && lastPausedAt == 0L) lastPausedAt = savedPause
+        val restoredScrollKey = if (restoredModule != null) STATE_MODULE_SCROLL_Y else STATE_HOME_SCROLL_Y
         val savedScroll = savedInstanceState?.getInt(
-            if (restoredModule != null) STATE_MODULE_SCROLL_Y else STATE_HOME_SCROLL_Y, 0
-        ) ?: 0
+            restoredScrollKey,
+            nativeStatePrefs.getInt(restoredScrollKey, 0)
+        ) ?: nativeStatePrefs.getInt(restoredScrollKey, 0)
 
         binding.loginScroll.visibility = View.GONE
         if (restoredModule != null) {
@@ -1841,6 +1862,7 @@ class MainActivity : AppCompatActivity() {
         if (password.isNotBlank()) savedCredentialsStore.save(username, password)
         val accountChanged = erpRepository.activateAccount(username)
         if (accountChanged) {
+            getSharedPreferences(NATIVE_UI_STATE_PREFS, MODE_PRIVATE).edit().clear().apply()
             homeHeroType = null
             homeHeroNight = null
             homeHeroAttendancePercentage = null
@@ -4685,6 +4707,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLogin() {
+        cancelSessionOperationTimeout()
+        cancelSessionHeartbeatTimeout()
         cancelParallelPrefetch()
         moduleScreenSnapshots.clear()
         attendanceSummarySnapshot = null
@@ -4736,6 +4760,7 @@ class MainActivity : AppCompatActivity() {
         lastModuleFetchAttemptAtElapsedMs.clear()
         savedCredentialsStore.clear()
         sessionStore.clear()
+        getSharedPreferences(NATIVE_UI_STATE_PREFS, MODE_PRIVATE).edit().clear().apply()
         profileCache.clear()
         erpRepository.clearAccountIdentity()
         getSharedPreferences("superior_student_preferences", MODE_PRIVATE).edit().clear().apply()
@@ -4870,6 +4895,7 @@ class MainActivity : AppCompatActivity() {
         private const val STATE_LAST_PAUSED_AT = "pachattar_state_last_paused_at"
         private const val RESUME_RECOVERY_PREFS = "pachattar_resume_recovery"
         private const val RESUME_LAST_PAUSE_MS = "last_pause_wall_clock_ms"
+        private const val NATIVE_UI_STATE_PREFS = "pachattar_native_ui_state"
 
     }
 }
