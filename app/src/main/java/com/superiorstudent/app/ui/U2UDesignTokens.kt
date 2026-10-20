@@ -30,6 +30,16 @@ data class U2UTypographyToken(
 
 object U2UDesignTokens {
     const val GRID_UNIT_DP = 4
+
+    // Runtime spacing values mirror res/values/dimens.xml space_1 through space_8.
+    const val SPACE_1_DP = 4
+    const val SPACE_2_DP = 8
+    const val SPACE_3_DP = 12
+    const val SPACE_4_DP = 16
+    const val SPACE_5_DP = 20
+    const val SPACE_6_DP = 24
+    const val SPACE_7_DP = 32
+    const val SPACE_8_DP = 40
     const val ICON_SIZE_DP = 24
     const val ICON_STROKE_DP = 1.8f
     const val RADIUS_ICON_DP = 12

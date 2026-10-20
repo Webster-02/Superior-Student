@@ -274,14 +274,14 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
 
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(8), dp(16), dp(12))
+            setPadding(dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_2_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_3_DP))
             setBackgroundColor(page)
         }
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(12))
+            setPadding(0, 0, 0, dp(U2UDesignTokens.SPACE_3_DP))
         }
         val back = makeText("‹", 28f, R.color.sc_lavender, medium = true).apply {
             gravity = Gravity.CENTER
@@ -351,7 +351,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             12f, R.color.sc_text_muted
         ).apply {
             setLineSpacing(dp(2).toFloat(), 1f)
-            setPadding(0, 0, 0, dp(16))
+            setPadding(0, 0, 0, dp(U2UDesignTokens.SPACE_4_DP))
         })
 
         sendButton = makeButton("Send a file", primary = true) {
@@ -390,7 +390,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         historyPanel.addView(makeText(
             "Stored only on this phone. Open or share a file, or remove a history entry. Received files can also be deleted after confirmation.",
             12f, R.color.sc_text_muted
-        ).apply { setLineSpacing(dp(2).toFloat(), 1f); setPadding(0, 0, 0, dp(12)) })
+        ).apply { setLineSpacing(dp(2).toFloat(), 1f); setPadding(0, 0, 0, dp(U2UDesignTokens.SPACE_3_DP)) })
         historyItemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         historyPanel.addView(historyItemsContainer, fullWidthParams())
         historyPanel.addView(
@@ -406,12 +406,12 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         val discoveryHero = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
             layoutParams = fullWidthParams(bottom = 16)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setPadding(dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP))
         }
         discoveryHero.setPadding(0, 0, 0, 0)
         val discoveryContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setPadding(dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP))
         }
         discoveryHeading = makeText("Looking for nearby phones", 18f, R.color.sc_text_primary, medium = true)
         val discoveryCopy = makeText(
@@ -481,7 +481,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         val transferHero = makeCard(R.color.sc_hero, U2UDesignTokens.RADIUS_HERO_DP).apply { setPadding(0, 0, 0, 0) }
         val transferContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setPadding(dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP))
         }
         progressTitle = makeText("SENDING", 10f, R.color.sc_button_secondary_text, medium = true)
         progressTitle.letterSpacing = 0.1f
@@ -539,7 +539,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         statusContent.addView(retryButton, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(40)
-        ).apply { topMargin = dp(8) })
+        ).apply { topMargin = dp(U2UDesignTokens.SPACE_2_DP) })
         statusCard.addView(statusContent)
         // Keep state/reason text fixed below the scrollable panels so it remains visible in every stage.
         statusCard.visibility = View.GONE
@@ -674,7 +674,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             contentDescription = null
         }
         row.addView(icon, LinearLayout.LayoutParams(dp(19), dp(19)).apply {
-            marginEnd = dp(8)
+            marginEnd = dp(U2UDesignTokens.SPACE_2_DP)
         })
         row.addView(makeText(message, 11f, R.color.sc_text_primary), LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
@@ -893,7 +893,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         peerListContainer.removeAllViews()
         val rowCard = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
             setCardBackgroundColor(color(R.color.sc_card))
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP))
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -915,7 +915,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             minimumHeight = dp(40)
             cornerRadius = dp(U2UDesignTokens.RADIUS_ICON_DP)
             textSize = 12f
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(dp(U2UDesignTokens.SPACE_2_DP), 0, dp(U2UDesignTokens.SPACE_2_DP), 0)
             setOnClickListener {
                 val prepared = preparedOutgoing
                 if (prepared != null && sending.get()) {
@@ -1803,7 +1803,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             }
             val codeContent = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(16), dp(16), dp(16), dp(16))
+                setPadding(dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP), dp(U2UDesignTokens.SPACE_4_DP))
             }
             codeContent.addView(makeText("SECURITY CODE", 10f, R.color.sc_button_secondary_text, medium = true))
             codeContent.addView(makeText(code, 38f, R.color.sc_purple, medium = true).apply {
@@ -1820,7 +1820,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             dialogContent.addView(codeCard, fullWidthParams(bottom = 12))
             val detailsCard = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
                 setCardBackgroundColor(color(R.color.sc_card))
-                setPadding(dp(12), dp(12), dp(12), dp(12))
+                setPadding(dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP))
             }
             detailsCard.addView(makeText(details, 12f, R.color.sc_text_primary).apply {
                 setLineSpacing(dp(3).toFloat(), 1f)
@@ -2225,7 +2225,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         records.forEach { record ->
             val card = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
-                setPadding(dp(12), dp(12), dp(12), dp(12))
+                setPadding(dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP), dp(U2UDesignTokens.SPACE_3_DP))
             }
             val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             column.addView(makeText(record.fileName, 13f, R.color.sc_text_primary, medium = true))

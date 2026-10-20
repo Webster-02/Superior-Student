@@ -44,6 +44,18 @@ class U2UDesignTokensTest {
     }
 
     @Test
+    fun spacingTokensMatchTheSharedFourDpScale() {
+        assertEquals(4, U2UDesignTokens.SPACE_1_DP)
+        assertEquals(8, U2UDesignTokens.SPACE_2_DP)
+        assertEquals(12, U2UDesignTokens.SPACE_3_DP)
+        assertEquals(16, U2UDesignTokens.SPACE_4_DP)
+        assertEquals(20, U2UDesignTokens.SPACE_5_DP)
+        assertEquals(24, U2UDesignTokens.SPACE_6_DP)
+        assertEquals(32, U2UDesignTokens.SPACE_7_DP)
+        assertEquals(40, U2UDesignTokens.SPACE_8_DP)
+    }
+
+    @Test
     fun geometryUsesFourDpGridAndSharedRadiusScale() {
         assertEquals(4, U2UDesignTokens.GRID_UNIT_DP)
         assertEquals(24, U2UDesignTokens.ICON_SIZE_DP)
