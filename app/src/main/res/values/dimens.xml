@@ -16,4 +16,5 @@
     <dimen name="radius_bento">24dp</dimen>
     <dimen name="radius_hero">28dp</dimen>
     <dimen name="radius_pill">999dp</dimen>
+    <dimen name="size_icon">24dp</dimen>
 </resources>

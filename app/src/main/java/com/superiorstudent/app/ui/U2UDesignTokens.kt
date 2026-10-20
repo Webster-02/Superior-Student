@@ -40,6 +40,7 @@ object U2UDesignTokens {
     const val SPACE_6_DP = 24
     const val SPACE_7_DP = 32
     const val SPACE_8_DP = 40
+    // Mirrors the shared XML resource @dimen/size_icon for static layout icons.
     const val ICON_SIZE_DP = 24
     const val ICON_STROKE_DP = 1.8f
     const val RADIUS_ICON_DP = 12
