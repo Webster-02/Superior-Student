@@ -557,16 +557,19 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun refreshTransferActions() {
-        if (!::transferActions.isInitialized) return
         val active = transferInProgress.get()
-        transferActions.visibility = if (active) View.VISIBLE else View.GONE
-        pauseResumeButton.visibility = if (active && sending.get() && outgoingStreamActive.get() && !senderDataFinished.get()) {
-            View.VISIBLE
-        } else View.GONE
-        stopButton.visibility = if (active) View.VISIBLE else View.GONE
-        pauseResumeButton.isEnabled = active && sending.get() && outgoingStreamActive.get() &&
-            !senderDataFinished.get() && !pauseRequestInFlight.get()
-        stopButton.isEnabled = active
+        mainHandler.post {
+            if (isFinishing || isDestroyed || !::transferActions.isInitialized) return@post
+            transferActions.visibility = if (active) View.VISIBLE else View.GONE
+            pauseResumeButton.visibility =
+                if (active && sending.get() && outgoingStreamActive.get() && !senderDataFinished.get()) {
+                    View.VISIBLE
+                } else View.GONE
+            stopButton.visibility = if (active) View.VISIBLE else View.GONE
+            pauseResumeButton.isEnabled = active && sending.get() && outgoingStreamActive.get() &&
+                !senderDataFinished.get() && !pauseRequestInFlight.get()
+            stopButton.isEnabled = active
+        }
     }
 
     private fun beginTransferProgress(
@@ -629,18 +632,20 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             setPadding(0, dp(3), 0, 0)
         })
         row.addView(details, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        val connect = makeButton("Connect", primary = true) {
-            val prepared = preparedOutgoing
-            if (prepared != null && sending.get()) {
-                connect.isEnabled = false
-                showStatus("Connecting locally. Confirm the same six-digit code on both phones when prompted…")
-                ioExecutor.execute { sendToPeer(peer, prepared) }
-            }
-        }.apply {
+        val connect = makeButton("Connect", primary = true) { }
+        connect.apply {
             minimumHeight = dp(40)
             cornerRadius = dp(12)
             textSize = 12f
             setPadding(dp(8), 0, dp(8), 0)
+            setOnClickListener {
+                val prepared = preparedOutgoing
+                if (prepared != null && sending.get()) {
+                    isEnabled = false
+                    showStatus("Connecting locally. Confirm the same six-digit code on both phones when prompted…")
+                    ioExecutor.execute { sendToPeer(peer, prepared) }
+                }
+            }
         }
         row.addView(connect, LinearLayout.LayoutParams(dp(100), dp(42)))
         rowCard.addView(row)
@@ -1364,11 +1369,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     ): Boolean {
         val latch = CountDownLatch(1)
         val confirmed = AtomicBoolean(false)
-        val code = Regex("""Security code:\\s*([0-9]{3}\\s*[0-9]{3})""")
+        val code = Regex("""Security code:\s*([0-9]{3}\s*[0-9]{3})""")
             .find(message)?.groupValues?.get(1)?.replace(Regex("\\s+"), " ") ?: "••• •••"
         val details = message
-            .replace(Regex("""(?m)^Security code:\\s*[0-9]{3}\\s*[0-9]{3}\\s*$"""), "")
-            .replace(Regex("""\\n{3,}"""), "\\n\\n")
+            .replace(Regex("""(?m)^Security code:\s*[0-9]{3}\s*[0-9]{3}\s*$"""), "")
+            .replace(Regex("""\n{3,}"""), "\n\n")
             .trim()
         mainHandler.post {
             if (isFinishing || isDestroyed) {
