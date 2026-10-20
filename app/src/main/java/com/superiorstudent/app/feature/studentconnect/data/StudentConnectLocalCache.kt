@@ -212,6 +212,7 @@ class StudentConnectLocalCache private constructor(context: Context) {
                     .filter { it.isValidFor(uid, conversationId, otherUid) }
                     .distinctBy { it.transferId }
                     .sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
+                    .toList()
                     .takeLast(MAX_CACHED_TRANSFER_OFFERS)
                     .forEach { offer ->
                         array.put(
