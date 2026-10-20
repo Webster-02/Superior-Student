@@ -4681,7 +4681,8 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
         try { activeBlockingDialog?.dismiss() } catch (_: Throwable) { }
         activeBlockingDialog = null
-        if (::webView.isInitialized && !webViewNeedsRecreation) {
+        if (::webView.isInitialized) {
+            // A pause/resume failure can mark the instance stale without destroying it first.
             try { webView.stopLoading() } catch (_: Throwable) { }
             try { (webView.parent as? ViewGroup)?.removeView(webView) } catch (_: Throwable) { }
             try { webView.destroy() } catch (_: Throwable) { }
