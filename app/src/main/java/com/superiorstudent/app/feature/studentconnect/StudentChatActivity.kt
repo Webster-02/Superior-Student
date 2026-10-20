@@ -607,6 +607,19 @@ class StudentChatActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * Computes the text width from the measured chat viewport, not the physical screen.
+     * This keeps message bubbles readable with edge-to-edge insets and narrow devices.
+     */
+    private fun maxChatMessageBodyWidthPx(): Int {
+        val viewportWidth = messagesScroll.width.takeIf { it > 0 }
+            ?: messagesContainer.width.takeIf { it > 0 }
+            ?: resources.displayMetrics.widthPixels
+        val safeViewportWidth = (viewportWidth - dp(16)).coerceAtLeast(dp(180))
+        val maxBubbleWidth = (safeViewportWidth * 0.82f).toInt().coerceAtMost(safeViewportWidth)
+        return (maxBubbleWidth - dp(20)).coerceAtLeast(dp(120))
+    }
+
     private fun renderMessages(uid: String, messages: List<StudentChatMessage>) {
         val conversationId = conversation?.id ?: runCatching {
             StudentChatIds.conversationId(uid, otherUid)
@@ -619,6 +632,7 @@ class StudentChatActivity : AppCompatActivity() {
         messageReactionSummaryViews.clear()
         messagesContainer.removeAllViews()
         messageBubbleViews.clear()
+        val maxMessageBodyWidthPx = maxChatMessageBodyWidthPx()
         emptyStateText.visibility = if (visibleMessages.isEmpty() && displayedTransferOffers.isEmpty()) {
             View.VISIBLE
         } else {
@@ -660,11 +674,16 @@ class StudentChatActivity : AppCompatActivity() {
                 textSize = 14f
                 includeFontPadding = false
                 isSingleLine = false
+                maxLines = Int.MAX_VALUE
+                ellipsize = null
                 setHorizontallyScrolling(false)
-                // Keep long messages within the bubble width and allow long unbroken text to wrap.
+                gravity = Gravity.START
+                textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+                textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+                // Constrain wrapping to the real chat viewport and allow long/unbroken lines to wrap.
                 breakStrategy = android.text.Layout.BREAK_STRATEGY_SIMPLE
                 hyphenationFrequency = android.text.Layout.HYPHENATION_FREQUENCY_NORMAL
-                maxWidth = (resources.displayMetrics.widthPixels * 0.78f - dp(20)).toInt().coerceAtLeast(dp(150))
+                maxWidth = maxMessageBodyWidthPx
                 setLineSpacing(dp(2).toFloat(), 1f)
             }
             val replyId = message.replyToMessageId
@@ -687,13 +706,19 @@ class StudentChatActivity : AppCompatActivity() {
                     text = "↪ $replyName"
                     textSize = 10f
                     setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_lavender))
+                    maxWidth = maxMessageBodyWidthPx
                     maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                 }
                 val quoteBody = TextView(this).apply {
                     text = replyText
                     textSize = 12f
                     setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_text_primary))
+                    maxWidth = maxMessageBodyWidthPx
                     maxLines = 2
+                    isSingleLine = false
+                    setHorizontallyScrolling(false)
+                    textDirection = View.TEXT_DIRECTION_FIRST_STRONG
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(2), 0, 0)
                 }
@@ -759,7 +784,15 @@ class StudentChatActivity : AppCompatActivity() {
             messageReactionSummaryViews[message.id] = reactionSummary
             bubbleContent.addView(reactionSummary)
             renderMessageReactionSummary(message.id, reactionSummary)
-            bubble.addView(bubbleContent)
+            // FrameLayout defaults children to MATCH_PARENT; explicit WRAP_CONTENT prevents
+            // bubble measurement from fighting the message TextView's maximum wrapping width.
+            bubble.addView(
+                bubbleContent,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
             var lastTapAtMillis = 0L
             bubble.setOnClickListener {
                 if (chatUnavailable || isSending) {
