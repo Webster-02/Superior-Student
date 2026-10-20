@@ -1512,6 +1512,10 @@ class MainActivity : AppCompatActivity() {
             } else if (restoredModule == StudentModule.ATTENDANCE &&
                 requestedDetailUrl != null && cachedData != null && cachedData.attendanceDetail == null) {
                 activeAttendanceDetailUrl = null
+                pendingAttendanceResolution = false
+                pendingAttendanceCourse = ""
+                pendingAttendanceCode = ""
+                bindModuleHeader(restoredModule, "Attendance", "Your attendance", showBack = false)
                 renderModuleData(restoredModule, cachedData)
                 binding.moduleInfo.text = "Showing saved attendance data"
             } else {
@@ -1650,11 +1654,22 @@ class MainActivity : AppCompatActivity() {
                         (module != StudentModule.ATTENDANCE ||
                             ((activeAttendanceDetailUrl != null) == (cached.attendanceDetail != null)))
                     if (cachedMatchesScreen && cached != null) {
+                        if (module == StudentModule.ATTENDANCE && cached.attendanceDetail == null) {
+                            // A subject resolver interrupted by backgrounding must not run after the summary is restored.
+                            pendingAttendanceResolution = false
+                            pendingAttendanceCourse = ""
+                            pendingAttendanceCode = ""
+                            activeAttendanceDetailUrl = null
+                            bindModuleHeader(module, "Attendance", "Your attendance", showBack = false)
+                        }
                         renderModuleData(module, cached)
                         binding.moduleInfo.text = "Showing saved data"
                     } else if (module == StudentModule.ATTENDANCE && activeAttendanceDetailUrl != null &&
                         cached != null && cached.attendanceDetail == null) {
                         // Subject history is not persisted separately; safely return to the cached summary.
+                        pendingAttendanceResolution = false
+                        pendingAttendanceCourse = ""
+                        pendingAttendanceCode = ""
                         activeAttendanceDetailUrl = null
                         bindModuleHeader(module, "Attendance", "Your attendance", showBack = false)
                         renderModuleData(module, cached)
