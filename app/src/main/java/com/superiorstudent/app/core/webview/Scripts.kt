@@ -37,6 +37,7 @@ object Scripts {
         private set
     var studentProfileText: String = ""
         private set
+    private var parallelPrefetchTemplate: String = ""
     private var attendanceSubjectResolverTemplate: String = ""
 
     private var loginTemplate: String = ""
@@ -56,6 +57,7 @@ object Scripts {
         resultsData = assets.read("js/results_data.js")
         enrolledCoursesData = assets.read("js/enrolled_courses.js")
         studentProfileText = assets.read("js/student_profile_text.js")
+        parallelPrefetchTemplate = assets.read("js/parallel_prefetch.js")
         attendanceSubjectResolverTemplate = assets.read("js/resolve_attendance_subject.js")
         loginTemplate = assets.read("js/login.js")
         semesterSelectTemplate = assets.read("js/semester_select.js")
@@ -72,6 +74,11 @@ object Scripts {
             ModuleDataScriptKind.ENROLLED_COURSES -> enrolledCoursesData
             ModuleDataScriptKind.GENERAL -> moduleData
         }
+
+    fun parallelPrefetchScript(batchId: String, jobsJson: String): String =
+        parallelPrefetchTemplate
+            .replace("%BATCH_ID_B64%", b64JsonString(batchId))
+            .replace("%JOBS_B64%", Base64.encodeToString(jobsJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
 
     fun loginScript(username: String, password: String): String =
         loginTemplate

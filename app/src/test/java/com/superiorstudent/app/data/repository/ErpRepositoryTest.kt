@@ -72,6 +72,19 @@ class ErpRepositoryTest {
     }
 
     @Test
+    fun rejectsOutOfOrderFetchGenerationSoLateResponseCannotOverwriteNewerData() {
+        val repository = ErpRepository()
+        val olderPayload = """{"cards":[{"label":"Outstanding balance","value":"1200"}]}"""
+        val newerPayload = """{"cards":[{"label":"Outstanding balance","value":"900"}]}"""
+        val olderGeneration = repository.beginFetch(StudentModule.FEE)
+        val newerGeneration = repository.beginFetch(StudentModule.FEE)
+
+        assertFalse(repository.cachePayload(StudentModule.FEE, olderPayload, olderGeneration))
+        assertTrue(repository.cachePayload(StudentModule.FEE, newerPayload, newerGeneration))
+        assertEquals(newerPayload, repository.cachedPayload(StudentModule.FEE))
+    }
+
+    @Test
     fun rejectsAttendancePayloadsContainingOnlyMergedSubjectLinks() {
         val repository = ErpRepository()
         val data = ModuleData(

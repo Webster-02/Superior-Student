@@ -1428,6 +1428,11 @@
             android:layout_marginTop="8dp"
             android:layout_weight="1">
 
+            <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+                android:id="@+id/modulePullRefresh"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
             <ScrollView
                 android:id="@+id/moduleScroll"
                 android:layout_width="match_parent"
@@ -1442,6 +1447,7 @@
                     android:orientation="vertical"
                     android:paddingBottom="24dp" />
             </ScrollView>
+            </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
             <!-- Keep the student login UI independent of WebView provider startup. -->
             <FrameLayout

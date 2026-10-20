@@ -207,6 +207,9 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.w("MainActivity", "Could not migrate saved session; showing login screen", t)
         }
 
+        binding.modulePullRefresh.setColorSchemeColors(Palette.primary(this), Palette.primaryDark(this))
+        binding.modulePullRefresh.setOnRefreshListener { refreshActiveModule() }
+
         binding.loginScroll.visibility = View.VISIBLE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
@@ -321,6 +324,10 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        handler.postDelayed({
+            if (!::webView.isInitialized) ensureWebView()
+        }, WEBVIEW_WARMUP_DELAY_MS)
     }
 
     /**
