@@ -1,15 +1,26 @@
 package com.superiorstudent.app.feature.transfer
 
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.content.res.ResourcesCompat
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -47,11 +58,37 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class P2pNearbyTransferActivity : AppCompatActivity() {
 
+    private enum class NearbyUiStage { HUB, DISCOVERY, VERIFY, TRANSFER, COMPLETE }
+
     private lateinit var statusText: TextView
     private lateinit var sendButton: Button
     private lateinit var receiveButton: Button
     private lateinit var pauseResumeButton: Button
-    private lateinit var stopButton: Button
+    private lateinit var stopButton
+    private lateinit var rootLayout: LinearLayout
+    private lateinit var headerTitle: TextView
+    private lateinit var headerSubtitle: TextView
+    private lateinit var hubPanel: LinearLayout
+    private lateinit var discoveryPanel: LinearLayout
+    private lateinit var discoveryStatusText: TextView
+    private lateinit var peerListContainer: LinearLayout
+    private lateinit var verifyPanel: LinearLayout
+    private lateinit var progressPanel: LinearLayout
+    private lateinit var progressTitle: TextView
+    private lateinit var progressFileName: TextView
+    private lateinit var progressPercent: TextView
+    private lateinit var progressAmounts: TextView
+    private lateinit var progressBar: ProgressBar
+    private lateinit var statusCard: MaterialCardView
+    private lateinit var transferActions: LinearLayout
+
+    @Volatile private var uiStage = NearbyUiStage.HUB
+    private val transferInProgress = AtomicBoolean(false)
+    @Volatile private var transferIsOutgoing = false
+    @Volatile private var transferFileName = ""
+    @Volatile private var transferTotalBytes = 0L
+    @Volatile private var transferStartOffset = 0L
+    @Volatile private var transferStartedAtMs = 0L: Button
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor: ExecutorService = Executors.newCachedThreadPool()
@@ -157,78 +194,458 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun renderScreen() {
-        val root = LinearLayout(this).apply {
+        val page = color(R.color.sc_navy)
+        window.statusBarColor = page
+        window.navigationBarColor = page
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        window.decorView.systemUiVisibility = if (night) 0 else (
+            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        )
+
+        rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.TOP
-            setPadding(dp(22), dp(26), dp(22), dp(18))
-            setBackgroundColor(0xFFF7F7FC.toInt())
-        }
-        val title = TextView(this).apply {
-            text = "Nearby file transfer"
-            textSize = 25f
-            setTextColor(0xFF211B36.toInt())
-            setPadding(0, 0, 0, dp(8))
-        }
-        val description = TextView(this).apply {
-            text = "Send directly between two phones on the same Wi-Fi network. This screen does not use Firebase or Internet signaling. Keep both phones nearby and compare the six-digit security code on both screens before approving."
-            textSize = 14f
-            setTextColor(0xFF5B5768.toInt())
-            setLineSpacing(dp(3).toFloat(), 1f)
-        }
-        sendButton = Button(this).apply {
-            text = "Send a file"
-            isAllCaps = false
-            setOnClickListener {
-                if (!sending.get() && !receiving.get()) outgoingFilePicker.launch(arrayOf("*/*"))
-            }
-        }
-        receiveButton = Button(this).apply {
-            text = "Receive a nearby file"
-            isAllCaps = false
-            setOnClickListener { startReceiving() }
-        }
-        pauseResumeButton = Button(this).apply {
-            text = "Pause transfer"
-            isAllCaps = false
-            isEnabled = false
-            setOnClickListener { togglePauseResume() }
-        }
-        stopButton = Button(this).apply {
-            text = "Cancel / Stop"
-            isAllCaps = false
-            isEnabled = false
-            setOnClickListener { cancelCurrentAction() }
-        }
-        statusText = TextView(this).apply {
-            text = "Choose Send a file or Receive a nearby file."
-            textSize = 14f
-            setTextColor(0xFF322B46.toInt())
-            setPadding(0, dp(18), 0, 0)
-            setLineSpacing(dp(3).toFloat(), 1f)
+            setPadding(dp(16), dp(8), dp(16), dp(12))
+            setBackgroundColor(page)
         }
 
-        root.addView(title, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
-        root.addView(description, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(20) })
-        root.addView(sendButton, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
-        root.addView(receiveButton, LinearLayout.LayoutParams(
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val back = makeText("‹", 28f, R.color.sc_lavender, medium = true).apply {
+            gravity = Gravity.CENTER
+            background = getDrawable(R.drawable.bg_student_connect_dashboard_tile)
+            setPadding(0, 0, 0, dp(3))
+            contentDescription = "Back"
+            setOnClickListener { finish() }
+        }
+        header.addView(back, LinearLayout.LayoutParams(dp(40), dp(40)))
+        val titleBlock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, 0, 0)
+        }
+        headerTitle = makeText("Nearby share", 18f, R.color.sc_text_primary, medium = true)
+        headerSubtitle = makeText("Same Wi-Fi · no mobile data", 11f, R.color.sc_text_muted)
+        titleBlock.addView(headerTitle)
+        titleBlock.addView(headerSubtitle)
+        header.addView(titleBlock, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        rootLayout.addView(header)
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+            setPadding(0, dp(2), 0, dp(10))
+        }
+
+        // Hub — matching the reference's concentric-phone illustration, primary Send and secondary Receive.
+        hubPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.VISIBLE
+        }
+        val orbitCard = makeCard(R.color.sc_hero, 26).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(176)
+            ).apply { bottomMargin = dp(18) }
+        }
+        val orbitFrame = FrameLayout(this)
+        val rings = ImageView(this).apply {
+            setImageResource(R.drawable.bg_student_connect_dashboard_orb)
+            imageTintList = ColorStateList.valueOf(color(R.color.sc_purple))
+            alpha = 0.95f
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        orbitFrame.addView(rings, FrameLayout.LayoutParams(dp(148), dp(148), Gravity.CENTER))
+        val phone = ImageView(this).apply {
+            setImageResource(R.drawable.ic_pt_device_mobile)
+            imageTintList = ColorStateList.valueOf(color(R.color.sc_purple))
+            contentDescription = null
+        }
+        orbitFrame.addView(phone, FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER))
+        orbitCard.addView(orbitFrame)
+        hubPanel.addView(orbitCard)
+
+        hubPanel.addView(makeText(
+            "Share files with classmates", 20f, R.color.sc_text_primary, medium = true
+        ).apply { setPadding(0, 0, 0, dp(5)) })
+        hubPanel.addView(makeText(
+            "Both phones must be on the same Wi-Fi network and close to each other.",
+            12f, R.color.sc_text_muted
+        ).apply {
+            setLineSpacing(dp(2).toFloat(), 1f)
+            setPadding(0, 0, 0, dp(16))
+        })
+
+        sendButton = makeButton("Send a file", primary = true) {
+            if (!sending.get() && !receiving.get()) outgoingFilePicker.launch(arrayOf("*/*"))
+        }
+        receiveButton = makeButton("Receive a nearby file", primary = false) {
+            startReceiving()
+        }
+        hubPanel.addView(sendButton, fullWidthParams())
+        hubPanel.addView(receiveButton, fullWidthParams(top = 8))
+
+        val hubNote = makeInfoCard(
+            "Files go directly phone to phone. Nothing is uploaded to the internet or Firebase. You will compare a six-digit code before anything is sent.",
+            R.color.sc_sky
+        )
+        hubPanel.addView(hubNote, fullWidthParams(top = 16))
+        content.addView(hubPanel, fullWidthParams())
+
+        // Discovery — sender can connect to a discovered receiver. Receiver advertises locally and waits.
+        discoveryPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        val discoveryHero = makeCard(R.color.sc_card, 24).apply {
+            layoutParams = fullWidthParams(bottom = 16)
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        val discoveryHeading = makeText("Looking for nearby phones", 18f, R.color.sc_text_primary, medium = true)
+        val discoveryCopy = makeText(
+            "Ask your classmate to open U2U and tap Receive. Keep both phones on the same Wi-Fi.",
+            12f, R.color.sc_text_muted
+        ).apply {
+            setPadding(0, dp(6), 0, dp(4))
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }
+        discoveryStatusText = makeText("Searching on this Wi-Fi…", 12f, R.color.sc_text_muted)
+        discoveryHero.addView(discoveryHeading)
+        discoveryHero.addView(discoveryCopy)
+        discoveryHero.addView(discoveryStatusText, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(8) })
-        root.addView(pauseResumeButton, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(8) })
-        root.addView(stopButton, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(8) })
-        root.addView(statusText, LinearLayout.LayoutParams(
+        discoveryPanel.addView(discoveryHero)
+        peerListContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        discoveryPanel.addView(peerListContainer, fullWidthParams())
+        discoveryPanel.addView(
+            makeInfoCard("No internet signaling is used for nearby transfer. Keep this screen open until the connection is ready.", R.color.sc_sky),
+            fullWidthParams(top = 14)
+        )
+        content.addView(discoveryPanel, fullWidthParams())
+
+        // Verification content under the modal is intentionally neutral; the code itself is shown in the
+        // existing confirmation dialog, whose accept/cancel callbacks remain unchanged.
+        verifyPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        val verifyHero = makeCard(R.color.sc_hero, 24).apply {
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+        }
+        verifyHero.addView(makeText("SECURITY CODE", 10f, R.color.sc_button_secondary_text, medium = true))
+        verifyHero.addView(makeText("Compare both phones", 20f, R.color.sc_purple, medium = true).apply {
+            setPadding(0, dp(8), 0, dp(4))
+        })
+        verifyHero.addView(makeText(
+            "Only continue when every digit matches on the sender and receiver.",
+            12f, R.color.sc_button_secondary_text
+        ))
+        verifyPanel.addView(verifyHero, fullWidthParams())
+        content.addView(verifyPanel, fullWidthParams())
+
+        // Transfer — bytes/progress are presentation only. Encrypted framing and SHA-256 logic below are untouched.
+        progressPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        val transferHero = makeCard(R.color.sc_hero, 26).apply {
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        progressTitle = makeText("SENDING", 10f, R.color.sc_button_secondary_text, medium = true)
+        progressTitle.letterSpacing = 0.1f
+        progressFileName = makeText("File", 13f, R.color.sc_button_secondary_text)
+        progressFileName.setPadding(0, dp(6), 0, dp(10))
+        progressPercent = makeText("0%", 42f, R.color.sc_purple, medium = true)
+        progressPercent.letterSpacing = 0.06f
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            progressTintList = ColorStateList.valueOf(color(R.color.sc_purple))
+            progressBackgroundTintList = ColorStateList.valueOf(color(R.color.sc_nav_icon))
+            minimumHeight = dp(7)
+        }
+        progressAmounts = makeText("0 B of 0 B · Preparing…", 10f, R.color.sc_button_secondary_text)
+        progressAmounts.setPadding(0, dp(8), 0, 0)
+        transferHero.addView(progressTitle)
+        transferHero.addView(progressFileName)
+        transferHero.addView(progressPercent)
+        transferHero.addView(progressBar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(7)
+        ).apply { topMargin = dp(10) })
+        transferHero.addView(progressAmounts)
+        progressPanel.addView(transferHero, fullWidthParams())
+        progressPanel.addView(
+            makeInfoCard("Keep both phones close and this screen open until the transfer finishes.", R.color.sc_sky),
+            fullWidthParams(top = 14)
+        )
+        content.addView(progressPanel, fullWidthParams())
+
+        statusCard = makeCard(R.color.sc_chat_status, 18).apply {
+            visibility = View.GONE
+            layoutParams = fullWidthParams(top = 12)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        statusText = makeText("", 12f, R.color.sc_text_muted)
+        statusText.setLineSpacing(dp(2).toFloat(), 1f)
+        statusCard.addView(statusText)
+        content.addView(statusCard)
+
+        scroll.addView(content, ScrollView.LayoutParams(
+            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT
+        ))
+        rootLayout.addView(scroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        transferActions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            setPadding(0, dp(8), 0, 0)
+        }
+        pauseResumeButton = makeButton("Pause", primary = false) { togglePauseResume() }
+        stopButton = makeButton("Cancel", primary = false) { cancelCurrentAction() }.apply {
+            backgroundTintList = ColorStateList.valueOf(color(R.color.sc_danger_bg))
+            setTextColor(color(R.color.sc_danger))
+        }
+        transferActions.addView(pauseResumeButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            marginEnd = dp(5)
+        })
+        transferActions.addView(stopButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            marginStart = dp(5)
+        })
+        rootLayout.addView(transferActions, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ))
-        setContentView(root)
+        setContentView(rootLayout)
+        applyUiStage(NearbyUiStage.HUB)
+        refreshTransferActions()
+    }
+
+    private fun color(resourceId: Int): Int = ContextCompat.getColor(this, resourceId)
+
+    private fun makeText(
+        value: String,
+        sizeSp: Float,
+        colorResource: Int,
+        medium: Boolean = false
+    ): TextView = TextView(this).apply {
+        text = value
+        textSize = sizeSp
+        setTextColor(color(colorResource))
+        includeFontPadding = false
+        typeface = ResourcesCompat.getFont(
+            this@P2pNearbyTransferActivity,
+            if (medium) R.font.poppins_medium else R.font.poppins
+        )
+    }
+
+    private fun makeCard(backgroundResource: Int, radiusDp: Int): MaterialCardView =
+        MaterialCardView(this).apply {
+            radius = dp(radiusDp).toFloat()
+            cardElevation = 0f
+            useCompatPadding = false
+            strokeWidth = dp(1)
+            setCardBackgroundColor(color(backgroundResource))
+            setStrokeColor(color(R.color.sc_border))
+        }
+
+    private fun makeButton(label: String, primary: Boolean, click: () -> Unit): MaterialButton =
+        MaterialButton(this).apply {
+            text = label
+            isAllCaps = false
+            textSize = 14f
+            includeFontPadding = false
+            cornerRadius = dp(16)
+            insetTop = 0
+            insetBottom = 0
+            minimumHeight = dp(50)
+            setTextColor(color(if (primary) R.color.sc_button_primary_text else R.color.sc_button_secondary_text))
+            backgroundTintList = ColorStateList.valueOf(
+                color(if (primary) R.color.sc_purple else R.color.sc_button_secondary)
+            )
+            setStrokeColor(ColorStateList.valueOf(color(R.color.sc_border)))
+            strokeWidth = dp(1)
+            typeface = ResourcesCompat.getFont(
+                this@P2pNearbyTransferActivity, R.font.poppins_medium
+            )
+            setOnClickListener { click() }
+        }
+
+    private fun fullWidthParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            if (top > 0) topMargin = dp(top)
+            if (bottom > 0) bottomMargin = dp(bottom)
+        }
+
+    private fun makeInfoCard(message: String, backgroundResource: Int): MaterialCardView {
+        val card = makeCard(backgroundResource, 18).apply {
+            setCardBackgroundColor(color(backgroundResource))
+            setStrokeColor(color(backgroundResource))
+            setPadding(dp(13), dp(12), dp(13), dp(12))
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_pt_shield)
+            imageTintList = ColorStateList.valueOf(color(R.color.sc_text_primary))
+            contentDescription = null
+        }
+        row.addView(icon, LinearLayout.LayoutParams(dp(19), dp(19)).apply {
+            marginEnd = dp(8)
+        })
+        row.addView(makeText(message, 11f, R.color.sc_text_primary), LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+        ))
+        card.addView(row)
+        return card
+    }
+
+    private fun setUiStage(stage: NearbyUiStage) {
+        mainHandler.post {
+            if (!isFinishing && !isDestroyed && ::hubPanel.isInitialized) {
+                applyUiStage(stage)
+            }
+        }
+    }
+
+    private fun applyUiStage(stage: NearbyUiStage) {
+        uiStage = stage
+        hubPanel.visibility = if (stage == NearbyUiStage.HUB) View.VISIBLE else View.GONE
+        discoveryPanel.visibility = if (stage == NearbyUiStage.DISCOVERY) View.VISIBLE else View.GONE
+        verifyPanel.visibility = if (stage == NearbyUiStage.VERIFY) View.VISIBLE else View.GONE
+        progressPanel.visibility = if (stage == NearbyUiStage.TRANSFER || stage == NearbyUiStage.COMPLETE) {
+            View.VISIBLE
+        } else View.GONE
+        when (stage) {
+            NearbyUiStage.HUB -> {
+                headerTitle.text = "Nearby share"
+                headerSubtitle.text = "Same Wi-Fi · no mobile data"
+            }
+            NearbyUiStage.DISCOVERY -> {
+                headerTitle.text = if (transferIsOutgoing) "Find a phone" else "Nearby share"
+                headerSubtitle.text = if (transferIsOutgoing) "Step 1 of 3 · Find a phone" else "Same Wi-Fi · waiting for a sender"
+                discoveryStatusText.text = if (transferIsOutgoing) {
+                    "Looking for nearby phones…"
+                } else {
+                    "Waiting for a nearby sender…"
+                }
+            }
+            NearbyUiStage.VERIFY -> {
+                headerTitle.text = "Check the code"
+                headerSubtitle.text = "Step 2 of 3 · Verify"
+            }
+            NearbyUiStage.TRANSFER, NearbyUiStage.COMPLETE -> {
+                headerTitle.text = if (transferIsOutgoing) "Sending" else "Receiving"
+                headerSubtitle.text = "Step 3 of 3 · Transfer"
+            }
+        }
+        refreshTransferActions()
+    }
+
+    private fun refreshTransferActions() {
+        if (!::transferActions.isInitialized) return
+        val active = transferInProgress.get()
+        transferActions.visibility = if (active) View.VISIBLE else View.GONE
+        pauseResumeButton.visibility = if (active && sending.get() && outgoingStreamActive.get() && !senderDataFinished.get()) {
+            View.VISIBLE
+        } else View.GONE
+        stopButton.visibility = if (active) View.VISIBLE else View.GONE
+        pauseResumeButton.isEnabled = active && sending.get() && outgoingStreamActive.get() &&
+            !senderDataFinished.get() && !pauseRequestInFlight.get()
+        stopButton.isEnabled = active
+    }
+
+    private fun beginTransferProgress(
+        outgoing: Boolean,
+        fileName: String,
+        totalBytes: Long,
+        resumeOffset: Long
+    ) {
+        transferIsOutgoing = outgoing
+        transferFileName = fileName
+        transferTotalBytes = totalBytes.coerceAtLeast(0L)
+        transferStartOffset = resumeOffset.coerceAtLeast(0L)
+        transferStartedAtMs = SystemClock.elapsedRealtime()
+        transferInProgress.set(true)
+        updateTransferProgress(transferStartOffset, transferTotalBytes, fileName, outgoing)
+        setUiStage(NearbyUiStage.TRANSFER)
+        refreshTransferActions()
+    }
+
+    private fun updateTransferProgress(bytes: Long, totalBytes: Long, fileName: String, outgoing: Boolean) {
+        val total = totalBytes.coerceAtLeast(0L)
+        val bounded = bytes.coerceAtLeast(0L).coerceAtMost(if (total > 0L) total else bytes.coerceAtLeast(0L))
+        val percent = if (total > 0L) ((bounded * 100L) / total).toInt().coerceIn(0, 100) else 0
+        val elapsedMs = (SystemClock.elapsedRealtime() - transferStartedAtMs).coerceAtLeast(1L)
+        val rateBytes = ((bounded - transferStartOffset).coerceAtLeast(0L) * 1000L) / elapsedMs
+        val amountText = P2pTransferFileMetadataReader.formatBytes(bounded) + " of " +
+            P2pTransferFileMetadataReader.formatBytes(total)
+        val speedText = if (transferStartedAtMs > 0L) {
+            P2pTransferFileMetadataReader.formatBytes(rateBytes) + "/s"
+        } else "Preparing…"
+        mainHandler.post {
+            if (isFinishing || isDestroyed || !::progressBar.isInitialized) return@post
+            progressTitle.text = if (outgoing) "SENDING" else "RECEIVING"
+            progressFileName.text = fileName + if (outgoing) "\nto nearby phone" else "\nfrom nearby phone"
+            progressPercent.text = "$percent%"
+            progressBar.progress = percent
+            progressAmounts.text = "$amountText · $speedText"
+        }
+    }
+
+    private fun showDiscoveredPeer(peer: P2pLanDiscovery.Peer) {
+        if (!::peerListContainer.isInitialized) return
+        peerListContainer.removeAllViews()
+        val rowCard = makeCard(R.color.sc_card, 22).apply {
+            setCardBackgroundColor(color(R.color.sc_card))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val avatar = makeText("P", 15f, R.color.sc_button_primary_text, medium = true).apply {
+            gravity = Gravity.CENTER
+            background = getDrawable(R.drawable.bg_student_connect_profile_avatar)
+        }
+        row.addView(avatar, LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(10) })
+        val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        details.addView(makeText("Nearby phone", 13f, R.color.sc_text_primary, medium = true))
+        details.addView(makeText("Ready to receive · same Wi-Fi", 10f, R.color.sc_online).apply {
+            setPadding(0, dp(3), 0, 0)
+        })
+        row.addView(details, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val connect = makeButton("Connect", primary = true) {
+            val prepared = preparedOutgoing
+            if (prepared != null && sending.get()) {
+                connect.isEnabled = false
+                showStatus("Connecting locally. Confirm the same six-digit code on both phones when prompted…")
+                ioExecutor.execute { sendToPeer(peer, prepared) }
+            }
+        }.apply {
+            minimumHeight = dp(40)
+            cornerRadius = dp(12)
+            textSize = 12f
+            setPadding(dp(8), 0, dp(8), 0)
+        }
+        row.addView(connect, LinearLayout.LayoutParams(dp(100), dp(42)))
+        rowCard.addView(row)
+        peerListContainer.addView(rowCard, fullWidthParams(top = 8))
+        discoveryStatusText.text = "A nearby phone is ready. Connect only to the person beside you."
     }
 
     private fun prepareOutgoingFile(uri: Uri) {
@@ -241,6 +658,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             showStatus("Another nearby transfer operation is already active.")
             return
         }
+        transferIsOutgoing = true
+        setUiStage(NearbyUiStage.DISCOVERY)
         setOperationUi(true)
         showStatus("Checking file integrity and preparing encrypted transfer…")
 
@@ -264,20 +683,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                             peerPromptShown = true
                             runOnUiThread {
                                 if (isFinishing || isDestroyed || !sending.get()) return@runOnUiThread
-                                AlertDialog.Builder(this@P2pNearbyTransferActivity)
-                                    .setTitle("Nearby receiver found")
-                                    .setMessage("Connect to a phone offering nearby file reception? Make sure the intended recipient started Receive a nearby file.")
-                                    .setPositiveButton("Connect") { _, _ ->
-                                        val current = preparedOutgoing
-                                        if (current != null && sending.get()) {
-                                            // Keep mDNS discovery alive so a reconnect can refresh the
-                                            // receiver's local IP if Wi-Fi briefly disconnects.
-                                            ioExecutor.execute { sendToPeer(peer, current) }
-                                        }
-                                    }
-                                    .setNegativeButton("Cancel") { _, _ -> cancelCurrentAction() }
-                                    .setOnCancelListener { cancelCurrentAction() }
-                                    .show()
+                                showDiscoveredPeer(peer)
                             }
                         }
 
@@ -349,6 +755,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 showStatus("Nearby transfer stopped after reconnect attempts: " + safeMessage(lastError!!))
             }
         } finally {
+            transferInProgress.set(false)
+            refreshTransferActions()
             outgoingStreamActive.set(false)
             outgoingPaused.set(false)
             senderDataFinished.set(true)
@@ -452,6 +860,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             senderDataFinished.set(false)
             outgoingStreamActive.set(true)
             pauseRequestInFlight.set(false)
+            beginTransferProgress(true, offer.fileName, offer.sizeBytes, resumeOffset)
             updatePauseResumeButton(enabled = true, paused = false)
             if (resumeOffset > 0L) {
                 showStatus(
@@ -511,6 +920,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                     val processed = sender.bytesProcessed
                     if (processed - lastStatusBytes >= STATUS_UPDATE_BYTES) {
                         lastStatusBytes = processed
+                        updateTransferProgress(processed, offer.sizeBytes, offer.fileName, outgoing = true)
                         showStatus("Sending directly over local Wi-Fi… " +
                             P2pTransferFileMetadataReader.formatBytes(processed) + " / " +
                             P2pTransferFileMetadataReader.formatBytes(offer.sizeBytes))
@@ -561,6 +971,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             showStatus("Nearby reception is already active.")
             return
         }
+        transferIsOutgoing = false
+        setUiStage(NearbyUiStage.DISCOVERY)
         setReceiveUi(true)
         showStatus("Opening a temporary local receiver…")
         ioExecutor.execute {
@@ -752,6 +1164,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 throw IOException("The sender did not start the approved transfer.")
             }
             socket.soTimeout = SOCKET_READ_TIMEOUT_MS
+            beginTransferProgress(false, offer.fileName, offer.sizeBytes, resumeOffset)
             showStatus(
                 if (resumeOffset > 0L) "Resuming encrypted file over local Wi-Fi…"
                 else "Receiving encrypted file directly over local Wi-Fi…"
@@ -818,6 +1231,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 val receivedBytes = receiver.bytesReceived
                 if (receivedBytes - lastStatusBytes >= STATUS_UPDATE_BYTES) {
                     lastStatusBytes = receivedBytes
+                    updateTransferProgress(receivedBytes, offer.sizeBytes, offer.fileName, outgoing = false)
                     showStatus("Receiving encrypted file… " +
                         P2pTransferFileMetadataReader.formatBytes(receivedBytes) + " / " +
                         P2pTransferFileMetadataReader.formatBytes(offer.sizeBytes))
@@ -868,7 +1282,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 mapOf("reason" to safeMessage(error).take(180))
             ) }
         } finally {
-            runCatching { receiver?.close() }
+            transferInProgress.set(false)
+            refreshTransferActions()
             if (completed) {
                 receivedOffer?.let {
                     resumableDownloads.remove(it.transferId)
@@ -897,20 +1312,26 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         val resumeOffset = resumeState?.tempFile?.length() ?: 0L
         val isResume = resumeState != null
         val canReuseDestination = isResume && resumeState?.destinationUri != null
+        val offerCard = makeCard(R.color.sc_card, 22).apply {
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+        }
+        offerCard.addView(makeText(pending.offer.fileName, 15f, R.color.sc_text_primary, medium = true))
+        offerCard.addView(makeText(
+            P2pTransferFileMetadataReader.formatBytes(pending.offer.sizeBytes) + " · " + pending.offer.mimeType,
+            11f, R.color.sc_text_muted
+        ).apply { setPadding(0, dp(5), 0, dp(10)) })
+        offerCard.addView(makeInfoCard(
+            if (isResume) {
+                "Saved progress: " + P2pTransferFileMetadataReader.formatBytes(resumeOffset) +
+                    ". Resume from the verified encrypted checkpoint."
+            } else {
+                "Only accept if you expected this file from the person next to you."
+            },
+            R.color.sc_sky
+        ))
         AlertDialog.Builder(this)
             .setTitle(if (isResume) "Resume nearby file" else "Incoming nearby file")
-            .setMessage(
-                pending.offer.fileName + "\n" +
-                    P2pTransferFileMetadataReader.formatBytes(pending.offer.sizeBytes) +
-                    "\n" + pending.offer.mimeType +
-                    if (isResume) {
-                        "\n\nA previous connection was interrupted. Verified progress: " +
-                            P2pTransferFileMetadataReader.formatBytes(resumeOffset) +
-                            "\n\nResume this same file from its saved checkpoint?"
-                    } else {
-                        "\n\nOnly accept if you expected this file from the person next to you."
-                    }
-            )
+            .setView(offerCard)
             .setPositiveButton(
                 if (!isResume) "Accept & choose save location"
                 else if (canReuseDestination) "Resume transfer"
@@ -943,14 +1364,49 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     ): Boolean {
         val latch = CountDownLatch(1)
         val confirmed = AtomicBoolean(false)
+        val code = Regex("""Security code:\\s*([0-9]{3}\\s*[0-9]{3})""")
+            .find(message)?.groupValues?.get(1)?.replace(Regex("\\s+"), " ") ?: "••• •••"
+        val details = message
+            .replace(Regex("""(?m)^Security code:\\s*[0-9]{3}\\s*[0-9]{3}\\s*$"""), "")
+            .replace(Regex("""\\n{3,}"""), "\\n\\n")
+            .trim()
         mainHandler.post {
             if (isFinishing || isDestroyed) {
                 latch.countDown()
                 return@post
             }
+            applyUiStage(NearbyUiStage.VERIFY)
+            val dialogContent = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(6), dp(4), dp(6), dp(6))
+            }
+            val codeCard = makeCard(R.color.sc_hero, 24).apply {
+                setCardBackgroundColor(color(R.color.sc_hero))
+                setStrokeColor(color(R.color.sc_hero))
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+            }
+            codeCard.addView(makeText("SECURITY CODE", 10f, R.color.sc_button_secondary_text, medium = true))
+            codeCard.addView(makeText(code, 38f, R.color.sc_purple, medium = true).apply {
+                letterSpacing = 0.13f
+                setPadding(0, dp(8), 0, dp(8))
+                gravity = Gravity.CENTER
+            })
+            codeCard.addView(makeText(
+                "Compare all six digits on both phones.", 11f, R.color.sc_button_secondary_text
+            ))
+            dialogContent.addView(codeCard, fullWidthParams(bottom = 12))
+            val detailsCard = makeCard(R.color.sc_card, 18).apply {
+                setCardBackgroundColor(color(R.color.sc_card))
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+            }
+            detailsCard.addView(makeText(details, 12f, R.color.sc_text_primary).apply {
+                setLineSpacing(dp(3).toFloat(), 1f)
+            })
+            dialogContent.addView(detailsCard, fullWidthParams())
+
             AlertDialog.Builder(this)
-                .setTitle(title)
-                .setMessage(message)
+                .setTitle("Check the code")
+                .setView(dialogContent)
                 .setPositiveButton(positiveLabel) { _, _ ->
                     confirmed.set(true)
                     latch.countDown()
@@ -1126,13 +1582,16 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private fun updatePauseResumeButton(enabled: Boolean, paused: Boolean) {
         mainHandler.post {
             if (!isFinishing && !isDestroyed && ::pauseResumeButton.isInitialized) {
-                pauseResumeButton.text = if (paused) "Resume transfer" else "Pause transfer"
+                pauseResumeButton.text = if (paused) "Resume" else "Pause"
                 pauseResumeButton.isEnabled = enabled && !pauseRequestInFlight.get()
+                refreshTransferActions()
             }
         }
     }
 
     private fun cancelCurrentAction() {
+        transferInProgress.set(false)
+        refreshTransferActions()
         if (receiving.get()) {
             stopReceiving()
             showStatus("Nearby reception stopped.")
@@ -1153,6 +1612,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun stopReceiving() {
+        transferInProgress.set(false)
+        refreshTransferActions()
         receiving.set(false)
         advertisingDiscovery?.close()
         advertisingDiscovery = null
@@ -1191,9 +1652,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private fun setOperationUi(active: Boolean) {
         sendButton.isEnabled = !active && !receiving.get()
         receiveButton.isEnabled = !active && !receiving.get()
-        stopButton.isEnabled = active || receiving.get()
+        refreshTransferActions()
         updatePauseResumeButton(
-            enabled = active && outgoingStreamActive.get() && !senderDataFinished.get(),
+            enabled = active && transferInProgress.get() && outgoingStreamActive.get() && !senderDataFinished.get(),
             paused = outgoingPaused.get()
         )
     }
@@ -1201,15 +1662,50 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private fun setReceiveUi(active: Boolean) {
         sendButton.isEnabled = !active && !sending.get()
         receiveButton.isEnabled = !active && !sending.get()
-        stopButton.isEnabled = active || sending.get()
+        refreshTransferActions()
         updatePauseResumeButton(enabled = false, paused = false)
     }
 
     private fun showStatus(message: String) {
         mainHandler.post {
-            if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
-                statusText.text = message
+            if (isFinishing || isDestroyed || !::statusText.isInitialized) return@post
+            statusText.text = message
+            statusCard.visibility = if (message.isBlank()) View.GONE else View.VISIBLE
+            statusText.setTextColor(color(
+                if (message.contains("could not", true) || message.contains("failed", true) ||
+                    message.contains("cancelled", true) || message.contains("declined", true) ||
+                    message.contains("not confirmed", true)
+                ) R.color.sc_danger else R.color.sc_text_muted
+            ))
+            when {
+                message.startsWith("File sent and SHA-256 verified") ||
+                    message.startsWith("File received and SHA-256 verified") -> {
+                    if (transferTotalBytes > 0L) {
+                        updateTransferProgress(transferTotalBytes, transferTotalBytes, transferFileName, transferIsOutgoing)
+                    }
+                    transferInProgress.set(false)
+                    applyUiStage(NearbyUiStage.COMPLETE)
+                }
+                message.startsWith("Searching for a nearby receiver") ||
+                    message.startsWith("Checking file integrity") ||
+                    message.startsWith("Opening a temporary local receiver") ||
+                    message.startsWith("Ready. Keep this screen open") ||
+                    message.startsWith("Waiting for a nearby sender") ||
+                    message.startsWith("Connected locally") -> applyUiStage(NearbyUiStage.DISCOVERY)
+                message.startsWith("Sending directly over local Wi-Fi") ||
+                    message.startsWith("Receiving encrypted file") ||
+                    message.startsWith("Resuming encrypted file") ||
+                    message.startsWith("Transfer paused") ||
+                    message.startsWith("Transfer resumed") -> {
+                    if (transferInProgress.get()) applyUiStage(NearbyUiStage.TRANSFER)
+                }
+                message.startsWith("File selection cancelled") ||
+                    message.startsWith("Nearby reception stopped") ||
+                    message.startsWith("Nearby transfer cancelled") -> {
+                    if (!transferInProgress.get()) applyUiStage(NearbyUiStage.HUB)
+                }
             }
+            refreshTransferActions()
         }
     }
 
