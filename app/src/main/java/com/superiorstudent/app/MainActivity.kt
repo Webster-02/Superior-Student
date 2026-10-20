@@ -93,6 +93,7 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
     private val savedCredentialsStore by lazy { SavedCredentialsStore(this) }
+    private val transientSessionFailureTracker by lazy { com.superiorstudent.app.core.session.TransientSessionFailureTracker() }
     private val profileCache by lazy { ProfileCache(this, erpRepository) }
     private val erpRepository by lazy { ErpRepository(this) }
     private val attendanceViewModel by lazy { ViewModelProvider(this)[AttendanceViewModel::class.java] }
@@ -591,6 +592,9 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         // Strict TLS: refuse to load content when certificate validation fails.
                         handler.cancel()
+                        if (!loginInProgress || silentReloginInProgress) {
+                            transientSessionFailureTracker.record(error.url.orEmpty(), android.os.SystemClock.elapsedRealtime())
+                        }
                         if (loginInProgress) {
                             failLogin("Secure connection to the university sign-in failed. Check your network and try again.")
                         } else if (restoringSession || silentReloginInProgress) {
@@ -611,6 +615,9 @@ class MainActivity : AppCompatActivity() {
                     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                         super.onReceivedError(view, request, error)
                         if (!request.isForMainFrame) return
+                        if (!loginInProgress || silentReloginInProgress) {
+                            transientSessionFailureTracker.record(request.url.toString(), android.os.SystemClock.elapsedRealtime())
+                        }
 
                         when {
                             loginInProgress -> failLogin(
@@ -643,6 +650,9 @@ class MainActivity : AppCompatActivity() {
                             .classify(statusCode = status)
                         val transientSignal = rejectionSignal ==
                             com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.TRANSIENT
+                        if (transientSignal && (!loginInProgress || silentReloginInProgress)) {
+                            transientSessionFailureTracker.record(request.url.toString(), android.os.SystemClock.elapsedRealtime())
+                        }
                         if (loginInProgress) {
                             if (silentReloginInProgress && rejectionSignal ==
                                 com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.REJECTED) {
@@ -684,6 +694,18 @@ class MainActivity : AppCompatActivity() {
                         if (!loginInProgress &&
                             com.superiorstudent.app.core.session.SessionRejectionClassifier.classify(finalUrl = url) ==
                                 com.superiorstudent.app.core.session.SessionRejectionClassifier.Decision.REJECTED) {
+                            val hasSavedSession = loggedIn || restoringSession || sessionStore.sessionActive
+                            if (hasSavedSession &&
+                                transientSessionFailureTracker.shouldDeferLoginRedirect(
+                                    url,
+                                    android.os.SystemClock.elapsedRealtime()
+                                )
+                            ) {
+                                keepCachedSessionAfterTransientFailure(
+                                    "The ERP request failed temporarily. Showing saved data."
+                                )
+                                return
+                            }
                             handleSessionExpired()
                             return
                         }
