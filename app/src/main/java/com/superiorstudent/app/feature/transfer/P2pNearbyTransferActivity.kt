@@ -18,10 +18,14 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.content.res.ResourcesCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.superiorstudent.app.R
+import com.superiorstudent.app.ui.AppThemePreferences
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -159,6 +163,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
         renderScreen()
         restoreResumableDownloads()
@@ -198,10 +203,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         val page = color(R.color.sc_navy)
         window.statusBarColor = page
         window.navigationBarColor = page
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        window.decorView.systemUiVisibility = if (night) 0 else (
-            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        )
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !AppThemePreferences.isNight(this@P2pNearbyTransferActivity)
+            isAppearanceLightNavigationBars = !AppThemePreferences.isNight(this@P2pNearbyTransferActivity)
+        }
 
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -310,13 +316,15 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         val discoveryHeading = makeText("Looking for nearby phones", 18f, R.color.sc_text_primary, medium = true)
         val discoveryCopy = makeText(
-            "Ask your classmate to open U2U and tap Receive. Keep both phones on the same Wi-Fi.",
+            "Ask your classmate to open U2U and tap Receive.",
             12f, R.color.sc_text_muted
         ).apply {
             setPadding(0, dp(6), 0, dp(4))
             setLineSpacing(dp(2).toFloat(), 1f)
         }
-        discoveryStatusText = makeText("Searching on this Wi-Fi…", 12f, R.color.sc_text_muted)
+        discoveryStatusText = makeText("Searching on this Wi-Fi…", 12f, R.color.sc_text_muted).apply {
+            visibility = View.GONE
+        }
         discoveryHero.addView(discoveryHeading)
         discoveryHero.addView(discoveryCopy)
         discoveryHero.addView(discoveryStatusText, LinearLayout.LayoutParams(
@@ -398,7 +406,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         statusText = makeText("", 12f, R.color.sc_text_muted)
         statusText.setLineSpacing(dp(2).toFloat(), 1f)
         statusCard.addView(statusText)
-        content.addView(statusCard)
+        // Keep status handling detached from the staged screen so it cannot stack over the new panels.
+        statusCard.visibility = View.GONE
 
         scroll.addView(content, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
@@ -427,8 +436,30 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ))
         setContentView(rootLayout)
+        applyNearbyWindowInsets()
         applyUiStage(NearbyUiStage.HUB)
         refreshTransferActions()
+    }
+
+    private fun applyNearbyWindowInsets() {
+        val baseLeft = rootLayout.paddingLeft
+        val baseTop = rootLayout.paddingTop
+        val baseRight = rootLayout.paddingRight
+        val baseBottom = rootLayout.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, windowInsets ->
+            val bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(
+                baseLeft + bars.left,
+                baseTop + bars.top,
+                baseRight + bars.right,
+                baseBottom + maxOf(bars.bottom, ime.bottom)
+            )
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(rootLayout)
     }
 
     private fun color(resourceId: Int): Int = ContextCompat.getColor(this, resourceId)
@@ -1676,7 +1707,18 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         mainHandler.post {
             if (isFinishing || isDestroyed || !::statusText.isInitialized) return@post
             statusText.text = message
-            statusCard.visibility = if (message.isBlank()) View.GONE else View.VISIBLE
+            statusCard.visibility = View.GONE
+            val lowerMessage = message.lowercase()
+            val userActionNeeded = listOf(
+                "could not", "failed", "cancelled", "declined", "not confirmed",
+                "unavailable", "invalid", "interrupted", "error"
+            ).any { lowerMessage.contains(it) }
+            if (userActionNeeded && message.isNotBlank()) {
+                val compactMessage = message.lineSequence().firstOrNull()?.trim().orEmpty().take(120)
+                if (compactMessage.isNotBlank()) {
+                    Toast.makeText(this, compactMessage, Toast.LENGTH_SHORT).show()
+                }
+            }
             statusText.setTextColor(color(
                 if (message.contains("could not", true) || message.contains("failed", true) ||
                     message.contains("cancelled", true) || message.contains("declined", true) ||

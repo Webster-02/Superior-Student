@@ -24,12 +24,16 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.card.MaterialCardView
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
+import com.superiorstudent.app.ui.AppThemePreferences
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatConversation
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessage
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessageReaction
@@ -211,6 +215,7 @@ class StudentChatActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
 
         val session = SessionStore(this)
@@ -222,6 +227,7 @@ class StudentChatActivity : AppCompatActivity() {
         setContentView(R.layout.activity_student_chat)
         auth = FirebaseAuth.getInstance()
         bindViews()
+        applyChatWindowInsets()
 
         otherUid = intent.getStringExtra(EXTRA_OTHER_UID).orEmpty()
         otherDisplayName = intent.getStringExtra(EXTRA_OTHER_DISPLAY_NAME)
@@ -343,14 +349,65 @@ class StudentChatActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun applyChatWindowInsets() {
+        val content = findViewById<ViewGroup>(android.R.id.content)
+        val root = content.getChildAt(0)
+        val baseLeft = root.paddingLeft
+        val baseTop = root.paddingTop
+        val baseRight = root.paddingRight
+        val baseBottom = root.paddingBottom
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = ContextCompat.getColor(this, R.color.sc_navy)
+        window.navigationBarColor = ContextCompat.getColor(this, R.color.sc_navy)
+        WindowCompat.getInsetsController(window, root).apply {
+            isAppearanceLightStatusBars = !AppThemePreferences.isNight(this@StudentChatActivity)
+            isAppearanceLightNavigationBars = !AppThemePreferences.isNight(this@StudentChatActivity)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, windowInsets ->
+            val bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(
+                baseLeft + bars.left,
+                baseTop + bars.top,
+                baseRight + bars.right,
+                baseBottom + maxOf(bars.bottom, ime.bottom)
+            )
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
     private fun bindViews() {
         contactNameText = findViewById(R.id.studentChatContactName)
         contactInitialsText = findViewById(R.id.studentChatAvatarInitials)
         contactPresenceText = findViewById(R.id.studentChatPresenceIndicator)
         typingIndicatorText = findViewById(R.id.studentChatTypingIndicator)
         statusText = findViewById(R.id.studentChatStatus)
+        val statusCard = findViewById<View>(R.id.studentChatStatusCard)
+        statusCard.visibility = View.GONE
         transferControlButton = findViewById(R.id.studentChatTransferControl)
         transferControlButton.visibility = View.GONE
+        statusText.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val message = s?.toString()?.trim().orEmpty()
+                statusCard.visibility = if (transferControlButton.visibility == View.VISIBLE) View.VISIBLE else View.GONE
+                if (message.isBlank() || transferControlButton.visibility == View.VISIBLE) return
+                if (message.endsWith("…") || message.endsWith("...") ||
+                    message.startsWith("Checking connection and opening chat") ||
+                    message.startsWith("Private chat ·") ||
+                    message.startsWith("Sending message") ||
+                    message.startsWith("Preparing encrypted file offer")
+                ) return
+                val compactMessage = message.replace(Regex("\\s+"), " ").take(120)
+                if (compactMessage.isNotBlank()) {
+                    Toast.makeText(this@StudentChatActivity, compactMessage, Toast.LENGTH_SHORT).show()
+                }
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
         messagesScroll = findViewById(R.id.studentChatMessagesScroll)
         messagesContainer = findViewById(R.id.studentChatMessagesContainer)
         emptyStateText = findViewById(R.id.studentChatEmptyState)
@@ -404,7 +461,7 @@ class StudentChatActivity : AppCompatActivity() {
 
                 conversation = opened
                 statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
-                statusText.text = "Private chat · Only this accepted connection can access these messages."
+                statusText.text = ""
                 setComposerEnabled(true)
                 startMessagesListener(uid, opened)
                 startIncomingOffersListener(opened)
@@ -481,7 +538,7 @@ class StudentChatActivity : AppCompatActivity() {
 
             val bubbleContent = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(9), dp(12), dp(8))
+                setPadding(dp(10), dp(7), dp(10), dp(6))
             }
 
             val body = TextView(this).apply {
@@ -491,7 +548,7 @@ class StudentChatActivity : AppCompatActivity() {
                     this@StudentChatActivity,
                     if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_text_primary
                 ))
-                maxWidth = (resources.displayMetrics.widthPixels - dp(92)).coerceAtLeast(dp(170))
+                maxWidth = (resources.displayMetrics.widthPixels * 0.78f - dp(20)).toInt().coerceAtLeast(dp(150))
                 setLineSpacing(dp(2).toFloat(), 1f)
             }
             val replyId = message.replyToMessageId
@@ -532,30 +589,41 @@ class StudentChatActivity : AppCompatActivity() {
             }
             bubbleContent.addView(body)
 
+            val metadataRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            }
             val time = TextView(this).apply {
                 text = message.createdAt?.let {
                     SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(it.toDate().time))
-                } ?: "Sending…"
+                }.orEmpty()
                 textSize = 10f
                 gravity = Gravity.END
                 setTextColor(ContextCompat.getColor(
                     this@StudentChatActivity,
                     if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_text_muted
                 ))
-                setPadding(0, dp(3), 0, 0)
+                setPadding(0, dp(2), 0, 0)
             }
-            bubbleContent.addView(time)
-
+            metadataRow.addView(time, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
             if (isOutgoing) {
                 val receipt = TextView(this).apply {
                     textSize = 9f
                     gravity = Gravity.END
-                    setPadding(0, dp(2), 0, 0)
+                    setTextColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_button_primary_text))
+                    setPadding(dp(4), dp(2), 0, 0)
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 }
                 outgoingReceiptViews[message.id] = receipt
-                bubbleContent.addView(receipt)
+                metadataRow.addView(receipt, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(2) })
             }
+            bubbleContent.addView(metadataRow, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(3) })
             val reactionSummary = TextView(this).apply {
                 textSize = 10f
                 maxLines = 1
@@ -858,8 +926,8 @@ class StudentChatActivity : AppCompatActivity() {
                 .isRead(message.createdAt, recipientLastReadAt)
             receipt.text = when {
                 message.createdAt == null -> "Sending…"
-                read -> "Read ✓✓"
-                else -> "Sent ✓"
+                read -> "✓✓"
+                else -> "✓"
             }
             receipt.contentDescription = when {
                 message.createdAt == null -> "Message is sending"
@@ -989,6 +1057,9 @@ class StudentChatActivity : AppCompatActivity() {
                 transferControlButton.visibility = View.VISIBLE
             }
         }
+        if (transferControlButton.visibility == View.VISIBLE) {
+            findViewById<View>(R.id.studentChatStatusCard).visibility = View.VISIBLE
+        }
     }
 
     private fun toggleOutgoingTransferPause() {
@@ -1038,6 +1109,7 @@ class StudentChatActivity : AppCompatActivity() {
             transferControlButton.visibility = View.GONE
             transferControlButton.isEnabled = true
             transferControlButton.text = "Pause transfer"
+            findViewById<View>(R.id.studentChatStatusCard).visibility = View.GONE
         }
     }
 
