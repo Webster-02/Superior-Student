@@ -42,6 +42,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.superiorstudent.app.core.config.ErpConfig
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.core.session.SessionStore
+import com.superiorstudent.app.core.session.SavedCredentialsStore
 import com.superiorstudent.app.core.webview.ModuleDataScriptSelector
 import com.superiorstudent.app.core.webview.Scripts
 import com.superiorstudent.app.feature.profile.data.ProfileCache
@@ -86,8 +87,9 @@ class MainActivity : AppCompatActivity() {
     private var homePreloadComplete = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
-    private val profileCache by lazy { ProfileCache(this) }
-    private val erpRepository by lazy { ErpRepository() }
+    private val savedCredentialsStore by lazy { SavedCredentialsStore(this) }
+    private val profileCache by lazy { ProfileCache(this, erpRepository) }
+    private val erpRepository by lazy { ErpRepository(this) }
     private val attendanceViewModel by lazy { ViewModelProvider(this)[AttendanceViewModel::class.java] }
     private val attendanceRenderer by lazy {
         AttendanceRenderer(this, attendanceViewModel, ::openAttendanceDetail, ::showAttendanceSummary)
@@ -214,7 +216,6 @@ class MainActivity : AppCompatActivity() {
             loginProbeAttempts = 0
             profileReadAttempts = 0
             homePreloadComplete = false
-            erpRepository.clearCache()
             binding.loginButton.isEnabled = false
             binding.loginStatus.text = "Signing in securely…"
             styleLoginStatus()
@@ -861,6 +862,8 @@ class MainActivity : AppCompatActivity() {
         startSessionHeartbeat()
         sessionStore.sessionActive = true
         sessionStore.username = username
+        if (password.isNotBlank()) savedCredentialsStore.save(username, password)
+        if (erpRepository.activateAccount(username)) profileCache.clear() else profileCache.reload()
         CookieManager.getInstance().flush()
         binding.loginStatus.text = ""
         styleLoginStatus()
@@ -2825,7 +2828,6 @@ class MainActivity : AppCompatActivity() {
         loginAttempt = 0
         preloadingModule = null
         preloadQueue.clear()
-        erpRepository.clearCache()
         webView.stopLoading()
         webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
@@ -2847,8 +2849,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun logout() {
+        savedCredentialsStore.clear()
         sessionStore.clear()
         profileCache.clear()
+        erpRepository.clearAccountIdentity()
         getSharedPreferences("superior_student_preferences", MODE_PRIVATE).edit().clear().apply()
         CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
         webView.clearHistory()

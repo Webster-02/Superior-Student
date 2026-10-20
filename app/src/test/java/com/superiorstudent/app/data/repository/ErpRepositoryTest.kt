@@ -29,17 +29,46 @@ class ErpRepositoryTest {
     fun cachesAndInvalidatesPayloadPerModule() {
         val repository = ErpRepository()
         repository.cachePayload(StudentModule.ATTENDANCE, """{"overallAttendance":90}""")
-        repository.cachePayload(StudentModule.FEE, """{"cards":[]}""")
+        repository.cachePayload(StudentModule.FEE, """{"cards":[{"label":"Outstanding balance","value":"10"}]}""")
 
         assertEquals("""{"overallAttendance":90}""", repository.cachedPayload(StudentModule.ATTENDANCE))
-        assertEquals("""{"cards":[]}""", repository.cachedPayload(StudentModule.FEE))
+        assertEquals("""{"cards":[{"label":"Outstanding balance","value":"10"}]}""", repository.cachedPayload(StudentModule.FEE))
 
         repository.clearCachedPayload(StudentModule.ATTENDANCE)
         assertNull(repository.cachedPayload(StudentModule.ATTENDANCE))
-        assertEquals("""{"cards":[]}""", repository.cachedPayload(StudentModule.FEE))
+        assertEquals("""{"cards":[{"label":"Outstanding balance","value":"10"}]}""", repository.cachedPayload(StudentModule.FEE))
 
         repository.clearCache()
         assertNull(repository.cachedPayload(StudentModule.FEE))
+    }
+
+    @Test
+    fun neverReplacesUsablePayloadWithEmptyOrMalformedData() {
+        val repository = ErpRepository()
+        val goodPayload = """{"cards":[{"label":"Outstanding balance","value":"1500"}]}"""
+        assertTrue(repository.cachePayload(StudentModule.FEE, goodPayload))
+        val savedTimestamp = repository.lastUpdated(StudentModule.FEE)
+
+        assertFalse(repository.cachePayload(StudentModule.FEE, """{"cards":[]}"""))
+        assertFalse(repository.cachePayload(StudentModule.FEE, """not-json"""))
+        assertEquals(goodPayload, repository.cachedPayload(StudentModule.FEE))
+        assertEquals(savedTimestamp, repository.lastUpdated(StudentModule.FEE))
+    }
+
+    @Test
+    fun payloadFreshnessUsesFiveMinuteWindow() {
+        val repository = ErpRepository()
+        assertTrue(repository.needsRefresh(StudentModule.TIMETABLE))
+        assertTrue(repository.cachePayload(
+            StudentModule.TIMETABLE,
+            """{"records":[{"headers":["Day","Time","Course"],"values":["Monday","09:00-10:00","Functional English"]}]}"""
+        ))
+        val savedAt = repository.lastUpdated(StudentModule.TIMETABLE) ?: error("timestamp missing")
+        assertFalse(repository.needsRefresh(StudentModule.TIMETABLE, savedAt + 1L))
+        assertTrue(repository.needsRefresh(
+            StudentModule.TIMETABLE,
+            savedAt + ErpRepository.CACHE_TTL_MS + 1L
+        ))
     }
 
     @Test

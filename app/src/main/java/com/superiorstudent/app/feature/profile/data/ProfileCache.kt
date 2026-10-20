@@ -2,63 +2,68 @@ package com.superiorstudent.app.feature.profile.data
 
 import android.content.Context
 import com.superiorstudent.app.core.parsing.ParsingUtils
+import com.superiorstudent.app.data.repository.ErpRepository
+import org.json.JSONObject
+import java.io.File
 
-/**
- * Lightweight cache for the student's display profile (name + GPA summary).
- * Replaces the old plaintext SharedPreferences storage of personal data.
- * Values are kept in memory and mirrored to a private file so the dashboard
- * can render instantly after process death without persisting PII in prefs.
- */
-class ProfileCache(context: Context) {
-
-    private val file = java.io.File(context.filesDir, FILE_NAME)
-
+/** Profile/GPA accessor backed by the same durable repository as every ERP module. */
+class ProfileCache(
+    context: Context,
+    private val repository: ErpRepository = ErpRepository(context)
+) {
+    private val legacyFile = File(context.filesDir, FILE_NAME)
     var studentName: String = ""
         private set
     var cgpa: String = ""
         private set
     var sgpa: String = ""
         private set
+    var lastUpdated: Long = 0L
+        private set
 
-    init {
-        load()
-    }
+    init { reload() }
+
+    fun isStale(now: Long = System.currentTimeMillis()): Boolean =
+        lastUpdated <= 0L || now - lastUpdated >= ErpRepository.CACHE_TTL_MS
 
     fun save(name: String?, cgpaValue: String?, sgpaValue: String?) {
-        if (!name.isNullOrBlank() && ParsingUtils.isValidStudentName(name)) studentName = name
-        if (!cgpaValue.isNullOrBlank()) cgpa = cgpaValue
-        if (!sgpaValue.isNullOrBlank()) sgpa = sgpaValue
-        persist()
+        val validName = name?.takeIf { ParsingUtils.isValidStudentName(it) }
+        val validCgpa = cgpaValue?.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
+        val validSgpa = sgpaValue?.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
+        if (validName == null && validCgpa == null && validSgpa == null) return
+        repository.saveProfileSnapshot(validName, validCgpa, validSgpa)
+        reload()
     }
 
     fun clear() {
         studentName = ""
         cgpa = ""
         sgpa = ""
-        file.delete()
+        lastUpdated = 0L
+        repository.clearProfileSnapshot()
+        runCatching { legacyFile.delete() }
     }
 
-    private fun load() {
-        try {
-            if (!file.exists()) return
-            val json = org.json.JSONObject(file.readText(Charsets.UTF_8))
-            studentName = json.optString("name", "")
-            cgpa = json.optString("cgpa", "")
-            sgpa = json.optString("sgpa", "")
-        } catch (_: Exception) {
-            // Corrupt cache is simply ignored; it will be refreshed on next login.
+    fun reload() {
+        repository.profileSnapshot()?.let { cached ->
+            studentName = cached.name
+            cgpa = cached.cgpa
+            sgpa = cached.sgpa
+            lastUpdated = cached.lastUpdated
+            return
         }
-    }
-
-    private fun persist() {
         try {
-            val json = org.json.JSONObject()
-                .put("name", studentName)
-                .put("cgpa", cgpa)
-                .put("sgpa", sgpa)
-            file.writeText(json.toString(), Charsets.UTF_8)
+            if (!legacyFile.isFile) return
+            val json = JSONObject(legacyFile.readText(Charsets.UTF_8))
+            studentName = json.optString("name", "").takeIf { ParsingUtils.isValidStudentName(it) }.orEmpty()
+            cgpa = ParsingUtils.validGpa(json.optString("cgpa", ""))
+            sgpa = ParsingUtils.validGpa(json.optString("sgpa", ""))
+            lastUpdated = legacyFile.lastModified().takeIf { it > 0L } ?: System.currentTimeMillis()
+            if (studentName.isNotBlank() || cgpa.isNotBlank() || sgpa.isNotBlank()) {
+                repository.saveProfileSnapshot(studentName, cgpa, sgpa, lastUpdated)
+            }
         } catch (_: Exception) {
-            // Non-critical: cache write failures only cost a slower first paint.
+            // A corrupt legacy snapshot is ignored without affecting login.
         }
     }
 
