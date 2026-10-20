@@ -13,17 +13,13 @@ enum class HomeHeroType { CGPA, ATTENDANCE }
 
 object HomeDisplayRules {
     /**
-     * Stable Home hero rule, evaluated from persisted data on first Home render:
-     * 1) use CGPA if the saved profile contains a valid CGPA;
-     * 2) otherwise use Attendance if saved attendance has a valid overall percentage;
-     * 3) if neither is available, use the CGPA hero with its normal unavailable placeholder.
-     *
-     * The chosen type stays fixed for this signed-in account/session while values update in place.
+     * Once attendance loading has settled, prefer the computed attendance summary over CGPA.
+     * The caller shows a skeleton while attendance is still loading and uses CGPA only as fallback.
      */
     fun chooseHero(hasValidSavedCgpa: Boolean, hasValidSavedAttendance: Boolean): HomeHeroType =
         when {
-            hasValidSavedCgpa -> HomeHeroType.CGPA
             hasValidSavedAttendance -> HomeHeroType.ATTENDANCE
+            hasValidSavedCgpa -> HomeHeroType.CGPA
             else -> HomeHeroType.CGPA
         }
 

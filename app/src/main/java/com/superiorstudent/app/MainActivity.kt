@@ -83,6 +83,8 @@ import com.superiorstudent.app.feature.results.ui.ResultsRenderer
 import com.superiorstudent.app.feature.enrolledcourses.ui.EnrolledCoursesRenderer
 import com.superiorstudent.app.feature.timetable.domain.NextClassSelector
 import org.json.JSONObject
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private data class ModuleScreenSnapshot(
@@ -95,6 +97,12 @@ class MainActivity : AppCompatActivity() {
         val attendanceDetailUrl: String?,
         val renderedData: ModuleData?,
         val wasNightTheme: Boolean
+    )
+
+    private data class HomeAttendanceSnapshot(
+        val sourcePayload: String?,
+        val percentage: Double?,
+        val safeLeaves: Int?
     )
 
     private lateinit var binding: ActivityMainBinding
@@ -114,10 +122,14 @@ class MainActivity : AppCompatActivity() {
     private var sessionOperationTimeoutRunnable: Runnable? = null
     private var sessionHeartbeatGeneration = 0
     private var sessionHeartbeatTimeoutRunnable: Runnable? = null
-    private var homeHeroType: HomeHeroType? = null
     private var homeHeroNight: Boolean? = null
-    private var homeHeroAttendancePercentage: Double? = null
-    private var homeHeroSafeLeaves: Int? = null
+    private var homeAttendanceSnapshot: HomeAttendanceSnapshot? = null
+    private var homeAttendanceSourcePayload: String? = null
+    private var homeAttendanceResolutionPending = false
+    private var homeAttendanceResolutionGeneration = 0
+    private val homeAttendanceExecutor: ExecutorService = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "HomeAttendanceResolver").apply { isDaemon = true }
+    }
     private val moduleScreenSnapshots = mutableMapOf<StudentModule, ModuleScreenSnapshot>()
     private var attendanceSummarySnapshot: ModuleScreenSnapshot? = null
     private var homePreloadComplete = false
@@ -1889,10 +1901,7 @@ class MainActivity : AppCompatActivity() {
         val accountChanged = erpRepository.activateAccount(username)
         if (accountChanged) {
             getSharedPreferences(NATIVE_UI_STATE_PREFS, MODE_PRIVATE).edit().clear().apply()
-            homeHeroType = null
-            homeHeroNight = null
-            homeHeroAttendancePercentage = null
-            homeHeroSafeLeaves = null
+            resetHomeAttendanceState()
             profileCache.clear()
         } else {
             profileCache.reload()
@@ -2314,7 +2323,8 @@ class MainActivity : AppCompatActivity() {
         }
         if (!ensureWebView()) {
             preloadingModule = null
-            homePreloadComplete = false
+            homePreloadComplete = true
+            if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
@@ -3768,6 +3778,71 @@ class MainActivity : AppCompatActivity() {
         renderHomeDashboard()
     }
 
+    /**
+     * Resolves the Home summary from the existing persisted ERP attendance payload off the UI thread.
+     * The AttendanceRenderer summary method is the single source of truth; this adds no parser or fetch.
+     */
+    private fun ensureHomeAttendanceSnapshot(payload: String?) {
+        if (!homeAttendanceResolutionPending && homeAttendanceSnapshot?.sourcePayload == payload) return
+        if (homeAttendanceResolutionPending && homeAttendanceSourcePayload == payload) return
+
+        homeAttendanceSourcePayload = payload
+        val generation = ++homeAttendanceResolutionGeneration
+        if (payload.isNullOrBlank()) {
+            homeAttendanceSnapshot = HomeAttendanceSnapshot(payload, null, null)
+            homeAttendanceResolutionPending = false
+            return
+        }
+
+        homeAttendanceResolutionPending = true
+        // Resolve the lazy renderer on the main thread before using its pure summary calculation.
+        val renderer = attendanceRenderer
+        homeAttendanceExecutor.execute {
+            val resolved = try {
+                val data = parseModuleData(payload)
+                    ?.takeIf {
+                        erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) &&
+                            it.attendanceDetail == null
+                    }
+                val percentage = data
+                    ?.let(renderer::summaryPercentageForHome)
+                    ?.percentage
+                    ?.takeIf { HomeDisplayRules.attendanceBand(it) != null }
+                val safeLeaves = if (data != null && percentage != null) {
+                    findOverallAttendanceCounts(data, percentage)?.let { counts ->
+                        AttendanceCalculator.calculate(counts.first, counts.second)?.safeFutureLeaves
+                    }
+                } else {
+                    null
+                }
+                HomeAttendanceSnapshot(payload, percentage, safeLeaves)
+            } catch (error: Exception) {
+                android.util.Log.w("HomeAttendance", "Could not resolve cached attendance", error)
+                HomeAttendanceSnapshot(payload, null, null)
+            }
+
+            handler.post {
+                if (generation != homeAttendanceResolutionGeneration) return@post
+                if (erpRepository.cachedPayload(StudentModule.ATTENDANCE) != payload) {
+                    homeAttendanceResolutionPending = false
+                    if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+                    return@post
+                }
+                homeAttendanceSnapshot = resolved
+                homeAttendanceResolutionPending = false
+                if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+            }
+        }
+    }
+
+    private fun resetHomeAttendanceState() {
+        homeAttendanceResolutionGeneration++
+        homeAttendanceResolutionPending = false
+        homeAttendanceSourcePayload = null
+        homeAttendanceSnapshot = null
+        homeHeroNight = null
+    }
+
     private fun renderHomeDashboard() {
         if (!::binding.isInitialized) return
 
@@ -3777,33 +3852,30 @@ class MainActivity : AppCompatActivity() {
         PageHeader.bind(this, binding.homeDateLine, binding.studentName, binding.studentAvatarInitial, fullName)
         renderMoreProfileCard()
 
-        val attendanceData = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
-            ?.let { parseModuleData(it) }
-            ?.takeIf { erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) }
-        val attendanceSummary = attendanceData?.let { attendanceRenderer.summaryPercentageForHome(it) }
-        val attendancePercent = attendanceSummary?.percentage
-            ?.takeIf { HomeDisplayRules.attendanceBand(it) != null }
+        val attendancePayload = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
+        ensureHomeAttendanceSnapshot(attendancePayload)
+        val attendanceSnapshot = homeAttendanceSnapshot?.takeIf { it.sourcePayload == attendancePayload }
+        val attendancePercent = attendanceSnapshot?.percentage
+        val attendanceLoading = homeAttendanceResolutionPending || !homePreloadComplete
         val cgpa = profileCache.cgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
             ?.let { ParsingUtils.validGpa(it) }.orEmpty()
         val sgpa = profileCache.sgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
             ?.let { ParsingUtils.validGpa(it) }.orEmpty()
 
-        // Keep the chosen hero type fixed for this account/session. New cache values
-        // update the current card in place; an unrelated module finishing prefetch
-        // cannot swap Attendance and CGPA after the first render.
-        val selectedHeroType = homeHeroType ?: HomeDisplayRules.chooseHero(
-            hasValidSavedCgpa = cgpa.isNotBlank(),
-            hasValidSavedAttendance = attendancePercent != null
-        ).also { homeHeroType = it }
-        if (attendancePercent != null) {
-            homeHeroAttendancePercentage = attendancePercent
-            val counts = attendanceData?.let { findOverallAttendanceCounts(it, attendancePercent) }
-            homeHeroSafeLeaves = counts?.let { pair ->
-                AttendanceCalculator.calculate(pair.first, pair.second)?.safeFutureLeaves
-            }
+        // Prefer the existing Attendance screen's computed summary as soon as it is available.
+        // Keep the hero skeletal while attendance is still being resolved or prefetched; only
+        // use CGPA after that load path has settled without a usable attendance percentage.
+        val selectedHeroType = when {
+            attendancePercent != null -> HomeHeroType.ATTENDANCE
+            attendanceLoading -> null
+            else -> HomeDisplayRules.chooseHero(
+                hasValidSavedCgpa = cgpa.isNotBlank(),
+                hasValidSavedAttendance = false
+            )
         }
-        val heroAttendancePercent = homeHeroAttendancePercentage ?: attendancePercent ?: 0.0
-        val heroTag = "pachattar_home_hero_" + selectedHeroType.name
+        val heroAttendancePercent = attendancePercent ?: 0.0
+        val heroSafeLeaves = attendanceSnapshot?.safeLeaves
+        val heroTag = "pachattar_home_hero_" + (selectedHeroType?.name ?: "SKELETON")
         val currentHero = binding.homeHeroContainer.getChildAt(0) as? LinearLayout
         val shouldRebuildHero = currentHero == null ||
             currentHero.tag != heroTag ||
@@ -3811,7 +3883,8 @@ class MainActivity : AppCompatActivity() {
         if (shouldRebuildHero) {
             binding.homeHeroContainer.removeAllViews()
             val hero = when (selectedHeroType) {
-                HomeHeroType.ATTENDANCE -> HeroCard.attendance(this, heroAttendancePercent, homeHeroSafeLeaves).also { card ->
+                null -> Skeleton.hero(this)
+                HomeHeroType.ATTENDANCE -> HeroCard.attendance(this, heroAttendancePercent, heroSafeLeaves).also { card ->
                     card.setOnClickListener { loadModule(StudentModule.ATTENDANCE) }
                     attachPressFeedback(card)
                 }
@@ -3827,7 +3900,8 @@ class MainActivity : AppCompatActivity() {
             homeHeroNight = Palette.isNight(this)
         } else {
             when (selectedHeroType) {
-                HomeHeroType.ATTENDANCE -> HeroCard.updateAttendance(currentHero!!, heroAttendancePercent, homeHeroSafeLeaves)
+                null -> Unit
+                HomeHeroType.ATTENDANCE -> HeroCard.updateAttendance(currentHero!!, heroAttendancePercent, heroSafeLeaves)
                 HomeHeroType.CGPA -> HeroCard.updateCgpa(currentHero!!, cgpa)
             }
         }
@@ -3853,7 +3927,8 @@ class MainActivity : AppCompatActivity() {
             this, binding.cgpaCard, binding.studentCgpaLabel, binding.studentCgpa, binding.studentCgpaCaption,
             "CGPA", cgpa, "", Palette.lav(this), false, 38f
         )
-        binding.cgpaCard.visibility = View.VISIBLE
+        binding.cgpaCard.visibility =
+            if (selectedHeroType == HomeHeroType.CGPA) View.GONE else View.VISIBLE
 
         BentoCard.bind(
             this, binding.sgpaCard, binding.studentSgpaLabel, binding.studentSgpa, binding.studentSgpaCaption,
@@ -3974,22 +4049,19 @@ class MainActivity : AppCompatActivity() {
         val timeText = ParsingUtils.formatScheduleTime(next.time)
             .replace("\n–\n", " – ").replace("\n", " ").trim()
         val startTimeText = timeText.substringBefore("–").trim().ifBlank { timeText }
-        val dayLabel = when {
-            daysUntil == 0 -> "Today"
+        val weekdayLabel = next.day.take(3).replaceFirstChar { it.uppercase() }
+        val nextClassLabel = "$weekdayLabel, $startTimeText"
+        val timingDetail = when {
+            minutesUntil == 0 -> "Starting now"
+            minutesUntil < 60 -> "Starts in $minutesUntil min"
+            daysUntil == 0 -> "Starts in ${minutesUntil / 60}h ${minutesUntil % 60}m"
             daysUntil == 1 -> "Tomorrow"
-            else -> next.day.take(3).replaceFirstChar { it.uppercase() }
-        }
-        val nextClassLabel = if (minutesUntil > 100) {
-            "$dayLabel, $startTimeText"
-        } else if (minutesUntil == 0) {
-            "Next class · starting now"
-        } else {
-            "Next class · in $minutesUntil min"
+            else -> "Starts in $daysUntil days"
         }
 
         binding.nextClassLabel.text = nextClassLabel
         HomeValueTransition.updateText(binding.homeNextClassTitle, ParsingUtils.cleanDisplayText(next.course))
-        HomeValueTransition.updateText(binding.homeNextClassTime, timeText)
+        HomeValueTransition.updateText(binding.homeNextClassTime, timingDetail)
         binding.homeNextClassTitle.typeface =
             androidx.core.content.res.ResourcesCompat.getFont(this, R.font.poppins_medium) ?: typeface
         attachPressFeedback(container)
@@ -4777,10 +4849,7 @@ class MainActivity : AppCompatActivity() {
         cancelParallelPrefetch()
         moduleScreenSnapshots.clear()
         attendanceSummarySnapshot = null
-        homeHeroType = null
-        homeHeroNight = null
-        homeHeroAttendancePercentage = null
-        homeHeroSafeLeaves = null
+        resetHomeAttendanceState()
         moduleFetchGenerations.clear()
         moduleFetchStartedAtMs.clear()
         lastModuleFetchAttemptAtElapsedMs.clear()
@@ -4840,6 +4909,8 @@ class MainActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         activityResumed = false
+        homeAttendanceResolutionGeneration++
+        homeAttendanceExecutor.shutdownNow()
         stopSessionHeartbeat()
         cancelSessionOperationTimeout()
         cancelSessionHeartbeatTimeout()

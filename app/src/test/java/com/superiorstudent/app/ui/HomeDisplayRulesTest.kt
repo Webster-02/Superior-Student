@@ -20,8 +20,8 @@ class HomeDisplayRulesTest {
         assertEquals("S", HomeDisplayRules.initials(""))
     }
 
-    @Test fun homeHeroPrefersSavedCgpaThenSavedAttendanceAndDefaultsToCgpaPlaceholder() {
-        assertEquals(HomeHeroType.CGPA, HomeDisplayRules.chooseHero(hasValidSavedCgpa = true, hasValidSavedAttendance = true))
+    @Test fun homeHeroPrefersAttendanceAndUsesCgpaOnlyAsFallback() {
+        assertEquals(HomeHeroType.ATTENDANCE, HomeDisplayRules.chooseHero(hasValidSavedCgpa = true, hasValidSavedAttendance = true))
         assertEquals(HomeHeroType.CGPA, HomeDisplayRules.chooseHero(hasValidSavedCgpa = true, hasValidSavedAttendance = false))
         assertEquals(HomeHeroType.ATTENDANCE, HomeDisplayRules.chooseHero(hasValidSavedCgpa = false, hasValidSavedAttendance = true))
         assertEquals(HomeHeroType.CGPA, HomeDisplayRules.chooseHero(hasValidSavedCgpa = false, hasValidSavedAttendance = false))
