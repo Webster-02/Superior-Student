@@ -101,7 +101,17 @@ class MainActivity : AppCompatActivity() {
     private var statusBarScrim: View? = null
     private var navigationBarScrim: View? = null
     private var webViewReady = false
+    private var webViewNeedsRecreation = false
     private var activityResumed = false
+    private var resumeRecoveryNeeded = false
+    private var lastStartedAtMs = 0L
+    private var lastResumeAtMs = 0L
+    private var resumeWatchdogGeneration = 0
+    private var activeBlockingDialog: android.app.Dialog? = null
+    private var sessionOperationGeneration = 0
+    private var sessionOperationTimeoutRunnable: Runnable? = null
+    private var sessionHeartbeatGeneration = 0
+    private var sessionHeartbeatTimeoutRunnable: Runnable? = null
     private var homeHeroType: HomeHeroType? = null
     private var homeHeroNight: Boolean? = null
     private var homeHeroAttendancePercentage: Double? = null
@@ -554,7 +564,16 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun ensureWebView(): Boolean {
         return try {
-            if (!::webView.isInitialized) {
+            if (!::webView.isInitialized || webViewNeedsRecreation) {
+                if (::webView.isInitialized) {
+                    try { webView.stopLoading() } catch (_: Throwable) { }
+                    try { (webView.parent as? ViewGroup)?.removeView(webView) } catch (_: Throwable) { }
+                    if (webViewNeedsRecreation) {
+                        try { webView.destroy() } catch (_: Throwable) { }
+                    }
+                }
+                webViewNeedsRecreation = false
+                webViewReady = false
                 webView = WebView(this).apply {
                     layoutParams = android.widget.FrameLayout.LayoutParams(dp(1), dp(1))
                     visibility = View.INVISIBLE
@@ -597,6 +616,14 @@ class MainActivity : AppCompatActivity() {
                 }
         
                 webView.webViewClient = object : WebViewClient() {
+                    override fun onRenderProcessGone(
+                        view: WebView,
+                        detail: android.webkit.RenderProcessGoneDetail
+                    ): Boolean {
+                        handleWebViewRendererGone(view, detail.didCrash())
+                        return true
+                    }
+
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val target = request.url.toString()
                         if (!ErpConfig.belongsToErp(target)) {
@@ -809,11 +836,62 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        lastStartedAtMs = System.currentTimeMillis()
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("AppLifecycle", "onStart at_ms=" + lastStartedAtMs +
+                " restored_session=" + (loggedIn || sessionStore.sessionActive))
+        }
         registerNetworkMonitoring()
     }
 
     override fun onStop() {
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("AppLifecycle", "onStop at_ms=" + System.currentTimeMillis() +
+                " resumed_at_ms=" + lastResumeAtMs + " last_pause_ms=" + lastPausedAt)
+        }
         unregisterNetworkMonitoring()
+        resumeRecoveryNeeded = loggedIn || sessionStore.sessionActive
+        cancelSessionOperationTimeout()
+        cancelSessionHeartbeatTimeout()
+        resumeWatchdogGeneration++
+        try { activeBlockingDialog?.dismiss() } catch (_: Throwable) { }
+        activeBlockingDialog = null
+        if (::binding.isInitialized && binding.sideMenuOverlay.visibility == View.VISIBLE) {
+            binding.sideMenuOverlay.visibility = View.GONE
+            applyModuleNavigation()
+        }
+        moduleReadRequestId++
+        moduleFetchInProgress = false
+        if (profileFetchInProgress) profileFetchGeneration++
+        profileFetchInProgress = false
+        preloadingModule = null
+        preloadQueue.clear()
+        parallelPrefetchBatchId = null
+        parallelPrefetchPollRunnable?.let(handler::removeCallbacks)
+        parallelPrefetchPollRunnable = null
+        parallelPrefetchModules.clear()
+        parallelPrefetchProcessedModules.clear()
+        parallelPrefetchSucceededModules.clear()
+        parallelPrefetchGenerations.clear()
+        if (::binding.isInitialized) {
+            setModuleLoaderVisible(false, "activity stopped")
+            binding.modulePullRefresh.isRefreshing = false
+        }
+        if (::webView.isInitialized && !webViewNeedsRecreation) {
+            try { webView.stopLoading(); webView.visibility = View.INVISIBLE } catch (_: Throwable) { }
+        }
+        if (restoringSession || silentReloginInProgress) {
+            restoringSession = false
+            silentReloginInProgress = false
+            sessionRetryAttempted = false
+        }
+        if (loginInProgress && !loggedIn) {
+            loginInProgress = false
+            loginSubmitted = false
+            binding.loginButton.isEnabled = true
+            binding.loginStatus.text = "Sign-in paused. Tap Sign in to try again."
+            styleLoginStatus()
+        }
         super.onStop()
     }
 
@@ -1082,19 +1160,29 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         lastPausedAt = System.currentTimeMillis()
         activityResumed = false
+        if (BuildConfig.DEBUG) android.util.Log.d("AppLifecycle", "onPause at_ms=" + lastPausedAt)
         stopSessionHeartbeat()
         cancelParallelPrefetch()
 
-        if (::webView.isInitialized) {
-            // Preload navigation has no user-visible value while app is backgrounded.
-            if (loggedIn && activeModule == null && !profileFetchInProgress) {
-                webView.stopLoading()
-                moduleReadRequestId++
-                preloadingModule = null
-                preloadQueue.clear()
+        // The full-screen More scrim is clickable and must never survive backgrounding.
+        if (::binding.isInitialized && binding.sideMenuOverlay.visibility == View.VISIBLE) {
+            closeSideMenu()
+            binding.sideMenuOverlay.visibility = View.GONE
+        }
+        if (::webView.isInitialized && !webViewNeedsRecreation) {
+            try {
+                if (loggedIn && activeModule == null && !profileFetchInProgress) {
+                    webView.stopLoading()
+                    moduleReadRequestId++
+                    preloadingModule = null
+                    preloadQueue.clear()
+                }
+                webView.onPause()
+                webView.pauseTimers()
+            } catch (_: Throwable) {
+                webViewNeedsRecreation = true
+                webViewReady = false
             }
-            webView.onPause()
-            webView.pauseTimers()
         }
         super.onPause()
     }
@@ -3774,6 +3862,8 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         dialog.window?.setDimAmount(0.46f)
         dialog.show()
+        activeBlockingDialog = dialog
+        dialog.setOnDismissListener { if (activeBlockingDialog === dialog) activeBlockingDialog = null }
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setLayout(dp(320), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
@@ -3881,6 +3971,8 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         dialog.window?.setDimAmount(0.56f)
         dialog.show()
+        activeBlockingDialog = dialog
+        dialog.setOnDismissListener { if (activeBlockingDialog === dialog) activeBlockingDialog = null }
         dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setLayout(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -4087,13 +4179,31 @@ class MainActivity : AppCompatActivity() {
     
     
     override fun onDestroy() {
+        activityResumed = false
         stopSessionHeartbeat()
+        cancelSessionOperationTimeout()
+        cancelSessionHeartbeatTimeout()
+        resumeWatchdogGeneration++
         handler.removeCallbacksAndMessages(null)
+        try { activeBlockingDialog?.dismiss() } catch (_: Throwable) { }
+        activeBlockingDialog = null
+        if (::webView.isInitialized && !webViewNeedsRecreation) {
+            try { webView.stopLoading() } catch (_: Throwable) { }
+            try { (webView.parent as? ViewGroup)?.removeView(webView) } catch (_: Throwable) { }
+            try { webView.destroy() } catch (_: Throwable) { }
+            webViewReady = false
+        }
         super.onDestroy()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        if (::webView.isInitialized) webView.saveState(outState)
+        // Native state is authoritative; do not restore a potentially stale WebView renderer.
+        outState.putBoolean(STATE_MODULE_VISIBLE, binding.moduleScreen.visibility == View.VISIBLE)
+        outState.putString(STATE_ACTIVE_MODULE, activeModule?.name)
+        outState.putInt(STATE_MODULE_SCROLL_Y, binding.moduleScroll.scrollY)
+        outState.putInt(STATE_HOME_SCROLL_Y, binding.dashboardScroll.scrollY)
+        outState.putString(STATE_ATTENDANCE_DETAIL_URL, activeAttendanceDetailUrl)
+        outState.putLong(STATE_LAST_PAUSED_AT, lastPausedAt)
         super.onSaveInstanceState(outState)
     }
 
@@ -4138,7 +4248,16 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_MODULE_READ_ATTEMPTS = 6
         private const val PRELOAD_READ_ATTEMPTS = 3
         private const val MODULE_LOAD_FALLBACK_MS = 10000L
+        private const val MODULE_EXTRACTION_TIMEOUT_MS = 5000L
+        private const val RESUME_NETWORK_START_DELAY_MS = 120L
+        private const val SESSION_HEARTBEAT_TIMEOUT_MS = 9000L
         private const val SESSION_HEARTBEAT_INTERVAL_MS = 4 * 60 * 1000L
+        private const val STATE_MODULE_VISIBLE = "pachattar_state_module_visible"
+        private const val STATE_ACTIVE_MODULE = "pachattar_state_active_module"
+        private const val STATE_MODULE_SCROLL_Y = "pachattar_state_module_scroll_y"
+        private const val STATE_HOME_SCROLL_Y = "pachattar_state_home_scroll_y"
+        private const val STATE_ATTENDANCE_DETAIL_URL = "pachattar_state_attendance_detail_url"
+        private const val STATE_LAST_PAUSED_AT = "pachattar_state_last_paused_at"
 
     }
 }
