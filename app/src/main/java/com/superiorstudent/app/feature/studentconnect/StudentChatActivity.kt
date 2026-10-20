@@ -297,6 +297,7 @@ class StudentChatActivity : AppCompatActivity() {
                 openConversation(user.uid)
             }
         }
+    }
 
     override fun onStart() {
         super.onStart()
