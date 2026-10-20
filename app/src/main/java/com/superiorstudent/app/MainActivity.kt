@@ -91,7 +91,9 @@ class MainActivity : AppCompatActivity() {
         val subtitle: String,
         val infoText: String,
         val infoVisibility: Int,
-        val attendanceDetailUrl: String?
+        val attendanceDetailUrl: String?,
+        val renderedData: ModuleData?,
+        val wasNightTheme: Boolean
     )
 
     private lateinit var binding: ActivityMainBinding
@@ -140,6 +142,7 @@ class MainActivity : AppCompatActivity() {
     private var profileFetchGeneration = 0L
     private var moduleReadAttempts = 0
     private var activeModule: StudentModule? = null
+    private var activeRenderedModuleData: ModuleData? = null
     private var username = ""
     private var password = ""
     private var loginAttempt = 0
@@ -1712,7 +1715,9 @@ class MainActivity : AppCompatActivity() {
             subtitle = binding.moduleSubtitle.text?.toString().orEmpty(),
             infoText = binding.moduleInfo.text?.toString().orEmpty(),
             infoVisibility = binding.moduleInfo.visibility,
-            attendanceDetailUrl = activeAttendanceDetailUrl
+            attendanceDetailUrl = activeAttendanceDetailUrl,
+            renderedData = activeRenderedModuleData,
+            wasNightTheme = Palette.isNight(this)
         )
     }
 
@@ -1726,6 +1731,7 @@ class MainActivity : AppCompatActivity() {
     private fun restoreModuleScreenSnapshot(module: StudentModule, snapshot: ModuleScreenSnapshot) {
         activeModule = module
         activeAttendanceDetailUrl = snapshot.attendanceDetailUrl
+        activeRenderedModuleData = snapshot.renderedData
         pendingAttendanceResolution = false
         pendingAttendanceCourse = ""
         pendingAttendanceCode = ""
@@ -1737,11 +1743,41 @@ class MainActivity : AppCompatActivity() {
         binding.moduleProgress.visibility = View.GONE
         binding.modulePullRefresh.isRefreshing = false
         binding.moduleContent.removeAllViews()
-        while (snapshot.content.childCount > 0) {
-            val child = snapshot.content.getChildAt(0)
-            snapshot.content.removeViewAt(0)
-            binding.moduleContent.addView(child)
+
+        val themeChanged = snapshot.wasNightTheme != Palette.isNight(this)
+        if (themeChanged && snapshot.renderedData != null) {
+            // Recreate content with the current semantic palette from the already-rendered data.
+            // No ERP request or parsing change is needed for a visual theme transition.
+            renderModuleData(module, snapshot.renderedData)
+        } else if (themeChanged) {
+            val isOfflineEmpty = snapshot.infoText.contains("offline", ignoreCase = true) &&
+                snapshot.infoText.contains("no saved", ignoreCase = true)
+            if (isOfflineEmpty) {
+                binding.moduleContent.addView(createEmptyState(
+                    "No saved data yet",
+                    "Connect to the internet once to load this section."
+                ))
+            } else {
+                val detailUnavailable = snapshot.title == "Attendance Planner"
+                binding.moduleContent.addView(ErrorState.create(
+                    this,
+                    if (detailUnavailable) "Subject detail unavailable" else "Couldn't load this section",
+                    if (detailUnavailable) {
+                        "Return to Attendance and refresh to try opening this subject again."
+                    } else {
+                        "Refresh to load the latest information from your university account."
+                    },
+                    ::refreshActiveModule
+                ))
+            }
+        } else {
+            while (snapshot.content.childCount > 0) {
+                val child = snapshot.content.getChildAt(0)
+                snapshot.content.removeViewAt(0)
+                binding.moduleContent.addView(child)
+            }
         }
+
         val isAttendanceDetail = module == StudentModule.ATTENDANCE &&
             (snapshot.attendanceDetailUrl != null || snapshot.title == "Attendance Planner")
         bindModuleHeader(
@@ -1753,6 +1789,7 @@ class MainActivity : AppCompatActivity() {
                 module == StudentModule.PROFILE ||
                 module == StudentModule.ENROLLED_COURSES
         )
+        activeRenderedModuleData = snapshot.renderedData
         binding.moduleInfo.text = snapshot.infoText
         binding.moduleInfo.visibility = snapshot.infoVisibility
         webView.visibility = View.INVISIBLE
@@ -1792,7 +1829,9 @@ class MainActivity : AppCompatActivity() {
         }
         val cachedSummary = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
             ?.let { parseModuleData(it) }
-            ?.takeIf { erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) }
+            ?.takeIf {
+                erpRepository.hasUsableData(StudentModule.ATTENDANCE, it) && it.attendanceDetail == null
+            }
         if (cachedSummary == null) {
             activeModule = null
             loadModule(StudentModule.ATTENDANCE)
@@ -1843,6 +1882,7 @@ class MainActivity : AppCompatActivity() {
         moduleReadRequestId++
 
         activeModule = module
+        activeRenderedModuleData = null
         binding.loginScroll.visibility = View.GONE
         binding.dashboardScroll.visibility = View.GONE
         binding.moduleScreen.visibility = View.VISIBLE
@@ -1943,9 +1983,11 @@ class MainActivity : AppCompatActivity() {
             binding.modulePullRefresh.isRefreshing = false
             if (cachedData == null) {
                 binding.moduleContent.removeAllViews()
-                binding.moduleContent.addView(createEmptyState(
+                binding.moduleContent.addView(ErrorState.create(
+                    this,
                     "No saved data yet",
-                    "Automatic retries are limited to once every five minutes. Tap Refresh to try again."
+                    "Automatic retries are limited to once every five minutes. Tap Retry to try again.",
+                    ::refreshActiveModule
                 ))
                 binding.moduleInfo.text = "No saved data yet"
                 logModuleFirstRender(module, "empty", false)
@@ -2066,9 +2108,11 @@ class MainActivity : AppCompatActivity() {
                         ::refreshActiveModule
                     ))
                 } else {
-                    binding.moduleContent.addView(createEmptyState(
+                    binding.moduleContent.addView(ErrorState.create(
+                        this,
                         "Couldn't load this page",
-                        "The ERP took too long to respond. Check your connection and tap Refresh to try again."
+                        "The ERP took too long to respond. Check your connection and tap Retry to try again.",
+                        ::refreshActiveModule
                     ))
                 }
                 logModuleFirstRender(module, "empty", false)
@@ -2111,6 +2155,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderModuleData(module: StudentModule, data: ModuleData) {
+        activeRenderedModuleData = data
         binding.moduleContent.removeAllViews()
         applyModuleContentPadding(module)
         if (module != StudentModule.ENROLLED_COURSES &&
@@ -2221,8 +2266,10 @@ class MainActivity : AppCompatActivity() {
             attendanceSummarySnapshot = detachCurrentModuleScreenSnapshot()
             moduleScreenSnapshots.remove(StudentModule.ATTENDANCE)
         }
+        activeRenderedModuleData = null
         activeModule = StudentModule.ATTENDANCE
         activeAttendanceDetailUrl = url
+        activeRenderedModuleData = null
         preloadingModule = null
         preloadQueue.clear()
         moduleReadAttempts = 0
@@ -2262,16 +2309,20 @@ class MainActivity : AppCompatActivity() {
         binding.moduleProgress.visibility = View.GONE
         binding.moduleInfo.text = "Subject detail unavailable"
         binding.moduleContent.removeAllViews()
-        binding.moduleContent.addView(
-            createEmptyState(
-                "Could not open this subject's records",
-                "The ERP did not expose a detail link or click action for this subject. Return to Attendance and refresh to retry."
-            )
-        )
+        binding.moduleContent.addView(ErrorState.create(
+            this,
+            "Could not open this subject's records",
+            "The ERP did not expose a detail link or click action for this subject. Retry to reload Attendance.",
+            ::refreshActiveModule
+        ))
         Toast.makeText(this, "Could not find this subject's ERP detail action. Please refresh attendance and try again.", Toast.LENGTH_LONG).show()
     }
 
     private fun showAttendanceSummary() {
+        if (activeModule == StudentModule.ATTENDANCE && isAttendanceDetailOpen()) {
+            returnToAttendanceSummary()
+            return
+        }
         pendingAttendanceResolution = false
         pendingAttendanceCourse = ""
         pendingAttendanceCode = ""
@@ -2383,9 +2434,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyModuleContentPadding(module: StudentModule?) {
         if (!::binding.isInitialized) return
-        val systemInset = ViewCompat.getRootWindowInsets(binding.root)
-            ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
-        val bottom = dp(58 + 16) + systemInset
+        // Root window insets already reserve the device navigation-bar area.
+        // This extra padding only clears the app's floating bottom bar.
+        val bottom = dp(58 + 16)
         binding.moduleContent.setPadding(
             binding.moduleContent.paddingLeft,
             binding.moduleContent.paddingTop,
@@ -2396,41 +2447,78 @@ class MainActivity : AppCompatActivity() {
 
     private fun rerenderBatchModuleForTheme() {
         val module = activeModule ?: return
-        if (!isRedesignedModule(module) || binding.moduleScreen.visibility != View.VISIBLE) return
+        if (binding.moduleScreen.visibility != View.VISIBLE) return
 
-        val cachedData = erpRepository.cachedPayload(module)
-            ?.let(::parseModuleData)
-            ?.takeIf { erpRepository.hasUsableData(module, it) }
-        if (cachedData != null) {
-            renderModuleData(module, cachedData)
-            if (moduleFetchInProgress) {
-                binding.moduleInfo.text = "Last synced data • Updating from ERP…"
+        val oldTitle = binding.moduleTitle.text?.toString().orEmpty()
+        val oldSubtitle = binding.moduleSubtitle.text?.toString().orEmpty()
+        val oldInfo = binding.moduleInfo.text?.toString().orEmpty()
+        val oldInfoVisibility = binding.moduleInfo.visibility
+        val oldProgressVisibility = binding.moduleProgress.visibility
+        val oldRefreshing = binding.modulePullRefresh.isRefreshing
+        val oldScrollY = binding.moduleScroll.scrollY
+        val attendanceDetail = isAttendanceDetailOpen()
+        val showBack = attendanceDetail ||
+            module == StudentModule.FEE ||
+            module == StudentModule.PROFILE ||
+            module == StudentModule.ENROLLED_COURSES
+
+        val cachedData = activeRenderedModuleData ?: run {
+            val shouldAvoidSummaryFallback = module == StudentModule.ATTENDANCE &&
+                (attendanceDetail || oldTitle == "Attendance Planner")
+            if (shouldAvoidSummaryFallback) null else {
+                erpRepository.cachedPayload(module)
+                    ?.let(::parseModuleData)
+                    ?.takeIf { erpRepository.hasUsableData(module, it) }
             }
+        }
+
+        if (cachedData != null) {
+            // Rebuild visible content from parsed data so all renderers receive current palette
+            // tokens. This is a visual refresh only and does not request ERP data.
+            activeRenderedModuleData = cachedData
+            renderModuleData(module, cachedData)
+            bindModuleHeader(module, oldTitle, oldSubtitle, showBack)
+            binding.moduleInfo.text = oldInfo
+            binding.moduleInfo.visibility = oldInfoVisibility
+            binding.moduleProgress.visibility = oldProgressVisibility
+            binding.modulePullRefresh.isRefreshing = oldRefreshing
+            binding.moduleScroll.post { binding.moduleScroll.scrollTo(0, oldScrollY) }
         } else if (moduleFetchInProgress) {
-            binding.moduleContent.removeAllViews()
-            applyModuleContentPadding(module)
-            binding.moduleContent.addView(Skeleton.rows(
-                this,
-                when (module) {
-                    StudentModule.TIMETABLE -> 3
-                    StudentModule.RESULTS -> 4
-                    StudentModule.FEE -> 3
-                    StudentModule.PROFILE -> 3
-                    StudentModule.ENROLLED_COURSES -> 4
-                    else -> 3
-                },
-                module == StudentModule.TIMETABLE
-            ))
-            binding.moduleProgress.visibility = View.GONE
+            // Keep the in-flight request intact. Redesign placeholders with the current palette;
+            // the legacy Attendance detail resolver remains on its existing spinner state.
+            if (isRedesignedModule(module)) {
+                binding.moduleContent.removeAllViews()
+                applyModuleContentPadding(module)
+                binding.moduleContent.addView(Skeleton.rows(
+                    this,
+                    when (module) {
+                        StudentModule.TIMETABLE -> 3
+                        StudentModule.RESULTS -> 4
+                        StudentModule.FEE -> 3
+                        StudentModule.PROFILE -> 3
+                        StudentModule.ENROLLED_COURSES -> 4
+                        else -> 3
+                    },
+                    module == StudentModule.TIMETABLE
+                ))
+            }
         } else {
             binding.moduleContent.removeAllViews()
             applyModuleContentPadding(module)
-            binding.moduleContent.addView(ErrorState.create(
-                this,
-                "Data unavailable",
-                "Refresh to load the latest information from your university account.",
-                ::refreshActiveModule
-            ))
+            if (!hasInternetAvailable() || offlineMode) {
+                binding.moduleContent.addView(createEmptyState(
+                    "No saved data yet",
+                    "Connect to the internet once to load this section."
+                ))
+            } else {
+                binding.moduleContent.addView(ErrorState.create(
+                    this,
+                    "Data unavailable",
+                    "Refresh to load the latest information from your university account.",
+                    ::refreshActiveModule
+                ))
+            }
+            binding.moduleProgress.visibility = View.GONE
         }
         applyModuleNavigation()
     }
@@ -2858,9 +2946,11 @@ class MainActivity : AppCompatActivity() {
                                     binding.moduleInfo.text = "Showing last synced data"
                                 } else {
                                     binding.moduleContent.removeAllViews()
-                                    binding.moduleContent.addView(createEmptyState(
+                                    binding.moduleContent.addView(ErrorState.create(
+                                        this,
                                         "Couldn't refresh this section",
-                                        "The latest response was older than a newer saved result. Tap Refresh to try again."
+                                        "The latest response was older than a newer saved result. Tap Retry to try again.",
+                                        ::refreshActiveModule
                                     ))
                                     logModuleFirstRender(module, "empty", false)
                                 }
@@ -2906,9 +2996,11 @@ class MainActivity : AppCompatActivity() {
                                     ::refreshActiveModule
                                 ))
                             } else {
-                                binding.moduleContent.addView(createEmptyState(
+                                binding.moduleContent.addView(ErrorState.create(
+                                    this,
                                     "No readable data returned",
-                                    "The ERP page loaded, but its data is not ready yet. Tap Refresh to try again."
+                                    "The ERP page loaded, but its data is not ready yet. Tap Retry to try again.",
+                                    ::refreshActiveModule
                                 ))
                             }
                         }
@@ -3255,19 +3347,12 @@ class MainActivity : AppCompatActivity() {
         } else {
             binding.moduleInfo.text = "Connection needs retry"
             binding.moduleContent.removeAllViews()
-            if (isRedesignedModule(module)) {
-                binding.moduleContent.addView(ErrorState.create(
-                    this,
-                    "Couldn't connect to the ERP",
-                    message,
-                    ::refreshActiveModule
-                ))
-            } else {
-                binding.moduleContent.addView(createEmptyState(
-                    "Couldn't connect to the ERP",
-                    message
-                ))
-            }
+            binding.moduleContent.addView(ErrorState.create(
+                this,
+                "Couldn't connect to the ERP",
+                message,
+                ::refreshActiveModule
+            ))
             logModuleFirstRender(module, "empty", false)
         }
     }
@@ -3597,10 +3682,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateMoreContentInsets() {
         if (!::binding.isInitialized) return
-        val bottomInset = ViewCompat.getRootWindowInsets(binding.root)
-            ?.getInsets(WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
         val side = dp(16)
-        binding.moreContentColumn.setPadding(side, 0, side, dp(74) + bottomInset)
+        // The activity root already applies system-bar insets; reserve app-nav space only.
+        binding.moreContentColumn.setPadding(side, 0, side, dp(58 + 16))
     }
 
     private fun applyMoreNavigation() {
@@ -3860,6 +3944,7 @@ class MainActivity : AppCompatActivity() {
         pendingAttendanceCourse = ""
         pendingAttendanceCode = ""
         activeModule = null
+        activeRenderedModuleData = null
         if (::webView.isInitialized) webView.stopLoading()
         webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
@@ -3912,6 +3997,7 @@ class MainActivity : AppCompatActivity() {
         stopSessionHeartbeat()
         activeAttendanceDetailUrl = null
         activeModule = null
+        activeRenderedModuleData = null
         loggedIn = false
         loginInProgress = false
         restoringSession = false
@@ -4023,8 +4109,8 @@ class MainActivity : AppCompatActivity() {
             binding.moduleScreen.visibility == View.VISIBLE -> {
                 // Returning from a subject detail should restore the attendance summary.
                 // Other native feature screens return to the dashboard.
-                if (activeAttendanceDetailUrl != null) {
-                    showAttendanceSummary()
+                if (isAttendanceDetailOpen()) {
+                    returnToAttendanceSummary()
                 } else {
                     showDashboard()
                 }
