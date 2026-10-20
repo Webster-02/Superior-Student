@@ -5,7 +5,7 @@
     android:layout_height="wrap_content"
     android:layout_marginTop="10dp"
     app:cardBackgroundColor="@color/sc_card"
-    app:cardCornerRadius="22dp"
+    app:cardCornerRadius="@dimen/radius_list_card"
     app:cardElevation="0dp"
     app:strokeColor="@color/sc_border"
     app:strokeWidth="1dp">
@@ -61,7 +61,7 @@
                 android:visibility="gone"
                 android:textColor="@color/sc_purple"
                 app:backgroundTint="@color/sc_input"
-                app:cornerRadius="10dp"
+                app:cornerRadius="@dimen/radius_compact_control"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 

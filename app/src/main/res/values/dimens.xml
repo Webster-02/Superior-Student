@@ -9,9 +9,11 @@
     <dimen name="space_6">24dp</dimen>
     <dimen name="space_7">32dp</dimen>
     <dimen name="space_8">40dp</dimen>
-    <!-- Shared shape scale: icon, control, card, hero and pill. -->
+    <!-- Shared shape scale: compact control, icon, control, list card, card, hero and pill. -->
+    <dimen name="radius_compact_control">10dp</dimen>
     <dimen name="radius_icon">12dp</dimen>
     <dimen name="radius_control">16dp</dimen>
+    <dimen name="radius_list_card">22dp</dimen>
     <dimen name="radius_card">24dp</dimen>
     <dimen name="radius_bento">24dp</dimen>
     <dimen name="radius_hero">28dp</dimen>

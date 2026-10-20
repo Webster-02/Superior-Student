@@ -59,13 +59,17 @@ class U2UDesignTokensTest {
     fun geometryUsesFourDpGridAndSharedRadiusScale() {
         assertEquals(4, U2UDesignTokens.GRID_UNIT_DP)
         assertEquals(24, U2UDesignTokens.ICON_SIZE_DP)
+        assertEquals(10, U2UDesignTokens.RADIUS_COMPACT_CONTROL_DP)
         assertEquals(12, U2UDesignTokens.RADIUS_ICON_DP)
         assertEquals(16, U2UDesignTokens.RADIUS_CONTROL_DP)
+        assertEquals(22, U2UDesignTokens.RADIUS_LIST_CARD_DP)
         assertEquals(24, U2UDesignTokens.RADIUS_CARD_DP)
         assertEquals(28, U2UDesignTokens.RADIUS_HERO_DP)
         assertEquals(1.8f, U2UDesignTokens.ICON_STROKE_DP, 0f)
+        assertTrue(U2UDesignTokens.RADIUS_COMPACT_CONTROL_DP < U2UDesignTokens.RADIUS_ICON_DP)
         assertTrue(U2UDesignTokens.RADIUS_ICON_DP < U2UDesignTokens.RADIUS_CONTROL_DP)
-        assertTrue(U2UDesignTokens.RADIUS_CONTROL_DP < U2UDesignTokens.RADIUS_CARD_DP)
+        assertTrue(U2UDesignTokens.RADIUS_CONTROL_DP < U2UDesignTokens.RADIUS_LIST_CARD_DP)
+        assertTrue(U2UDesignTokens.RADIUS_LIST_CARD_DP < U2UDesignTokens.RADIUS_CARD_DP)
         assertTrue(U2UDesignTokens.RADIUS_CARD_DP < U2UDesignTokens.RADIUS_HERO_DP)
     }
 }

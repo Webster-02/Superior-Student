@@ -43,8 +43,10 @@ object U2UDesignTokens {
     // Mirrors the shared XML resource @dimen/size_icon for static layout icons.
     const val ICON_SIZE_DP = 24
     const val ICON_STROKE_DP = 1.8f
+    const val RADIUS_COMPACT_CONTROL_DP = 10
     const val RADIUS_ICON_DP = 12
     const val RADIUS_CONTROL_DP = 16
+    const val RADIUS_LIST_CARD_DP = 22
     const val RADIUS_CARD_DP = 24
     const val RADIUS_HERO_DP = 28
 

@@ -8,7 +8,7 @@
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
     app:cardBackgroundColor="@color/sc_card"
-    app:cardCornerRadius="22dp"
+    app:cardCornerRadius="@dimen/radius_list_card"
     app:cardElevation="0dp"
     app:strokeColor="@color/sc_border"
     app:strokeWidth="1dp">
