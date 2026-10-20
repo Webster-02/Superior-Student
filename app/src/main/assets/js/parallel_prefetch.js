@@ -9,7 +9,21 @@
     pending: jobs.length,
     results: {},
     frames: [],
-    cancelled: false
+    cancelled: false,
+    cancel: function () {
+      if (batch.cancelled) return;
+      batch.cancelled = true;
+      batch.frames.slice().forEach(function (frame) {
+        try {
+          if (frame.__pachattarTimeoutId) clearTimeout(frame.__pachattarTimeoutId);
+          frame.onload = null;
+          frame.onerror = null;
+          frame.remove();
+        } catch (_) {}
+      });
+      batch.frames = [];
+      batch.pending = 0;
+    }
   };
   batches[batchId] = batch;
 
@@ -39,6 +53,7 @@
       if (ended) return;
       ended = true;
       clearTimeout(timeoutId);
+      frame.__pachattarTimeoutId = null;
       finish(job, frame, startedAt, status, payload, fallbackPayload, detail);
     }
 
@@ -89,6 +104,7 @@
       finishOnce("timeout", "", "", "ERP fetch timed out");
     }, job.timeoutMs || 22000);
     batch.frames.push(frame);
+    frame.__pachattarTimeoutId = timeoutId;
     frame.src = job.url;
     document.body.appendChild(frame);
   });
