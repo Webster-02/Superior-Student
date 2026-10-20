@@ -1,10 +1,15 @@
 package com.superiorstudent.app.feature.transfer
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
+import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -20,6 +25,7 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -49,9 +55,11 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetSocketAddress
+import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.security.MessageDigest
+import java.util.Collections
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ConcurrentHashMap
@@ -89,6 +97,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private lateinit var progressAmounts: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var statusCard: MaterialCardView
+    private lateinit var retryButton: MaterialButton
     private lateinit var transferActions: LinearLayout
 
     @Volatile private var uiStage = NearbyUiStage.HUB
@@ -122,6 +131,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     @Volatile private var peerPromptShown = false
     @Volatile private var temporaryDownload: File? = null
     private var pendingNearbyPermissionAction: NearbyPermissionAction? = null
+    private var lastNearbyAction: NearbyPermissionAction? = null
+    private var lastStatusAllowsRetry = false
 
     private data class PreparedOutgoing(
         val metadata: P2pTransferFileMetadata,
@@ -167,6 +178,15 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             else showStatus("Save location selected. Comparing the security code…")
         }
 
+    private val senderDiscoveryTimeout = Runnable {
+        if (sending.get() && !peerPromptShown && uiStage == NearbyUiStage.DISCOVERY) {
+            cancelCurrentAction()
+            showStatus(
+                "No nearby phone was found within 30 seconds. The phones may be on different Wi-Fi networks, or guest Wi-Fi/client isolation may block local discovery. Use the same non-guest Wi-Fi; if discovery still fails, turn on one phone's hotspot and connect the other phone to it, then retry."
+            )
+        }
+    }
+
     private val nearbyWifiPermissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             val action = pendingNearbyPermissionAction
@@ -175,7 +195,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 action?.let(::performNearbyPermissionAction)
             } else {
                 setUiStage(NearbyUiStage.HUB)
-                showStatus("Nearby Wi-Fi permission is needed to find or connect to phones on the same Wi-Fi.")
+                showStatus("Nearby Wi-Fi permission was denied. Allow it to discover or connect to nearby phones.")
+                showNearbyWifiPermissionHelp(action)
             }
         }
 
@@ -316,6 +337,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         hubPanel.addView(sendButton, fullWidthParams())
         hubPanel.addView(receiveButton, fullWidthParams(top = 8))
+        hubPanel.addView(
+            makeButton("Connection check", primary = false) { runConnectionCheck() },
+            fullWidthParams(top = 8)
+        )
 
         val hubNote = makeInfoCard(
             "Files go directly phone to phone. Nothing is uploaded to the internet or Firebase. You will compare a six-digit code before anything is sent.",
@@ -359,6 +384,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         discoveryPanel.addView(
             makeInfoCard("No internet signaling is used for nearby transfer. Keep this screen open until the connection is ready.", R.color.sc_sky),
             fullWidthParams(top = 14)
+        )
+        discoveryPanel.addView(
+            makeButton("Connection check", primary = false) { runConnectionCheck() },
+            fullWidthParams(top = 8)
         )
         content.addView(discoveryPanel, fullWidthParams())
 
@@ -436,8 +465,26 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         statusText = makeText("", 12f, R.color.sc_text_muted)
         statusText.setLineSpacing(dp(2).toFloat(), 1f)
-        statusCard.addView(statusText)
-        // Keep status handling detached from the staged screen so it cannot stack over the new panels.
+        statusText.maxLines = 5
+        val statusContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        statusContent.addView(statusText)
+        retryButton = makeButton("Try again", primary = true) {
+            val action = lastNearbyAction
+            if (action != null) requestNearbyWifiPermission(action) else runConnectionCheck()
+        }.apply {
+            minimumHeight = dp(40)
+            cornerRadius = dp(12)
+            textSize = 12f
+            visibility = View.GONE
+        }
+        statusContent.addView(retryButton, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(40)
+        ).apply { topMargin = dp(8) })
+        statusCard.addView(statusContent)
+        // Keep state/reason text fixed below the scrollable panels so it remains visible in every stage.
         statusCard.visibility = View.GONE
 
         scroll.addView(content, FrameLayout.LayoutParams(
@@ -446,6 +493,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         rootLayout.addView(scroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
+        rootLayout.addView(statusCard, fullWidthParams(top = 8))
 
         transferActions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -578,6 +626,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun requestNearbyWifiPermission(action: NearbyPermissionAction) {
+        lastNearbyAction = action
         // Android 16's opt-in local-network protections temporarily use NEARBY_WIFI_DEVICES.
         // Avoid extra prompts on Android 13–15; this app still targets SDK 35, so Android 17+
         // retains legacy local-network access without ACCESS_LOCAL_NETWORK.
@@ -590,6 +639,86 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         pendingNearbyPermissionAction = action
         nearbyWifiPermissionRequest.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+    }
+
+    private fun showNearbyWifiPermissionHelp(action: NearbyPermissionAction?) {
+        val showSettings = !ActivityCompat.shouldShowRequestPermissionRationale(
+            this, Manifest.permission.NEARBY_WIFI_DEVICES
+        )
+        val message = "Nearby sharing needs local Wi-Fi permission so Android can discover and connect to the other phone on the same Wi-Fi or hotspot. It does not need internet access. Allow the permission to continue."
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Nearby Wi-Fi permission needed")
+            .setMessage(message)
+            .setNegativeButton("Not now", null)
+        if (showSettings) {
+            dialog.setPositiveButton("Open app settings") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                }
+                startActivity(intent)
+            }
+        } else {
+            dialog.setPositiveButton("Try again") { _, _ ->
+                requestNearbyWifiPermission(action ?: lastNearbyAction ?: NearbyPermissionAction.RECEIVE)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun runConnectionCheck() {
+        val wifiManager = getSystemService(WIFI_SERVICE) as? WifiManager
+        val wifiEnabled = runCatching { wifiManager?.isWifiEnabled == true }.getOrDefault(false)
+        val connectivity = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val wifiNetworkConnected = runCatching {
+            connectivity?.allNetworks.orEmpty().any { network ->
+                connectivity?.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            }
+        }.getOrDefault(false)
+        val localWifiAddress = runCatching {
+            Collections.list(NetworkInterface.getNetworkInterfaces())
+                .asSequence()
+                .filter { network ->
+                    network.isUp && !network.isLoopback &&
+                        network.name.lowercase().let { name ->
+                            name.startsWith("wlan") || name.startsWith("wifi") ||
+                                name.startsWith("ap") || name.startsWith("swlan") ||
+                                name.startsWith("softap")
+                        }
+                }
+                .flatMap { network -> Collections.list(network.inetAddresses).asSequence() }
+                .filterIsInstance<Inet4Address>()
+                .firstOrNull { address ->
+                    address.isSiteLocalAddress && !address.isLoopbackAddress && !address.isLinkLocalAddress
+                }
+                ?.hostAddress
+        }.getOrNull()
+        val nearbyPermissionGranted = Build.VERSION.SDK_INT != 36 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) ==
+            PackageManager.PERMISSION_GRANTED
+        val advice = P2pNearbyConnectionDiagnosis.advice(
+            wifiEnabled = wifiEnabled,
+            wifiNetworkConnected = wifiNetworkConnected,
+            hasPrivateWifiAddress = !localWifiAddress.isNullOrBlank(),
+            nearbyPermissionGranted = nearbyPermissionGranted
+        )
+        val diagnostic = buildString {
+            appendLine("Wi-Fi radio: ${if (wifiEnabled) "enabled" else "disabled or managed by hotspot"}")
+            appendLine("Connected Wi-Fi network: ${if (wifiNetworkConnected) "detected" else "not detected by Android"}")
+            appendLine("Local Wi-Fi IPv4: ${localWifiAddress ?: "not detected"}")
+            if (Build.VERSION.SDK_INT == 36) {
+                appendLine("Nearby Wi-Fi permission: ${if (nearbyPermissionGranted) "granted" else "not granted"}")
+            }
+            appendLine()
+            append(advice)
+            appendLine()
+            appendLine()
+            append("This check cannot directly test whether a router isolates its connected devices. If the other phone is not found after 30 seconds, avoid guest Wi-Fi and disable client/AP isolation. As an alternative, enable a hotspot on one phone, connect the second phone to it, open Receive on one phone first, then Send on the other.")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Nearby connection check")
+            .setMessage(diagnostic)
+            .setPositiveButton("Done", null)
+            .show()
     }
 
     private fun performNearbyPermissionAction(action: NearbyPermissionAction) {
@@ -736,6 +865,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         rowCard.addView(row)
         peerListContainer.addView(rowCard, fullWidthParams(top = 8))
         discoveryHeading.text = "Nearby phone found"
+        showStatus("Nearby phone found. Tap Connect to establish a local connection.")
     }
 
     private fun prepareOutgoingFile(uri: Uri) {
@@ -771,6 +901,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                                 peer.port !in 1..65535
                             ) return
                             peerPromptShown = true
+                            mainHandler.removeCallbacks(senderDiscoveryTimeout)
                             runOnUiThread {
                                 if (isFinishing || isDestroyed || !sending.get()) return@runOnUiThread
                                 showDiscoveredPeer(peer)
@@ -801,8 +932,11 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                     if (sending.get()) {
                         showStatus("Searching for a nearby receiver on the current Wi-Fi…")
                         if (!discovery.startDiscovery()) {
-                            showStatus("Could not start nearby discovery. Check that Wi-Fi is enabled.")
                             cancelCurrentAction()
+                            showStatus("Could not start nearby discovery. Check Wi-Fi/hotspot and retry.")
+                        } else {
+                            mainHandler.removeCallbacks(senderDiscoveryTimeout)
+                            mainHandler.postDelayed(senderDiscoveryTimeout, DISCOVERY_TIMEOUT_MS)
                         }
                     } else {
                         discovery.close()
@@ -1714,6 +1848,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun cancelCurrentAction() {
+        mainHandler.removeCallbacks(senderDiscoveryTimeout)
         transferInProgress.set(false)
         refreshTransferActions()
         if (receiving.get()) {
@@ -1778,6 +1913,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun finishSending() {
+        mainHandler.removeCallbacks(senderDiscoveryTimeout)
         sending.set(false)
         outgoingDiscovery?.close()
         outgoingDiscovery = null
@@ -1789,6 +1925,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
 
     private fun setOperationUi(active: Boolean) {
         sendButton.isEnabled = !active && !receiving.get()
+        refreshRetryActionVisibility()
         receiveButton.isEnabled = !active && !receiving.get()
         refreshTransferActions()
         updatePauseResumeButton(
@@ -1799,6 +1936,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
 
     private fun setReceiveUi(active: Boolean) {
         sendButton.isEnabled = !active && !sending.get()
+        refreshRetryActionVisibility()
         receiveButton.isEnabled = !active && !sending.get()
         refreshTransferActions()
         updatePauseResumeButton(enabled = false, paused = false)
@@ -1808,14 +1946,15 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         mainHandler.post {
             if (isFinishing || isDestroyed || !::statusText.isInitialized) return@post
             statusText.text = message
-            statusCard.visibility = View.GONE
+            statusCard.visibility = if (message.isNotBlank()) View.VISIBLE else View.GONE
             val lowerMessage = message.lowercase()
             val userActionNeeded = listOf(
                 "could not", "failed", "cancelled", "declined", "not confirmed",
                 "unavailable", "invalid", "interrupted", "error", "not sent",
                 "not accepted", "stopped", "did not", "timed out", "no nearby",
-                "not readable"
+                "not found", "not readable", "denied"
             ).any { lowerMessage.contains(it) }
+            lastStatusAllowsRetry = userActionNeeded
             if (userActionNeeded && message.isNotBlank()) {
                 val compactMessage = message.lineSequence().firstOrNull()?.trim().orEmpty().take(120)
                 if (compactMessage.isNotBlank()) {
@@ -1823,11 +1962,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 }
             }
             statusText.setTextColor(color(
-                if (message.contains("could not", true) || message.contains("failed", true) ||
-                    message.contains("cancelled", true) || message.contains("declined", true) ||
-                    message.contains("not confirmed", true)
-                ) R.color.sc_danger else R.color.sc_text_muted
+                if (userActionNeeded) R.color.sc_danger else R.color.sc_text_muted
             ))
+            refreshRetryActionVisibility()
             when {
                 message.startsWith("File sent and SHA-256 verified") ||
                     message.startsWith("File received and SHA-256 verified") -> {
@@ -1858,6 +1995,13 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             }
             refreshTransferActions()
         }
+    }
+
+    private fun refreshRetryActionVisibility() {
+        if (!::retryButton.isInitialized) return
+        retryButton.visibility = if (
+            lastStatusAllowsRetry && lastNearbyAction != null && !sending.get() && !receiving.get()
+        ) View.VISIBLE else View.GONE
     }
 
     private fun safeMessage(error: Exception): String =
@@ -1907,6 +2051,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         const val CONNECT_TIMEOUT_MS = 8_000
         const val HANDSHAKE_TIMEOUT_MS = 3 * 60 * 1000
         const val SOCKET_READ_TIMEOUT_MS = 2 * 60 * 1000
+        const val DISCOVERY_TIMEOUT_MS = 30_000L
         const val USER_DECISION_TIMEOUT_MINUTES = 3L
         const val CONFIRMATION_TIMEOUT_MINUTES = 3L
         const val STATUS_UPDATE_BYTES = 1024L * 1024L
