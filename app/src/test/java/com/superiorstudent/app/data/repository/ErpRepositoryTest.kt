@@ -107,6 +107,19 @@ class ErpRepositoryTest {
     }
 
     @Test
+    fun activatingAccountClearsUnownedCachedStudentData() {
+        val repository = ErpRepository()
+        val feePayload = """{"cards":[{"label":"Outstanding balance","value":"1500"}]}"""
+        assertTrue(repository.cachePayload(StudentModule.FEE, feePayload))
+        repository.saveProfileSnapshot("Student One", "3.4", "3.6")
+
+        assertTrue(repository.activateAccount("student-two"))
+        assertNull(repository.cachedPayload(StudentModule.FEE))
+        assertNull(repository.profileSnapshot())
+        assertFalse(repository.activateAccount("student-two"))
+    }
+
+    @Test
     fun typedInvoicePayloadCountsAsUsableEvenWithoutGenericRows() {
         val repository = ErpRepository()
         val data = ModuleData(
