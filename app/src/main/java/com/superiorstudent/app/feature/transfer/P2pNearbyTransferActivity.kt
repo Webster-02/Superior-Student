@@ -400,8 +400,8 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         statusCard.addView(statusText)
         content.addView(statusCard)
 
-        scroll.addView(content, ScrollView.LayoutParams(
-            ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT
+        scroll.addView(content, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
         ))
         rootLayout.addView(scroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
