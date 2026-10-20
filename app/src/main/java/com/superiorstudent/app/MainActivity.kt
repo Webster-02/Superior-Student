@@ -6,9 +6,14 @@ import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Environment
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -131,6 +136,27 @@ class MainActivity : AppCompatActivity() {
     private var pendingAttendanceCourse = ""
     private var pendingAttendanceCode = ""
     private var lastPausedAt = 0L
+    private var offlineMode = false
+    private var silentReloginInProgress = false
+    private var sessionRetryAttempted = false
+    private var networkCallbackRegistered = false
+    private var offlineIndicator: TextView? = null
+    private val connectivityManager by lazy {
+        getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    }
+    private val erpNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            handler.post { handleNetworkAvailable() }
+        }
+
+        override fun onLost(network: Network) {
+            handler.postDelayed({
+                if (!hasInternetAvailable() && (loggedIn || sessionStore.sessionActive)) {
+                    setOfflineMode(true)
+                }
+            }, 250L)
+        }
+    }
     /** Brand display font (Roboto Medium) used across programmatic views. */
     private val typeface: android.graphics.Typeface
         get() = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -279,13 +305,20 @@ class MainActivity : AppCompatActivity() {
             if (ensureWebView()) webView.restoreState(savedInstanceState)
         } else if (hasSavedSession) {
             username = try { sessionStore.username } catch (_: Throwable) { "" }
+            if (username.isNotBlank()) erpRepository.activateAccount(username)
+            profileCache.reload()
             if (ensureWebView()) {
-                restoringSession = true
-                binding.loginScroll.visibility = View.GONE
-                binding.dashboardScroll.visibility = View.VISIBLE
-                webView.visibility = View.GONE
-                showDashboard()
-                webView.loadUrl(ErpConfig.DASHBOARD_URL)
+                if (!hasInternetAvailable()) {
+                    enterCachedSessionOffline()
+                } else {
+                    restoringSession = true
+                    binding.loginScroll.visibility = View.GONE
+                    binding.dashboardScroll.visibility = View.VISIBLE
+                    webView.visibility = View.GONE
+                    showDashboard()
+                    webView.visibility = View.INVISIBLE
+                    webView.loadUrl(ErpConfig.DASHBOARD_URL)
+                }
             }
         }
     }
@@ -539,15 +572,10 @@ class MainActivity : AppCompatActivity() {
                         handler.cancel()
                         if (loginInProgress) {
                             failLogin("Secure connection to the university sign-in failed. Check your network and try again.")
-                        } else if (restoringSession) {
-                            restoringSession = false
-                            sessionStore.sessionActive = false
-                            showLogin()
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Secure connection failed. Please sign in again.",
-                                Toast.LENGTH_LONG
-                            ).show()
+                        } else if (restoringSession || silentReloginInProgress) {
+                            keepCachedSessionAfterTransientFailure(
+                                "The secure connection could not be verified. Saved data is still available."
+                            )
                         } else if (activeModule != null) {
                             handleModuleLoadFailure("The secure connection to the university portal failed. Check your internet and try again.")
                         }
@@ -561,15 +589,10 @@ class MainActivity : AppCompatActivity() {
                             loginInProgress -> failLogin(
                                 "Could not load the university sign-in page. Check your internet connection and try again."
                             )
-                            restoringSession -> {
-                                restoringSession = false
-                                sessionStore.sessionActive = false
-                                showLogin()
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    "Could not restore your university session. Please sign in again.",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                            restoringSession || silentReloginInProgress -> {
+                                keepCachedSessionAfterTransientFailure(
+                                    "The university portal could not be reached. Saved data is still available."
+                                )
                             }
                             activeModule != null -> handleModuleLoadFailure(
                                 "Unable to reach the ERP. Check your internet connection and tap Refresh to try again."
@@ -577,6 +600,33 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
         
+                    override fun onReceivedHttpError(
+                        view: WebView,
+                        request: WebResourceRequest,
+                        errorResponse: android.webkit.WebResourceResponse
+                    ) {
+                        super.onReceivedHttpError(view, request, errorResponse)
+                        if (!request.isForMainFrame) return
+                        val status = errorResponse.statusCode
+                        if (loginInProgress) {
+                            if (silentReloginInProgress && (status == 401 || status == 403)) {
+                                rejectSilentRelogin()
+                            } else if (!silentReloginInProgress && (status == 401 || status == 403)) {
+                                failLogin("Login failed. Check your university username and password.")
+                            }
+                            return
+                        }
+                        if ((status == 401 || status == 403) && (loggedIn || restoringSession)) {
+                            handler.post { if (!silentReloginInProgress) handleSessionExpired() }
+                        } else if (status >= 500 && restoringSession) {
+                            keepCachedSessionAfterTransientFailure(
+                                "The university server is temporarily unavailable. Showing saved data."
+                            )
+                        } else if (status >= 500 && activeModule != null) {
+                            handleModuleLoadFailure("The university server is temporarily unavailable. Showing saved data where available.")
+                        }
+                    }
+
                     override fun onPageFinished(view: WebView, url: String) {
                         super.onPageFinished(view, url)
 
@@ -587,11 +637,7 @@ class MainActivity : AppCompatActivity() {
                         }
         
                         if (!loginInProgress && !profileFetchInProgress && ErpConfig.isLoginUrl(url)) {
-                            restoringSession = false
-                            loggedIn = false
-                            sessionStore.sessionActive = false
-                            showLogin()
-                            Toast.makeText(this@MainActivity, "Your university session expired. Please sign in again.", Toast.LENGTH_LONG).show()
+                            handleSessionExpired()
                             return
                         }
         
@@ -600,9 +646,7 @@ class MainActivity : AppCompatActivity() {
                                 restoringSession = false
                                 completeLogin()
                             } else if (ErpConfig.isLoginUrl(url)) {
-                                restoringSession = false
-                                sessionStore.sessionActive = false
-                                showLogin()
+                                handleSessionExpired()
                             }
                             return
                         }
@@ -618,7 +662,8 @@ class MainActivity : AppCompatActivity() {
                                     view.evaluateJavascript(Scripts.loginErrorCheck) { result ->
                                         if (!loginInProgress) return@evaluateJavascript
                                         if (result == "true") {
-                                            failLogin("Login failed. Check your university username and password.")
+                                            if (silentReloginInProgress) rejectSilentRelogin()
+                                            else failLogin("Login failed. Check your university username and password.")
                                         } else {
                                             probeLoginPage(view)
                                         }
@@ -671,9 +716,241 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        registerNetworkMonitoring()
+    }
+
+    override fun onStop() {
+        unregisterNetworkMonitoring()
+        super.onStop()
+    }
+
+    private fun registerNetworkMonitoring() {
+        if (networkCallbackRegistered) return
+        try {
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            connectivityManager.registerNetworkCallback(request, erpNetworkCallback)
+            networkCallbackRegistered = true
+        } catch (error: Exception) {
+            android.util.Log.w("MainActivity", "Could not register network observer", error)
+        }
+    }
+
+    private fun unregisterNetworkMonitoring() {
+        if (!networkCallbackRegistered) return
+        try {
+            connectivityManager.unregisterNetworkCallback(erpNetworkCallback)
+        } catch (error: Exception) {
+            android.util.Log.w("MainActivity", "Could not unregister network observer", error)
+        }
+        networkCallbackRegistered = false
+    }
+
+    private fun hasInternetAvailable(): Boolean {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val network = connectivityManager.activeNetwork ?: return false
+                val caps = connectivityManager.getNetworkCapabilities(network) ?: return false
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            } else {
+                @Suppress("DEPRECATION")
+                connectivityManager.activeNetworkInfo?.isConnected == true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun handleNetworkAvailable() {
+        if (!hasInternetAvailable() || !activityResumed) return
+        if (!(loggedIn || sessionStore.sessionActive)) {
+            setOfflineMode(false)
+            return
+        }
+        if (offlineMode || restoringSession) {
+            revalidateSessionQuietly()
+        } else {
+            setOfflineMode(false)
+            pingSession()
+            preloadAllModules()
+        }
+    }
+
+    private fun revalidateSessionQuietly() {
+        if (!activityResumed || !hasInternetAvailable() ||
+            loginInProgress || restoringSession || silentReloginInProgress
+        ) return
+        if (!(loggedIn || sessionStore.sessionActive)) return
+        if (!::webView.isInitialized && !ensureWebView()) return
+        restoringSession = true
+        webView.stopLoading()
+        webView.visibility = View.INVISIBLE
+        webView.loadUrl(ErpConfig.DASHBOARD_URL)
+    }
+
+    private fun setOfflineMode(offline: Boolean) {
+        offlineMode = offline
+        if (!::binding.isInitialized) return
+        if (offline) homePreloadComplete = true
+        val chip = getOrCreateOfflineIndicator()
+        chip.visibility = if (offline && binding.dashboardScroll.visibility == View.VISIBLE) View.VISIBLE else View.GONE
+        chip.text = "Offline - showing saved data"
+        chip.background = GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat()
+            setColor(Palette.card(this@MainActivity))
+        }
+        chip.setTextColor(Palette.ink(this))
+        if (binding.moduleScreen.visibility == View.VISIBLE && activeModule != null && offline) {
+            val module = activeModule!!
+            val cached = erpRepository.cachedPayload(module)
+                ?.let(::parseModuleData)
+                ?.let { erpRepository.hasUsableData(module, it) } == true
+            binding.moduleInfo.text = if (cached) "Offline - showing saved data" else "Offline - no saved data yet"
+            binding.moduleProgress.visibility = View.GONE
+        }
+        if (offline && binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+    }
+
+    private fun getOrCreateOfflineIndicator(): TextView {
+        offlineIndicator?.let { return it }
+        val chip = TextView(this).apply {
+            text = "Offline - showing saved data"
+            textSize = 10f
+            setPadding(dp(9), dp(6), dp(9), dp(6))
+            gravity = Gravity.CENTER
+            elevation = dp(3).toFloat()
+            visibility = View.GONE
+            contentDescription = "Offline. Showing saved data."
+        }
+        binding.dashboardHeader.addView(chip, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.END
+        ).apply {
+            topMargin = dp(8)
+            marginEnd = dp(12)
+        })
+        offlineIndicator = chip
+        return chip
+    }
+
+    private fun enterCachedSessionOffline() {
+        restoringSession = false
+        loginInProgress = false
+        loggedIn = true
+        sessionStore.sessionActive = true
+        profileFetchInProgress = false
+        moduleFetchInProgress = false
+        homePreloadComplete = true
+        offlineMode = true
+        profileCache.reload()
+        webView.stopLoading()
+        webView.visibility = View.GONE
+        showDashboard()
+        setOfflineMode(true)
+    }
+
+    private fun keepCachedSessionAfterTransientFailure(message: String) {
+        val hadSavedSession = sessionStore.sessionActive || loggedIn || restoringSession
+        loginInProgress = false
+        loginSubmitted = false
+        loginProbeInProgress = false
+        loginProbeAttempts = 0
+        restoringSession = false
+        if (silentReloginInProgress) {
+            silentReloginInProgress = false
+            sessionRetryAttempted = false
+            password = ""
+        }
+        moduleFetchInProgress = false
+        profileFetchInProgress = false
+        webView.visibility = View.GONE
+        binding.moduleProgress.visibility = View.GONE
+
+        if (!hadSavedSession) {
+            setOfflineMode(!hasInternetAvailable())
+            binding.loginStatus.text = message
+            styleLoginStatus()
+            return
+        }
+
+        loggedIn = true
+        sessionStore.sessionActive = true
+        homePreloadComplete = true
+        profileCache.reload()
+        if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
+            val module = activeModule!!
+            val cached = erpRepository.cachedPayload(module)
+                ?.let(::parseModuleData)
+                ?.takeIf { erpRepository.hasUsableData(module, it) }
+            if (cached != null) {
+                renderModuleData(module, cached)
+            } else {
+                binding.moduleContent.removeAllViews()
+                binding.moduleContent.addView(createEmptyState(
+                    "No saved data yet",
+                    "The university portal could not be reached. Reconnect to load this section."
+                ))
+            }
+        } else {
+            showDashboard()
+        }
+        setOfflineMode(!hasInternetAvailable())
+        if (!offlineMode) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun beginSilentRelogin(savedUsername: String, savedPassword: String) {
+        if (!hasInternetAvailable()) {
+            keepCachedSessionAfterTransientFailure("Offline - showing saved data")
+            return
+        }
+        if (!::webView.isInitialized && !ensureWebView()) {
+            keepCachedSessionAfterTransientFailure("University sign-in is temporarily unavailable. Saved data is still available.")
+            return
+        }
+        sessionRetryAttempted = true
+        silentReloginInProgress = true
+        restoringSession = false
+        loginInProgress = true
+        loginSubmitted = false
+        loginAttempt = 0
+        loginProbeInProgress = false
+        loginProbeAttempts = 0
+        username = savedUsername
+        password = savedPassword
+        webView.stopLoading()
+        webView.visibility = View.INVISIBLE
+        webView.loadUrl(ErpConfig.LOGIN_URL)
+    }
+
+    private fun rejectSilentRelogin() {
+        silentReloginInProgress = false
+        sessionRetryAttempted = false
+        loginInProgress = false
+        loginSubmitted = false
+        restoringSession = false
+        password = ""
+        savedCredentialsStore.clear()
+        sessionStore.sessionActive = false
+        loggedIn = false
+        stopSessionHeartbeat()
+        showLogin()
+        binding.loginStatus.text = "Saved university credentials were rejected. Please sign in again."
+        styleLoginStatus()
+    }
+
     override fun onResume() {
         super.onResume()
         activityResumed = true
+        if ((loggedIn || sessionStore.sessionActive) && !hasInternetAvailable()) {
+            setOfflineMode(true)
+        } else if ((loggedIn || sessionStore.sessionActive) && offlineMode) {
+            revalidateSessionQuietly()
+        }
         if (::webView.isInitialized) {
             webView.onResume()
             webView.resumeTimers()
@@ -817,7 +1094,10 @@ class MainActivity : AppCompatActivity() {
                         scheduleLoginInjection(view)
                     }
                 }
-                "LOGIN_ERROR" -> failLogin("Login failed. Check your university username and password.")
+                "LOGIN_ERROR" -> {
+                    if (silentReloginInProgress) rejectSilentRelogin()
+                    else failLogin("Login failed. Check your university username and password.")
+                }
                 "AUTHENTICATED" -> completeLogin()
                 else -> handler.postDelayed({
                     if (loginInProgress) probeLoginPage(view)
@@ -857,7 +1137,10 @@ class MainActivity : AppCompatActivity() {
         loginProbeInProgress = false
         loginProbeAttempts = 0
         restoringSession = false
+        silentReloginInProgress = false
+        sessionRetryAttempted = false
         loggedIn = true
+        setOfflineMode(false)
         profileReadAttempts = 0
         startSessionHeartbeat()
         sessionStore.sessionActive = true
@@ -967,6 +1250,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun preloadAllModules() {
         if (!loggedIn || !activityResumed || profileFetchInProgress || preloadingModule != null) return
+        if (offlineMode || !hasInternetAvailable()) {
+            homePreloadComplete = true
+            setOfflineMode(true)
+            return
+        }
         preloadQueue.clear()
         preloadQueue.addAll(StudentModule.values().filter { module ->
             val cached = erpRepository.cachedPayload(module)?.let { parseModuleData(it) }
@@ -1079,6 +1367,20 @@ class MainActivity : AppCompatActivity() {
             binding.moduleInfo.text = "Syncing your latest information…"
         }
 
+        if (!hasInternetAvailable() || offlineMode) {
+            moduleFetchInProgress = false
+            setOfflineMode(true)
+            if (cachedData == null) {
+                binding.moduleContent.removeAllViews()
+                binding.moduleContent.addView(createEmptyState(
+                    "No saved data yet",
+                    "Connect to the internet once to load this section."
+                ))
+            }
+            binding.moduleProgress.visibility = View.GONE
+            binding.moduleInfo.text = if (cachedData != null) "Offline - showing saved data" else "Offline - no saved data yet"
+            return
+        }
         moduleFetchInProgress = true
         webView.loadUrl(ErpConfig.moduleUrl(module.path))
         scheduleModuleLoadFallback(module, moduleReadRequestId)
@@ -1086,6 +1388,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshActiveModule() {
         val module = activeModule ?: return
+        if (!hasInternetAvailable() || offlineMode) {
+            setOfflineMode(true)
+            val cached = erpRepository.cachedPayload(module)
+                ?.let(::parseModuleData)
+                ?.takeIf { erpRepository.hasUsableData(module, it) }
+            moduleFetchInProgress = false
+            binding.moduleProgress.visibility = View.GONE
+            if (cached != null) renderModuleData(module, cached) else {
+                binding.moduleContent.removeAllViews()
+                binding.moduleContent.addView(createEmptyState(
+                    "No saved data yet",
+                    "Connect to the internet once to load this section."
+                ))
+            }
+            binding.moduleInfo.text = if (cached != null) "Offline - showing saved data" else "Offline - no saved data yet"
+            return
+        }
         val detailUrl = activeAttendanceDetailUrl
         if (module == StudentModule.ATTENDANCE && detailUrl != null) {
             openAttendanceDetail(detailUrl)
@@ -2191,14 +2510,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun pingSession() {
         if (!loggedIn || !activityResumed || !::webView.isInitialized) return
+        if (!hasInternetAvailable()) {
+            setOfflineMode(true)
+            return
+        }
+        if (!ErpConfig.belongsToErp(webView.url.orEmpty())) {
+            revalidateSessionQuietly()
+            return
+        }
         webView.evaluateJavascript(Scripts.sessionHeartbeat) { result ->
             if (!loggedIn) return@evaluateJavascript
             val state = ParsingUtils.decodeJavascriptString(result)
-            if (state == "EXPIRED") {
-                handleSessionExpired()
-            } else if (state == "OFFLINE") {
-                // Keep the local app session intact. A transient network failure
-                // must not force the student back to the login screen.
+            when (state) {
+                "EXPIRED" -> handleSessionExpired()
+                "OK" -> setOfflineMode(false)
+                "OFFLINE" -> {
+                    if (!hasInternetAvailable()) setOfflineMode(true)
+                    // Probe/network errors never clear the saved session.
+                }
             }
         }
     }
@@ -2234,16 +2563,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleSessionExpired() {
-        if (!loggedIn) return
-        loggedIn = false
-        profileFetchInProgress = false
-        moduleFetchInProgress = false
-        preloadingModule = null
-        preloadQueue.clear()
-        sessionStore.sessionActive = false
-        stopSessionHeartbeat()
-        showLogin()
-        Toast.makeText(this, "Your university session has expired. Please sign in again.", Toast.LENGTH_LONG).show()
+        if (!(loggedIn || restoringSession || sessionStore.sessionActive)) return
+        if (!hasInternetAvailable()) {
+            keepCachedSessionAfterTransientFailure("Offline - showing saved data")
+            return
+        }
+        if (silentReloginInProgress) return
+        if (sessionRetryAttempted) {
+            rejectSilentRelogin()
+            return
+        }
+        val credentials = savedCredentialsStore.load()
+        if (credentials == null) {
+            loggedIn = false
+            sessionStore.sessionActive = false
+            showLogin()
+            binding.loginStatus.text = "Your university session expired. Please sign in again."
+            styleLoginStatus()
+            return
+        }
+        beginSilentRelogin(credentials.username, credentials.password)
     }
 
     /**
@@ -2777,7 +3116,7 @@ class MainActivity : AppCompatActivity() {
     private fun showDashboardInternal() {
         activeAttendanceDetailUrl = null
         activeModule = null
-        webView.stopLoading()
+        if (::webView.isInitialized) webView.stopLoading()
         webView.visibility = View.GONE
         binding.moduleProgress.visibility = View.GONE
         binding.moduleScreen.visibility = View.GONE
@@ -2796,6 +3135,7 @@ class MainActivity : AppCompatActivity() {
             lightNavigationIcons = Palette.isNight(this)
         )
         renderHomeDashboard()
+        setOfflineMode(offlineMode || !hasInternetAvailable())
         // If opening a module interrupted a previous preload, resume missing ERP modules on return.
         preloadAllModules()
     }
@@ -2865,6 +3205,10 @@ class MainActivity : AppCompatActivity() {
     private fun isAuthenticatedUrl(url: String): Boolean = ErpConfig.isAuthenticatedUrl(url)
 
     private fun failLogin(message: String) {
+        if (silentReloginInProgress) {
+            keepCachedSessionAfterTransientFailure(message)
+            return
+        }
         loginInProgress = false
         loginSubmitted = false
         loginProbeInProgress = false
