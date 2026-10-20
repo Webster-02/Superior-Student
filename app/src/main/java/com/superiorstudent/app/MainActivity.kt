@@ -1819,6 +1819,11 @@ class MainActivity : AppCompatActivity() {
         if (activeModule != null && binding.moduleScreen.visibility == View.VISIBLE) {
             saveCurrentModuleScreen()
         }
+        if (activeModule == StudentModule.ATTENDANCE && module != StudentModule.ATTENDANCE) {
+            pendingAttendanceResolution = false
+            pendingAttendanceCourse = ""
+            pendingAttendanceCode = ""
+        }
         if (module == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
         closeSideMenu()
         cancelParallelPrefetch()
@@ -3851,6 +3856,9 @@ class MainActivity : AppCompatActivity() {
             saveCurrentModuleScreen()
         }
         activeAttendanceDetailUrl = null
+        pendingAttendanceResolution = false
+        pendingAttendanceCourse = ""
+        pendingAttendanceCode = ""
         activeModule = null
         if (::webView.isInitialized) webView.stopLoading()
         webView.visibility = View.GONE
