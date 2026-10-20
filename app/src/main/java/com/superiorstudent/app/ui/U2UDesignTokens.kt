@@ -269,9 +269,11 @@ object U2UDesignTokens {
             val descendants = mutableListOf<TextView>()
             collectTextViews(card, descendants)
             val title = descendants.firstOrNull { it.text?.isNotBlank() == true } ?: return@forEach
-            applyTextRole(title, U2UTextRole.CAPTION, mediumOverride = true)
-            title.maxLines = 1
-            title.isSingleLine = true
+            applyTextRole(title, U2UTextRole.BODY, mediumOverride = true)
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            title.setLineSpacing(0f, 1f)
+            title.maxLines = 2
+            title.isSingleLine = false
             title.ellipsize = TextUtils.TruncateAt.END
             descendants.dropWhile { it !== title }.drop(1)
                 .firstOrNull { it.text?.isNotBlank() == true }?.let { subtitle ->

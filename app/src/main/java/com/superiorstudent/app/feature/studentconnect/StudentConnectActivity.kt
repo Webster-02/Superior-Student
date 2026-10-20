@@ -691,6 +691,7 @@ class StudentConnectActivity : AppCompatActivity() {
         applyStudentConnectAuthTypography(root)
         U2UDesignTokens.applyHomeTileRules(root)
         U2UDesignTokens.applySurfaceDepth(root)
+        applyHomeDashboardPolish(root)
         U2UDesignTokens.applyInteractionFeedback(root)
     }
 
@@ -716,6 +717,49 @@ class StudentConnectActivity : AppCompatActivity() {
             button?.apply {
                 textSize = 15f
                 typeface = ResourcesCompat.getFont(this@StudentConnectActivity, R.font.poppins_medium)
+            }
+        }
+    }
+
+    /** Applies reference-matched visual refinements only to existing Home dashboard controls. */
+    private fun applyHomeDashboardPolish(root: View) {
+        fun styleText(id: Int, sizeSp: Float, medium: Boolean) {
+            root.findViewById<TextView>(id)?.apply {
+                setTextSize(sizeSp)
+                includeFontPadding = false
+                typeface = ResourcesCompat.getFont(
+                    this@StudentConnectActivity,
+                    if (medium) R.font.poppins_medium else R.font.poppins_regular
+                )
+                letterSpacing = if (medium) -0.01f else 0f
+                setLineSpacing(0f, 1f)
+            }
+        }
+        styleText(R.id.studentConnectHomeHeroSubtitle, 13f, false)
+        styleText(R.id.studentConnectHomeNearbyShareTitle, 15f, true)
+        styleText(R.id.studentConnectHomeNearbyShareDescription, 12f, false)
+        styleText(R.id.studentConnectHomeSpaceTitle, 16f, true)
+        styleText(R.id.studentConnectHomeSpaceSubtitle, 12f, false)
+        listOf(
+            R.id.studentConnectHomeFindCard,
+            R.id.studentConnectHomeRequestsCard,
+            R.id.studentConnectHomeConnectionsCard,
+            R.id.studentConnectHomeProfileCard
+        ).forEach { id ->
+            root.findViewById<MaterialCardView>(id)?.apply {
+                radius = dp(22).toFloat()
+                strokeWidth = 0
+            }
+        }
+        listOf(
+            R.id.studentConnectHeroFindButton,
+            R.id.studentConnectHomeNearbySendButton,
+            R.id.studentConnectHomeNearbyReceiveButton
+        ).forEach { id ->
+            root.findViewById<TextView>(id)?.apply {
+                setTextSize(if (id == R.id.studentConnectHeroFindButton) 12.5f else 15f)
+                typeface = ResourcesCompat.getFont(this@StudentConnectActivity, R.font.poppins_medium)
+                includeFontPadding = false
             }
         }
     }
