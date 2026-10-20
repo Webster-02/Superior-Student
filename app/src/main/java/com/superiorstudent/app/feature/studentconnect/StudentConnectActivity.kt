@@ -310,6 +310,12 @@ class StudentConnectActivity : AppCompatActivity() {
         findViewById<View>(R.id.studentConnectHomeRequestsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.REQUESTS) }
         findViewById<View>(R.id.studentConnectHomeConnectionsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CONNECTIONS) }
         findViewById<View>(R.id.studentConnectHomeProfileCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.PROFILE) }
+        findViewById<View>(R.id.studentConnectHomeNearbySendButton).setOnClickListener {
+            openNearbyShare(com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity.MODE_SEND)
+        }
+        findViewById<View>(R.id.studentConnectHomeNearbyReceiveButton).setOnClickListener {
+            openNearbyShare(com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity.MODE_RECEIVE)
+        }
         findViewById<View>(R.id.studentConnectSeeAllChats).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CHATS) }
         navItems[0].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.HOME) }
         navItems[1].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
@@ -340,6 +346,17 @@ class StudentConnectActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         signOutButton.setOnClickListener { signOutStudentConnect() }
+    }
+
+    private fun openNearbyShare(mode: String) {
+        val intent = android.content.Intent(
+            this@StudentConnectActivity,
+            com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity::class.java
+        ).putExtra(
+            com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity.EXTRA_INITIAL_MODE,
+            mode
+        )
+        startActivity(intent)
     }
 
     private fun signOutStudentConnect() {

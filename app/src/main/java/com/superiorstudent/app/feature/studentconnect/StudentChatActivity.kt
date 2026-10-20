@@ -243,7 +243,6 @@ class StudentChatActivity : AppCompatActivity() {
             PopupMenu(this, attachFileButton).apply {
                 val inChatItem = menu.add(0, 1, 0, "Send file in chat")
                 inChatItem.isEnabled = conversation != null && !chatUnavailable
-                menu.add(0, 2, 1, "Nearby offline transfer")
                 setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         1 -> {
@@ -253,9 +252,6 @@ class StudentChatActivity : AppCompatActivity() {
                                 filePicker.launch(arrayOf("*/*"))
                             }
                         }
-                        2 -> startActivity(
-                            Intent(this@StudentChatActivity, P2pNearbyTransferActivity::class.java)
-                        )
                     }
                     true
                 }

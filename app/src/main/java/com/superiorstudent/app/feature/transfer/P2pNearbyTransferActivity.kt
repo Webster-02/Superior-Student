@@ -124,6 +124,14 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         renderScreen()
         restoreResumableDownloads()
+        when (intent.getStringExtra(EXTRA_INITIAL_MODE)) {
+            MODE_SEND -> window.decorView.post {
+                if (!isFinishing && !isDestroyed && !sending.get() && !receiving.get()) {
+                    outgoingFilePicker.launch(arrayOf("*/*"))
+                }
+            }
+            MODE_RECEIVE -> startReceiving()
+        }
     }
 
     private fun restoreResumableDownloads() {
@@ -1246,6 +1254,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private companion object {
+        const val EXTRA_INITIAL_MODE = "pachattar.u2u.nearby.initial_mode"
+        const val MODE_SEND = "send"
+        const val MODE_RECEIVE = "receive"
         const val CONNECT_TIMEOUT_MS = 8_000
         const val HANDSHAKE_TIMEOUT_MS = 3 * 60 * 1000
         const val SOCKET_READ_TIMEOUT_MS = 2 * 60 * 1000
