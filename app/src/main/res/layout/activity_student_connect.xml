@@ -428,7 +428,7 @@
                 android:id="@+id/studentConnectHomeNearbyShareCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/space_3"
                 app:cardBackgroundColor="@color/sc_card"
                 app:cardCornerRadius="@dimen/radius_card"
                 app:cardElevation="0dp"
@@ -465,7 +465,7 @@
                         <LinearLayout
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp"
+                            android:layout_marginStart="@dimen/space_3"
                             android:layout_weight="1"
                             android:orientation="vertical">
 
@@ -491,7 +491,7 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
+                        android:layout_marginTop="@dimen/space_3"
                         android:orientation="horizontal">
 
                         <com.google.android.material.button.MaterialButton
