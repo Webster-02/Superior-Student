@@ -141,32 +141,36 @@
             android:id="@+id/studentConnectAuthForm"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="22dp"
             android:background="@drawable/bg_student_connect_auth_card"
             android:orientation="vertical"
-            android:padding="18dp">
+            android:padding="16dp">
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Email address"
                 android:textColor="@color/sc_text_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                android:textSize="12sp"
+                android:fontFamily="@font/poppins_medium" />
 
             <EditText
                 android:id="@+id/studentConnectEmailInput"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:layout_marginTop="7dp"
+                android:layout_marginTop="6dp"
                 android:autofillHints="emailAddress"
                 android:background="@drawable/bg_student_connect_input"
+                android:drawableStart="@drawable/ic_pt_mail"
+                android:drawablePadding="12dp"
+                android:drawableTint="@color/sc_text_muted"
                 android:hint="you@example.com"
                 android:inputType="textEmailAddress"
                 android:maxLines="1"
-                android:paddingStart="14dp"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
                 android:paddingTop="12dp"
-                android:paddingEnd="14dp"
+                android:paddingEnd="16dp"
                 android:paddingBottom="12dp"
                 android:textColor="@color/sc_text_primary"
                 android:textColorHint="@color/sc_text_muted"
@@ -175,25 +179,29 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="12dp"
                 android:text="U2U password"
                 android:textColor="@color/sc_text_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                android:textSize="12sp"
+                android:fontFamily="@font/poppins_medium" />
 
             <EditText
                 android:id="@+id/studentConnectPasswordInput"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:layout_marginTop="7dp"
+                android:layout_marginTop="6dp"
                 android:autofillHints="newPassword"
                 android:background="@drawable/bg_student_connect_input"
+                android:drawableStart="@drawable/ic_pt_lock"
+                android:drawablePadding="12dp"
+                android:drawableTint="@color/sc_text_muted"
                 android:hint="At least 6 characters"
                 android:inputType="textPassword"
                 android:maxLines="1"
-                android:paddingStart="14dp"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
                 android:paddingTop="12dp"
-                android:paddingEnd="14dp"
+                android:paddingEnd="16dp"
                 android:paddingBottom="12dp"
                 android:textColor="@color/sc_text_primary"
                 android:textColorHint="@color/sc_text_muted"
@@ -202,12 +210,13 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectCreateAccountButton"
                 android:layout_width="match_parent"
-                android:layout_height="54dp"
-                android:layout_marginTop="20dp"
+                android:layout_height="52dp"
+                android:layout_marginTop="16dp"
                 android:text="Create U2U account"
                 android:textAllCaps="false"
                 android:textColor="@color/sc_button_primary_text"
-                android:textSize="14sp"
+                android:textSize="15sp"
+                android:textStyle="bold"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="@dimen/radius_control" />
 
@@ -215,12 +224,13 @@
                 android:id="@+id/studentConnectSignInButton"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="10dp"
                 android:text="I already have an account"
                 android:textAllCaps="false"
                 android:textColor="@color/sc_text_primary"
-                android:textSize="14sp"
-                app:backgroundTint="@color/sc_input"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:backgroundTint="@color/sc_card"
                 app:cornerRadius="@dimen/radius_control"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
@@ -232,7 +242,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             app:cardBackgroundColor="@color/sc_peach"
-            app:cardCornerRadius="@dimen/radius_card"
+            app:cardCornerRadius="20dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/sc_peach"
             app:strokeWidth="1dp">
@@ -240,13 +250,14 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
+                android:gravity="top"
                 android:orientation="horizontal"
                 android:padding="14dp">
 
                 <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_marginTop="1dp"
                     android:layout_marginEnd="8dp"
                     android:contentDescription="@null"
                     android:importantForAccessibility="no"
@@ -257,10 +268,10 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:lineSpacingExtra="2dp"
+                    android:lineSpacingExtra="4dp"
                     android:text="Use a different password from your university ERP password. Your university login is unchanged."
                     android:textColor="@color/sc_text_primary"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:fontFamily="@font/poppins" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

@@ -33,6 +33,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -687,9 +688,36 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun applySharedDesignTokens() {
         val root = findViewById<View>(R.id.studentConnectRoot) ?: return
         U2UDesignTokens.applyTypographyTree(root)
+        applyStudentConnectAuthTypography(root)
         U2UDesignTokens.applyHomeTileRules(root)
         U2UDesignTokens.applySurfaceDepth(root)
         U2UDesignTokens.applyInteractionFeedback(root)
+    }
+
+    private fun applyStudentConnectAuthTypography(root: View) {
+        val header = root.findViewById<LinearLayout>(R.id.studentConnectBrandHeader) ?: return
+        if (header.orientation != LinearLayout.VERTICAL) return
+
+        root.findViewById<TextView>(R.id.studentConnectBrandTitle)?.apply {
+            textSize = 30f
+            letterSpacing = -0.027f
+            typeface = ResourcesCompat.getFont(this@StudentConnectActivity, R.font.poppins_medium)
+        }
+        root.findViewById<TextView>(R.id.studentConnectBrandTagline)?.apply {
+            textSize = 14f
+            letterSpacing = 0f
+            typeface = ResourcesCompat.getFont(this@StudentConnectActivity, R.font.poppins_regular)
+            setLineSpacing(dp(3).toFloat(), 1f)
+        }
+        listOf(
+            root.findViewById<Button>(R.id.studentConnectCreateAccountButton),
+            root.findViewById<Button>(R.id.studentConnectSignInButton)
+        ).forEach { button ->
+            button?.apply {
+                textSize = 15f
+                typeface = ResourcesCompat.getFont(this@StudentConnectActivity, R.font.poppins_medium)
+            }
+        }
     }
 
     private fun applyStudentConnectWindowInsets() {
@@ -882,6 +910,7 @@ class StudentConnectActivity : AppCompatActivity() {
         val brandLogo = findViewById<ImageView>(R.id.studentConnectBrandLogo)
         val brandTitle = findViewById<TextView>(R.id.studentConnectBrandTitle)
         val brandTagline = findViewById<TextView>(R.id.studentConnectBrandTagline)
+        val brandHeader = findViewById<LinearLayout>(R.id.studentConnectBrandHeader)
         val notificationContainer = headerNotificationsButton.parent as? View
 
         val screenTitle = when {
@@ -907,24 +936,61 @@ class StudentConnectActivity : AppCompatActivity() {
             else -> "Chat and share with classmates"
         }
 
+        brandHeader.orientation = if (hasStudentProfile) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        (brandHeader.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+            params.topMargin = dp(if (hasStudentProfile) 2 else 30)
+            brandHeader.layoutParams = params
+        }
         backButton.apply {
             text = "‹"
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_lavender))
-            visibility = if (hasStudentProfile && currentScreen == StudentConnectScreen.HOME) View.GONE else View.VISIBLE
+            visibility = if (!hasStudentProfile || currentScreen == StudentConnectScreen.HOME) View.GONE else View.VISIBLE
         }
-        brandLogo.visibility = if (!hasStudentProfile || currentScreen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
+        brandLogo.apply {
+            visibility = if (!hasStudentProfile || currentScreen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
+            layoutParams = layoutParams.apply {
+                width = dp(if (hasStudentProfile) 40 else 64)
+                height = dp(if (hasStudentProfile) 40 else 64)
+            }
+            setImageResource(if (hasStudentProfile) R.drawable.ic_student_connect_brand else R.drawable.ic_student_connect_auth_mark)
+            setBackgroundResource(if (hasStudentProfile) android.R.color.transparent else R.drawable.bg_student_connect_auth_logo)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+        }
+        val brandTextBlock = brandTitle.parent as? LinearLayout
+        (brandTextBlock?.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+            params.width = if (hasStudentProfile) 0 else LinearLayout.LayoutParams.MATCH_PARENT
+            params.height = LinearLayout.LayoutParams.WRAP_CONTENT
+            params.weight = if (hasStudentProfile) 1f else 0f
+            params.marginStart = dp(if (hasStudentProfile) 12 else 0)
+            params.topMargin = dp(if (hasStudentProfile) 0 else 18)
+            brandTextBlock.layoutParams = params
+        }
+        brandTitle.layoutParams = brandTitle.layoutParams.apply {
+            height = if (hasStudentProfile) dp(40) else LinearLayout.LayoutParams.WRAP_CONTENT
+        }
         brandTitle.apply {
             text = screenTitle
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_primary))
-            textSize = if (!hasStudentProfile) 22f else if (currentScreen == StudentConnectScreen.HOME) 20f else 18f
+            textSize = if (!hasStudentProfile) 30f else if (currentScreen == StudentConnectScreen.HOME) 20f else 18f
+            letterSpacing = if (!hasStudentProfile) -0.027f else 0f
+            typeface = ResourcesCompat.getFont(
+                this@StudentConnectActivity,
+                if (!hasStudentProfile) R.font.poppins_medium else R.font.poppins_medium
+            )
             maxLines = 1
         }
         brandTagline.apply {
             text = screenSubtitle
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_muted))
             visibility = View.VISIBLE
-            textSize = 11f
+            textSize = if (!hasStudentProfile) 14f else 11f
+            letterSpacing = 0f
             maxLines = 2
+            setLineSpacing(if (!hasStudentProfile) dp(3).toFloat() else dp(1).toFloat(), 1f)
+            (layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                params.topMargin = dp(if (!hasStudentProfile) 6 else 3)
+                layoutParams = params
+            }
         }
         findViewById<TextView>(R.id.studentConnectBrandPromise).visibility = View.GONE
         notificationContainer?.visibility =
@@ -937,10 +1003,6 @@ class StudentConnectActivity : AppCompatActivity() {
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
         findViewById<View>(R.id.studentConnectPasswordSafetyNote).visibility =
             if (user == null) View.VISIBLE else View.GONE
-        brandLogo.layoutParams = brandLogo.layoutParams.apply {
-            width = dp(40)
-            height = dp(40)
-        }
         updateChatFilterTabs()
         updateRequestTabs()
         applySharedDesignTokens()
