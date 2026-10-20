@@ -53,6 +53,7 @@ import com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity
 import com.superiorstudent.app.feature.transfer.data.FirebaseP2pTransferSignaling
 import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadata
 import com.superiorstudent.app.feature.transfer.data.P2pTransferFileMetadataReader
+import com.superiorstudent.app.feature.transfer.data.P2pOfferState
 import com.superiorstudent.app.feature.transfer.data.P2pTransferOffer
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
@@ -135,6 +136,7 @@ class StudentChatActivity : AppCompatActivity() {
     }
 
     private var incomingOffersListener: ListenerRegistration? = null
+    private val transferOfferStatusListeners = mutableMapOf<String, ListenerRegistration>()
     private val promptedIncomingOfferIds = mutableSetOf<String>()
     private val incomingOfferQueue = ArrayDeque<P2pTransferOffer>()
     private var incomingOfferDialogVisible = false
@@ -165,6 +167,7 @@ class StudentChatActivity : AppCompatActivity() {
     private var reactionRecords: List<StudentChatMessageReaction> = emptyList()
     private var reactionListening = false
     private var displayedMessages: List<StudentChatMessage> = emptyList()
+    private var displayedTransferOffers: List<P2pTransferOffer> = emptyList()
     private var liveMessagesSnapshotReceived = false
     private var replyToMessage: StudentChatMessage? = null
     private var recipientLastReadAt: Timestamp? = null
@@ -293,6 +296,16 @@ class StudentChatActivity : AppCompatActivity() {
                         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
                         statusText.text = "Showing saved messages · syncing"
                     }
+                    localCache.loadTransferOffers(user.uid, expectedConversationId, otherUid) { savedOffers ->
+                        if (!isCurrentUser(user.uid)) return@loadTransferOffers
+                        val liveIds = displayedTransferOffers.mapTo(mutableSetOf()) { it.transferId }
+                        displayedTransferOffers = (
+                            savedOffers.filterNot { it.transferId in liveIds } + displayedTransferOffers
+                        ).distinctBy { it.transferId }
+                            .sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
+                        renderMessages(user.uid, displayedMessages)
+                        if (activityStarted) startOutgoingOfferStatusListeners(user.uid)
+                    }
                 }
                 openConversation(user.uid)
             }
@@ -313,6 +326,7 @@ class StudentChatActivity : AppCompatActivity() {
                 startMessageReactionsListeners(user.uid, displayedMessages)
             }
             startIncomingOffersListener(activeConversation)
+            startOutgoingOfferStatusListeners(user.uid)
         }
     }
 
@@ -323,6 +337,8 @@ class StudentChatActivity : AppCompatActivity() {
         otherPresenceListener = null
         incomingOffersListener?.remove()
         incomingOffersListener = null
+        transferOfferStatusListeners.values.forEach { it.remove() }
+        transferOfferStatusListeners.clear()
         typingHandler.removeCallbacks(presenceRefreshRunnable)
         stopLocalTypingState()
         typingListener?.remove()
@@ -359,9 +375,12 @@ class StudentChatActivity : AppCompatActivity() {
         messagesListener = null
         incomingOffersListener?.remove()
         incomingOffersListener = null
+        transferOfferStatusListeners.values.forEach { it.remove() }
+        transferOfferStatusListeners.clear()
         fileTransferManager.close()
         outgoingReceiptViews.clear()
         displayedMessages = emptyList()
+        displayedTransferOffers = emptyList()
         replyToMessage = null
         clearSelectedFile()
         typingHandler.removeCallbacksAndMessages(null)
@@ -533,10 +552,23 @@ class StudentChatActivity : AppCompatActivity() {
         outgoingReceiptViews.clear()
         messageReactionSummaryViews.clear()
         messagesContainer.removeAllViews()
-        emptyStateText.visibility = if (messages.isEmpty()) View.VISIBLE else View.GONE
+        emptyStateText.visibility = if (messages.isEmpty() && displayedTransferOffers.isEmpty()) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
 
-        messages.forEach { message ->
-            val isOutgoing = message.senderUid == uid
+        val timelineItems = ArrayList<ChatTimelineItem>(messages.size + displayedTransferOffers.size)
+        messages.forEach { timelineItems.add(ChatTimelineItem.Message(it)) }
+        displayedTransferOffers.forEach { timelineItems.add(ChatTimelineItem.Transfer(it)) }
+        timelineItems.sortBy { it.timestampMillis }
+
+        timelineItems.forEach { item ->
+            when (item) {
+                is ChatTimelineItem.Transfer -> renderTransferOfferBubble(uid, item.offer)
+                is ChatTimelineItem.Message -> {
+                    val message = item.message
+                    val isOutgoing = message.senderUid == uid
             val bubble = MaterialCardView(this).apply {
                 radius = dp(19).toFloat()
                 cardElevation = 0f
@@ -697,11 +729,122 @@ class StudentChatActivity : AppCompatActivity() {
                 marginEnd = dp(3)
             }
             messagesContainer.addView(bubble, bubbleParams)
+                }
+            }
         }
 
         // Apply the latest read marker even when its listener fired before messages rendered.
         updateMessageReceipts(uid)
         messagesScroll.post { messagesScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun renderTransferOfferBubble(uid: String, offer: P2pTransferOffer) {
+        val isOutgoing = offer.senderUid == uid
+        val mainTextColor = ContextCompat.getColor(
+            this,
+            if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_text_primary
+        )
+        val mutedTextColor = ContextCompat.getColor(
+            this,
+            if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_text_muted
+        )
+        val statusText = when (offer.status) {
+            P2pOfferState.OFFERED -> if (isOutgoing) "Waiting for recipient to accept" else "Incoming · awaiting your response"
+            P2pOfferState.ACCEPTED -> "Accepted · preparing secure connection"
+            P2pOfferState.TRANSFERRING -> "Transferring securely…"
+            P2pOfferState.PAUSED -> "Transfer paused"
+            P2pOfferState.COMPLETED -> if (isOutgoing) "Sent · receiver verified file" else "Received · SHA-256 verified"
+            P2pOfferState.REJECTED -> if (isOutgoing) "Declined by recipient" else "You declined this file"
+            P2pOfferState.FAILED -> "Transfer failed"
+            P2pOfferState.CANCELLED -> "Transfer cancelled"
+        }
+        val bubble = MaterialCardView(this).apply {
+            radius = dp(17).toFloat()
+            cardElevation = 0f
+            useCompatPadding = false
+            strokeWidth = if (isOutgoing) 0 else dp(1)
+            setCardBackgroundColor(ContextCompat.getColor(
+                this@StudentChatActivity,
+                if (isOutgoing) R.color.sc_purple else R.color.sc_chat_bubble
+            ))
+            if (!isOutgoing) setStrokeColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_border))
+            contentDescription = "File " + offer.fileName + ", " +
+                P2pTransferFileMetadataReader.formatBytes(offer.sizeBytes) + ", " + statusText
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(9))
+        }
+        val header = TextView(this).apply {
+            text = if (isOutgoing) "FILE SENT" else "FILE FROM $otherDisplayName"
+            textSize = 10f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(mutedTextColor)
+            maxWidth = (resources.displayMetrics.widthPixels * 0.78f - dp(24)).toInt().coerceAtLeast(dp(150))
+        }
+        val fileName = TextView(this).apply {
+            text = offer.fileName
+            textSize = 14f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(mainTextColor)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = (resources.displayMetrics.widthPixels * 0.78f - dp(24)).toInt().coerceAtLeast(dp(150))
+            setPadding(0, dp(3), 0, 0)
+        }
+        val details = TextView(this).apply {
+            text = P2pTransferFileMetadataReader.formatBytes(offer.sizeBytes) + " · " + offer.mimeType
+            textSize = 11f
+            setTextColor(mutedTextColor)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxWidth = (resources.displayMetrics.widthPixels * 0.78f - dp(24)).toInt().coerceAtLeast(dp(150))
+            setPadding(0, dp(3), 0, 0)
+        }
+        val state = TextView(this).apply {
+            text = statusText
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(ContextCompat.getColor(
+                this@StudentChatActivity,
+                if (!isOutgoing && offer.status in setOf(
+                        P2pOfferState.REJECTED, P2pOfferState.FAILED, P2pOfferState.CANCELLED
+                    )
+                ) R.color.sc_danger else if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_lavender
+            ))
+            maxWidth = (resources.displayMetrics.widthPixels * 0.78f - dp(24)).toInt().coerceAtLeast(dp(150))
+            setPadding(0, dp(8), 0, 0)
+        }
+        val time = TextView(this).apply {
+            text = offer.createdAt?.let {
+                SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(it.toDate().time))
+            }.orEmpty()
+            textSize = 10f
+            gravity = Gravity.END
+            setTextColor(mutedTextColor)
+            setPadding(0, dp(5), 0, 0)
+        }
+        content.addView(header)
+        content.addView(fileName)
+        content.addView(details)
+        content.addView(state)
+        content.addView(time, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { gravity = Gravity.END })
+        bubble.addView(content)
+        messagesContainer.addView(
+            bubble,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = if (isOutgoing) Gravity.END else Gravity.START
+                topMargin = dp(4)
+                bottomMargin = dp(4)
+                marginStart = dp(3)
+                marginEnd = dp(3)
+            }
+        )
     }
 
     private fun startMessageReactionsListeners(uid: String, messages: List<StudentChatMessage>) {
@@ -987,11 +1130,53 @@ class StudentChatActivity : AppCompatActivity() {
                 }
                 return@listenForIncomingOffers
             }
-            offers.forEach { offer ->
-                if (promptedIncomingOfferIds.add(offer.transferId)) incomingOfferQueue.addLast(offer)
-            }
+
+            // Firestore only permits the receiver-filtered list query. Keep the sender's
+            // own offers from the device cache, and use per-offer reads to refresh them.
+            displayedTransferOffers = (
+                displayedTransferOffers.filter { it.senderUid == uid } + offers
+            ).distinctBy { it.transferId }
+                .sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
+            localCache.saveTransferOffers(uid, opened.id, otherUid, displayedTransferOffers)
+            renderMessages(uid, displayedMessages)
+
+            offers.asSequence()
+                .filter { it.receiverUid == uid && it.status == P2pOfferState.OFFERED }
+                .forEach { offer ->
+                    if (promptedIncomingOfferIds.add(offer.transferId)) incomingOfferQueue.addLast(offer)
+                }
+            startOutgoingOfferStatusListeners(uid)
             showNextIncomingOffer()
         }
+    }
+
+    private fun startOutgoingOfferStatusListeners(uid: String) {
+        if (!activityStarted || chatUnavailable || !isCurrentUser(uid)) return
+        val expectedConversationId = runCatching { StudentChatIds.conversationId(uid, otherUid) }.getOrNull()
+            ?: return
+        displayedTransferOffers
+            .filter { it.senderUid == uid && it.conversationId == expectedConversationId }
+            .forEach { offer ->
+                if (transferOfferStatusListeners.containsKey(offer.transferId)) return@forEach
+                val listener = transferSignaling.listenForOffer(offer.conversationId, offer.transferId) { latest, error ->
+                    if (!isCurrentUser(uid)) return@listenForOffer
+                    if (error != null) {
+                        Log.w(TAG, "Could not refresh sent file status.", error)
+                        return@listenForOffer
+                    }
+                    val refreshed = latest ?: return@listenForOffer
+                    if (refreshed.senderUid != uid || refreshed.conversationId != expectedConversationId) {
+                        return@listenForOffer
+                    }
+                    displayedTransferOffers = (
+                        displayedTransferOffers.filterNot { it.transferId == refreshed.transferId } + refreshed
+                    ).distinctBy { it.transferId }
+                        .sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
+                    localCache.saveTransferOffers(uid, expectedConversationId, otherUid, displayedTransferOffers)
+                    renderMessages(uid, displayedMessages)
+                }
+                if (listener != null) transferOfferStatusListeners[offer.transferId] = listener
+            }
     }
 
     private fun showNextIncomingOffer() {
@@ -1169,6 +1354,15 @@ class StudentChatActivity : AppCompatActivity() {
                         transferControlButton.visibility = View.GONE
                         transferControlButton.text = "Pause transfer"
                         clearSelectedFile()
+                        displayedTransferOffers = (
+                            displayedTransferOffers.filterNot { it.transferId == offer.transferId } + offer
+                        ).distinctBy { it.transferId }
+                            .sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
+                        localCache.saveTransferOffers(
+                            user.uid, activeConversation.id, otherUid, displayedTransferOffers
+                        )
+                        renderMessages(user.uid, displayedMessages)
+                        startOutgoingOfferStatusListeners(user.uid)
                         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
                         statusText.text = "File offer sent. Waiting for " + otherDisplayName + " to accept…"
                     }
@@ -1265,6 +1459,20 @@ class StudentChatActivity : AppCompatActivity() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private sealed class ChatTimelineItem {
+        abstract val timestampMillis: Long
+
+        data class Message(val message: StudentChatMessage) : ChatTimelineItem() {
+            override val timestampMillis: Long
+                get() = message.createdAt?.toDate()?.time ?: Long.MAX_VALUE
+        }
+
+        data class Transfer(val offer: P2pTransferOffer) : ChatTimelineItem() {
+            override val timestampMillis: Long
+                get() = offer.createdAt?.toDate()?.time ?: Long.MAX_VALUE
+        }
+    }
 
     companion object {
         const val EXTRA_OTHER_UID = "student_chat_other_uid"

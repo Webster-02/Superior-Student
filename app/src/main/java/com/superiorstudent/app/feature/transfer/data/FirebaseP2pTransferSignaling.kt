@@ -87,7 +87,8 @@ class FirebaseP2pTransferSignaling(
                 }
                 val offers = snapshot?.documents.orEmpty()
                     .mapNotNull { it.toP2pTransferOffer() }
-                    .filter { it.receiverUid == uid && it.status == P2pOfferState.OFFERED }
+                    .filter { it.receiverUid == uid }
+                    .sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
                 onChanged(offers, null)
             }
     }

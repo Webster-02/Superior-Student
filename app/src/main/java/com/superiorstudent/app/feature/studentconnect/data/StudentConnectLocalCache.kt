@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.google.firebase.Timestamp
+import com.superiorstudent.app.feature.transfer.data.P2pOfferState
+import com.superiorstudent.app.feature.transfer.data.P2pTransferOffer
+import com.superiorstudent.app.feature.transfer.data.P2pTransferValidation
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -166,13 +169,84 @@ class StudentConnectLocalCache private constructor(context: Context) {
         }
     }
 
+    fun loadTransferOffers(
+        uid: String,
+        conversationId: String,
+        otherUid: String,
+        callback: (List<P2pTransferOffer>) -> Unit
+    ) {
+        ioExecutor.execute {
+            val offers = runCatching {
+                if (uid.isBlank() || otherUid.isBlank() ||
+                    conversationId != StudentChatIds.conversationId(uid, otherUid)
+                ) return@runCatching emptyList()
+                val raw = preferences.getString(transferOffersKey(uid, conversationId), null)
+                    ?: return@runCatching emptyList()
+                val array = JSONArray(raw)
+                buildList {
+                    for (index in 0 until array.length()) {
+                        val item = array.optJSONObject(index) ?: continue
+                        val offer = item.toTransferOffer(uid, conversationId, otherUid) ?: continue
+                        add(offer)
+                        if (size >= MAX_CACHED_TRANSFER_OFFERS) break
+                    }
+                }.sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
+            }.getOrDefault(emptyList())
+            mainHandler.post { callback(offers) }
+        }
+    }
+
+    fun saveTransferOffers(
+        uid: String,
+        conversationId: String,
+        otherUid: String,
+        offers: List<P2pTransferOffer>
+    ) {
+        if (uid.isBlank() || otherUid.isBlank() ||
+            conversationId != runCatching { StudentChatIds.conversationId(uid, otherUid) }.getOrNull()
+        ) return
+        ioExecutor.execute {
+            runCatching {
+                val array = JSONArray()
+                offers.asSequence()
+                    .filter { it.isValidFor(uid, conversationId, otherUid) }
+                    .distinctBy { it.transferId }
+                    .sortedBy { it.createdAt?.toDate()?.time ?: Long.MAX_VALUE }
+                    .takeLast(MAX_CACHED_TRANSFER_OFFERS)
+                    .forEach { offer ->
+                        array.put(
+                            JSONObject()
+                                .put("transferId", offer.transferId)
+                                .put("conversationId", offer.conversationId)
+                                .put("senderUid", offer.senderUid)
+                                .put("receiverUid", offer.receiverUid)
+                                .put("fileName", offer.fileName)
+                                .put("sizeBytes", offer.sizeBytes)
+                                .put("mimeType", offer.mimeType)
+                                .put("sha256", offer.sha256)
+                                .put("chunkSize", offer.chunkSize)
+                                .put("senderPublicKeyBase64", offer.senderPublicKeyBase64)
+                                .putNullableString("thumbnailBase64", offer.thumbnailBase64)
+                                .put("status", offer.status.wireValue)
+                                .putTimestamp("createdAt", offer.createdAt)
+                                .putTimestamp("updatedAt", offer.updatedAt)
+                        )
+                    }
+                preferences.edit().putString(transferOffersKey(uid, conversationId), array.toString()).apply()
+            }
+        }
+    }
+
     fun clearAccount(uid: String) {
         if (uid.isBlank()) return
         ioExecutor.execute {
             runCatching {
                 val editor = preferences.edit()
                 preferences.all.keys
-                    .filter { it == profileKey(uid) || it == summariesKey(uid) || it.startsWith("messages:$uid:") }
+                    .filter {
+                        it == profileKey(uid) || it == summariesKey(uid) ||
+                            it.startsWith("messages:$uid:") || it.startsWith("transfers:$uid:")
+                    }
                     .forEach(editor::remove)
                 editor.apply()
             }
@@ -252,11 +326,53 @@ class StudentConnectLocalCache private constructor(context: Context) {
     private fun profileKey(uid: String) = "profile:$uid"
     private fun summariesKey(uid: String) = "summaries:$uid"
     private fun messagesKey(uid: String, conversationId: String) = "messages:$uid:$conversationId"
+    private fun transferOffersKey(uid: String, conversationId: String) = "transfers:$uid:$conversationId"
+
+    private fun P2pTransferOffer.isValidFor(uid: String, conversationId: String, otherUid: String): Boolean =
+        this.conversationId == conversationId &&
+            senderUid in setOf(uid, otherUid) &&
+            receiverUid in setOf(uid, otherUid) &&
+            senderUid != receiverUid &&
+            P2pTransferValidation.isConversationIdForPair(conversationId, senderUid, receiverUid) &&
+            P2pTransferValidation.isValidTransferId(transferId) &&
+            P2pTransferValidation.isValidFileName(fileName) &&
+            sizeBytes > 0L &&
+            P2pTransferValidation.isValidMimeType(mimeType) &&
+            P2pTransferValidation.isValidSha256(sha256) &&
+            P2pTransferValidation.isValidChunkSize(chunkSize) &&
+            P2pTransferValidation.isValidPublicKey(senderPublicKeyBase64) &&
+            P2pTransferValidation.isValidThumbnail(thumbnailBase64)
+
+    private fun JSONObject.toTransferOffer(
+        uid: String,
+        conversationId: String,
+        otherUid: String
+    ): P2pTransferOffer? {
+        val status = P2pOfferState.fromWire(optString("status")) ?: return null
+        val offer = P2pTransferOffer(
+            transferId = optString("transferId"),
+            conversationId = optString("conversationId"),
+            senderUid = optString("senderUid"),
+            receiverUid = optString("receiverUid"),
+            fileName = optString("fileName"),
+            sizeBytes = optLong("sizeBytes", -1L),
+            mimeType = optString("mimeType"),
+            sha256 = optString("sha256"),
+            chunkSize = optInt("chunkSize", -1),
+            senderPublicKeyBase64 = optString("senderPublicKeyBase64"),
+            thumbnailBase64 = nullableString("thumbnailBase64"),
+            status = status,
+            createdAt = readTimestamp("createdAt"),
+            updatedAt = readTimestamp("updatedAt")
+        )
+        return offer.takeIf { it.isValidFor(uid, conversationId, otherUid) }
+    }
 
     companion object {
         private const val PREFERENCES_NAME = "student_connect_local_cache_v1"
         private const val MAX_CACHED_CONVERSATIONS = 50
         private const val MAX_CACHED_MESSAGES = 100
+        private const val MAX_CACHED_TRANSFER_OFFERS = 50
 
         @Volatile
         private var instance: StudentConnectLocalCache? = null
