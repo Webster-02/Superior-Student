@@ -77,7 +77,7 @@
                 android:visibility="gone"
                 android:textColor="@color/sc_purple"
                 app:backgroundTint="@color/sc_input"
-                app:cornerRadius="10dp"
+                app:cornerRadius="@dimen/radius_compact_control"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
@@ -93,7 +93,7 @@
                 android:textSize="12sp"
                 android:visibility="gone"
                 app:backgroundTint="@color/sc_purple"
-                app:cornerRadius="10dp" />
+                app:cornerRadius="@dimen/radius_compact_control" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectFriendRequestRejectButton"
@@ -107,7 +107,7 @@
                 android:visibility="gone"
                 android:textColor="@color/sc_purple"
                 app:backgroundTint="@color/sc_input"
-                app:cornerRadius="10dp"
+                app:cornerRadius="@dimen/radius_compact_control"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
@@ -122,7 +122,7 @@
                 android:visibility="gone"
                 android:textColor="@color/sc_purple"
                 app:backgroundTint="@color/sc_input"
-                app:cornerRadius="10dp"
+                app:cornerRadius="@dimen/radius_compact_control"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
@@ -137,7 +137,7 @@
                 android:textSize="12sp"
                 android:visibility="gone"
                 app:backgroundTint="@color/sc_purple"
-                app:cornerRadius="10dp" />
+                app:cornerRadius="@dimen/radius_compact_control" />
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
@@ -151,6 +151,6 @@
             android:visibility="gone"
             android:textColor="@color/sc_button_primary_text"
             app:backgroundTint="@color/sc_purple"
-            app:cornerRadius="10dp" />
+            app:cornerRadius="@dimen/radius_compact_control" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
