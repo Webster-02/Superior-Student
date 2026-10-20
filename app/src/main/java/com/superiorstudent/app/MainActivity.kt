@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity() {
     private var navigationBarScrim: View? = null
     private var webViewReady = false
     private var webViewNeedsRecreation = false
+    private var webViewRendererGone = false
     private var activityResumed = false
     private var resumeRecoveryNeeded = false
     private var lastStartedAtMs = 0L
@@ -555,14 +556,15 @@ class MainActivity : AppCompatActivity() {
     private fun ensureWebView(): Boolean {
         return try {
             if (!::webView.isInitialized || webViewNeedsRecreation) {
-                if (::webView.isInitialized) {
+                if (::webView.isInitialized && !webViewRendererGone) {
+                    // A stale instance after pause/resume can be safely detached. A renderer-dead
+                    // instance was already removed and destroyed by onRenderProcessGone.
                     try { webView.stopLoading() } catch (_: Throwable) { }
                     try { (webView.parent as? ViewGroup)?.removeView(webView) } catch (_: Throwable) { }
-                    if (webViewNeedsRecreation) {
-                        try { webView.destroy() } catch (_: Throwable) { }
-                    }
+                    try { webView.destroy() } catch (_: Throwable) { }
                 }
                 webViewNeedsRecreation = false
+                webViewRendererGone = false
                 webViewReady = false
                 webView = WebView(this).apply {
                     layoutParams = android.widget.FrameLayout.LayoutParams(dp(1), dp(1))
@@ -866,7 +868,7 @@ class MainActivity : AppCompatActivity() {
             setModuleLoaderVisible(false, "activity stopped")
             binding.modulePullRefresh.isRefreshing = false
         }
-        if (::webView.isInitialized && !webViewNeedsRecreation) {
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone) {
             try { webView.stopLoading(); webView.visibility = View.INVISIBLE } catch (_: Throwable) { }
         }
         if (restoringSession || silentReloginInProgress) {
@@ -1138,7 +1140,7 @@ class MainActivity : AppCompatActivity() {
         // The first operation is always to remove touch blockers and paint from native cache.
         restoreNativeScreenForResume("onResume")
 
-        if (::webView.isInitialized && !webViewNeedsRecreation) {
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone) {
             try {
                 webView.onResume()
                 webView.resumeTimers()
@@ -1206,7 +1208,7 @@ class MainActivity : AppCompatActivity() {
             closeSideMenu()
             binding.sideMenuOverlay.visibility = View.GONE
         }
-        if (::webView.isInitialized && !webViewNeedsRecreation) {
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone) {
             try {
                 if (loggedIn && activeModule == null && !profileFetchInProgress) {
                     webView.stopLoading()
@@ -1376,8 +1378,10 @@ class MainActivity : AppCompatActivity() {
                     keepCachedSessionAfterTransientFailure(
                         "The student profile check timed out. Showing saved data."
                     )
-                pendingAttendanceResolution ->
-                    failAttendanceDetailResolution()
+                pendingAttendanceResolution ||
+                    (activeModule == StudentModule.ATTENDANCE &&
+                        binding.moduleTitle.text?.toString() == "Attendance Planner") ->
+                    recoverTimedOutAttendanceDetail()
                 else -> Unit
             }
         }
@@ -1414,6 +1418,7 @@ class MainActivity : AppCompatActivity() {
         )
         if (view === webView) {
             webViewNeedsRecreation = true
+            webViewRendererGone = true
             webViewReady = false
         }
         cancelSessionOperationTimeout()
@@ -2149,7 +2154,8 @@ class MainActivity : AppCompatActivity() {
             logModuleFetchOutcome(it, "timeout_or_missing_result")
         }
         val elapsed = (android.os.SystemClock.elapsedRealtime() - parallelPrefetchStartedAtMs).coerceAtLeast(0L)
-        if (cancelInPage && ::webView.isInitialized && ErpConfig.belongsToErp(webView.url.orEmpty())) {
+        if (cancelInPage && ::webView.isInitialized && !webViewNeedsRecreation &&
+            !webViewRendererGone && ErpConfig.belongsToErp(webView.url.orEmpty())) {
             try {
                 webView.evaluateJavascript(Scripts.cancelParallelPrefetchScript(batchId), null)
             } catch (_: Exception) { }
@@ -2187,7 +2193,8 @@ class MainActivity : AppCompatActivity() {
     private fun cancelParallelPrefetch() {
         val batchId = parallelPrefetchBatchId ?: return
         parallelPrefetchPollRunnable?.let(handler::removeCallbacks)
-        if (::webView.isInitialized && ErpConfig.belongsToErp(webView.url.orEmpty())) {
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone &&
+            ErpConfig.belongsToErp(webView.url.orEmpty())) {
             try {
                 webView.evaluateJavascript(Scripts.cancelParallelPrefetchScript(batchId), null)
             } catch (_: Exception) { }
@@ -2401,8 +2408,9 @@ class MainActivity : AppCompatActivity() {
         pendingAttendanceCode = ""
         moduleReadRequestId++
         moduleFetchInProgress = false
-        if (::webView.isInitialized) webView.stopLoading()
-        webView.visibility = View.INVISIBLE
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone) {
+            try { webView.stopLoading() } catch (_: Throwable) { }
+        }
         if (summarySnapshot != null && summarySnapshot.content.childCount > 0) {
             restoreModuleScreenSnapshot(StudentModule.ATTENDANCE, summarySnapshot)
             return
@@ -2429,6 +2437,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadModule(module: StudentModule) {
         if (!loggedIn) return
+        if (!ensureWebView()) {
+            setModuleLoaderVisible(false, "WebView unavailable before navigation")
+            binding.modulePullRefresh.isRefreshing = false
+            return
+        }
         if (module == activeModule && binding.moduleScreen.visibility == View.VISIBLE) {
             if (module == StudentModule.ATTENDANCE && isAttendanceDetailOpen()) {
                 returnToAttendanceSummary()
@@ -2740,6 +2753,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderModuleData(module: StudentModule, data: ModuleData) {
+        if (module == StudentModule.ATTENDANCE) cancelSessionOperationTimeout()
         activeRenderedModuleData = data
         binding.moduleContent.removeAllViews()
         applyModuleContentPadding(module)
@@ -2772,6 +2786,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun openAttendanceDetail(url: String, course: String = "", code: String = "") {
         if (!loggedIn) return
+        if (!ensureWebView()) {
+            Toast.makeText(this, "The university portal is reconnecting. Please try again.", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         if (url.isNotBlank()) {
             cancelSessionOperationTimeout()
@@ -2831,6 +2849,7 @@ class MainActivity : AppCompatActivity() {
                         pendingAttendanceCode = ""
                         activeAttendanceDetailUrl = resolvedUrl
                         moduleFetchInProgress = true
+                        scheduleSessionOperationTimeout("attendance_detail_navigation")
                         view.loadUrl(resolvedUrl)
                     }
                 }
@@ -2894,8 +2913,29 @@ class MainActivity : AppCompatActivity() {
         binding.moduleContent.removeAllViews()
         setModuleLoaderVisible(true, "request in progress")
         binding.moduleInfo.text = "Finding this subject's attendance detail in ERP…"
+        scheduleSessionOperationTimeout("attendance_detail_navigation")
         webView.visibility = View.INVISIBLE
         if (!url.isNullOrBlank()) webView.loadUrl(url)
+    }
+
+    private fun recoverTimedOutAttendanceDetail() {
+        cancelSessionOperationTimeout()
+        val cachedSummary = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
+            ?.let(::parseModuleData)
+            ?.takeIf {
+                it.attendanceDetail == null &&
+                    erpRepository.hasUsableData(StudentModule.ATTENDANCE, it)
+            }
+        val detachedSummaryExists = (attendanceSummarySnapshot?.content?.childCount ?: 0) > 0
+        if (cachedSummary != null || detachedSummaryExists) {
+            returnToAttendanceSummary()
+            if (activeModule == StudentModule.ATTENDANCE && binding.moduleScreen.visibility == View.VISIBLE) {
+                binding.moduleInfo.text = "Subject history timed out • Showing saved attendance"
+                setModuleLoaderVisible(false, "attendance detail timeout")
+            }
+        } else {
+            failAttendanceDetailResolution()
+        }
     }
 
     private fun failAttendanceDetailResolution() {
@@ -4556,8 +4596,9 @@ class MainActivity : AppCompatActivity() {
         pendingAttendanceCode = ""
         activeModule = null
         activeRenderedModuleData = null
-        if (::webView.isInitialized) webView.stopLoading()
-        webView.visibility = View.GONE
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone) {
+            try { webView.stopLoading(); webView.visibility = View.GONE } catch (_: Throwable) { }
+        }
         setModuleLoaderVisible(false, "state transition")
         binding.moduleScreen.visibility = View.GONE
         binding.moduleContent.removeAllViews()
@@ -4655,9 +4696,13 @@ class MainActivity : AppCompatActivity() {
         erpRepository.clearAccountIdentity()
         getSharedPreferences("superior_student_preferences", MODE_PRIVATE).edit().clear().apply()
         CookieManager.getInstance().removeAllCookies { CookieManager.getInstance().flush() }
-        webView.clearHistory()
-        webView.clearCache(true)
-        webView.clearFormData()
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone) {
+            try {
+                webView.clearHistory()
+                webView.clearCache(true)
+                webView.clearFormData()
+            } catch (_: Throwable) { }
+        }
         erpRepository.clearCache()
         showLogin()
     }
@@ -4707,13 +4752,13 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
         try { activeBlockingDialog?.dismiss() } catch (_: Throwable) { }
         activeBlockingDialog = null
-        if (::webView.isInitialized) {
-            // A pause/resume failure can mark the instance stale without destroying it first.
+        if (::webView.isInitialized && !webViewRendererGone) {
+            // Do not call WebView APIs after Android reports renderer death.
             try { webView.stopLoading() } catch (_: Throwable) { }
             try { (webView.parent as? ViewGroup)?.removeView(webView) } catch (_: Throwable) { }
             try { webView.destroy() } catch (_: Throwable) { }
-            webViewReady = false
         }
+        webViewReady = false
         super.onDestroy()
     }
 
