@@ -189,7 +189,7 @@
                 android:layout_marginTop="6dp"
                 android:text="Pause transfer"
                 android:textAllCaps="false"
-                android:textColor="@color/sc_text_primary"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="12sp"
                 android:visibility="gone"
                 app:backgroundTint="@color/sc_purple"
@@ -407,7 +407,7 @@
                     android:layout_marginStart="8dp"
                     android:text="Send"
                     android:textAllCaps="false"
-                    android:textColor="@color/sc_text_primary"
+                    android:textColor="@color/sc_button_primary_text"
                     android:textSize="13sp"
                     app:backgroundTint="@color/sc_purple"
                     app:cornerRadius="15dp" />

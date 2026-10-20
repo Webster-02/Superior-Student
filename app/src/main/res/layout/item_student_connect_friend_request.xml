@@ -5,7 +5,7 @@
     android:layout_height="wrap_content"
     android:layout_marginTop="10dp"
     app:cardBackgroundColor="@color/sc_card"
-    app:cardCornerRadius="14dp"
+    app:cardCornerRadius="22dp"
     app:cardElevation="0dp"
     app:strokeColor="@color/sc_border"
     app:strokeWidth="1dp">
@@ -52,7 +52,7 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectFriendRequestCopyIdButton"
                 android:layout_width="0dp"
-                android:layout_height="44dp"
+                android:layout_height="42dp"
                 android:layout_weight="1"
                 android:layout_marginEnd="4dp"
                 android:text="Copy ID"
@@ -89,6 +89,7 @@
                 android:layout_marginEnd="4dp"
                 android:text="Accept"
                 android:textAllCaps="false"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="12sp"
                 android:visibility="gone"
                 app:backgroundTint="@color/sc_purple"
@@ -100,7 +101,7 @@
                 android:layout_height="44dp"
                 android:layout_weight="1"
                 android:layout_marginStart="4dp"
-                android:text="Reject"
+                android:text="Decline"
                 android:textAllCaps="false"
                 android:textSize="12sp"
                 android:visibility="gone"
@@ -132,6 +133,7 @@
                 android:layout_weight="1"
                 android:text="Resend request"
                 android:textAllCaps="false"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="12sp"
                 android:visibility="gone"
                 app:backgroundTint="@color/sc_purple"
@@ -147,7 +149,7 @@
             android:textAllCaps="false"
             android:textSize="13sp"
             android:visibility="gone"
-            android:textColor="@color/sc_text_primary"
+            android:textColor="@color/sc_button_primary_text"
             app:backgroundTint="@color/sc_purple"
             app:cornerRadius="10dp" />
     </LinearLayout>

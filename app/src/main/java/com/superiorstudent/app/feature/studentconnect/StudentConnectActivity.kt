@@ -307,6 +307,7 @@ class StudentConnectActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.studentConnectBackButton).setOnClickListener { finish() }
         headerNotificationsButton.setOnClickListener { showStudentConnectScreen(StudentConnectScreen.NOTIFICATIONS) }
         findViewById<View>(R.id.studentConnectHomeFindCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
+        findViewById<View>(R.id.studentConnectHeroFindButton).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.SEARCH) }
         findViewById<View>(R.id.studentConnectHomeRequestsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.REQUESTS) }
         findViewById<View>(R.id.studentConnectHomeConnectionsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CONNECTIONS) }
         findViewById<View>(R.id.studentConnectHomeProfileCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.PROFILE) }
@@ -669,27 +670,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun startDashboardAnimations() {
         stopDashboardAnimations()
         if (!::homeDashboard.isInitialized || homeDashboard.visibility != View.VISIBLE) return
-        heroFloatAnimator = ObjectAnimator.ofFloat(homeHeroLogo, View.TRANSLATION_Y, 0f, -dp(6).toFloat()).apply {
-            duration = 1900L
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            interpolator = AccelerateDecelerateInterpolator()
-            start()
-        }
-        heroTiltAnimator = ObjectAnimator.ofFloat(homeHeroLogo, View.ROTATION_Y, 7f, 15f).apply {
-            duration = 2700L
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            interpolator = AccelerateDecelerateInterpolator()
-            start()
-        }
-        heroOrbAnimator = ObjectAnimator.ofFloat(homeHeroOrb, View.ALPHA, 0.42f, 0.84f).apply {
-            duration = 2300L
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            interpolator = AccelerateDecelerateInterpolator()
-            start()
-        }
+        // The overlapping ring motif is static in the supplied reference.
     }
 
     private fun stopDashboardAnimations() {
@@ -708,14 +689,22 @@ class StudentConnectActivity : AppCompatActivity() {
 
     private fun applyStudentConnectBranding() {
         studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
-        findViewById<TextView>(R.id.studentConnectBackButton)
-            .setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
+        findViewById<TextView>(R.id.studentConnectBackButton).apply {
+            setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
+            visibility = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) View.GONE else View.VISIBLE
+        }
         findViewById<TextView>(R.id.studentConnectBrandTitle).apply {
             text = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) "U2U" else "Join U2U"
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_primary))
         }
-        findViewById<TextView>(R.id.studentConnectBrandTagline)
-            .setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+        findViewById<TextView>(R.id.studentConnectBrandTagline).apply {
+            setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_muted))
+            text = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) {
+                "Chat and share with classmates"
+            } else {
+                "Same campus. Real people.\nNew opportunities."
+            }
+        }
         findViewById<TextView>(R.id.studentConnectBrandPromise).apply {
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_purple))
             visibility = View.GONE
@@ -726,9 +715,9 @@ class StudentConnectActivity : AppCompatActivity() {
         }
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
         val hasStudentProfile = currentStudentProfile != null && auth.currentUser?.isEmailVerified == true
-        findViewById<TextView>(R.id.studentConnectBrandTagline).visibility = if (hasStudentProfile) View.GONE else View.VISIBLE
-        findViewById<TextView>(R.id.studentConnectBrandPromise).visibility = if (hasStudentProfile) View.GONE else View.VISIBLE
-        findViewById<TextView>(R.id.studentConnectBrandTitle).textSize = if (hasStudentProfile) 16f else 22f
+        findViewById<TextView>(R.id.studentConnectBrandTagline).visibility = View.VISIBLE
+        findViewById<TextView>(R.id.studentConnectBrandPromise).visibility = View.GONE
+        findViewById<TextView>(R.id.studentConnectBrandTitle).textSize = if (hasStudentProfile) 20f else 22f
         val brandLogo = findViewById<ImageView>(R.id.studentConnectBrandLogo)
         brandLogo.layoutParams = brandLogo.layoutParams.apply {
             width = dp(40)
@@ -1013,6 +1002,9 @@ class StudentConnectActivity : AppCompatActivity() {
         summaries.forEach { summary ->
             val row = layoutInflater.inflate(R.layout.item_student_chat_summary, chatListContainer, false)
             row.findViewById<TextView>(R.id.studentChatSummaryName).text = summary.otherDisplayName
+            row.findViewById<TextView>(R.id.studentChatSummaryAvatar).text = summary.otherDisplayName
+                .trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
+                .joinToString("") { it.take(1).uppercase(Locale.getDefault()) }
             val preview = summary.lastMessageText?.let { message ->
                 val prefix = if (summary.lastMessageSenderUid == uid) "You: " else ""
                 (prefix + message).take(92).let { if ((prefix + message).length > 92) "$it…" else it }
@@ -1075,6 +1067,23 @@ class StudentConnectActivity : AppCompatActivity() {
             row.isFocusable = true
             row.setOnClickListener { openNotification(notification) }
             row.findViewById<TextView>(R.id.studentConnectNotificationItemTitle).text = notification.title
+            val notificationIcon = row.findViewById<ImageView>(R.id.studentConnectNotificationItemIcon)
+            val iconDetails = when {
+                notification.type.contains("message", ignoreCase = true) ->
+                    R.drawable.ic_sc_chat to R.color.sc_sky
+                notification.type.contains("accepted", ignoreCase = true) ->
+                    R.drawable.ic_sc_requests to R.color.sc_mint
+                else -> R.drawable.ic_sc_requests to R.color.sc_peach
+            }
+            notificationIcon.setImageResource(iconDetails.first)
+            notificationIcon.background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(ContextCompat.getColor(this@StudentConnectActivity, iconDetails.second))
+            }
+            notificationIcon.imageTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this, R.color.sc_text_primary)
+            )
             row.findViewById<TextView>(R.id.studentConnectNotificationItemBody).text = notification.body
             val readState = row.findViewById<TextView>(R.id.studentConnectNotificationItemReadState)
             readState.text = if (notification.isRead) "READ" else "UNREAD"

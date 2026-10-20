@@ -489,7 +489,7 @@ class StudentChatActivity : AppCompatActivity() {
                 textSize = 14f
                 setTextColor(ContextCompat.getColor(
                     this@StudentChatActivity,
-                    R.color.sc_text_primary
+                    if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_text_primary
                 ))
                 maxWidth = (resources.displayMetrics.widthPixels - dp(92)).coerceAtLeast(dp(170))
                 setLineSpacing(dp(2).toFloat(), 1f)
@@ -540,7 +540,7 @@ class StudentChatActivity : AppCompatActivity() {
                 gravity = Gravity.END
                 setTextColor(ContextCompat.getColor(
                     this@StudentChatActivity,
-                    if (isOutgoing) R.color.sc_lavender else R.color.sc_text_muted
+                    if (isOutgoing) R.color.sc_button_primary_text else R.color.sc_text_muted
                 ))
                 setPadding(0, dp(3), 0, 0)
             }

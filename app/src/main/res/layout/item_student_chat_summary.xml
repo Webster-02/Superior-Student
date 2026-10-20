@@ -8,7 +8,7 @@
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
     app:cardBackgroundColor="@color/sc_card"
-    app:cardCornerRadius="14dp"
+    app:cardCornerRadius="22dp"
     app:cardElevation="0dp"
     app:strokeColor="@color/sc_border"
     app:strokeWidth="1dp">
@@ -19,6 +19,17 @@
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:padding="12dp">
+
+        <TextView
+            android:id="@+id/studentChatSummaryAvatar"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginEnd="0dp"
+            android:background="@drawable/bg_student_connect_chat_avatar"
+            android:gravity="center"
+            android:textColor="@color/sc_text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
 
         <LinearLayout
             android:layout_width="0dp"

@@ -196,7 +196,7 @@
                 android:layout_marginTop="20dp"
                 android:text="Create U2U account"
                 android:textAllCaps="false"
-                android:textColor="@color/sc_text_primary"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="14dp" />
@@ -249,6 +249,7 @@
                 android:layout_marginTop="12dp"
                 android:text="Resend verification email"
                 android:textAllCaps="false"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="14dp" />
@@ -329,6 +330,7 @@
                 android:layout_marginTop="14dp"
                 android:text="Create my student profile"
                 android:textAllCaps="false"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="14dp" />
@@ -340,17 +342,33 @@
             android:orientation="vertical" android:visibility="gone">
             <FrameLayout
                 android:id="@+id/studentConnectHeroCard"
-                android:layout_width="match_parent" android:layout_height="132dp"
+                android:layout_width="match_parent" android:layout_height="150dp"
                 android:background="@drawable/bg_student_connect_dashboard_hero"
                 android:clipChildren="false" android:clipToPadding="false" android:elevation="0dp" android:padding="16dp">
                 <View android:id="@+id/studentConnectHeroOrb" android:layout_width="112dp" android:layout_height="112dp" android:layout_gravity="top|end" android:layout_marginTop="7dp" android:layout_marginEnd="-6dp" android:alpha="0.72" android:background="@drawable/bg_student_connect_dashboard_orb" android:elevation="2dp" />
-                <LinearLayout android:layout_width="205dp" android:layout_height="wrap_content" android:layout_gravity="start|center_vertical" android:orientation="vertical">
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:letterSpacing="0.12" android:text="CAMPUS COMMUNITY" android:textColor="@color/sc_lavender" android:textSize="10sp" android:textStyle="bold" />
-                    <TextView android:id="@+id/studentConnectHomeGreeting" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:ellipsize="end" android:maxLines="1" android:text="Your campus. Your people." android:textColor="@color/sc_text_primary" android:textSize="22sp" android:textStyle="bold" />
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:lineSpacingExtra="2dp" android:maxLines="2" android:text="Meet classmates. Build your circle." android:textColor="@color/sc_text_muted" android:textSize="13sp" />
+                <LinearLayout android:layout_width="184dp" android:layout_height="wrap_content" android:layout_gravity="start|center_vertical" android:orientation="vertical">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:letterSpacing="0.12" android:text="CAMPUS COMMUNITY" android:visibility="gone" android:textColor="@color/sc_lavender" android:textSize="10sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/studentConnectHomeGreeting" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:ellipsize="end" android:maxLines="1" android:text="Your campus. Your people." android:textColor="@color/sc_text_primary" android:textSize="22sp" android:textStyle="bold" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:lineSpacingExtra="2dp" android:maxLines="2" android:text="Meet classmates. Build your circle." android:textColor="@color/sc_text_muted" android:textSize="13sp" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/studentConnectHeroFindButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="34dp"
+                        android:layout_marginTop="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minHeight="0dp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="14dp"
+                        android:text="⌕  Find students"
+                        android:textAllCaps="false"
+                        android:textColor="@color/sc_button_primary_text"
+                        android:textSize="12sp"
+                        app:backgroundTint="@color/sc_purple"
+                        app:cornerRadius="99dp" />
                 </LinearLayout>
-                <ImageView android:id="@+id/studentConnectHeroLogo" android:layout_width="46dp" android:layout_height="46dp" android:layout_gravity="top|end" android:layout_marginTop="29dp" android:layout_marginEnd="16dp" android:contentDescription="@null" android:elevation="16dp" android:importantForAccessibility="no" android:rotation="0" android:rotationY="0" android:src="@drawable/ic_student_connect_brand" />
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHeroFloatingChip" android:layout_width="wrap_content" android:layout_height="38dp" android:layout_gravity="bottom|end" android:elevation="16dp" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="13dp" app:cardElevation="12dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <ImageView android:id="@+id/studentConnectHeroLogo" android:layout_width="96dp" android:layout_height="96dp" android:layout_gravity="top|end" android:layout_marginTop="27dp" android:layout_marginEnd="8dp" android:contentDescription="@null" android:elevation="16dp" android:importantForAccessibility="no" android:rotation="0" android:rotationY="0" android:src="@drawable/ic_u2u_orbit_motif" />
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHeroFloatingChip" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="38dp" android:layout_gravity="bottom|end" android:elevation="16dp" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="13dp" app:cardElevation="12dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="wrap_content" android:layout_height="match_parent" android:gravity="center" android:orientation="horizontal" android:paddingStart="10dp" android:paddingEnd="12dp">
                         <ImageView android:layout_width="17dp" android:layout_height="17dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_chat" android:tint="@color/sc_lavender" />
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Connect · Chat · Grow" android:textColor="@color/sc_text_primary" android:textSize="10sp" android:textStyle="bold" />
@@ -580,6 +598,7 @@
                 android:layout_marginTop="12dp"
                 android:text="Copy student ID"
                 android:textAllCaps="false"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="14dp" />
@@ -633,6 +652,7 @@
                 android:layout_marginTop="10dp"
                 android:text="Search by student ID"
                 android:textAllCaps="false"
+                android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
                 app:cornerRadius="14dp" />
@@ -680,6 +700,7 @@
                     android:layout_marginTop="12dp"
                     android:text="Send friend request"
                     android:textAllCaps="false"
+                android:textColor="@color/sc_button_primary_text"
                     android:textSize="14sp"
                     android:visibility="gone"
                     app:backgroundTint="@color/sc_purple"
