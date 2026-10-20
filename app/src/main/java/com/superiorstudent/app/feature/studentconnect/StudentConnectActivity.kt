@@ -48,6 +48,8 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.ui.AppThemePreferences
+import com.superiorstudent.app.ui.U2UDesignTokens
+import com.superiorstudent.app.ui.U2UTextRole
 import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequest
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
@@ -221,6 +223,7 @@ class StudentConnectActivity : AppCompatActivity() {
         setContentView(R.layout.activity_student_connect)
         auth = FirebaseAuth.getInstance()
         bindViews()
+        applySharedDesignTokens()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 handleU2UBack()
@@ -681,6 +684,12 @@ class StudentConnectActivity : AppCompatActivity() {
      */
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private fun applySharedDesignTokens() {
+        val root = findViewById<View>(R.id.studentConnectRoot) ?: return
+        U2UDesignTokens.applyTypographyTree(root)
+        U2UDesignTokens.applyHomeTileRules(root)
+    }
+
     private fun applyStudentConnectWindowInsets() {
         val root = findViewById<View>(R.id.studentConnectRoot)
         val baseLeft = root.paddingLeft
@@ -807,7 +816,7 @@ class StudentConnectActivity : AppCompatActivity() {
                 ContextCompat.getColor(this, if (selected) R.color.sc_button_primary_text else R.color.sc_nav_icon)
             )
             navLabels[index].setTextColor(ContextCompat.getColor(this, if (selected) R.color.sc_button_primary_text else R.color.sc_nav_icon))
-            navLabels[index].setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+            U2UDesignTokens.applyTextRole(navLabels[index], U2UTextRole.CAPTION, mediumOverride = selected)
         }
 
         updateChatFilterTabs()
@@ -823,6 +832,7 @@ class StudentConnectActivity : AppCompatActivity() {
         } else {
             stopDashboardAnimations()
         }
+        applySharedDesignTokens()
     }
 
     private fun animateDashboardEntrance() {
@@ -931,6 +941,7 @@ class StudentConnectActivity : AppCompatActivity() {
         }
         updateChatFilterTabs()
         updateRequestTabs()
+        applySharedDesignTokens()
     }
 
     private fun updateChatFilterTabs() {
@@ -1342,6 +1353,7 @@ class StudentConnectActivity : AppCompatActivity() {
             }
             chatListContainer.addView(row)
         }
+        applySharedDesignTokens()
     }
 
     private fun formatChatSummaryTime(timestamp: com.google.firebase.Timestamp?): String {
@@ -1415,6 +1427,7 @@ class StudentConnectActivity : AppCompatActivity() {
             }
             notificationsContainer.addView(row)
         }
+        applySharedDesignTokens()
     }
 
     private fun markNotificationAsRead(
@@ -1795,6 +1808,7 @@ class StudentConnectActivity : AppCompatActivity() {
         incomingRequestsEmptyText.visibility = if (incoming.isEmpty()) View.VISIBLE else View.GONE
         outgoingRequestsEmptyText.visibility = if (outgoing.isEmpty()) View.VISIBLE else View.GONE
         updateRequestTabs()
+        applySharedDesignTokens()
     }
 
     private fun addFriendRequestRow(

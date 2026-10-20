@@ -37,6 +37,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.ui.AppThemePreferences
+import com.superiorstudent.app.ui.U2UDesignTokens
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatConversation
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatIds
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectLocalCache
@@ -241,6 +242,7 @@ class StudentChatActivity : AppCompatActivity() {
         localChatClearState = StudentChatLocalClearState(applicationContext)
         bindViews()
         applyChatWindowInsets()
+        U2UDesignTokens.applyTypographyTree(findViewById(android.R.id.content))
 
         otherUid = intent.getStringExtra(EXTRA_OTHER_UID).orEmpty()
         otherDisplayName = intent.getStringExtra(EXTRA_OTHER_DISPLAY_NAME)
@@ -822,6 +824,7 @@ class StudentChatActivity : AppCompatActivity() {
         // Apply the latest read marker even when its listener fired before messages rendered.
         updateMessageReceipts(uid)
         messagesScroll.post { messagesScroll.fullScroll(View.FOCUS_DOWN) }
+        U2UDesignTokens.applyTypographyTree(findViewById(android.R.id.content))
     }
 
     private fun renderTransferOfferBubble(uid: String, offer: P2pTransferOffer) {

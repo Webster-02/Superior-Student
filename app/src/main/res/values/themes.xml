@@ -34,7 +34,54 @@
     <!-- U2U shares the main app's Paper/Night palette and local Poppins fonts. -->
     <style name="Theme.SuperiorStudent.U2U" parent="Theme.SuperiorStudent">
         <item name="android:fontFamily">@font/poppins</item>
+        <item name="android:textViewStyle">@style/Widget.SuperiorStudent.U2U.TextView</item>
+        <item name="android:editTextStyle">@style/Widget.SuperiorStudent.U2U.EditText</item>
         <item name="materialButtonStyle">@style/Widget.SuperiorStudent.U2U.Button</item>
+    </style>
+
+    <style name="Widget.SuperiorStudent.U2U.TextView" parent="@android:style/Widget.TextView">
+        <item name="android:fontFamily">@font/poppins</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+    <style name="Widget.SuperiorStudent.U2U.EditText" parent="@android:style/Widget.EditText">
+        <item name="android:fontFamily">@font/poppins</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+    <style name="TextAppearance.SuperiorStudent.U2U.Title">
+        <item name="android:textSize">22sp</item>
+        <item name="android:fontFamily">@font/poppins_medium</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:letterSpacing">-0.02</item>
+        <item name="android:lineSpacingExtra">6sp</item>
+    </style>
+    <style name="TextAppearance.SuperiorStudent.U2U.Section">
+        <item name="android:textSize">18sp</item>
+        <item name="android:fontFamily">@font/poppins_medium</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:letterSpacing">-0.01</item>
+        <item name="android:lineSpacingExtra">6sp</item>
+    </style>
+    <style name="TextAppearance.SuperiorStudent.U2U.Body">
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">@font/poppins</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:lineSpacingExtra">6sp</item>
+    </style>
+    <style name="TextAppearance.SuperiorStudent.U2U.Caption">
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">@font/poppins</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:letterSpacing">0</item>
+        <item name="android:lineSpacingExtra">5sp</item>
+    </style>
+    <style name="TextAppearance.SuperiorStudent.U2U.Label">
+        <item name="android:textSize">11sp</item>
+        <item name="android:fontFamily">@font/poppins_medium</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="android:lineSpacingExtra">5sp</item>
     </style>
 
     <style name="Widget.SuperiorStudent.U2U.Button" parent="Widget.MaterialComponents.Button">

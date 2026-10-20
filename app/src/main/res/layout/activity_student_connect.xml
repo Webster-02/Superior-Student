@@ -122,7 +122,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             app:cardBackgroundColor="@color/sc_card"
-            app:cardCornerRadius="22dp"
+            app:cardCornerRadius="@dimen/radius_card"
             app:cardElevation="0dp"
             app:strokeColor="@color/sc_border"
             app:strokeWidth="1dp">
@@ -209,7 +209,7 @@
                 android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
-                app:cornerRadius="14dp" />
+                app:cornerRadius="@dimen/radius_control" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectSignInButton"
@@ -221,7 +221,7 @@
                 android:textColor="@color/sc_text_primary"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_input"
-                app:cornerRadius="14dp"
+                app:cornerRadius="@dimen/radius_control"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
         </LinearLayout>
@@ -232,7 +232,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             app:cardBackgroundColor="@color/sc_peach"
-            app:cardCornerRadius="18dp"
+            app:cardCornerRadius="@dimen/radius_card"
             app:cardElevation="0dp"
             app:strokeColor="@color/sc_peach"
             app:strokeWidth="1dp">
@@ -301,7 +301,7 @@
                 android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
-                app:cornerRadius="14dp" />
+                app:cornerRadius="@dimen/radius_control" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/studentConnectCheckVerificationButton"
@@ -313,7 +313,7 @@
                 android:textColor="@color/sc_purple"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_input"
-                app:cornerRadius="14dp"
+                app:cornerRadius="@dimen/radius_control"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp" />
 
@@ -327,7 +327,7 @@
                 android:textColor="@color/sc_danger"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_danger_bg"
-                app:cornerRadius="14dp" />
+                app:cornerRadius="@dimen/radius_control" />
         </LinearLayout>
 
         <LinearLayout
@@ -382,7 +382,7 @@
                 android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
-                app:cornerRadius="14dp" />
+                app:cornerRadius="@dimen/radius_control" />
         </LinearLayout>
 
         <LinearLayout
@@ -414,10 +414,10 @@
                         android:textColor="@color/sc_button_primary_text"
                         android:textSize="12sp"
                         app:backgroundTint="@color/sc_purple"
-                        app:cornerRadius="99dp" />
+                        app:cornerRadius="@dimen/radius_control" />
                 </LinearLayout>
                 <ImageView android:id="@+id/studentConnectHeroLogo" android:layout_width="96dp" android:layout_height="96dp" android:layout_gravity="top|end" android:layout_marginTop="27dp" android:layout_marginEnd="8dp" android:contentDescription="@null" android:elevation="16dp" android:importantForAccessibility="no" android:rotation="0" android:rotationY="0" android:src="@drawable/ic_u2u_orbit_motif" />
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHeroFloatingChip" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="38dp" android:layout_gravity="bottom|end" android:elevation="16dp" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="13dp" app:cardElevation="12dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHeroFloatingChip" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="38dp" android:layout_gravity="bottom|end" android:elevation="16dp" app:cardBackgroundColor="@color/sc_card" app:cardCornerRadius="@dimen/radius_card" app:cardElevation="12dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="wrap_content" android:layout_height="match_parent" android:gravity="center" android:orientation="horizontal" android:paddingStart="10dp" android:paddingEnd="12dp">
                         <ImageView android:layout_width="17dp" android:layout_height="17dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_chat" android:tint="@color/sc_lavender" />
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:text="Connect · Chat · Grow" android:textColor="@color/sc_text_primary" android:textSize="10sp" android:textStyle="bold" />
@@ -430,7 +430,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 app:cardBackgroundColor="@color/sc_card"
-                app:cardCornerRadius="26dp"
+                app:cardCornerRadius="@dimen/radius_card"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp">
@@ -450,11 +450,11 @@
                         <FrameLayout
                             android:layout_width="44dp"
                             android:layout_height="44dp"
-                            android:background="@color/lime">
+                            android:background="@drawable/bg_student_connect_nearby_icon">
 
                             <ImageView
-                                android:layout_width="22dp"
-                                android:layout_height="22dp"
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
                                 android:layout_gravity="center"
                                 android:contentDescription="@null"
                                 android:importantForAccessibility="no"
@@ -499,26 +499,26 @@
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
-                            android:layout_marginEnd="5dp"
+                            android:layout_marginEnd="4dp"
                             android:text="Send"
                             android:textColor="@color/sc_button_primary_text"
                             android:textAllCaps="false"
                             android:textSize="14sp"
                             app:backgroundTint="@color/sc_purple"
-                            app:cornerRadius="14dp" />
+                            app:cornerRadius="@dimen/radius_control" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/studentConnectHomeNearbyReceiveButton"
                             android:layout_width="0dp"
                             android:layout_height="44dp"
                             android:layout_weight="1"
-                            android:layout_marginStart="5dp"
+                            android:layout_marginStart="4dp"
                             android:text="Receive"
                             android:textColor="@color/sc_button_secondary_text"
                             android:textAllCaps="false"
                             android:textSize="14sp"
                             app:backgroundTint="@color/sc_button_secondary"
-                            app:cornerRadius="14dp" />
+                            app:cornerRadius="@dimen/radius_control" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
@@ -526,10 +526,10 @@
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:text="Your space" android:textColor="@color/sc_text_primary" android:textSize="16sp" android:textStyle="bold" />
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Everything you need to connect on campus." android:textColor="@color/sc_text_muted" android:textSize="12sp" />
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="horizontal">
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeFindCard" android:layout_width="0dp" android:layout_height="78dp" android:layout_marginEnd="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_lav" app:cardCornerRadius="22dp" app:cardElevation="0dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeFindCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginEnd="@dimen/space_2" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_lav" app:cardCornerRadius="@dimen/radius_card" app:cardElevation="0dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
-                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_search" android:tint="@color/sc_lavender" />
+                        <FrameLayout android:layout_width="40dp" android:layout_height="40dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
+                            <ImageView android:layout_width="24dp" android:layout_height="24dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_search" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
                             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Find a classmate" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
@@ -537,10 +537,10 @@
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeRequestsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_peach" app:cardCornerRadius="17dp" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeRequestsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="@dimen/space_2" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_peach" app:cardCornerRadius="@dimen/radius_card" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
-                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
+                        <FrameLayout android:layout_width="40dp" android:layout_height="40dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
+                            <ImageView android:layout_width="24dp" android:layout_height="24dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
                             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Friend Requests" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
@@ -549,11 +549,11 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal">
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeConnectionsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginEnd="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_sky" app:cardCornerRadius="17dp" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="@dimen/space_2" android:orientation="horizontal">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeConnectionsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginEnd="@dimen/space_2" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_sky" app:cardCornerRadius="@dimen/radius_card" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
-                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
+                        <FrameLayout android:layout_width="40dp" android:layout_height="40dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
+                            <ImageView android:layout_width="24dp" android:layout_height="24dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
                             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="My Connections" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
@@ -561,10 +561,10 @@
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeProfileCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_mint" app:cardCornerRadius="17dp" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeProfileCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="@dimen/space_2" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_mint" app:cardCornerRadius="@dimen/radius_card" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
-                            <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_profile" android:tint="@color/sc_lavender" />
+                        <FrameLayout android:layout_width="40dp" android:layout_height="40dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
+                            <ImageView android:layout_width="24dp" android:layout_height="24dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_profile" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
                             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="My Profile" android:textColor="@color/sc_text_primary" android:textSize="12sp" android:textStyle="bold" />
@@ -675,7 +675,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
                 app:cardBackgroundColor="@color/sc_card"
-                app:cardCornerRadius="22dp"
+                app:cardCornerRadius="@dimen/radius_card"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/sc_border"
                 app:strokeWidth="1dp">
@@ -713,7 +713,7 @@
                         android:textColor="@color/sc_button_primary_text"
                         android:textSize="14sp"
                         app:backgroundTint="@color/sc_purple"
-                        app:cornerRadius="14dp" />
+                        app:cornerRadius="@dimen/radius_control" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
@@ -769,7 +769,7 @@
                 android:textColor="@color/sc_button_primary_text"
                 android:textSize="14sp"
                 app:backgroundTint="@color/sc_purple"
-                app:cornerRadius="14dp" />
+                app:cornerRadius="@dimen/radius_control" />
 
             <LinearLayout
                 android:id="@+id/studentConnectSearchResultCard"
@@ -818,7 +818,7 @@
                     android:textSize="14sp"
                     android:visibility="gone"
                     app:backgroundTint="@color/sc_purple"
-                    app:cornerRadius="14dp" />
+                    app:cornerRadius="@dimen/radius_control" />
             </LinearLayout>
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/studentConnectSearchPrivacyNote"
@@ -826,7 +826,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
                 app:cardBackgroundColor="@color/sc_sky"
-                app:cardCornerRadius="18dp"
+                app:cardCornerRadius="@dimen/radius_card"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/sc_sky"
                 app:strokeWidth="1dp">
@@ -893,7 +893,7 @@
                     android:textSize="11sp"
                     android:visibility="gone"
                     app:backgroundTint="@color/sc_input"
-                    app:cornerRadius="10dp"
+                    app:cornerRadius="@dimen/radius_control"
                     app:strokeColor="@color/sc_border"
                     app:strokeWidth="1dp" />
             </LinearLayout>
@@ -992,7 +992,7 @@
                     android:textAllCaps="false"
                     android:textSize="12sp"
                     app:backgroundTint="@color/sc_input"
-                    app:cornerRadius="12dp"
+                    app:cornerRadius="@dimen/radius_control"
                     app:strokeColor="@color/sc_border"
                     app:strokeWidth="1dp" />
             </LinearLayout>
@@ -1133,23 +1133,23 @@
         android:paddingBottom="5dp"
         android:visibility="gone">
         <LinearLayout android:id="@+id/studentConnectNavHome" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@drawable/bg_student_connect_nav_selected" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
-            <ImageView android:id="@+id/studentConnectNavHomeIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_home" android:tint="@color/sc_text_primary" />
+            <ImageView android:id="@+id/studentConnectNavHomeIcon" android:layout_width="24dp" android:layout_height="24dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_home" android:tint="@color/sc_text_primary" />
             <TextView android:id="@+id/studentConnectNavHomeLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Home" android:textColor="@color/sc_text_primary" android:textSize="10sp" android:textStyle="bold" />
         </LinearLayout>
         <LinearLayout android:id="@+id/studentConnectNavSearch" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
-            <ImageView android:id="@+id/studentConnectNavSearchIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_search" android:tint="@color/sc_text_muted" />
+            <ImageView android:id="@+id/studentConnectNavSearchIcon" android:layout_width="24dp" android:layout_height="24dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_search" android:tint="@color/sc_text_muted" />
             <TextView android:id="@+id/studentConnectNavSearchLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Find" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
         </LinearLayout>
         <LinearLayout android:id="@+id/studentConnectNavChats" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
-            <ImageView android:id="@+id/studentConnectNavChatsIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_chat" android:tint="@color/sc_text_muted" />
+            <ImageView android:id="@+id/studentConnectNavChatsIcon" android:layout_width="24dp" android:layout_height="24dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_chat" android:tint="@color/sc_text_muted" />
             <TextView android:id="@+id/studentConnectNavChatsLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Chats" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
         </LinearLayout>
         <LinearLayout android:id="@+id/studentConnectNavRequests" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
-            <ImageView android:id="@+id/studentConnectNavRequestsIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_text_muted" />
+            <ImageView android:id="@+id/studentConnectNavRequestsIcon" android:layout_width="24dp" android:layout_height="24dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_text_muted" />
             <TextView android:id="@+id/studentConnectNavRequestsLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Requests" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
         </LinearLayout>
         <LinearLayout android:id="@+id/studentConnectNavProfile" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@android:color/transparent" android:clickable="true" android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="4dp">
-            <ImageView android:id="@+id/studentConnectNavProfileIcon" android:layout_width="22dp" android:layout_height="22dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_profile" android:tint="@color/sc_text_muted" />
+            <ImageView android:id="@+id/studentConnectNavProfileIcon" android:layout_width="24dp" android:layout_height="24dp" android:importantForAccessibility="no" android:src="@drawable/ic_sc_profile" android:tint="@color/sc_text_muted" />
             <TextView android:id="@+id/studentConnectNavProfileLabel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:text="Profile" android:textColor="@color/sc_text_muted" android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
