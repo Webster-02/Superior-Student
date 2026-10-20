@@ -80,6 +80,15 @@ object Scripts {
             .replace("%BATCH_ID_B64%", b64JsonString(batchId))
             .replace("%JOBS_B64%", Base64.encodeToString(jobsJson.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
 
+    fun parallelPrefetchStatusScript(batchId: String): String =
+        "(function(){var all=window.__pachattarE1Batches;var b=all&&all[\u0024{org.json.JSONObject.quote(batchId)}];" +
+            "return b?JSON.stringify({pending:b.pending,results:b.results,startedAt:b.startedAt}):'';})()"
+
+    fun cancelParallelPrefetchScript(batchId: String): String =
+        "(function(){var all=window.__pachattarE1Batches;var b=all&&all[\u0024{org.json.JSONObject.quote(batchId)}];" +
+            "if(b&&typeof b.cancel==='function')b.cancel();if(all)delete all[\u0024{org.json.JSONObject.quote(batchId)}];" +
+            "return 'CANCELLED';})()"
+
     fun loginScript(username: String, password: String): String =
         loginTemplate
             .replace("%USERNAME_B64%", b64JsonString(username))
