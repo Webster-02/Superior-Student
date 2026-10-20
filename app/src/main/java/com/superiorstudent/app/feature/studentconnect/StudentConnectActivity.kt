@@ -690,7 +690,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun applyStudentConnectBranding() {
         studentConnectScrollView.setBackgroundResource(R.drawable.bg_student_connect_auth)
         findViewById<TextView>(R.id.studentConnectBackButton).apply {
-            setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
+            setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_lavender))
             visibility = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) View.GONE else View.VISIBLE
         }
         findViewById<TextView>(R.id.studentConnectBrandTitle).apply {
