@@ -1198,9 +1198,47 @@ class MainActivity : AppCompatActivity() {
         lastPausedAt = System.currentTimeMillis()
         getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE)
             .edit().putLong(RESUME_LAST_PAUSE_MS, lastPausedAt).apply()
+        val interruptedWork = restoringSession || silentReloginInProgress || loginInProgress ||
+            profileFetchInProgress || moduleFetchInProgress || pendingAttendanceResolution ||
+            preloadingModule != null || parallelPrefetchBatchId != null ||
+            sessionOperationTimeoutRunnable != null
+        if (interruptedWork && (loggedIn || sessionStore.sessionActive)) resumeRecoveryNeeded = true
         activityResumed = false
         if (isRecoveryDebugEnabled()) android.util.Log.d("AppLifecycle", "onPause at_ms=" + lastPausedAt)
         stopSessionHeartbeat()
+        cancelSessionOperationTimeout()
+        cancelSessionHeartbeatTimeout()
+        if (pendingAttendanceResolution) {
+            pendingAttendanceResolution = false
+            pendingAttendanceCourse = ""
+            pendingAttendanceCode = ""
+            if (activeModule == StudentModule.ATTENDANCE) activeAttendanceDetailUrl = null
+        }
+        if (moduleFetchInProgress) {
+            moduleReadRequestId++
+            moduleFetchInProgress = false
+            setModuleLoaderVisible(false, "activity paused")
+            binding.modulePullRefresh.isRefreshing = false
+        }
+        if (profileFetchInProgress) {
+            profileFetchGeneration++
+            profileFetchInProgress = false
+        }
+        if (restoringSession || silentReloginInProgress) {
+            restoringSession = false
+            silentReloginInProgress = false
+            sessionRetryAttempted = false
+        }
+        if (loginInProgress) {
+            val sessionStillSaved = loggedIn || sessionStore.sessionActive
+            loginInProgress = false
+            loginSubmitted = false
+            if (!sessionStillSaved) {
+                binding.loginButton.isEnabled = true
+                binding.loginStatus.text = "Sign-in paused. Tap Sign in to try again."
+                styleLoginStatus()
+            }
+        }
         cancelParallelPrefetch()
 
         // The full-screen More scrim is clickable and must never survive backgrounding.
@@ -2224,6 +2262,11 @@ class MainActivity : AppCompatActivity() {
             homePreloadComplete = true
             webView.visibility = View.GONE
             if (binding.dashboardScroll.visibility == View.VISIBLE) renderHomeDashboard()
+            return
+        }
+        if (!ensureWebView()) {
+            preloadingModule = null
+            homePreloadComplete = false
             return
         }
         preloadingModule = preloadQueue.removeAt(0)
@@ -4659,8 +4702,9 @@ class MainActivity : AppCompatActivity() {
         loginAttempt = 0
         preloadingModule = null
         preloadQueue.clear()
-        webView.stopLoading()
-        webView.visibility = View.GONE
+        if (::webView.isInitialized && !webViewNeedsRecreation && !webViewRendererGone) {
+            try { webView.stopLoading(); webView.visibility = View.GONE } catch (_: Throwable) { }
+        }
         setModuleLoaderVisible(false, "state transition")
         binding.moduleScreen.visibility = View.GONE
         binding.dashboardBottomNav.visibility = View.GONE
