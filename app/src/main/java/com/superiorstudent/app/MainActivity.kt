@@ -1291,10 +1291,36 @@ class MainActivity : AppCompatActivity() {
         cancelParallelPrefetch()
         preloadingModule = null
         preloadQueue.clear()
-        try { webView.stopLoading() } catch (_: Throwable) { }
-        webView.visibility = View.INVISIBLE
+        if (!webViewNeedsRecreation && !webViewRendererGone) {
+            try { webView.stopLoading() } catch (_: Throwable) { }
+            webView.visibility = View.INVISIBLE
+        }
 
         if (module != null && binding.moduleScreen.visibility == View.VISIBLE) {
+            if (module == StudentModule.ATTENDANCE &&
+                activeAttendanceDetailUrl != null && activeRenderedModuleData == null
+            ) {
+                // An in-flight subject detail may not have a durable detail cache. Prefer the
+                // saved Attendance summary while quietly resuming; do not leave an empty detail screen.
+                val summarySnapshotAvailable = (attendanceSummarySnapshot?.content?.childCount ?: 0) > 0
+                val cachedSummary = erpRepository.cachedPayload(StudentModule.ATTENDANCE)
+                    ?.let(::parseModuleData)
+                    ?.takeIf {
+                        it.attendanceDetail == null &&
+                            erpRepository.hasUsableData(StudentModule.ATTENDANCE, it)
+                    }
+                if (summarySnapshotAvailable) {
+                    returnToAttendanceSummary()
+                } else if (cachedSummary != null) {
+                    activeAttendanceDetailUrl = null
+                    pendingAttendanceResolution = false
+                    pendingAttendanceCourse = ""
+                    pendingAttendanceCode = ""
+                    bindModuleHeader(StudentModule.ATTENDANCE, "Attendance", "Your attendance", showBack = false)
+                    renderModuleData(StudentModule.ATTENDANCE, cachedSummary)
+                    binding.moduleInfo.text = "Showing saved attendance data"
+                }
+            }
             val cached = erpRepository.cachedPayload(module)
                 ?.let(::parseModuleData)
                 ?.takeIf { erpRepository.hasUsableData(module, it) }
