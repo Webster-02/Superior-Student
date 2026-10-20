@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- U2U aliases of the shared Pachattar% design tokens. -->
+    <color name="sc_navy">#0E1612</color><color name="sc_navy_mid">#0E1612</color><color name="sc_navy_violet">#0E1612</color>
+    <color name="sc_card">#17221C</color><color name="sc_input">#0E1612</color><color name="sc_border">#17FFFFFF</color>
+    <color name="sc_purple">#D4F34A</color><color name="sc_lavender">#D4F34A</color><color name="sc_online">#8FE0A5</color>
+    <color name="sc_text_primary">#F1F4EE</color><color name="sc_text_muted">#A8B5AD</color>
+    <color name="sc_danger">#FF8A7A</color><color name="sc_danger_bg">#3A1E1B</color>
+    <color name="sc_chat_avatar">#2B2745</color><color name="sc_chat_status">#17221C</color><color name="sc_chat_bubble">#17221C</color>
+    <color name="sc_hero">#0F4A38</color><color name="sc_tile">#1AFFFFFF</color><color name="sc_nav">#1B2A22</color><color name="sc_nav_icon">#9DB0A5</color>
+    <color name="sc_segment">#D4F34A</color><color name="sc_segment_ink">#14201A</color><color name="sc_button_primary_text">#14201A</color>
+    <color name="sc_button_secondary">#2A3B32</color><color name="sc_button_secondary_text">#F1F4EE</color>
+    <color name="sc_lav">#2B2745</color><color name="sc_peach">#3B2B24</color><color name="sc_sky">#1F3144</color><color name="sc_mint">#1D3A2E</color>
+    <color name="sc_ok_bg">#1F3A2A</color><color name="sc_warn_bg">#3B3220</color><color name="sc_warn">#F2C86B</color>
+</resources>

@@ -1,20 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Scoped Student Connect login palette; ERP and academic screens remain unchanged. -->
-    <color name="sc_navy">#080B1C</color>
-    <color name="sc_navy_mid">#121735</color>
-    <color name="sc_navy_violet">#21164B</color>
-    <color name="sc_card">#171C38</color>
-    <color name="sc_input">#0F142D</color>
-    <color name="sc_border">#45427D</color>
-    <color name="sc_purple">#7757FF</color>
-    <color name="sc_lavender">#C4B5FD</color>
-    <color name="sc_online">#4ADE80</color>
-    <color name="sc_text_primary">#F7F5FF</color>
-    <color name="sc_text_muted">#B7BEDC</color>
-    <color name="sc_danger">#FDA4AF</color>
-    <color name="sc_danger_bg">#3B1D35</color>
-    <color name="sc_chat_avatar">#30245F</color>
-    <color name="sc_chat_status">#12172F</color>
-    <color name="sc_chat_bubble">#191F3B</color>
+    <!-- U2U aliases of the shared Pachattar% design tokens. -->
+    <color name="sc_navy">#F4F1EA</color><color name="sc_navy_mid">#F4F1EA</color><color name="sc_navy_violet">#F4F1EA</color>
+    <color name="sc_card">#FFFFFF</color><color name="sc_input">#F4F1EA</color><color name="sc_border">#E6E2D8</color>
+    <color name="sc_purple">#D4F34A</color><color name="sc_lavender">#0B3D2E</color><color name="sc_online">#1E7A3C</color>
+    <color name="sc_text_primary">#14201A</color><color name="sc_text_muted">#5C6760</color>
+    <color name="sc_danger">#B3261E</color><color name="sc_danger_bg">#FBE3E0</color>
+    <color name="sc_chat_avatar">#E4DDFC</color><color name="sc_chat_status">#F4F1EA</color><color name="sc_chat_bubble">#FFFFFF</color>
+    <color name="sc_hero">#0B3D2E</color><color name="sc_tile">#99FFFFFF</color><color name="sc_nav">#14201A</color><color name="sc_nav_icon">#A9B7AE</color>
+    <color name="sc_segment">#14201A</color><color name="sc_segment_ink">#FFFFFF</color><color name="sc_button_primary_text">#14201A</color>
+    <color name="sc_button_secondary">#14201A</color><color name="sc_button_secondary_text">#FFFFFF</color>
+    <color name="sc_lav">#E4DDFC</color><color name="sc_peach">#FDDACA</color><color name="sc_sky">#D2E7FA</color><color name="sc_mint">#D5EFDF</color>
+    <color name="sc_ok_bg">#DCF3E3</color><color name="sc_warn_bg">#FFF0CC</color><color name="sc_warn">#8A5A00</color>
 </resources>
