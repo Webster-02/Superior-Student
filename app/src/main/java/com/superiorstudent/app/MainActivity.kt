@@ -352,25 +352,8 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.w("MainActivity", "Ignoring unreadable saved session", t)
             false
         }
-        if (savedInstanceState != null) {
-            if (ensureWebView()) webView.restoreState(savedInstanceState)
-        } else if (hasSavedSession) {
-            username = try { sessionStore.username } catch (_: Throwable) { "" }
-            if (username.isNotBlank()) erpRepository.activateAccount(username)
-            profileCache.reload()
-            if (ensureWebView()) {
-                if (!hasInternetAvailable()) {
-                    enterCachedSessionOffline()
-                } else {
-                    restoringSession = true
-                    binding.loginScroll.visibility = View.GONE
-                    binding.dashboardScroll.visibility = View.VISIBLE
-                    webView.visibility = View.GONE
-                    showDashboard()
-                    webView.visibility = View.INVISIBLE
-                    webView.loadUrl(ErpConfig.DASHBOARD_URL)
-                }
-            }
+        if (hasSavedSession) {
+            restoreNativeSessionFromSavedState(savedInstanceState)
         }
 
         handler.postDelayed({
@@ -1121,49 +1104,83 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        val resumedAt = System.currentTimeMillis()
+        val savedPause = getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE)
+            .getLong(RESUME_LAST_PAUSE_MS, 0L)
+        val pauseTimestamp = maxOf(lastPausedAt, savedPause)
+        val pausedFor = ResumeRecoveryPolicy.timeInBackground(resumedAt, pauseTimestamp)
+        lastResumeAtMs = resumedAt
+        lastPausedAt = 0L
+        getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE)
+            .edit().remove(RESUME_LAST_PAUSE_MS).apply()
         activityResumed = true
-        if ((loggedIn || sessionStore.sessionActive) && !hasInternetAvailable()) {
-            setOfflineMode(true)
-        } else if ((loggedIn || sessionStore.sessionActive) && offlineMode) {
-            revalidateSessionQuietly()
-        }
-        if (::webView.isInitialized) {
-            webView.onResume()
-            webView.resumeTimers()
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("AppLifecycle", "onResume at_ms=" + resumedAt +
+                " time_in_background_ms=" + pausedFor +
+                " logged_in=" + loggedIn + " saved_session=" + sessionStore.sessionActive)
         }
 
-        val pausedFor = if (lastPausedAt > 0L) System.currentTimeMillis() - lastPausedAt else 0L
-        lastPausedAt = 0L
-        if (loggedIn) {
-            if (pausedFor >= sessionResumeThresholdMs) {
-                recoverSessionAfterBackground()
-            } else {
-                startSessionHeartbeat()
-                val module = activeModule
-                if (module != null && binding.moduleScreen.visibility == View.VISIBLE && moduleFetchInProgress) {
-                    // If Android paused the WebView mid-navigation, restart only that
-                    // request. Keep cached content visible while the request completes.
-                    moduleReadRequestId++
-                    moduleReadAttempts = 0
-                    webView.stopLoading()
-                    val targetUrl = if (module == StudentModule.ATTENDANCE && !activeAttendanceDetailUrl.isNullOrBlank()) {
-                        activeAttendanceDetailUrl!!
-                    } else {
-                        ErpConfig.moduleUrl(module.path)
-                    }
-                    webView.loadUrl(targetUrl)
-                    scheduleModuleLoadFallback(module, moduleReadRequestId)
-                } else if (binding.dashboardScroll.visibility == View.VISIBLE &&
-                    !profileFetchInProgress && preloadingModule == null && preloadQueue.isEmpty()) {
-                    preloadAllModules()
-                }
+        // The first operation is always to remove touch blockers and paint from native cache.
+        restoreNativeScreenForResume("onResume")
+
+        if (::webView.isInitialized && !webViewNeedsRecreation) {
+            try {
+                webView.onResume()
+                webView.resumeTimers()
+            } catch (error: Throwable) {
+                if (BuildConfig.DEBUG) android.util.Log.w("WebViewRecovery", "WebView resume failed", error)
+                webViewNeedsRecreation = true
+                webViewReady = false
             }
         }
 
+        if (loggedIn || sessionStore.sessionActive) {
+            if (!hasInternetAvailable()) {
+                setOfflineMode(true)
+                resumeRecoveryNeeded = false
+            } else {
+                startSessionHeartbeat()
+                val needsRecovery = resumeRecoveryNeeded || pausedFor >= sessionResumeThresholdMs ||
+                    webViewNeedsRecreation
+                resumeRecoveryNeeded = false
+                if (needsRecovery) {
+                    handler.postDelayed({
+                        if (activityResumed && (loggedIn || sessionStore.sessionActive)) {
+                            recoverSessionAfterBackground(pausedFor)
+                        }
+                    }, RESUME_NETWORK_START_DELAY_MS)
+                } else {
+                    handler.postDelayed({
+                        if (!activityResumed || !(loggedIn || sessionStore.sessionActive)) return@postDelayed
+                        if (!ensureWebView()) {
+                            keepCachedSessionAfterTransientFailure(
+                                "University sign-in is temporarily unavailable. Saved data is still available."
+                            )
+                            return@postDelayed
+                        }
+                        if (activeModule == null) {
+                            if (ResumeRecoveryPolicy.shouldRevalidateSession(pausedFor)) {
+                                revalidateSessionQuietly()
+                            } else {
+                                pingSession()
+                                preloadAllModules()
+                            }
+                        } else if (activeRenderedModuleData == null) {
+                            recoverSessionAfterBackground(pausedFor)
+                        } else {
+                            pingSession()
+                        }
+                    }, RESUME_NETWORK_START_DELAY_MS)
+                }
+            }
+        }
+        scheduleResumeWatchdog()
     }
 
     override fun onPause() {
         lastPausedAt = System.currentTimeMillis()
+        getSharedPreferences(RESUME_RECOVERY_PREFS, MODE_PRIVATE)
+            .edit().putLong(RESUME_LAST_PAUSE_MS, lastPausedAt).apply()
         activityResumed = false
         if (BuildConfig.DEBUG) android.util.Log.d("AppLifecycle", "onPause at_ms=" + lastPausedAt)
         stopSessionHeartbeat()
@@ -1192,48 +1209,71 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    private fun recoverSessionAfterBackground() {
-        if (!loggedIn || !activityResumed) return
+    private fun recoverSessionAfterBackground(pausedForMs: Long = 0L) {
+        if (!activityResumed || !(loggedIn || sessionStore.sessionActive)) return
+        restoreNativeScreenForResume("background recovery")
+        if (!hasInternetAvailable()) {
+            setOfflineMode(true)
+            return
+        }
+        if (!ensureWebView()) {
+            keepCachedSessionAfterTransientFailure(
+                "University sign-in is temporarily unavailable. Saved data is still available."
+            )
+            return
+        }
 
         val module = activeModule
         cancelParallelPrefetch()
-        if (::webView.isInitialized) {
-            webView.stopLoading()
-            webView.visibility = View.INVISIBLE
-        }
         preloadingModule = null
         preloadQueue.clear()
+        try { webView.stopLoading() } catch (_: Throwable) { }
+        webView.visibility = View.INVISIBLE
 
         if (module != null && binding.moduleScreen.visibility == View.VISIBLE) {
+            val cached = erpRepository.cachedPayload(module)
+                ?.let(::parseModuleData)
+                ?.takeIf { erpRepository.hasUsableData(module, it) }
+                ?.takeIf {
+                    module != StudentModule.ATTENDANCE ||
+                        ((activeAttendanceDetailUrl != null) == (it.attendanceDetail != null))
+                }
+            if (cached != null && activeRenderedModuleData == null) {
+                renderModuleData(module, cached)
+            }
             moduleReadRequestId++
             moduleReadAttempts = 0
-            binding.moduleInfo.text = "Reconnecting to your student account…"
-            binding.moduleProgress.visibility = View.VISIBLE
-
-            erpRepository.cachedPayload(module)?.let { payload ->
-                parseModuleData(payload)
-                    ?.takeIf { erpRepository.hasUsableData(module, it) }
-                    ?.let { cached ->
-                        renderModuleData(module, cached)
-                        binding.moduleInfo.text = "Last synced data • Updating from ERP…"
-                        binding.moduleProgress.visibility = View.VISIBLE
-                    }
-            }
-
             moduleFetchInProgress = true
-            webView.loadUrl(ErpConfig.moduleUrl(module.path))
+            binding.modulePullRefresh.isRefreshing = false
+            setModuleLoaderVisible(false, "cache-first resume")
+            binding.moduleInfo.text = if (activeRenderedModuleData != null) {
+                "Showing saved data • Updating from ERP…"
+            } else {
+                "Reconnecting to your student account…"
+            }
+            val targetUrl = if (module == StudentModule.ATTENDANCE && !activeAttendanceDetailUrl.isNullOrBlank()) {
+                activeAttendanceDetailUrl!!
+            } else {
+                ErpConfig.moduleUrl(module.path)
+            }
+            beginModuleFetch(module)
+            webView.loadUrl(targetUrl)
             scheduleModuleLoadFallback(module, moduleReadRequestId)
         } else {
-            // Dashboard/profile are native UI. Don't reload the full ERP dashboard
-            // after returning from background, and invalidate a profile read that
-            // may have been interrupted while the app was suspended.
-            profileFetchInProgress = false
-            profileFetchGeneration++
-            webView.visibility = View.GONE
-            pingSession()
-            preloadAllModules()
+            binding.dashboardBottomNav.visibility = View.VISIBLE
+            applyModuleNavigation()
+            if (ResumeRecoveryPolicy.shouldRevalidateSession(pausedForMs)) {
+                revalidateSessionQuietly()
+            } else {
+                pingSession()
+                preloadAllModules()
+            }
         }
         startSessionHeartbeat()
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("SessionRecovery", "background_recovery scheduled screen=" +
+                (module?.name ?: "HOME") + " background_ms=" + pausedForMs + " cache_first=true")
+        }
     }
 
     private fun setModuleLoaderVisible(visible: Boolean, reason: String) {
@@ -1353,6 +1393,164 @@ class MainActivity : AppCompatActivity() {
                 )
             }, RESUME_NETWORK_START_DELAY_MS)
         }
+    }
+
+    private fun restoreNativeSessionFromSavedState(savedInstanceState: Bundle?) {
+        username = try { sessionStore.username } catch (_: Throwable) { "" }
+        if (username.isBlank()) {
+            if (BuildConfig.DEBUG) android.util.Log.w("SessionRecovery", "saved session had no username; showing login")
+            return
+        }
+        erpRepository.activateAccount(username)
+        profileCache.reload()
+        loggedIn = true
+        loginInProgress = false
+        restoringSession = false
+        silentReloginInProgress = false
+        profileFetchInProgress = false
+        moduleFetchInProgress = false
+        activeRenderedModuleData = null
+        activeAttendanceDetailUrl = null
+        pendingAttendanceResolution = false
+        pendingAttendanceCourse = ""
+        pendingAttendanceCode = ""
+        binding.sideMenuOverlay.visibility = View.GONE
+
+        val wantsModule = savedInstanceState?.getBoolean(STATE_MODULE_VISIBLE, false) == true
+        val restoredModule = savedInstanceState?.getString(STATE_ACTIVE_MODULE)
+            ?.let { saved -> StudentModule.values().firstOrNull { it.name == saved } }
+            .takeIf { wantsModule }
+        val requestedDetailUrl = savedInstanceState?.getString(STATE_ATTENDANCE_DETAIL_URL)
+            ?.takeIf { it.isNotBlank() }
+        val savedPause = savedInstanceState?.getLong(STATE_LAST_PAUSED_AT, 0L) ?: 0L
+        if (savedPause > 0L && lastPausedAt == 0L) lastPausedAt = savedPause
+        val savedScroll = savedInstanceState?.getInt(
+            if (restoredModule != null) STATE_MODULE_SCROLL_Y else STATE_HOME_SCROLL_Y, 0
+        ) ?: 0
+
+        binding.loginScroll.visibility = View.GONE
+        if (restoredModule != null) {
+            activeModule = restoredModule
+            activeAttendanceDetailUrl = requestedDetailUrl.takeIf { restoredModule == StudentModule.ATTENDANCE }
+            binding.dashboardScroll.visibility = View.GONE
+            binding.moduleScreen.visibility = View.VISIBLE
+            setModuleLoaderVisible(false, "process restore")
+            binding.modulePullRefresh.isRefreshing = false
+            binding.moduleContent.removeAllViews()
+            val cachedData = erpRepository.cachedPayload(restoredModule)
+                ?.let(::parseModuleData)
+                ?.takeIf { erpRepository.hasUsableData(restoredModule, it) }
+            val cachedMatchesScreen = cachedData != null &&
+                (restoredModule != StudentModule.ATTENDANCE ||
+                    (activeAttendanceDetailUrl != null && cachedData.attendanceDetail != null) ||
+                    (activeAttendanceDetailUrl == null && cachedData.attendanceDetail == null))
+            if (cachedMatchesScreen && cachedData != null) {
+                firstRenderSource = "process_restore_cache"
+                renderModuleData(restoredModule, cachedData)
+                binding.moduleInfo.text = "Showing saved data"
+            } else if (restoredModule == StudentModule.ATTENDANCE &&
+                requestedDetailUrl != null && cachedData != null && cachedData.attendanceDetail == null) {
+                activeAttendanceDetailUrl = null
+                renderModuleData(restoredModule, cachedData)
+                binding.moduleInfo.text = "Showing saved attendance data"
+            } else {
+                activeAttendanceDetailUrl = null
+                bindRestoredModuleHeader(restoredModule)
+                binding.moduleContent.addView(ErrorState.create(
+                    this,
+                    "Saved section is unavailable",
+                    "Your session is restored. Retry to load this section.",
+                    ::refreshActiveModule
+                ))
+                binding.moduleInfo.text = if (!hasInternetAvailable()) "Offline - no saved data yet" else "Showing saved data"
+            }
+            setModuleLoaderVisible(false, "process restore finished")
+            binding.modulePullRefresh.isRefreshing = false
+            applyModuleContentPadding(restoredModule)
+            applyModuleNavigation()
+            binding.moduleScroll.post { binding.moduleScroll.scrollTo(0, savedScroll) }
+        } else {
+            activeModule = null
+            activeRenderedModuleData = null
+            activeAttendanceDetailUrl = null
+            binding.moduleScreen.visibility = View.GONE
+            binding.dashboardScroll.visibility = View.VISIBLE
+            binding.dashboardBottomNav.visibility = View.VISIBLE
+            renderHomeDashboard()
+            binding.dashboardScroll.post { binding.dashboardScroll.scrollTo(0, savedScroll) }
+            applyModuleNavigation()
+        }
+
+        offlineMode = !hasInternetAvailable()
+        applySelectedTheme()
+        applySystemBarStyle(
+            statusColor = Palette.bg(this),
+            navigationColor = Palette.bg(this),
+            lightStatusIcons = Palette.isNight(this),
+            lightNavigationIcons = Palette.isNight(this)
+        )
+        setOfflineMode(offlineMode)
+        resumeRecoveryNeeded = true
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d(
+                "SessionRecovery",
+                "native_session_restored source=" + (if (savedInstanceState == null) "cold_start" else "saved_instance") +
+                    " screen=" + (restoredModule?.name ?: "HOME") + " cache_first=true"
+            )
+        }
+    }
+
+    private fun bindRestoredModuleHeader(module: StudentModule) {
+        when (module) {
+            StudentModule.ATTENDANCE ->
+                bindModuleHeader(module, "Attendance", "Your attendance", showBack = false)
+            StudentModule.TIMETABLE ->
+                bindModuleHeader(module, "Timetable", timetableDateSubtitle(), showBack = false)
+            StudentModule.RESULTS ->
+                bindModuleHeader(module, "Results", "Academic results", showBack = false)
+            StudentModule.FEE ->
+                bindModuleHeader(module, "Fee invoices", "", showBack = true)
+            StudentModule.PROFILE ->
+                bindModuleHeader(module, "Profile", "", showBack = true)
+            StudentModule.ENROLLED_COURSES ->
+                bindModuleHeader(module, "Enrolled courses", "", showBack = true)
+        }
+    }
+
+    private fun scheduleResumeWatchdog() {
+        val generation = ++resumeWatchdogGeneration
+        handler.postDelayed({
+            if (generation != resumeWatchdogGeneration || !activityResumed ||
+                !(loggedIn || sessionStore.sessionActive)
+            ) return@postDelayed
+            val visibleNative = binding.dashboardScroll.visibility == View.VISIBLE ||
+                binding.moduleScreen.visibility == View.VISIBLE
+            val stuckOverlay = binding.sideMenuOverlay.visibility == View.VISIBLE
+            val stuckLoader = binding.moduleProgress.visibility == View.VISIBLE && !moduleFetchInProgress
+            val missingNavigation = visibleNative && binding.dashboardBottomNav.visibility != View.VISIBLE
+            val screenMissing = !binding.loginScroll.isShown &&
+                !binding.dashboardScroll.isShown && !binding.moduleScreen.isShown
+            if (!stuckOverlay && !stuckLoader && !missingNavigation && !screenMissing && !webViewNeedsRecreation) return@postDelayed
+
+            if (BuildConfig.DEBUG) android.util.Log.w(
+                "UiRecovery",
+                "resume_watchdog triggered overlay=" + stuckOverlay + " loader=" + stuckLoader +
+                    " nav_missing=" + missingNavigation + " screen_missing=" + screenMissing +
+                    " webview_dead=" + webViewNeedsRecreation
+            )
+            restoreNativeScreenForResume("resume watchdog")
+            if (webViewNeedsRecreation) ensureWebView()
+            if (hasInternetAvailable()) {
+                resumeRecoveryNeeded = true
+                handler.postDelayed({
+                    if (activityResumed && (loggedIn || sessionStore.sessionActive)) {
+                        recoverSessionAfterBackground(0L)
+                    }
+                }, RESUME_NETWORK_START_DELAY_MS)
+            } else {
+                setOfflineMode(true)
+            }
+        }, ResumeRecoveryPolicy.UI_WATCHDOG_DELAY_MS)
     }
 
     private fun restoreNativeScreenForResume(reason: String) {
@@ -4457,6 +4655,8 @@ class MainActivity : AppCompatActivity() {
         private const val STATE_HOME_SCROLL_Y = "pachattar_state_home_scroll_y"
         private const val STATE_ATTENDANCE_DETAIL_URL = "pachattar_state_attendance_detail_url"
         private const val STATE_LAST_PAUSED_AT = "pachattar_state_last_paused_at"
+        private const val RESUME_RECOVERY_PREFS = "pachattar_resume_recovery"
+        private const val RESUME_LAST_PAUSE_MS = "last_pause_wall_clock_ms"
 
     }
 }
