@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="8dp"
+    android:layout_marginTop="@dimen/space_2"
     android:clickable="true"
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
@@ -18,7 +18,7 @@
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="12dp">
+        android:padding="@dimen/space_3">
 
         <TextView
             android:id="@+id/studentChatSummaryAvatar"
@@ -51,7 +51,7 @@
                 android:id="@+id/studentChatSummaryPreview"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="@dimen/space_1"
                 android:ellipsize="end"
                 android:maxLines="2"
                 android:textColor="@color/sc_text_muted"
@@ -78,9 +78,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:background="@drawable/bg_chat_unread_badge"
-                android:paddingStart="8dp"
+                android:paddingStart="@dimen/space_2"
                 android:paddingTop="3dp"
-                android:paddingEnd="8dp"
+                android:paddingEnd="@dimen/space_2"
                 android:paddingBottom="3dp"
                 android:textColor="@color/sc_text_primary"
                 android:textSize="10sp"
