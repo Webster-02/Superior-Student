@@ -243,9 +243,13 @@ class TimetableRenderer(
             if (selected) append(", selected")
         }
 
-        addView(text(day.take(3), 12f, if (selected) Palette.segmentInk(activity) else Palette.ink2(activity), false))
+        addView(text(day.take(3), 12f, if (selected) Palette.segmentInk(activity) else Palette.ink2(activity), false)
+            .apply { gravity = Gravity.CENTER })
         addView(text(date.get(Calendar.DAY_OF_MONTH).toString(), 16f, if (selected) Palette.segmentInk(activity) else Palette.ink(activity), true)
-            .apply { setPadding(0, dp(2), 0, 0) })
+            .apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2), 0, 0)
+            })
         addView(View(activity).apply {
             background = roundRect(
                 if (selected) Palette.segmentInk(activity) else Palette.ink3(activity),
