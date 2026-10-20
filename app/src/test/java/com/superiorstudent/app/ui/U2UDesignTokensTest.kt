@@ -52,5 +52,8 @@ class U2UDesignTokensTest {
         assertEquals(24, U2UDesignTokens.RADIUS_CARD_DP)
         assertEquals(28, U2UDesignTokens.RADIUS_HERO_DP)
         assertEquals(1.8f, U2UDesignTokens.ICON_STROKE_DP, 0f)
+        assertTrue(U2UDesignTokens.RADIUS_ICON_DP < U2UDesignTokens.RADIUS_CONTROL_DP)
+        assertTrue(U2UDesignTokens.RADIUS_CONTROL_DP < U2UDesignTokens.RADIUS_CARD_DP)
+        assertTrue(U2UDesignTokens.RADIUS_CARD_DP < U2UDesignTokens.RADIUS_HERO_DP)
     }
 }

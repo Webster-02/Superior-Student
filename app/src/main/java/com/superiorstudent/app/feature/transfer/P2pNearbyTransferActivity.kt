@@ -321,7 +321,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             visibility = View.VISIBLE
         }
-        val orbitCard = makeCard(R.color.sc_hero, 26).apply {
+        val orbitCard = makeCard(R.color.sc_hero, U2UDesignTokens.RADIUS_HERO_DP).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(176)
             ).apply { bottomMargin = dp(18) }
@@ -404,7 +404,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        val discoveryHero = makeCard(R.color.sc_card, 24).apply {
+        val discoveryHero = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
             layoutParams = fullWidthParams(bottom = 16)
             setPadding(dp(16), dp(16), dp(16), dp(16))
         }
@@ -454,7 +454,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        val verifyHero = makeCard(R.color.sc_hero, 24).apply { setPadding(0, 0, 0, 0) }
+        val verifyHero = makeCard(R.color.sc_hero, U2UDesignTokens.RADIUS_HERO_DP).apply { setPadding(0, 0, 0, 0) }
         val verifyContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(18))
@@ -478,7 +478,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        val transferHero = makeCard(R.color.sc_hero, 26).apply { setPadding(0, 0, 0, 0) }
+        val transferHero = makeCard(R.color.sc_hero, U2UDesignTokens.RADIUS_HERO_DP).apply { setPadding(0, 0, 0, 0) }
         val transferContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(16))
@@ -515,7 +515,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         )
         content.addView(progressPanel, fullWidthParams())
 
-        statusCard = makeCard(R.color.sc_chat_status, 18).apply {
+        statusCard = makeCard(R.color.sc_chat_status, U2UDesignTokens.RADIUS_CONTROL_DP).apply {
             visibility = View.GONE
             layoutParams = fullWidthParams(top = 12)
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -533,7 +533,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             if (action != null) requestNearbyWifiPermission(action) else runConnectionCheck()
         }.apply {
             minimumHeight = dp(40)
-            cornerRadius = dp(12)
+            cornerRadius = dp(U2UDesignTokens.RADIUS_ICON_DP)
             textSize = 12f
             visibility = View.GONE
         }
@@ -633,7 +633,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             isAllCaps = false
             textSize = 14f
             includeFontPadding = false
-            cornerRadius = dp(16)
+            cornerRadius = dp(U2UDesignTokens.RADIUS_CONTROL_DP)
             insetTop = 0
             insetBottom = 0
             minimumHeight = dp(50)
@@ -659,7 +659,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
 
     private fun makeInfoCard(message: String, backgroundResource: Int): MaterialCardView {
-        val card = makeCard(backgroundResource, 18).apply {
+        val card = makeCard(backgroundResource, U2UDesignTokens.RADIUS_CONTROL_DP).apply {
             setCardBackgroundColor(color(backgroundResource))
             setStrokeColor(color(backgroundResource))
             setPadding(dp(13), dp(12), dp(13), dp(12))
@@ -891,7 +891,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private fun showDiscoveredPeer(peer: P2pLanDiscovery.Peer) {
         if (!::peerListContainer.isInitialized) return
         peerListContainer.removeAllViews()
-        val rowCard = makeCard(R.color.sc_card, 22).apply {
+        val rowCard = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
             setCardBackgroundColor(color(R.color.sc_card))
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
@@ -913,7 +913,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         val connect = makeButton("Connect", primary = true) { }
         connect.apply {
             minimumHeight = dp(40)
-            cornerRadius = dp(12)
+            cornerRadius = dp(U2UDesignTokens.RADIUS_ICON_DP)
             textSize = 12f
             setPadding(dp(8), 0, dp(8), 0)
             setOnClickListener {
@@ -1723,7 +1723,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         val resumeOffset = resumeState?.tempFile?.length() ?: 0L
         val isResume = resumeState != null
         val canReuseDestination = isResume && resumeState?.destinationUri != null
-        val offerCard = makeCard(R.color.sc_card, 22).apply { setPadding(0, 0, 0, 0) }
+        val offerCard = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply { setPadding(0, 0, 0, 0) }
         val offerContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(14))
@@ -1796,7 +1796,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(6), dp(4), dp(6), dp(6))
             }
-            val codeCard = makeCard(R.color.sc_hero, 24).apply {
+            val codeCard = makeCard(R.color.sc_hero, U2UDesignTokens.RADIUS_HERO_DP).apply {
                 setCardBackgroundColor(color(R.color.sc_hero))
                 setStrokeColor(color(R.color.sc_hero))
                 setPadding(0, 0, 0, 0)
@@ -1818,7 +1818,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
             ))
             dialogContent.addView(codeCard, fullWidthParams(bottom = 12))
-            val detailsCard = makeCard(R.color.sc_card, 18).apply {
+            val detailsCard = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
                 setCardBackgroundColor(color(R.color.sc_card))
                 setPadding(dp(12), dp(12), dp(12), dp(12))
             }
@@ -2224,7 +2224,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             return
         }
         records.forEach { record ->
-            val card = makeCard(R.color.sc_card, 18).apply {
+            val card = makeCard(R.color.sc_card, U2UDesignTokens.RADIUS_CARD_DP).apply {
                 setPadding(dp(12), dp(12), dp(12), dp(12))
             }
             val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }

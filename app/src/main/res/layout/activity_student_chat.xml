@@ -68,7 +68,7 @@
                     android:layout_width="44dp"
                     android:layout_height="44dp"
                     app:cardBackgroundColor="@color/sc_chat_avatar"
-                    app:cardCornerRadius="15dp"
+                    app:cardCornerRadius="@dimen/radius_control"
                     app:cardElevation="0dp"
                     app:strokeColor="@color/sc_border"
                     app:strokeWidth="1dp">
@@ -180,7 +180,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         app:cardBackgroundColor="@color/sc_chat_status"
-        app:cardCornerRadius="16dp"
+        app:cardCornerRadius="@dimen/radius_control"
         app:cardElevation="0dp"
         app:strokeColor="@color/sc_border"
         app:strokeWidth="1dp">
@@ -214,7 +214,7 @@
                 android:textSize="12sp"
                 android:visibility="gone"
                 app:backgroundTint="@color/sc_purple"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="@dimen/radius_icon" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
@@ -263,7 +263,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="7dp"
         app:cardBackgroundColor="@color/sc_card"
-        app:cardCornerRadius="23dp"
+        app:cardCornerRadius="@dimen/radius_card"
         app:cardElevation="8dp"
         app:strokeColor="@color/sc_border"
         app:strokeWidth="1dp">
@@ -445,7 +445,7 @@
                     android:textColor="@color/sc_button_primary_text"
                     android:textSize="13sp"
                     app:backgroundTint="@color/sc_purple"
-                    app:cornerRadius="15dp" />
+                    app:cornerRadius="@dimen/radius_control" />
             </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
