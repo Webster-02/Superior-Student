@@ -20,6 +20,13 @@ class HomeDisplayRulesTest {
         assertEquals("S", HomeDisplayRules.initials(""))
     }
 
+    @Test fun homeHeroPrefersSavedCgpaThenSavedAttendanceAndDefaultsToCgpaPlaceholder() {
+        assertEquals(HomeHeroType.CGPA, HomeDisplayRules.chooseHero(hasValidSavedCgpa = true, hasValidSavedAttendance = true))
+        assertEquals(HomeHeroType.CGPA, HomeDisplayRules.chooseHero(hasValidSavedCgpa = true, hasValidSavedAttendance = false))
+        assertEquals(HomeHeroType.ATTENDANCE, HomeDisplayRules.chooseHero(hasValidSavedCgpa = false, hasValidSavedAttendance = true))
+        assertEquals(HomeHeroType.CGPA, HomeDisplayRules.chooseHero(hasValidSavedCgpa = false, hasValidSavedAttendance = false))
+    }
+
     @Test fun attendanceBandsUseEightyAndSeventyFivePercentBoundaries() {
         assertEquals(AttendanceBand.SAFE, HomeDisplayRules.attendanceBand(80.0))
         assertEquals(AttendanceBand.NEAR_LIMIT, HomeDisplayRules.attendanceBand(75.0))

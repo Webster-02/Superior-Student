@@ -56,6 +56,8 @@ import com.superiorstudent.app.ui.Palette
 import com.superiorstudent.app.ui.AppTheme
 import com.superiorstudent.app.ui.AppThemePreferences
 import com.superiorstudent.app.ui.HomeDisplayRules
+import com.superiorstudent.app.ui.HomeHeroType
+import com.superiorstudent.app.ui.components.HomeValueTransition
 import com.superiorstudent.app.ui.components.*
 
 import com.superiorstudent.app.data.model.AttendanceDetailData
@@ -88,7 +90,10 @@ class MainActivity : AppCompatActivity() {
     private var navigationBarScrim: View? = null
     private var webViewReady = false
     private var activityResumed = false
-    private var dashboardEntranceAnimated = false
+    private var homeHeroType: HomeHeroType? = null
+    private var homeHeroNight: Boolean? = null
+    private var homeHeroAttendancePercentage: Double? = null
+    private var homeHeroSafeLeaves: Int? = null
     private var homePreloadComplete = false
     private val handler = Handler(Looper.getMainLooper())
     private val sessionStore by lazy { SessionStore(this) }
@@ -1055,28 +1060,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (loggedIn && binding.dashboardScroll.visibility == View.VISIBLE && !dashboardEntranceAnimated) {
-            dashboardEntranceAnimated = true
-            animateDashboardEntrance()
-        }
-    }
-
-    /** Sequential fade/scale-in for the dashboard hero + stat + action cards. */
-    private fun animateDashboardEntrance() {
-        val targets = listOf(
-            binding.dashboardScreen.getChildAt(0),  // gradient header
-            binding.studentName                      // welcome card name
-        )
-        var delay = 0L
-        for (t in targets) {
-            t?.animate()?.alpha(0f)?.setDuration(0)?.withEndAction {
-                android.view.animation.AnimationUtils.loadAnimation(this, R.anim.fade_scale_in).let { anim ->
-                    anim.startOffset = delay
-                    t.startAnimation(anim)
-                }
-            }?.start()
-            delay += 90
-        }
     }
 
     override fun onPause() {
@@ -1219,7 +1202,16 @@ class MainActivity : AppCompatActivity() {
         sessionStore.sessionActive = true
         sessionStore.username = username
         if (password.isNotBlank()) savedCredentialsStore.save(username, password)
-        if (erpRepository.activateAccount(username)) profileCache.clear() else profileCache.reload()
+        val accountChanged = erpRepository.activateAccount(username)
+        if (accountChanged) {
+            homeHeroType = null
+            homeHeroNight = null
+            homeHeroAttendancePercentage = null
+            homeHeroSafeLeaves = null
+            profileCache.clear()
+        } else {
+            profileCache.reload()
+        }
         CookieManager.getInstance().flush()
         binding.loginStatus.text = ""
         styleLoginStatus()
@@ -2785,6 +2777,8 @@ class MainActivity : AppCompatActivity() {
     private fun renderHomeDashboard() {
         if (!::binding.isInitialized) return
 
+        // The static header is bound first, synchronously from the persisted profile snapshot.
+        // It is never hidden behind preload state or an entrance animation.
         val fullName = profileCache.studentName.takeIf { ParsingUtils.isValidStudentName(it) }.orEmpty()
         PageHeader.bind(this, binding.homeDateLine, binding.studentName, binding.studentAvatarInitial, fullName)
         renderMoreProfileCard()
@@ -2797,30 +2791,55 @@ class MainActivity : AppCompatActivity() {
             ?.takeIf { HomeDisplayRules.attendanceBand(it) != null }
         val cgpa = profileCache.cgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
             ?.let { ParsingUtils.validGpa(it) }.orEmpty()
-        val isLoading = loggedIn && !homePreloadComplete
+        val sgpa = profileCache.sgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
+            ?.let { ParsingUtils.validGpa(it) }.orEmpty()
 
-        binding.homeHeroContainer.removeAllViews()
-        val hero = when {
-            isLoading -> Skeleton.hero(this)
-            attendancePercent != null -> {
-                val counts = attendanceData?.let { findOverallAttendanceCounts(it, attendancePercent) }
-                val canMiss = counts?.let { pair ->
-                    AttendanceCalculator.calculate(pair.first, pair.second)?.safeFutureLeaves
-                }
-                HeroCard.attendance(this, attendancePercent, canMiss).also { card ->
+        // Keep the chosen hero type fixed for this account/session. New cache values
+        // update the current card in place; an unrelated module finishing prefetch
+        // cannot swap Attendance and CGPA after the first render.
+        val selectedHeroType = homeHeroType ?: HomeDisplayRules.chooseHero(
+            hasValidSavedCgpa = cgpa.isNotBlank(),
+            hasValidSavedAttendance = attendancePercent != null
+        ).also { homeHeroType = it }
+        if (attendancePercent != null) {
+            homeHeroAttendancePercentage = attendancePercent
+            val counts = attendanceData?.let { findOverallAttendanceCounts(it, attendancePercent) }
+            homeHeroSafeLeaves = counts?.let { pair ->
+                AttendanceCalculator.calculate(pair.first, pair.second)?.safeFutureLeaves
+            }
+        }
+        val heroAttendancePercent = homeHeroAttendancePercentage ?: attendancePercent ?: 0.0
+        val heroTag = "pachattar_home_hero_" + selectedHeroType.name
+        val currentHero = binding.homeHeroContainer.getChildAt(0) as? LinearLayout
+        val shouldRebuildHero = currentHero == null ||
+            currentHero.tag != heroTag ||
+            homeHeroNight != Palette.isNight(this)
+        if (shouldRebuildHero) {
+            binding.homeHeroContainer.removeAllViews()
+            val hero = when (selectedHeroType) {
+                HomeHeroType.ATTENDANCE -> HeroCard.attendance(this, heroAttendancePercent, homeHeroSafeLeaves).also { card ->
                     card.setOnClickListener { loadModule(StudentModule.ATTENDANCE) }
                     attachPressFeedback(card)
                 }
+                HomeHeroType.CGPA -> HeroCard.cgpa(this, cgpa).also { card ->
+                    card.setOnClickListener { loadModule(StudentModule.RESULTS) }
+                    attachPressFeedback(card)
+                }
             }
-            else -> HeroCard.cgpa(this, cgpa).also { card ->
-                card.setOnClickListener { loadModule(StudentModule.RESULTS) }
-                attachPressFeedback(card)
+            hero.tag = heroTag
+            binding.homeHeroContainer.addView(hero, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            homeHeroNight = Palette.isNight(this)
+        } else {
+            when (selectedHeroType) {
+                HomeHeroType.ATTENDANCE -> HeroCard.updateAttendance(currentHero!!, heroAttendancePercent, homeHeroSafeLeaves)
+                HomeHeroType.CGPA -> HeroCard.updateCgpa(currentHero!!, cgpa)
             }
         }
-        binding.homeHeroContainer.addView(hero, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
 
+        // Every dashboard card has a persistent slot. Loading means placeholders in
+        // the same slots, never a skeleton that changes the surrounding layout.
         renderHomeNextClassCard()
 
         val feeData = erpRepository.cachedPayload(StudentModule.FEE)
@@ -2835,36 +2854,52 @@ class MainActivity : AppCompatActivity() {
             if (overdue) "Overdue since " + HomeDisplayRules.dueDateFullLabel(invoice.dueDate).orEmpty()
             else "by " + dueDate.orEmpty()
         }.orEmpty()
-        val sgpa = profileCache.sgpa.takeIf { ParsingUtils.validGpa(it).isNotBlank() }
-            ?.let { ParsingUtils.validGpa(it) }.orEmpty()
-        // Attendance-free Home already uses the large CGPA hero; put SGPA and (when valid) fees in the bento row.
-        val cgpaHeroShown = !isLoading && attendancePercent == null
+
         BentoCard.bind(
             this, binding.cgpaCard, binding.studentCgpaLabel, binding.studentCgpa, binding.studentCgpaCaption,
-            if (cgpaHeroShown) "SGPA" else "CGPA",
-            if (cgpaHeroShown) sgpa else cgpa,
-            "",
-            if (cgpaHeroShown) Palette.sky(this) else Palette.lav(this),
-            isLoading,
-            38f
+            "CGPA", cgpa, "", Palette.lav(this), false, 38f
         )
-        binding.cgpaCard.visibility = if (cgpaHeroShown && sgpa.isBlank() && !isLoading) View.GONE else View.VISIBLE
+        binding.cgpaCard.visibility = View.VISIBLE
 
         BentoCard.bind(
             this, binding.sgpaCard, binding.studentSgpaLabel, binding.studentSgpa, binding.studentSgpaCaption,
-            if (showFeeDue) if (overdue) "Overdue" else "Fee due" else "SGPA",
-            if (showFeeDue) payable.orEmpty() else sgpa,
-            feeCaption,
-            if (overdue) Palette.badBg(this) else Palette.sky(this),
-            isLoading,
-            if (showFeeDue) 23f else 38f
+            "SGPA", sgpa, "", Palette.sky(this), false, 38f
         )
-        binding.sgpaCard.visibility = if (cgpaHeroShown && !showFeeDue && !isLoading) View.GONE else View.VISIBLE
-        if (overdue) {
-            binding.studentSgpaLabel.setTextColor(Palette.bad(this))
-            binding.studentSgpa.setTextColor(Palette.bad(this))
-            binding.studentSgpaCaption.setTextColor(Palette.bad(this))
+        binding.sgpaCard.visibility = View.VISIBLE
+
+        binding.homeFeeCard.visibility = View.VISIBLE
+        binding.homeFeeCard.background = roundedBackground(
+            when {
+                overdue -> Palette.badBg(this)
+                showFeeDue -> Palette.sky(this)
+                else -> Palette.card(this)
+            },
+            22f
+        )
+        val feeLabel = when {
+            overdue -> "OVERDUE"
+            showFeeDue -> "FEE DUE"
+            else -> "FEE STATUS"
         }
+        val feeValue = when {
+            showFeeDue -> payable.orEmpty()
+            feeData == null -> "Not synced"
+            else -> "No current amount due"
+        }
+        val feeHelper = when {
+            showFeeDue -> feeCaption
+            feeData == null -> "Saved fee information will appear here"
+            else -> "Open Fee Invoices for the full breakdown"
+        }
+        binding.homeFeeLabel.text = feeLabel
+        HomeValueTransition.updateText(binding.homeFeeValue, feeValue)
+        HomeValueTransition.updateText(binding.homeFeeCaption, feeHelper)
+        val feeTextColor = if (overdue) Palette.bad(this) else Palette.ink(this)
+        binding.homeFeeLabel.setTextColor(if (overdue) Palette.bad(this) else Palette.ink2(this))
+        binding.homeFeeValue.setTextColor(feeTextColor)
+        binding.homeFeeCaption.setTextColor(if (overdue) Palette.bad(this) else Palette.ink2(this))
+        binding.homeFeeCard.contentDescription = "$feeLabel: $feeValue. $feeHelper"
+        binding.homeFeeCard.setOnClickListener { loadModule(StudentModule.FEE) }
 
         ListCard.bind(this, binding.timetableButton, R.drawable.ic_pt_calendar, "Timetable")
         ListCard.bind(this, binding.resultsButton, R.drawable.ic_pt_chart, "Results")
@@ -2876,7 +2911,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderHomeNextClassCard() {
         val container = binding.homeNextClassContainer
-        container.visibility = View.GONE
+        container.visibility = View.VISIBLE
+        container.minimumHeight = dp(108)
+        container.background = roundedBackground(Palette.peach(this), 24f)
+        binding.nextClassLabel.text = "Next class"
+        HomeValueTransition.updateText(binding.homeNextClassTitle, "Schedule not synced")
+        HomeValueTransition.updateText(binding.homeNextClassTime, "Open Timetable to load your classes")
+        binding.nextClassLabel.setTextColor(Palette.ink2(this))
+        binding.homeNextClassTitle.setTextColor(Palette.ink(this))
+        binding.homeNextClassTime.setTextColor(Palette.ink2(this))
+        binding.homeNextClassTitle.maxLines = 2
+        binding.homeNextClassTitle.isSingleLine = false
+        binding.homeNextClassIcon.background = roundedBackground(Palette.ink(this), 999f)
+        val arrow = binding.homeNextClassIcon.getChildAt(0) as? android.widget.ImageView
+        arrow?.imageTintList = ColorStateList.valueOf(Palette.bg(this))
+        container.setOnClickListener { loadModule(StudentModule.TIMETABLE) }
+
         val data = erpRepository.cachedPayload(StudentModule.TIMETABLE)
             ?.let { parseModuleData(it) }
             ?.takeIf { erpRepository.hasUsableData(StudentModule.TIMETABLE, it) }
@@ -2884,7 +2934,11 @@ class MainActivity : AppCompatActivity() {
         val rows = TimetableParser.toRows(data.records)
             .filter { it.time.isNotBlank() && it.course.isNotBlank() }
             .distinctBy { it.day + "|" + it.time + "|" + it.course + "|" + it.code }
-        if (rows.isEmpty()) return
+        if (rows.isEmpty()) {
+            HomeValueTransition.updateText(binding.homeNextClassTitle, "No upcoming class in saved schedule")
+            HomeValueTransition.updateText(binding.homeNextClassTime, "Open Timetable to view the weekly schedule")
+            return
+        }
 
         val now = java.util.Calendar.getInstance()
         val currentDay = when (now.get(java.util.Calendar.DAY_OF_WEEK)) {
@@ -2897,15 +2951,29 @@ class MainActivity : AppCompatActivity() {
             else -> "Sunday"
         }
         val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
-        val next = NextClassSelector.selectNext(rows, currentDay, currentMinutes) ?: return
-        if (next.course.isBlank()) return
-        val startMinutes = ParsingUtils.startMinutesOf(next.time) ?: return
+        val next = NextClassSelector.selectNext(rows, currentDay, currentMinutes)
+        if (next == null || next.course.isBlank()) {
+            HomeValueTransition.updateText(binding.homeNextClassTitle, "No upcoming class in saved schedule")
+            HomeValueTransition.updateText(binding.homeNextClassTime, "Open Timetable to view the weekly schedule")
+            return
+        }
+        val startMinutes = ParsingUtils.startMinutesOf(next.time)
+        if (startMinutes == null) {
+            HomeValueTransition.updateText(binding.homeNextClassTitle, "Schedule needs a refresh")
+            HomeValueTransition.updateText(binding.homeNextClassTime, "Open Timetable to reload class times")
+            return
+        }
         val weekday = mapOf(
             "Monday" to 1, "Tuesday" to 2, "Wednesday" to 3, "Thursday" to 4,
             "Friday" to 5, "Saturday" to 6, "Sunday" to 7
         )
-        val dayNumber = weekday.entries.firstOrNull { it.key.equals(next.day, true) }?.value ?: return
-        val todayNumber = weekday.entries.firstOrNull { it.key.equals(currentDay, true) }?.value ?: return
+        val dayNumber = weekday.entries.firstOrNull { it.key.equals(next.day, true) }?.value
+        val todayNumber = weekday.entries.firstOrNull { it.key.equals(currentDay, true) }?.value
+        if (dayNumber == null || todayNumber == null) {
+            HomeValueTransition.updateText(binding.homeNextClassTitle, "Schedule needs a refresh")
+            HomeValueTransition.updateText(binding.homeNextClassTime, "Open Timetable to reload class times")
+            return
+        }
         var daysUntil = (dayNumber - todayNumber + 7) % 7
         if (daysUntil == 0 && startMinutes < currentMinutes) daysUntil = 7
         val minutesUntil = (daysUntil * 1440 + startMinutes - currentMinutes).coerceAtLeast(0)
@@ -2925,22 +2993,11 @@ class MainActivity : AppCompatActivity() {
             "Next class · in $minutesUntil min"
         }
 
-        container.visibility = View.VISIBLE
-        container.background = roundedBackground(Palette.peach(this), 24f)
         binding.nextClassLabel.text = nextClassLabel
-        binding.homeNextClassTitle.text = ParsingUtils.cleanDisplayText(next.course)
-        binding.homeNextClassTitle.maxLines = 2
-        binding.homeNextClassTitle.isSingleLine = false
-        binding.homeNextClassTime.text = timeText
-        binding.homeNextClassTitle.setTextColor(Palette.ink(this))
+        HomeValueTransition.updateText(binding.homeNextClassTitle, ParsingUtils.cleanDisplayText(next.course))
+        HomeValueTransition.updateText(binding.homeNextClassTime, timeText)
         binding.homeNextClassTitle.typeface =
             androidx.core.content.res.ResourcesCompat.getFont(this, R.font.poppins_medium) ?: typeface
-        binding.nextClassLabel.setTextColor(Palette.ink2(this))
-        binding.homeNextClassTime.setTextColor(Palette.ink2(this))
-        binding.homeNextClassIcon.background = roundedBackground(Palette.ink(this), 999f)
-        val arrow = binding.homeNextClassIcon.getChildAt(0) as? android.widget.ImageView
-        arrow?.imageTintList = ColorStateList.valueOf(Palette.bg(this))
-        container.setOnClickListener { loadModule(StudentModule.TIMETABLE) }
         attachPressFeedback(container)
     }
 
@@ -3692,6 +3749,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun logout() {
         cancelParallelPrefetch()
+        homeHeroType = null
+        homeHeroNight = null
+        homeHeroAttendancePercentage = null
+        homeHeroSafeLeaves = null
         moduleFetchGenerations.clear()
         moduleFetchStartedAtMs.clear()
         lastModuleFetchAttemptAtElapsedMs.clear()

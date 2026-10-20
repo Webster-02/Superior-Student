@@ -928,6 +928,7 @@
                 android:id="@+id/homeNextClassContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:minHeight="108dp"
                 android:layout_marginStart="16dp"
                 android:layout_marginTop="10dp"
                 android:layout_marginEnd="16dp"
@@ -935,7 +936,7 @@
                 android:gravity="center_vertical"
                 android:padding="16dp"
                 android:background="@color/peach"
-                android:visibility="gone"
+                android:visibility="visible"
                 android:clickable="true"
                 android:focusable="true">
 
@@ -1090,6 +1091,63 @@
                         android:visibility="gone"
                         android:includeFontPadding="false" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/homeFeeCard"
+                android:layout_width="match_parent"
+                android:layout_height="88dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="10dp"
+                android:layout_marginEnd="16dp"
+                android:orientation="vertical"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:paddingTop="10dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="10dp"
+                android:background="@color/card"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Fee status">
+
+                <TextView
+                    android:id="@+id/homeFeeLabel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="FEE STATUS"
+                    android:textColor="@color/ink_500"
+                    android:textSize="10sp"
+                    android:fontFamily="@font/poppins_medium"
+                    android:letterSpacing="0.06"
+                    android:includeFontPadding="false"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:id="@+id/homeFeeValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Not synced"
+                    android:textColor="@color/ink_900"
+                    android:textSize="20sp"
+                    android:fontFamily="@font/poppins_medium"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/homeFeeCaption"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="1dp"
+                    android:text="Saved fee information will appear here"
+                    android:textColor="@color/ink_500"
+                    android:textSize="11sp"
+                    android:fontFamily="@font/poppins"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
             </LinearLayout>
 
             <TextView

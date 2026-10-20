@@ -9,8 +9,24 @@ import java.util.Date
 import java.util.Locale
 
 enum class AttendanceBand { SAFE, NEAR_LIMIT, SHORT }
+enum class HomeHeroType { CGPA, ATTENDANCE }
 
 object HomeDisplayRules {
+    /**
+     * Stable Home hero rule, evaluated from persisted data on first Home render:
+     * 1) use CGPA if the saved profile contains a valid CGPA;
+     * 2) otherwise use Attendance if saved attendance has a valid overall percentage;
+     * 3) if neither is available, use the CGPA hero with its normal unavailable placeholder.
+     *
+     * The chosen type stays fixed for this signed-in account/session while values update in place.
+     */
+    fun chooseHero(hasValidSavedCgpa: Boolean, hasValidSavedAttendance: Boolean): HomeHeroType =
+        when {
+            hasValidSavedCgpa -> HomeHeroType.CGPA
+            hasValidSavedAttendance -> HomeHeroType.ATTENDANCE
+            else -> HomeHeroType.CGPA
+        }
+
     fun firstName(fullName: String): String = fullName.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
 
     fun initials(fullName: String): String {

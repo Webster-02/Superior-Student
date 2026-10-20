@@ -64,9 +64,28 @@ object Chip {
         }
 }
 
+/**
+ * Updates a displayed value without changing its view or its parent's measured structure.
+ * Initial values are set immediately; later changes get a short, subtle fade.
+ */
+object HomeValueTransition {
+    fun updateText(view: TextView, value: String) {
+        if (view.text?.toString() == value) return
+        val animateChange = view.isLaidOut && view.visibility == View.VISIBLE
+        view.animate().cancel()
+        view.text = value
+        if (animateChange) {
+            view.alpha = 0.78f
+            view.animate().alpha(1f).setDuration(150L).start()
+        } else {
+            view.alpha = 1f
+        }
+    }
+}
+
 object Avatar {
     fun bind(context: Context, view: TextView, fullName: String) {
-        view.text = HomeDisplayRules.initials(fullName)
+        HomeValueTransition.updateText(view, HomeDisplayRules.initials(fullName))
         view.typeface = mediumTypeface(context)
         view.textSize = 14f
         view.gravity = Gravity.CENTER
@@ -101,13 +120,13 @@ object PageHeader {
     }
 
     fun bind(context: Context, dateView: TextView, greetingView: TextView, avatarView: TextView, fullName: String) {
-        dateView.text = SimpleDateFormat("EEEE, d MMM", Locale.ENGLISH).format(Date())
+        HomeValueTransition.updateText(dateView, SimpleDateFormat("EEEE, d MMM", Locale.ENGLISH).format(Date()))
         dateView.textSize = 12f
         dateView.setTextColor(Palette.ink2(context))
         dateView.typeface = regularTypeface(context)
         dateView.includeFontPadding = false
         val firstName = HomeDisplayRules.firstName(fullName)
-        greetingView.text = if (firstName.isNotBlank()) "Salam, " + firstName else "Salam"
+        HomeValueTransition.updateText(greetingView, if (firstName.isNotBlank()) "Salam, " + firstName else "Salam")
         greetingView.textSize = 26f
         greetingView.setTextColor(Palette.ink(context))
         greetingView.typeface = mediumTypeface(context)
@@ -122,9 +141,17 @@ object PageHeader {
 
 object ProgressBar {
     fun create(context: Context, percentage: Double): View = AttendanceProgressView(context, percentage.coerceIn(0.0, 100.0))
+    fun update(view: View?, percentage: Double) {
+        (view as? AttendanceProgressView)?.updatePercentage(percentage)
+    }
 }
 
-private class AttendanceProgressView(context: Context, private val percentage: Double) : View(context) {
+private class AttendanceProgressView(context: Context, private var percentage: Double) : View(context) {
+    fun updatePercentage(value: Double) {
+        percentage = value.coerceIn(0.0, 100.0)
+        contentDescription = percentage.toInt().toString() + "% attendance; 75% target marker"
+        invalidate()
+    }
     private val density = resources.displayMetrics.density
     private fun d(value: Float) = value * density
     private val track = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -382,14 +409,14 @@ object HeroCard {
         }
     }
 
-    fun attendance(context: Context, percentage: Double, safeLeaves: Int?): LinearLayout {
+    private fun attendanceStatus(context: Context, percentage: Double): Triple<String, Int, Int> {
         val band = HomeDisplayRules.attendanceBand(percentage) ?: AttendanceBand.SHORT
-        val statusText = when (band) {
+        val label = when (band) {
             AttendanceBand.SAFE -> "Safe zone"
             AttendanceBand.NEAR_LIMIT -> "Near limit"
             AttendanceBand.SHORT -> "Short"
         }
-        val chipColors = if (Palette.isNight(context)) {
+        val colors = if (Palette.isNight(context)) {
             Palette.nav(context) to when (band) {
                 AttendanceBand.SAFE -> Palette.ok(context)
                 AttendanceBand.NEAR_LIMIT -> Palette.warn(context)
@@ -402,6 +429,11 @@ object HeroCard {
                 AttendanceBand.SHORT -> Palette.badBg(context) to Palette.bad(context)
             }
         }
+        return Triple(label, colors.first, colors.second)
+    }
+
+    fun attendance(context: Context, percentage: Double, safeLeaves: Int?): LinearLayout {
+        val status = attendanceStatus(context, percentage)
         return base(context).apply {
             val top = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -410,31 +442,64 @@ object HeroCard {
                     text = "Attendance"; textSize = 13f; setTextColor(Palette.heroInk(context))
                     typeface = regularTypeface(context); includeFontPadding = false
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(Chip.createCustom(context, statusText, chipColors.first, chipColors.second))
+                addView(Chip.createCustom(context, status.first, status.second, status.third).apply {
+                    tag = "pachattar_home_hero_attendance_status"
+                })
             }
             addView(top)
             val valueRow = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.BOTTOM
                 setPadding(0, px(context, 6f), 0, px(context, 8f))
                 addView(TextView(context).apply {
-                    text = formatPercent(percentage); textSize = 68f; setTextColor(Palette.heroInk(context))
+                    text = formatPercent(percentage); tag = "pachattar_home_hero_attendance_value"
+                    textSize = 68f; setTextColor(Palette.heroInk(context))
                     typeface = mediumTypeface(context); includeFontPadding = false
                     setFontFeatureSettings("tnum"); letterSpacing = -0.035f
                 })
                 addView(TextView(context).apply {
-                    text = "%"; textSize = 26f; setTextColor(Palette.heroInk(context))
+                    text = "%"; tag = "pachattar_home_hero_attendance_unit"
+                    textSize = 26f; setTextColor(Palette.heroInk(context))
                     typeface = mediumTypeface(context); includeFontPadding = false
                     setPadding(px(context, 2f), 0, 0, px(context, 3f))
                 })
             }
             addView(valueRow)
-            addView(ProgressBar.create(context, percentage), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(context, 40f)))
-            if (safeLeaves != null) addView(TextView(context).apply {
-                text = "You can miss " + safeLeaves + " more " + if (safeLeaves == 1) "lecture" else "lectures"
+            addView(ProgressBar.create(context, percentage).apply {
+                tag = "pachattar_home_hero_attendance_progress"
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(context, 40f)))
+            addView(TextView(context).apply {
+                tag = "pachattar_home_hero_attendance_safe_leaves"
+                text = safeLeaves?.let {
+                    "You can miss " + it + " more " + if (it == 1) "lecture" else "lectures"
+                }.orEmpty()
                 textSize = 14f; setTextColor(Palette.heroInk(context)); typeface = regularTypeface(context)
                 includeFontPadding = false; setPadding(0, px(context, 8f), 0, 0)
+                minHeight = px(context, 22f)
+                visibility = if (safeLeaves == null) View.INVISIBLE else View.VISIBLE
             })
-        }.also { it.contentDescription = "Overall attendance " + formatPercent(percentage) + " percent, " + statusText }
+        }.also { it.contentDescription = "Overall attendance " + formatPercent(percentage) + " percent, " + status.first }
+    }
+
+    fun updateAttendance(card: LinearLayout, percentage: Double, safeLeaves: Int?) {
+        val status = attendanceStatus(card.context, percentage)
+        (card.findViewWithTag<View>("pachattar_home_hero_attendance_status") as? TextView)?.let { chip ->
+            HomeValueTransition.updateText(chip, status.first)
+            chip.setTextColor(status.third)
+            chip.background = roundRect(card.context, status.second, 999f)
+            chip.contentDescription = status.first
+        }
+        (card.findViewWithTag<View>("pachattar_home_hero_attendance_value") as? TextView)?.let {
+            HomeValueTransition.updateText(it, formatPercent(percentage))
+        }
+        ProgressBar.update(card.findViewWithTag("pachattar_home_hero_attendance_progress"), percentage)
+        (card.findViewWithTag<View>("pachattar_home_hero_attendance_safe_leaves") as? TextView)?.let { leaveView ->
+            HomeValueTransition.updateText(leaveView, safeLeaves?.let {
+                "You can miss " + it + " more " + if (it == 1) "lecture" else "lectures"
+            }.orEmpty())
+            leaveView.visibility = if (safeLeaves == null) View.INVISIBLE else View.VISIBLE
+        }
+        card.contentDescription = "Overall attendance " + formatPercent(percentage) + " percent, " + status.first
     }
 
     fun cgpa(context: Context, cgpa: String): LinearLayout = base(context).apply {
@@ -444,19 +509,37 @@ object HeroCard {
                 text = "CGPA"; textSize = 13f; setTextColor(Palette.heroInk(context))
                 typeface = regularTypeface(context); includeFontPadding = false
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(Chip.createCustom(context, if (cgpa.isBlank()) "Unavailable" else "Academic overview", Palette.heroTrack(context), Palette.heroInk(context)))
+            addView(Chip.createCustom(context, if (cgpa.isBlank()) "Unavailable" else "Academic overview", Palette.heroTrack(context), Palette.heroInk(context)).apply {
+                tag = "pachattar_home_hero_cgpa_status"
+            })
         }
         addView(top)
         addView(TextView(context).apply {
+            tag = "pachattar_home_hero_cgpa_value"
             text = cgpa.ifBlank { "—" }; textSize = 68f; setTextColor(Palette.heroInk(context))
             typeface = mediumTypeface(context); includeFontPadding = false; setFontFeatureSettings("tnum")
             letterSpacing = -0.035f; setPadding(0, px(context, 10f), 0, px(context, 6f))
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
         })
         addView(TextView(context).apply {
+            tag = "pachattar_home_hero_cgpa_caption"
             text = if (cgpa.isBlank()) "CGPA value unavailable from ERP" else "Cumulative grade point average"
             textSize = 12f; setTextColor(Palette.heroInk(context)); typeface = regularTypeface(context)
             includeFontPadding = false; alpha = 0.9f
         })
+    }
+
+    fun updateCgpa(card: LinearLayout, cgpa: String) {
+        (card.findViewWithTag<View>("pachattar_home_hero_cgpa_value") as? TextView)?.let {
+            HomeValueTransition.updateText(it, cgpa.ifBlank { "—" })
+        }
+        (card.findViewWithTag<View>("pachattar_home_hero_cgpa_status") as? TextView)?.let {
+            HomeValueTransition.updateText(it, if (cgpa.isBlank()) "Unavailable" else "Academic overview")
+        }
+        (card.findViewWithTag<View>("pachattar_home_hero_cgpa_caption") as? TextView)?.let {
+            HomeValueTransition.updateText(it, if (cgpa.isBlank()) "CGPA value unavailable from ERP" else "Cumulative grade point average")
+        }
+        card.contentDescription = if (cgpa.isBlank()) "CGPA unavailable" else "CGPA " + cgpa
     }
 
     private fun base(context: Context) = LinearLayout(context).apply {
@@ -480,7 +563,7 @@ object BentoCard {
         root.minimumHeight = px(context, 88f)
         labelView.text = label; labelView.textSize = 12f; labelView.setTextColor(Palette.ink2(context))
         labelView.typeface = regularTypeface(context); labelView.includeFontPadding = false
-        valueView.text = value.ifBlank { "—" }; valueView.textSize = valueSizeSp
+        HomeValueTransition.updateText(valueView, value.ifBlank { "—" }); valueView.textSize = valueSizeSp
         valueView.setTextColor(Palette.ink(context)); valueView.typeface = mediumTypeface(context)
         valueView.includeFontPadding = false; valueView.setFontFeatureSettings("tnum")
         valueView.letterSpacing = if (valueSizeSp >= 35f) -0.025f else -0.01f
