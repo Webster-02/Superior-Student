@@ -311,10 +311,10 @@ class StudentConnectActivity : AppCompatActivity() {
         findViewById<View>(R.id.studentConnectHomeConnectionsCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CONNECTIONS) }
         findViewById<View>(R.id.studentConnectHomeProfileCard).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.PROFILE) }
         findViewById<View>(R.id.studentConnectHomeNearbySendButton).setOnClickListener {
-            openNearbyShare(com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity.MODE_SEND)
+            openNearbyShare("send")
         }
         findViewById<View>(R.id.studentConnectHomeNearbyReceiveButton).setOnClickListener {
-            openNearbyShare(com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity.MODE_RECEIVE)
+            openNearbyShare("receive")
         }
         findViewById<View>(R.id.studentConnectSeeAllChats).setOnClickListener { showStudentConnectScreen(StudentConnectScreen.CHATS) }
         navItems[0].setOnClickListener { showStudentConnectScreen(StudentConnectScreen.HOME) }
@@ -353,7 +353,7 @@ class StudentConnectActivity : AppCompatActivity() {
             this@StudentConnectActivity,
             com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity::class.java
         ).putExtra(
-            com.superiorstudent.app.feature.transfer.P2pNearbyTransferActivity.EXTRA_INITIAL_MODE,
+            "pachattar.u2u.nearby.initial_mode",
             mode
         )
         startActivity(intent)
