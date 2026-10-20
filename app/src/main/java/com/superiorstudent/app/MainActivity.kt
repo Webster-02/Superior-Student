@@ -2597,6 +2597,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun parseModuleData(payload: String): ModuleData? = erpRepository.parse(payload)
 
+    private fun moduleRetryDelayMs(attempt: Int): Long = when (attempt.coerceIn(1, 4)) {
+        1 -> MODULE_RETRY_DELAY_MS
+        2 -> MODULE_RETRY_DELAY_MS * 2
+        3 -> MODULE_RETRY_DELAY_MS * 4
+        else -> MAX_MODULE_RETRY_BACKOFF_MS
+    }
+
     private fun readModuleData(view: WebView, module: StudentModule, displayWhenReady: Boolean) {
         if (!loggedIn || (!displayWhenReady && !activityResumed)) return
         val requestId = moduleReadRequestId
@@ -2675,7 +2682,7 @@ class MainActivity : AppCompatActivity() {
                     } else if (displayWhenReady && activeModule == module) {
                         if (moduleReadAttempts < MAX_MODULE_READ_ATTEMPTS) {
                             binding.moduleInfo.text = "Waiting for the ERP data…"
-                            handler.postDelayed({ readModuleData(view, module, true) }, MODULE_RETRY_DELAY_MS)
+                            handler.postDelayed({ readModuleData(view, module, true) }, moduleRetryDelayMs(moduleReadAttempts))
                             return
                         }
 
@@ -2707,7 +2714,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     } else if (!displayWhenReady && preloadingModule == module) {
                         if (moduleReadAttempts < PRELOAD_READ_ATTEMPTS) {
-                            handler.postDelayed({ readModuleData(view, module, false) }, MODULE_RETRY_DELAY_MS)
+                            handler.postDelayed({ readModuleData(view, module, false) }, moduleRetryDelayMs(moduleReadAttempts))
                             return
                         }
                         logModuleFetchOutcome(module, "unusable_response")
@@ -3742,6 +3749,7 @@ class MainActivity : AppCompatActivity() {
         private const val MODULE_READ_DELAY_MS = 650L
         private const val MODULE_VISUAL_DELAY_MS = 220L
         private const val MODULE_RETRY_DELAY_MS = 550L
+        private const val MAX_MODULE_RETRY_BACKOFF_MS = 4000L
         private const val MAX_MODULE_READ_ATTEMPTS = 6
         private const val PRELOAD_READ_ATTEMPTS = 3
         private const val MODULE_LOAD_FALLBACK_MS = 10000L
