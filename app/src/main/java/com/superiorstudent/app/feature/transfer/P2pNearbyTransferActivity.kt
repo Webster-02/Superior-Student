@@ -75,7 +75,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private lateinit var headerSubtitle: TextView
     private lateinit var hubPanel: LinearLayout
     private lateinit var discoveryPanel: LinearLayout
-    private lateinit var discoveryStatusText: TextView
+    private lateinit var discoveryHeading: TextView
     private lateinit var peerListContainer: LinearLayout
     private lateinit var verifyPanel: LinearLayout
     private lateinit var progressPanel: LinearLayout
@@ -314,22 +314,24 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             layoutParams = fullWidthParams(bottom = 16)
             setPadding(dp(16), dp(16), dp(16), dp(16))
         }
-        val discoveryHeading = makeText("Looking for nearby phones", 18f, R.color.sc_text_primary, medium = true)
+        discoveryHero.setPadding(0, 0, 0, 0)
+        val discoveryContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        discoveryHeading = makeText("Looking for nearby phones", 18f, R.color.sc_text_primary, medium = true)
         val discoveryCopy = makeText(
-            "Ask your classmate to open U2U and tap Receive.",
+            "Keep both phones on the same Wi-Fi network and leave U2U open while connecting.",
             12f, R.color.sc_text_muted
         ).apply {
-            setPadding(0, dp(6), 0, dp(4))
+            setPadding(0, dp(6), 0, 0)
             setLineSpacing(dp(2).toFloat(), 1f)
         }
-        discoveryStatusText = makeText("Searching on this Wi-Fi…", 12f, R.color.sc_text_muted).apply {
-            visibility = View.GONE
-        }
-        discoveryHero.addView(discoveryHeading)
-        discoveryHero.addView(discoveryCopy)
-        discoveryHero.addView(discoveryStatusText, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(8) })
+        discoveryContent.addView(discoveryHeading)
+        discoveryContent.addView(discoveryCopy)
+        discoveryHero.addView(discoveryContent, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
         discoveryPanel.addView(discoveryHero)
         peerListContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -347,16 +349,21 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        val verifyHero = makeCard(R.color.sc_hero, 24).apply {
+        val verifyHero = makeCard(R.color.sc_hero, 24).apply { setPadding(0, 0, 0, 0) }
+        val verifyContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(18), dp(18))
         }
-        verifyHero.addView(makeText("SECURITY CODE", 10f, R.color.sc_button_secondary_text, medium = true))
-        verifyHero.addView(makeText("Compare both phones", 20f, R.color.sc_purple, medium = true).apply {
+        verifyContent.addView(makeText("SECURITY CODE", 10f, R.color.sc_button_secondary_text, medium = true))
+        verifyContent.addView(makeText("Compare both phones", 20f, R.color.sc_purple, medium = true).apply {
             setPadding(0, dp(8), 0, dp(4))
         })
-        verifyHero.addView(makeText(
+        verifyContent.addView(makeText(
             "Only continue when every digit matches on the sender and receiver.",
             12f, R.color.sc_button_secondary_text
+        ))
+        verifyHero.addView(verifyContent, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
         ))
         verifyPanel.addView(verifyHero, fullWidthParams())
         content.addView(verifyPanel, fullWidthParams())
@@ -366,7 +373,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        val transferHero = makeCard(R.color.sc_hero, 26).apply {
+        val transferHero = makeCard(R.color.sc_hero, 26).apply { setPadding(0, 0, 0, 0) }
+        val transferContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(16))
         }
         progressTitle = makeText("SENDING", 10f, R.color.sc_button_secondary_text, medium = true)
@@ -384,13 +393,16 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         }
         progressAmounts = makeText("0 B of 0 B · Preparing…", 10f, R.color.sc_button_secondary_text)
         progressAmounts.setPadding(0, dp(8), 0, 0)
-        transferHero.addView(progressTitle)
-        transferHero.addView(progressFileName)
-        transferHero.addView(progressPercent)
-        transferHero.addView(progressBar, LinearLayout.LayoutParams(
+        transferContent.addView(progressTitle)
+        transferContent.addView(progressFileName)
+        transferContent.addView(progressPercent)
+        transferContent.addView(progressBar, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(7)
         ).apply { topMargin = dp(10) })
-        transferHero.addView(progressAmounts)
+        transferContent.addView(progressAmounts)
+        transferHero.addView(transferContent, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
+        ))
         progressPanel.addView(transferHero, fullWidthParams())
         progressPanel.addView(
             makeInfoCard("Keep both phones close and this screen open until the transfer finishes.", R.color.sc_sky),
@@ -570,10 +582,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             NearbyUiStage.DISCOVERY -> {
                 headerTitle.text = if (transferIsOutgoing) "Find a phone" else "Nearby share"
                 headerSubtitle.text = if (transferIsOutgoing) "Step 1 of 3 · Find a phone" else "Same Wi-Fi · waiting for a sender"
-                discoveryStatusText.text = if (transferIsOutgoing) {
-                    "Looking for nearby phones…"
+                discoveryHeading.text = if (transferIsOutgoing) {
+                    "Looking for nearby phones"
                 } else {
-                    "Waiting for a nearby sender…"
+                    "Waiting for a nearby sender"
                 }
             }
             NearbyUiStage.VERIFY -> {
@@ -682,7 +694,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         row.addView(connect, LinearLayout.LayoutParams(dp(100), dp(42)))
         rowCard.addView(row)
         peerListContainer.addView(rowCard, fullWidthParams(top = 8))
-        discoveryStatusText.text = "A nearby phone is ready. Connect only to the person beside you."
+        discoveryHeading.text = "Nearby phone found"
     }
 
     private fun prepareOutgoingFile(uri: Uri) {
@@ -1349,15 +1361,17 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
         val resumeOffset = resumeState?.tempFile?.length() ?: 0L
         val isResume = resumeState != null
         val canReuseDestination = isResume && resumeState?.destinationUri != null
-        val offerCard = makeCard(R.color.sc_card, 22).apply {
+        val offerCard = makeCard(R.color.sc_card, 22).apply { setPadding(0, 0, 0, 0) }
+        val offerContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(14))
         }
-        offerCard.addView(makeText(pending.offer.fileName, 15f, R.color.sc_text_primary, medium = true))
-        offerCard.addView(makeText(
+        offerContent.addView(makeText(pending.offer.fileName, 15f, R.color.sc_text_primary, medium = true))
+        offerContent.addView(makeText(
             P2pTransferFileMetadataReader.formatBytes(pending.offer.sizeBytes) + " · " + pending.offer.mimeType,
             11f, R.color.sc_text_muted
         ).apply { setPadding(0, dp(5), 0, dp(10)) })
-        offerCard.addView(makeInfoCard(
+        offerContent.addView(makeInfoCard(
             if (isResume) {
                 "Saved progress: " + P2pTransferFileMetadataReader.formatBytes(resumeOffset) +
                     ". Resume from the verified encrypted checkpoint."
@@ -1365,6 +1379,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
                 "Only accept if you expected this file from the person next to you."
             },
             R.color.sc_sky
+        ))
+        offerCard.addView(offerContent, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
         ))
         AlertDialog.Builder(this)
             .setTitle(if (isResume) "Resume nearby file" else "Incoming nearby file")
@@ -1420,16 +1437,23 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             val codeCard = makeCard(R.color.sc_hero, 24).apply {
                 setCardBackgroundColor(color(R.color.sc_hero))
                 setStrokeColor(color(R.color.sc_hero))
+                setPadding(0, 0, 0, 0)
+            }
+            val codeContent = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
                 setPadding(dp(16), dp(16), dp(16), dp(16))
             }
-            codeCard.addView(makeText("SECURITY CODE", 10f, R.color.sc_button_secondary_text, medium = true))
-            codeCard.addView(makeText(code, 38f, R.color.sc_purple, medium = true).apply {
+            codeContent.addView(makeText("SECURITY CODE", 10f, R.color.sc_button_secondary_text, medium = true))
+            codeContent.addView(makeText(code, 38f, R.color.sc_purple, medium = true).apply {
                 letterSpacing = 0.13f
                 setPadding(0, dp(8), 0, dp(8))
                 gravity = Gravity.CENTER
             })
-            codeCard.addView(makeText(
+            codeContent.addView(makeText(
                 "Compare all six digits on both phones.", 11f, R.color.sc_button_secondary_text
+            ))
+            codeCard.addView(codeContent, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
             ))
             dialogContent.addView(codeCard, fullWidthParams(bottom = 12))
             val detailsCard = makeCard(R.color.sc_card, 18).apply {
