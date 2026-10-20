@@ -4,13 +4,16 @@ import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
+import android.os.SystemClock
 import android.net.Uri
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -161,6 +164,7 @@ class StudentChatActivity : AppCompatActivity() {
         }
     }
     private val outgoingReceiptViews = mutableMapOf<String, TextView>()
+    private val messageBubbleViews = mutableMapOf<String, MaterialCardView>()
     private val messageReactionSummaryViews = mutableMapOf<String, TextView>()
     private val reactionListeners = mutableListOf<ListenerRegistration>()
     private var reactionMessageIds: List<String> = emptyList()
@@ -552,6 +556,7 @@ class StudentChatActivity : AppCompatActivity() {
         outgoingReceiptViews.clear()
         messageReactionSummaryViews.clear()
         messagesContainer.removeAllViews()
+        messageBubbleViews.clear()
         emptyStateText.visibility = if (messages.isEmpty() && displayedTransferOffers.isEmpty()) {
             View.VISIBLE
         } else {
@@ -604,6 +609,10 @@ class StudentChatActivity : AppCompatActivity() {
             if (replyId != null && StudentChatReplyMetadata.isValid(replyId, replyName, replyText)) {
                 val quotePanel = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
+                    isClickable = true
+                    isFocusable = true
+                    contentDescription = "Jump to original message from $replyName"
+                    setOnClickListener { scrollToAndHighlightMessage(replyId) }
                     setPadding(dp(9), dp(7), dp(9), dp(7))
                     background = GradientDrawable().apply {
                         setColor(ContextCompat.getColor(this@StudentChatActivity, R.color.sc_chat_status))
@@ -687,6 +696,25 @@ class StudentChatActivity : AppCompatActivity() {
             bubbleContent.addView(reactionSummary)
             renderMessageReactionSummary(message.id, reactionSummary)
             bubble.addView(bubbleContent)
+            var lastTapAtMillis = 0L
+            bubble.setOnClickListener {
+                if (chatUnavailable || isSending) {
+                    lastTapAtMillis = 0L
+                    return@setOnClickListener
+                }
+                val now = SystemClock.uptimeMillis()
+                val isDoubleTap = StudentChatDoubleTap.occurred(
+                    previousTapAtMillis = lastTapAtMillis,
+                    currentTapAtMillis = now,
+                    timeoutMillis = ViewConfiguration.getDoubleTapTimeout().toLong()
+                )
+                lastTapAtMillis = if (isDoubleTap) 0L else now
+                if (isDoubleTap) {
+                    bubble.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    selectReplyTarget(message)
+                }
+            }
+            messageBubbleViews[message.id] = bubble
             bubble.setOnLongClickListener {
                 if (chatUnavailable || isSending) {
                     false
@@ -939,6 +967,30 @@ class StudentChatActivity : AppCompatActivity() {
                     "Reaction not saved. Publish the latest message reaction rules."
                 else -> "Reaction not saved. Check your connection and try again."
             }
+        }
+    }
+
+    private fun scrollToAndHighlightMessage(messageId: String) {
+        val target = messageBubbleViews[messageId]
+        if (target == null) {
+            statusText.text = "The original message is no longer available in this chat."
+            return
+        }
+        val isOutgoing = displayedMessages.firstOrNull { it.id == messageId }?.senderUid ==
+            auth.currentUser?.uid
+        messagesScroll.post {
+            if (messageBubbleViews[messageId] !== target) return@post
+            messagesScroll.smoothScrollTo(0, target.top)
+            target.strokeWidth = dp(2)
+            target.setStrokeColor(ContextCompat.getColor(this, R.color.pachattar_lime))
+            target.postDelayed({
+                if (messageBubbleViews[messageId] !== target) return@postDelayed
+                target.strokeWidth = if (isOutgoing) 0 else dp(1)
+                target.setStrokeColor(ContextCompat.getColor(
+                    this,
+                    if (isOutgoing) R.color.sc_purple else R.color.sc_border
+                ))
+            }, 1200L)
         }
     }
 
