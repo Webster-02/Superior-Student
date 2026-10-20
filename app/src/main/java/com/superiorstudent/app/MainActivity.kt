@@ -48,6 +48,7 @@ import com.superiorstudent.app.core.config.ErpConfig
 import com.superiorstudent.app.core.parsing.ParsingUtils
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.core.session.SavedCredentialsStore
+import com.superiorstudent.app.core.session.ResumeRecoveryPolicy
 import com.superiorstudent.app.core.webview.ModuleDataScriptSelector
 import com.superiorstudent.app.core.webview.Scripts
 import com.superiorstudent.app.feature.profile.data.ProfileCache
@@ -354,6 +355,11 @@ class MainActivity : AppCompatActivity() {
         }
         if (hasSavedSession) {
             restoreNativeSessionFromSavedState(savedInstanceState)
+        } else {
+            binding.loginScroll.visibility = View.VISIBLE
+            binding.dashboardScroll.visibility = View.GONE
+            binding.moduleScreen.visibility = View.GONE
+            binding.dashboardBottomNav.visibility = View.GONE
         }
 
         handler.postDelayed({
@@ -802,7 +808,6 @@ class MainActivity : AppCompatActivity() {
                         val active = activeModule
                         if (moduleFetchInProgress && active != null && ErpConfig.belongsToErp(url) &&
                             active.acceptsPath(try { java.net.URI(url).path.orEmpty() } catch (_: Exception) { "" })) {
-                            moduleFetchInProgress = false
                             readModuleData(view, active, true)
                         }
                     }
@@ -938,7 +943,12 @@ class MainActivity : AppCompatActivity() {
             loginInProgress || restoringSession || silentReloginInProgress
         ) return
         if (!(loggedIn || sessionStore.sessionActive)) return
-        if (!::webView.isInitialized && !ensureWebView()) return
+        if (!ensureWebView()) {
+            keepCachedSessionAfterTransientFailure(
+                "University sign-in is temporarily unavailable. Saved data is still available."
+            )
+            return
+        }
         cancelParallelPrefetch()
         restoringSession = true
         webView.stopLoading()
@@ -1065,7 +1075,7 @@ class MainActivity : AppCompatActivity() {
             keepCachedSessionAfterTransientFailure("Offline - showing saved data")
             return
         }
-        if (!::webView.isInitialized && !ensureWebView()) {
+        if (!ensureWebView()) {
             keepCachedSessionAfterTransientFailure("University sign-in is temporarily unavailable. Saved data is still available.")
             return
         }
@@ -1276,6 +1286,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun completeTimedOutModuleRequest(module: StudentModule, requestId: Int, outcome: String) {
+        if (!loggedIn || !activityResumed || activeModule != module ||
+            requestId != moduleReadRequestId || !moduleFetchInProgress
+        ) return
+        moduleFetchInProgress = false
+        moduleReadRequestId++
+        setModuleLoaderVisible(false, outcome)
+        binding.modulePullRefresh.isRefreshing = false
+        logModuleFetchOutcome(module, "timeout")
+        val cached = erpRepository.cachedPayload(module)
+            ?.let(::parseModuleData)
+            ?.takeIf { erpRepository.hasUsableData(module, it) }
+            ?.takeIf {
+                module != StudentModule.ATTENDANCE ||
+                    ((activeAttendanceDetailUrl != null) == (it.attendanceDetail != null))
+            }
+        if (cached != null) {
+            renderModuleData(module, cached)
+            binding.moduleInfo.text = "Couldn't refresh • Showing last synced data"
+        } else {
+            binding.moduleInfo.text = "Connection needs retry"
+            binding.moduleContent.removeAllViews()
+            binding.moduleContent.addView(ErrorState.create(
+                this,
+                "Couldn't load this page",
+                "The ERP took too long to respond. Check your connection and tap Retry to try again.",
+                ::refreshActiveModule
+            ))
+            logModuleFirstRender(module, "empty", false)
+        }
+        if (BuildConfig.DEBUG) {
+            android.util.Log.w("SessionRecovery", "request_timeout operation=module:" + module.name +
+                " outcome=" + outcome)
+        }
+    }
+
     private fun setModuleLoaderVisible(visible: Boolean, reason: String) {
         if (!::binding.isInitialized) return
         val wasVisible = binding.moduleProgress.visibility == View.VISIBLE
@@ -1398,6 +1444,12 @@ class MainActivity : AppCompatActivity() {
     private fun restoreNativeSessionFromSavedState(savedInstanceState: Bundle?) {
         username = try { sessionStore.username } catch (_: Throwable) { "" }
         if (username.isBlank()) {
+            // A session flag without its account identity is not enough to restore authenticated UI.
+            sessionStore.sessionActive = false
+            binding.loginScroll.visibility = View.VISIBLE
+            binding.dashboardScroll.visibility = View.GONE
+            binding.moduleScreen.visibility = View.GONE
+            binding.dashboardBottomNav.visibility = View.GONE
             if (BuildConfig.DEBUG) android.util.Log.w("SessionRecovery", "saved session had no username; showing login")
             return
         }
@@ -2560,9 +2612,14 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Exception) { false }
 
             if (pageMatches) {
-                moduleFetchInProgress = false
                 moduleReadAttempts = 0
                 readModuleData(webView, module, true)
+                handler.postDelayed({
+                    if (!loggedIn || !activityResumed || activeModule != module ||
+                        requestId != moduleReadRequestId || !moduleFetchInProgress
+                    ) return@postDelayed
+                    completeTimedOutModuleRequest(module, requestId, "data_extraction_timeout")
+                }, MODULE_EXTRACTION_TIMEOUT_MS)
                 return@postDelayed
             }
 
@@ -3786,7 +3843,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun pingSession() {
-        if (!loggedIn || !activityResumed || !::webView.isInitialized) return
+        if (!loggedIn || !activityResumed || !::webView.isInitialized || webViewNeedsRecreation) return
         if (!hasInternetAvailable()) {
             setOfflineMode(true)
             return
@@ -4655,6 +4712,8 @@ class MainActivity : AppCompatActivity() {
         private const val STATE_HOME_SCROLL_Y = "pachattar_state_home_scroll_y"
         private const val STATE_ATTENDANCE_DETAIL_URL = "pachattar_state_attendance_detail_url"
         private const val STATE_LAST_PAUSED_AT = "pachattar_state_last_paused_at"
+        private const val RESUME_RECOVERY_PREFS = "pachattar_resume_recovery"
+        private const val RESUME_LAST_PAUSE_MS = "last_pause_wall_clock_ms"
         private const val RESUME_RECOVERY_PREFS = "pachattar_resume_recovery"
         private const val RESUME_LAST_PAUSE_MS = "last_pause_wall_clock_ms"
 
