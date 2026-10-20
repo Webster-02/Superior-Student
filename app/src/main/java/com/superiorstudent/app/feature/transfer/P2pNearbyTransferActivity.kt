@@ -1711,7 +1711,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             val lowerMessage = message.lowercase()
             val userActionNeeded = listOf(
                 "could not", "failed", "cancelled", "declined", "not confirmed",
-                "unavailable", "invalid", "interrupted", "error"
+                "unavailable", "invalid", "interrupted", "error", "not sent",
+                "not accepted", "stopped", "did not", "timed out", "no nearby",
+                "not readable"
             ).any { lowerMessage.contains(it) }
             if (userActionNeeded && message.isNotBlank()) {
                 val compactMessage = message.lineSequence().firstOrNull()?.trim().orEmpty().take(120)

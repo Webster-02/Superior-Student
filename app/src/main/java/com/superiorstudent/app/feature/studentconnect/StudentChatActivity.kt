@@ -622,8 +622,11 @@ class StudentChatActivity : AppCompatActivity() {
                 ).apply { marginStart = dp(2) })
             }
             bubbleContent.addView(metadataRow, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(3) })
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.END
+                topMargin = dp(3)
+            })
             val reactionSummary = TextView(this).apply {
                 textSize = 10f
                 maxLines = 1

@@ -27,6 +27,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -289,7 +290,7 @@ class StudentConnectActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         studentConnectScrollView = findViewById(R.id.studentConnectScrollView)
-        friendRequestsSwipeRefresh = findViewById(R.id.studentConnectPullRefresh)
+        friendRequestsSwipeRefresh = studentConnectScrollView.parent as SwipeRefreshLayout
         friendRequestsSwipeRefresh.setColorSchemeResources(R.color.sc_purple, R.color.sc_lavender)
         friendRequestsSwipeRefresh.isEnabled = false
         friendRequestsSwipeRefresh.setOnChildScrollUpCallback { _, _ -> studentConnectScrollView.scrollY > 0 }
