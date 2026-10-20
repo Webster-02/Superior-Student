@@ -6,12 +6,17 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_student_connect_auth"
     android:orientation="vertical">
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/studentConnectPullRefresh"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
     <ScrollView
         android:id="@+id/studentConnectScrollView"
         android:forceDarkAllowed="false"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="match_parent"
         android:background="@drawable/bg_student_connect_auth"
         android:fillViewport="true"
         android:overScrollMode="never">
@@ -23,7 +28,7 @@
         android:paddingStart="16dp"
         android:paddingTop="10dp"
         android:paddingEnd="16dp"
-        android:paddingBottom="20dp">
+        android:paddingBottom="56dp">
 
         
 
@@ -392,7 +397,7 @@
                 <LinearLayout android:layout_width="184dp" android:layout_height="wrap_content" android:layout_gravity="start|center_vertical" android:orientation="vertical">
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:letterSpacing="0.12" android:text="CAMPUS COMMUNITY" android:visibility="gone" android:textColor="@color/sc_lavender" android:textSize="10sp" android:textStyle="bold" />
                     <TextView android:id="@+id/studentConnectHomeGreeting" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="0dp" android:ellipsize="end" android:maxLines="1" android:text="Your campus. Your people." android:textColor="@color/sc_text_primary" android:textSize="22sp" android:textStyle="bold" />
-                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:lineSpacingExtra="2dp" android:maxLines="2" android:text="Meet classmates. Build your circle." android:textColor="@color/sc_text_muted" android:textSize="13sp" />
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:lineSpacingExtra="2dp" android:maxLines="2" android:text="Meet classmates. Build your circle." android:textColor="@color/sc_button_secondary_text" android:textSize="13sp" />
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/studentConnectHeroFindButton"
                         android:layout_width="wrap_content"
@@ -522,7 +527,7 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="horizontal">
                 <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeFindCard" android:layout_width="0dp" android:layout_height="78dp" android:layout_marginEnd="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_lav" app:cardCornerRadius="22dp" app:cardElevation="0dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
                             <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_search" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
@@ -531,9 +536,9 @@
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeRequestsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_peach" app:cardCornerRadius="17dp" app:cardElevation="6dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeRequestsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_peach" app:cardCornerRadius="17dp" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
                             <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
@@ -544,9 +549,9 @@
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal">
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeConnectionsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginEnd="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_sky" app:cardCornerRadius="17dp" app:cardElevation="6dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeConnectionsCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginEnd="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_sky" app:cardCornerRadius="17dp" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
                             <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_requests" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
@@ -555,9 +560,9 @@
                         </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
-                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeProfileCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_mint" app:cardCornerRadius="17dp" app:cardElevation="6dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
+                <com.google.android.material.card.MaterialCardView android:id="@+id/studentConnectHomeProfileCard" android:layout_width="0dp" android:layout_height="88dp" android:layout_marginStart="6dp" android:layout_weight="1" android:clickable="true" android:focusable="true" android:foreground="?attr/selectableItemBackground" app:cardBackgroundColor="@color/sc_mint" app:cardCornerRadius="17dp" app:cardElevation="2dp" app:strokeColor="@color/sc_border" app:strokeWidth="1dp">
                     <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center_vertical" android:orientation="horizontal" android:padding="10dp">
-                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="5dp">
+                        <FrameLayout android:layout_width="38dp" android:layout_height="38dp" android:background="@drawable/bg_student_connect_dashboard_tile" android:elevation="2dp">
                             <ImageView android:layout_width="23dp" android:layout_height="23dp" android:layout_gravity="center" android:importantForAccessibility="no" android:src="@drawable/ic_sc_profile" android:tint="@color/sc_lavender" />
                         </FrameLayout>
                         <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="9dp" android:layout_weight="1" android:orientation="vertical">
@@ -1052,7 +1057,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="No incoming friend requests yet."
+                android:minHeight="88dp"
+                android:gravity="center"
+                android:padding="16dp"
+                android:background="@drawable/bg_student_connect_dashboard_tile"
+                android:lineSpacingExtra="2dp"
+                android:text="✦\nNo incoming friend requests yet.\nWhen someone reaches out, their request will appear here."
                 android:textColor="@color/sc_text_muted"
                 android:textSize="13sp" />
 
@@ -1077,7 +1087,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="You haven't sent any friend requests yet."
+                android:minHeight="88dp"
+                android:gravity="center"
+                android:padding="16dp"
+                android:background="@drawable/bg_student_connect_dashboard_tile"
+                android:lineSpacingExtra="2dp"
+                android:text="↗\nNo sent requests yet.\nStudents you invite will appear here."
                 android:textColor="@color/sc_text_muted"
                 android:textSize="13sp" />
         </LinearLayout>
@@ -1097,6 +1112,7 @@
 
     </LinearLayout>
     </ScrollView>
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
     <LinearLayout
         android:id="@+id/studentConnectBottomNavigation"

@@ -31,6 +31,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.card.MaterialCardView
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -41,6 +45,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.firestore.ListenerRegistration
 import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
+import com.superiorstudent.app.ui.AppThemePreferences
 import com.superiorstudent.app.feature.profile.data.ProfileCache
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequest
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
@@ -79,6 +84,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private lateinit var passwordInput: EditText
     private lateinit var statusText: TextView
     private lateinit var studentConnectScrollView: ScrollView
+    private lateinit var friendRequestsSwipeRefresh: SwipeRefreshLayout
     private lateinit var authForm: View
     private lateinit var signedInPanel: View
     private lateinit var accountEmail: TextView
@@ -193,6 +199,7 @@ class StudentConnectActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
 
         // This screen is reachable from the authenticated dashboard only.
@@ -205,6 +212,8 @@ class StudentConnectActivity : AppCompatActivity() {
         setContentView(R.layout.activity_student_connect)
         auth = FirebaseAuth.getInstance()
         bindViews()
+        applyStudentConnectWindowInsets()
+        arrangeProfileSection()
         renderCurrentUser()
         if (auth.currentUser != null) refreshVerificationStatus(silent = true)
     }
@@ -263,14 +272,31 @@ class StudentConnectActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 val message = s?.toString()?.trim().orEmpty()
-                val placeholder = message == "Checking U2U status…" ||
+                val placeholder = message.isBlank() ||
+                    message == "Checking U2U status…" ||
+                    message.startsWith("Checking your student profile") ||
                     message.startsWith("Create a separate account or sign in.") ||
-                    message.startsWith("Email verified. Checking your student profile")
-                statusCard.visibility = if (message.isBlank() || placeholder) View.GONE else View.VISIBLE
+                    message.startsWith("Email verified. Checking your student profile") ||
+                    message.endsWith("…") || message.endsWith("...")
+                statusCard.visibility = View.GONE
+                if (!placeholder) {
+                    val compactMessage = message.replace(Regex("\\s+"), " ").take(140)
+                    if (compactMessage.isNotBlank()) {
+                        Toast.makeText(this@StudentConnectActivity, compactMessage, Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
         studentConnectScrollView = findViewById(R.id.studentConnectScrollView)
+        friendRequestsSwipeRefresh = findViewById(R.id.studentConnectPullRefresh)
+        friendRequestsSwipeRefresh.setColorSchemeResources(R.color.sc_purple, R.color.sc_lavender)
+        friendRequestsSwipeRefresh.isEnabled = false
+        friendRequestsSwipeRefresh.setOnChildScrollUpCallback { _, _ -> studentConnectScrollView.scrollY > 0 }
+        friendRequestsSwipeRefresh.setOnRefreshListener {
+            if (currentScreen == StudentConnectScreen.REQUESTS) refreshFriendRequests(showLoadingMessage = false)
+            else friendRequestsSwipeRefresh.isRefreshing = false
+        }
         authForm = findViewById(R.id.studentConnectAuthForm)
         signedInPanel = findViewById(R.id.studentConnectSignedInPanel)
         accountEmail = findViewById(R.id.studentConnectAccountEmail)
@@ -296,6 +322,7 @@ class StudentConnectActivity : AppCompatActivity() {
         sendFriendRequestButton = findViewById(R.id.studentConnectSendFriendRequestButton)
         friendRequestsPanel = findViewById(R.id.studentConnectFriendRequestsPanel)
         refreshFriendRequestsButton = findViewById(R.id.studentConnectRefreshFriendRequestsButton)
+        refreshFriendRequestsButton.visibility = View.GONE
         chatListTitleText = findViewById(R.id.studentConnectChatListTitle)
         chatListContainer = findViewById(R.id.studentConnectChatListContainer)
         chatListEmptyText = findViewById(R.id.studentConnectChatListEmpty)
@@ -645,6 +672,43 @@ class StudentConnectActivity : AppCompatActivity() {
      */
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private fun applyStudentConnectWindowInsets() {
+        val root = findViewById<View>(R.id.studentConnectRoot)
+        val baseLeft = root.paddingLeft
+        val baseTop = root.paddingTop
+        val baseRight = root.paddingRight
+        val baseBottom = root.paddingBottom
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = ContextCompat.getColor(this, R.color.sc_navy)
+        window.navigationBarColor = ContextCompat.getColor(this, R.color.sc_navy)
+        WindowCompat.getInsetsController(window, root).apply {
+            isAppearanceLightStatusBars = !AppThemePreferences.isNight(this@StudentConnectActivity)
+            isAppearanceLightNavigationBars = !AppThemePreferences.isNight(this@StudentConnectActivity)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, windowInsets ->
+            val bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            val ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(
+                baseLeft + bars.left, baseTop + bars.top, baseRight + bars.right,
+                baseBottom + maxOf(bars.bottom, ime.bottom)
+            )
+            windowInsets
+        }
+        ViewCompat.requestApplyInsets(root)
+    }
+
+    private fun arrangeProfileSection() {
+        val content = studentConnectScrollView.getChildAt(0) as? LinearLayout ?: return
+        content.removeView(profileCard)
+        content.removeView(signedInPanel)
+        content.removeView(securityNoteText)
+        content.addView(profileCard)
+        content.addView(signedInPanel)
+        content.addView(securityNoteText)
+    }
+
     private fun hideStudentConnectWorkspace() {
         stopDashboardAnimations()
         homeDashboard.visibility = View.GONE
@@ -661,6 +725,8 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun showStudentConnectScreen(screen: StudentConnectScreen) {
         if (currentStudentProfile == null || auth.currentUser?.isEmailVerified != true) return
         currentScreen = screen
+        friendRequestsSwipeRefresh.isEnabled = screen == StudentConnectScreen.REQUESTS
+        if (screen != StudentConnectScreen.REQUESTS) friendRequestsSwipeRefresh.isRefreshing = false
         if (screen == StudentConnectScreen.HOME) filterUnreadChatsOnly = false
         applyStudentConnectBranding()
         homeDashboard.visibility = if (screen == StudentConnectScreen.HOME) View.VISIBLE else View.GONE
@@ -969,7 +1035,7 @@ class StudentConnectActivity : AppCompatActivity() {
                     statusText.text = "Email verified. Create your student profile to reserve your unique ID."
                 } else {
                     showProfile(profile)
-                    statusText.text = "Your student profile is ready. You can share your public ID with classmates."
+                    statusText.text = "Student profile ready"
                 }
             }
         }
@@ -1030,7 +1096,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
                     profileLoadedFor = user.uid
                     showProfile(profile)
-                    statusText.text = "Student profile created. Your unique public ID is ready to share."
+                    statusText.text = "Student profile created"
                 }
             }
         }
@@ -1522,6 +1588,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun refreshFriendRequests(showLoadingMessage: Boolean = true) {
         val user = auth.currentUser
         if (user == null || !user.isEmailVerified || currentStudentProfile?.uid != user.uid) {
+            friendRequestsSwipeRefresh.isRefreshing = false
             friendRequestsPanel.visibility = View.GONE
             return
         }
@@ -1543,6 +1610,7 @@ class StudentConnectActivity : AppCompatActivity() {
 
             friendRequestsLoadingFor = null
             refreshFriendRequestsButton.isEnabled = true
+            friendRequestsSwipeRefresh.isRefreshing = false
             if (auth.currentUser?.uid != user.uid) return@loadRequests
 
             if (error != null || requests == null) {
@@ -1550,14 +1618,14 @@ class StudentConnectActivity : AppCompatActivity() {
                 incomingRequestsContainer.removeAllViews()
                 outgoingRequestsContainer.removeAllViews()
                 connectionsContainer.removeAllViews()
-                incomingRequestsEmptyText.text = "Could not load requests. Tap Refresh to try again."
-                outgoingRequestsEmptyText.text = "Could not load requests. Tap Refresh to try again."
+                incomingRequestsEmptyText.text = "Could not load requests. Pull down to try again."
+                outgoingRequestsEmptyText.text = "Could not load requests. Pull down to try again."
                 incomingRequestsEmptyText.visibility = View.VISIBLE
                 outgoingRequestsEmptyText.visibility = View.VISIBLE
                 statusText.text = if (error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
                     "Firestore rules blocked loading friend requests. Confirm the published rules allow request participants to read their requests."
                 } else {
-                    "Could not load friend requests. Check your internet connection and tap Refresh to retry."
+                    "Could not load friend requests. Check your connection and pull down to retry."
                 }
             } else {
                 cachedFriendRequests = requests
