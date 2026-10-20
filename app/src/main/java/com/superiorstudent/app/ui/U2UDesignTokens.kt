@@ -9,8 +9,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
+import com.google.android.material.card.MaterialCardView
 import com.superiorstudent.app.R
+import kotlin.math.roundToInt
 
 /** Shared typography and geometry tokens for U2U. Colour values remain in Palette/XML resources. */
 enum class U2UTextRole { TITLE, SECTION, BODY, CAPTION, LABEL }
@@ -30,6 +33,48 @@ object U2UDesignTokens {
     const val RADIUS_CONTROL_DP = 16
     const val RADIUS_CARD_DP = 24
     const val RADIUS_HERO_DP = 28
+
+    // Surface depth follows the U2U references: outlined, flat content; lift only floating UI.
+    const val SURFACE_STROKE_WIDTH_DP = 1
+    const val FLAT_SURFACE_ELEVATION_DP = 0f
+    const val FLOATING_SURFACE_ELEVATION_DP = 12f
+    const val COMPOSER_SURFACE_ELEVATION_DP = 8f
+
+    /**
+     * Applies the shared U2U surface hierarchy without replacing backgrounds, radii, or view IDs.
+     * It is safe to call on any U2U screen; IDs from other screens simply are not present.
+     */
+    fun applySurfaceDepth(root: View) {
+        val context = root.context
+        val density = context.resources.displayMetrics.density
+        val flatOutlinedIds = setOf(
+            R.id.studentConnectStatusCard,
+            R.id.studentConnectHomeNearbyShareCard,
+            R.id.studentChatStatusCard,
+            R.id.studentChatComposerCard
+        )
+        fun visit(view: View) {
+            if (view is MaterialCardView) {
+                val elevationDp = when (view.id) {
+                    R.id.studentConnectHeroFloatingChip -> FLOATING_SURFACE_ELEVATION_DP
+                    R.id.studentChatComposerCard -> COMPOSER_SURFACE_ELEVATION_DP
+                    else -> FLAT_SURFACE_ELEVATION_DP
+                }
+                view.cardElevation = elevationDp * density
+                if (view.strokeWidth > 0 || view.isClickable || view.id in flatOutlinedIds) {
+                    view.strokeWidth = (SURFACE_STROKE_WIDTH_DP * density).roundToInt().coerceAtLeast(1)
+                    view.setStrokeColor(ContextCompat.getColor(context, R.color.sc_border))
+                }
+            }
+            if (view.id == R.id.studentConnectBottomNavigation) {
+                view.elevation = FLOATING_SURFACE_ELEVATION_DP * density
+            }
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) visit(view.getChildAt(index))
+            }
+        }
+        visit(root)
+    }
 
     val title = U2UTypographyToken(22f, 28f, true, -0.02f)
     val section = U2UTypographyToken(18f, 24f, true, -0.01f)

@@ -688,6 +688,7 @@ class StudentConnectActivity : AppCompatActivity() {
         val root = findViewById<View>(R.id.studentConnectRoot) ?: return
         U2UDesignTokens.applyTypographyTree(root)
         U2UDesignTokens.applyHomeTileRules(root)
+        U2UDesignTokens.applySurfaceDepth(root)
     }
 
     private fun applyStudentConnectWindowInsets() {

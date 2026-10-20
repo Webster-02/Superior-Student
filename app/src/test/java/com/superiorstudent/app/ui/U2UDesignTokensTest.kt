@@ -28,6 +28,14 @@ class U2UDesignTokensTest {
     }
 
     @Test
+    fun surfaceDepthKeepsContentFlatAndLiftsOnlyFloatingSurfaces() {
+        assertEquals(1, U2UDesignTokens.SURFACE_STROKE_WIDTH_DP)
+        assertEquals(0f, U2UDesignTokens.FLAT_SURFACE_ELEVATION_DP, 0f)
+        assertEquals(8f, U2UDesignTokens.COMPOSER_SURFACE_ELEVATION_DP, 0f)
+        assertEquals(12f, U2UDesignTokens.FLOATING_SURFACE_ELEVATION_DP, 0f)
+    }
+
+    @Test
     fun geometryUsesFourDpGridAndSharedRadiusScale() {
         assertEquals(4, U2UDesignTokens.GRID_UNIT_DP)
         assertEquals(24, U2UDesignTokens.ICON_SIZE_DP)

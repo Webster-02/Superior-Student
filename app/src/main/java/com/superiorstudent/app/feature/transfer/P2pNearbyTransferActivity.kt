@@ -619,9 +619,9 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private fun makeCard(backgroundResource: Int, radiusDp: Int): MaterialCardView =
         MaterialCardView(this).apply {
             radius = dp(radiusDp).toFloat()
-            cardElevation = 0f
+            cardElevation = U2UDesignTokens.FLAT_SURFACE_ELEVATION_DP * resources.displayMetrics.density
             useCompatPadding = false
-            strokeWidth = dp(1)
+            strokeWidth = dp(U2UDesignTokens.SURFACE_STROKE_WIDTH_DP)
             setCardBackgroundColor(color(backgroundResource))
             setStrokeColor(color(R.color.sc_border))
         }

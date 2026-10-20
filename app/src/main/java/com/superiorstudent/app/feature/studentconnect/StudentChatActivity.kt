@@ -242,7 +242,9 @@ class StudentChatActivity : AppCompatActivity() {
         localChatClearState = StudentChatLocalClearState(applicationContext)
         bindViews()
         applyChatWindowInsets()
-        U2UDesignTokens.applyTypographyTree(findViewById(android.R.id.content))
+        val chatRoot = findViewById<View>(android.R.id.content)
+        U2UDesignTokens.applyTypographyTree(chatRoot)
+        U2UDesignTokens.applySurfaceDepth(chatRoot)
 
         otherUid = intent.getStringExtra(EXTRA_OTHER_UID).orEmpty()
         otherDisplayName = intent.getStringExtra(EXTRA_OTHER_DISPLAY_NAME)
