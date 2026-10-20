@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.superiorstudent.app.R
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -64,7 +65,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     private lateinit var sendButton: Button
     private lateinit var receiveButton: Button
     private lateinit var pauseResumeButton: Button
-    private lateinit var stopButton
+    private lateinit var stopButton: Button
     private lateinit var rootLayout: LinearLayout
     private lateinit var headerTitle: TextView
     private lateinit var headerSubtitle: TextView
@@ -88,7 +89,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     @Volatile private var transferFileName = ""
     @Volatile private var transferTotalBytes = 0L
     @Volatile private var transferStartOffset = 0L
-    @Volatile private var transferStartedAtMs = 0L: Button
+    @Volatile private var transferStartedAtMs = 0L
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor: ExecutorService = Executors.newCachedThreadPool()
@@ -641,7 +642,7 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
             setOnClickListener {
                 val prepared = preparedOutgoing
                 if (prepared != null && sending.get()) {
-                    isEnabled = false
+                    connect.isEnabled = false
                     showStatus("Connecting locally. Confirm the same six-digit code on both phones when prompted…")
                     ioExecutor.execute { sendToPeer(peer, prepared) }
                 }
