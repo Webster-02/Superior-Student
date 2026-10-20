@@ -694,7 +694,7 @@ class StudentConnectActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.studentConnectBackButton)
             .setTextColor(ContextCompat.getColor(this, R.color.sc_lavender))
         findViewById<TextView>(R.id.studentConnectBrandTitle).apply {
-            text = if (hasStudentProfile) "U2U" else "Join U2U"
+            text = if (currentStudentProfile != null && auth.currentUser?.isEmailVerified == true) "U2U" else "Join U2U"
             setTextColor(ContextCompat.getColor(this@StudentConnectActivity, R.color.sc_text_primary))
         }
         findViewById<TextView>(R.id.studentConnectBrandTagline)
