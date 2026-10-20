@@ -35,6 +35,8 @@ import com.superiorstudent.app.R
 import com.superiorstudent.app.core.session.SessionStore
 import com.superiorstudent.app.ui.AppThemePreferences
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatConversation
+import com.superiorstudent.app.feature.studentconnect.data.StudentChatIds
+import com.superiorstudent.app.feature.studentconnect.data.StudentConnectLocalCache
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessage
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatMessageReaction
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatReactionEmoji
@@ -88,6 +90,7 @@ class StudentChatActivity : AppCompatActivity() {
     private var transferControlRequestInFlight = false
 
     private val chatRepository by lazy { StudentChatRepository() }
+    private val localCache by lazy { StudentConnectLocalCache.get(applicationContext) }
     private val profileRepository by lazy { StudentProfileRepository() }
     private val presenceRepository by lazy { StudentPresenceRepository() }
     private val transferSignaling by lazy { FirebaseP2pTransferSignaling() }
@@ -162,6 +165,7 @@ class StudentChatActivity : AppCompatActivity() {
     private var reactionRecords: List<StudentChatMessageReaction> = emptyList()
     private var reactionListening = false
     private var displayedMessages: List<StudentChatMessage> = emptyList()
+    private var liveMessagesSnapshotReceived = false
     private var replyToMessage: StudentChatMessage? = null
     private var recipientLastReadAt: Timestamp? = null
     private val typingHandler = Handler(Looper.getMainLooper())
@@ -276,9 +280,23 @@ class StudentChatActivity : AppCompatActivity() {
             otherUid.isBlank() || otherUid == user.uid -> showFatalError(
                 "This chat link is invalid. Go back and open a chat from My Connections."
             )
-            else -> openConversation(user.uid)
+            else -> {
+                val expectedConversationId = runCatching {
+                    StudentChatIds.conversationId(user.uid, otherUid)
+                }.getOrNull()
+                if (expectedConversationId != null) {
+                    localCache.loadMessages(user.uid, expectedConversationId, otherUid) { savedMessages ->
+                        if (!isCurrentUser(user.uid) || liveMessagesSnapshotReceived ||
+                            displayedMessages.isNotEmpty() || savedMessages.isEmpty()
+                        ) return@loadMessages
+                        renderMessages(user.uid, savedMessages)
+                        statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
+                        statusText.text = "Showing saved messages · syncing"
+                    }
+                }
+                openConversation(user.uid)
+            }
         }
-    }
 
     override fun onStart() {
         super.onStart()
@@ -391,19 +409,12 @@ class StudentChatActivity : AppCompatActivity() {
         transferControlButton.visibility = View.GONE
         statusText.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
                 val message = s?.toString()?.trim().orEmpty()
-                statusCard.visibility = if (transferControlButton.visibility == View.VISIBLE) View.VISIBLE else View.GONE
-                if (message.isBlank() || transferControlButton.visibility == View.VISIBLE) return
-                if (message.endsWith("…") || message.endsWith("...") ||
-                    message.startsWith("Checking connection and opening chat") ||
-                    message.startsWith("Private chat ·") ||
-                    message.startsWith("Sending message") ||
-                    message.startsWith("Preparing encrypted file offer")
-                ) return
-                val compactMessage = message.replace(Regex("\\s+"), " ").take(120)
-                if (compactMessage.isNotBlank()) {
-                    Toast.makeText(this@StudentChatActivity, compactMessage, Toast.LENGTH_SHORT).show()
+                statusCard.visibility = if (message.isNotBlank() || transferControlButton.visibility == View.VISIBLE) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
                 }
             }
             override fun afterTextChanged(s: Editable?) = Unit
@@ -436,7 +447,7 @@ class StudentChatActivity : AppCompatActivity() {
 
     private fun openConversation(uid: String) {
         statusText.setTextColor(ContextCompat.getColor(this, R.color.sc_text_muted))
-        statusText.text = "Checking connection and opening chat…"
+        statusText.text = "Syncing chat"
         profileRepository.getOwnProfile(uid) { profile, profileError ->
             if (!isCurrentUser(uid)) return@getOwnProfile
             if (profileError != null || profile == null) {
@@ -501,7 +512,10 @@ class StudentChatActivity : AppCompatActivity() {
                 }
                 return@listenMessages
             }
+            liveMessagesSnapshotReceived = true
+            localCache.saveMessages(uid, opened.id, otherUid, messages)
             renderMessages(uid, messages)
+            statusText.text = ""
             startMessageReactionsListeners(uid, messages)
             chatRepository.markConversationRead(opened.id, uid) { readError ->
                 if (!isCurrentUser(uid)) return@markConversationRead

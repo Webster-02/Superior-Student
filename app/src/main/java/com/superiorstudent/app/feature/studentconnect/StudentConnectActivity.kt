@@ -60,6 +60,7 @@ import com.superiorstudent.app.feature.studentconnect.data.StudentPresenceReposi
 import com.superiorstudent.app.feature.studentconnect.data.StudentConnectPresenceTracker
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentChatSummary
+import com.superiorstudent.app.feature.studentconnect.data.StudentConnectLocalCache
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationTokenRepository
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotification
 import com.superiorstudent.app.feature.studentconnect.data.StudentNotificationRepository
@@ -156,6 +157,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private val profileRepository by lazy { StudentProfileRepository() }
     private val friendRequestRepository by lazy { FriendRequestRepository() }
     private val studentChatRepository by lazy { StudentChatRepository() }
+    private val localCache by lazy { StudentConnectLocalCache.get(applicationContext) }
     private val notificationTokenRepository by lazy { StudentNotificationTokenRepository() }
     private val studentNotificationRepository by lazy { StudentNotificationRepository() }
     private var notificationListener: ListenerRegistration? = null
@@ -163,6 +165,8 @@ class StudentConnectActivity : AppCompatActivity() {
     private var cachedStudentNotifications: List<StudentNotification> = emptyList()
     private var chatListListener: ListenerRegistration? = null
     private var chatListListeningFor: String? = null
+    private var chatListSubscriptionGeneration = 0
+    private var chatListLiveSnapshotReceivedFor: String? = null
     private var cachedChatSummaries: List<StudentChatSummary> = emptyList()
     private val notificationHighlightHandler = Handler(Looper.getMainLooper())
     private var highlightedNotificationRequestId: String? = null
@@ -184,6 +188,7 @@ class StudentConnectActivity : AppCompatActivity() {
     private var friendRequestsRefreshQueued = false
     private var profileLoadInProgressFor: String? = null
     private var profileLoadedFor: String? = null
+    private var profileCacheLookupFor: String? = null
     private var activityStarted = false
     private val presenceOwnerKey by lazy { "StudentConnectActivity:" + System.identityHashCode(this) }
     private val presenceRepository by lazy { StudentPresenceRepository() }
@@ -216,7 +221,7 @@ class StudentConnectActivity : AppCompatActivity() {
         applyStudentConnectWindowInsets()
         arrangeProfileSection()
         renderCurrentUser()
-        if (auth.currentUser != null) refreshVerificationStatus(silent = true)
+        // The saved profile renders first; one background ID-token refresh confirms it without user.reload().
     }
 
     override fun onStart() {
@@ -257,9 +262,9 @@ class StudentConnectActivity : AppCompatActivity() {
 
         val user = auth.currentUser ?: return
         if (user.isEmailVerified && currentStudentProfile?.uid == user.uid) {
-            // Refresh requests/connections and unread summaries when returning from a chat.
+            // Keep the existing listener and cached rows alive while returning from a chat.
             refreshFriendRequests(showLoadingMessage = false)
-            startChatListListener(user.uid, forceRefresh = true)
+            startChatListListener(user.uid)
         }
     }
 
@@ -271,21 +276,14 @@ class StudentConnectActivity : AppCompatActivity() {
         statusCard.visibility = View.GONE
         statusText.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
                 val message = s?.toString()?.trim().orEmpty()
-                val placeholder = message.isBlank() ||
+                val backgroundActivity = message.isBlank() ||
                     message == "Checking U2U status…" ||
                     message.startsWith("Checking your student profile") ||
-                    message.startsWith("Create a separate account or sign in.") ||
                     message.startsWith("Email verified. Checking your student profile") ||
                     message.endsWith("…") || message.endsWith("...")
-                statusCard.visibility = View.GONE
-                if (!placeholder) {
-                    val compactMessage = message.replace(Regex("\\s+"), " ").take(140)
-                    if (compactMessage.isNotBlank()) {
-                        Toast.makeText(this@StudentConnectActivity, compactMessage, Toast.LENGTH_SHORT).show()
-                    }
-                }
+                statusCard.visibility = if (backgroundActivity) View.GONE else View.VISIBLE
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
@@ -474,6 +472,7 @@ class StudentConnectActivity : AppCompatActivity() {
         stopConnectionPresenceListeners()
         connectionPresenceCache.clear()
         connectionPresenceViews.clear()
+        auth.currentUser?.uid?.let(localCache::clearAccount)
         auth.signOut()
         passwordInput.text?.clear()
         profileLoadInProgressFor = null
@@ -971,8 +970,18 @@ class StudentConnectActivity : AppCompatActivity() {
         resendVerificationButton.visibility = if (verified) View.GONE else View.VISIBLE
         checkVerificationButton.visibility = if (verified) View.GONE else View.VISIBLE
         if (verified) {
-            statusText.text = "Email verified. Checking your student profile…"
-            loadProfileIfNeeded(user.uid)
+            statusText.text = ""
+            if (currentStudentProfile?.uid == user.uid) {
+                loadProfileIfNeeded(user.uid)
+            } else if (profileCacheLookupFor != user.uid) {
+                profileCacheLookupFor = user.uid
+                localCache.loadProfile(user.uid) { savedProfile ->
+                    if (auth.currentUser?.uid != user.uid) return@loadProfile
+                    profileCacheLookupFor = null
+                    if (savedProfile?.uid == user.uid) showProfile(savedProfile, cachedOnly = true)
+                    loadProfileIfNeeded(user.uid)
+                }
+            }
         } else {
             hideStudentConnectWorkspace()
             profileSetupPanel.visibility = View.GONE
@@ -984,9 +993,11 @@ class StudentConnectActivity : AppCompatActivity() {
     private fun loadProfileIfNeeded(uid: String) {
         if (profileLoadInProgressFor == uid || profileLoadedFor == uid) return
         profileLoadInProgressFor = uid
-        profileSetupPanel.visibility = View.GONE
-        profileCard.visibility = View.GONE
-        statusText.text = "Checking your student profile…"
+        if (currentStudentProfile?.uid != uid) {
+            profileSetupPanel.visibility = View.GONE
+            profileCard.visibility = View.GONE
+        }
+        statusText.text = ""
 
         val user = auth.currentUser
         if (user == null || user.uid != uid) {
@@ -1000,7 +1011,11 @@ class StudentConnectActivity : AppCompatActivity() {
             if (!tokenTask.isSuccessful) {
                 profileLoadInProgressFor = null
                 profileLoadedFor = uid
-                statusText.text = "Could not verify your Firebase session. Reopen U2U and try again."
+                statusText.text = if (currentStudentProfile?.uid == uid) {
+                    "Showing saved U2U data. Could not verify the session right now."
+                } else {
+                    "Could not verify your Firebase session. Check your connection and try again."
+                }
                 return@addOnCompleteListener
             }
 
@@ -1010,17 +1025,22 @@ class StudentConnectActivity : AppCompatActivity() {
                 profileLoadedFor = uid
 
                 if (error != null) {
-                    profileLoadedFor = null
-                    profileSetupPanel.visibility = View.GONE
-                    profileCard.visibility = View.GONE
-                    studentSearchPanel.visibility = View.GONE
-                    studentSearchResultCard.visibility = View.GONE
-                    statusText.text = "Could not load your profile. Check Firestore and its published security rules, then reopen U2U."
+                    if (currentStudentProfile?.uid == uid) {
+                        statusText.text = "Showing saved U2U data. Could not sync the profile right now."
+                    } else {
+                        profileLoadedFor = null
+                        profileSetupPanel.visibility = View.GONE
+                        profileCard.visibility = View.GONE
+                        studentSearchPanel.visibility = View.GONE
+                        studentSearchResultCard.visibility = View.GONE
+                        statusText.text = "Could not load your profile. Check your connection and try again."
+                    }
                     return@getOwnProfile
                 }
 
                 if (profile == null) {
                     currentStudentProfile = null
+                    localCache.clearAccount(uid)
                     searchedStudentProfile = null
                     sendFriendRequestButton.visibility = View.GONE
                     friendRequestsPanel.visibility = View.GONE
@@ -1103,14 +1123,17 @@ class StudentConnectActivity : AppCompatActivity() {
         }
     }
 
-    private fun showProfile(profile: StudentProfile) {
+    private fun showProfile(profile: StudentProfile, cachedOnly: Boolean = false) {
         currentStudentProfile = profile
+        if (!cachedOnly) localCache.saveProfile(profile)
         syncOwnPresence()
         notificationsPanel.visibility = View.VISIBLE
         startNotificationsListener(profile.uid)
         startChatListListener(profile.uid)
-        requestStudentConnectNotificationPermissionIfNeeded()
-        registerStudentNotificationToken(profile.uid)
+        if (!cachedOnly) {
+            requestStudentConnectNotificationPermissionIfNeeded()
+            registerStudentNotificationToken(profile.uid)
+        }
         profileSetupPanel.visibility = View.GONE
         profileCard.visibility = View.VISIBLE
         studentSearchPanel.visibility = View.VISIBLE
@@ -1124,7 +1147,7 @@ class StudentConnectActivity : AppCompatActivity() {
         homeGreetingText.text = "Hi, " + profile.displayName.substringBefore(" ").ifBlank { profile.displayName } + "!"
         applyStudentConnectBranding()
         showStudentConnectScreen(StudentConnectScreen.HOME)
-        refreshFriendRequests(showLoadingMessage = false)
+        if (!cachedOnly) refreshFriendRequests(showLoadingMessage = false)
     }
 
     private fun startNotificationsListener(uid: String) {
@@ -1162,34 +1185,55 @@ class StudentConnectActivity : AppCompatActivity() {
         if (!forceRefresh && chatListListeningFor == uid && chatListListener != null) return
         stopChatListListener()
         chatListListeningFor = uid
+        val generation = ++chatListSubscriptionGeneration
+        chatListLiveSnapshotReceivedFor = null
         chatListTitleText.text = "Recent chats"
         chatListEmptyText.text = "Loading recent chats…"
         chatListEmptyText.visibility = View.VISIBLE
 
+        localCache.loadChatSummaries(uid) { savedSummaries ->
+            if (generation != chatListSubscriptionGeneration ||
+                auth.currentUser?.uid != uid || currentStudentProfile?.uid != uid ||
+                chatListLiveSnapshotReceivedFor == uid
+            ) return@loadChatSummaries
+            cachedChatSummaries = savedSummaries
+            renderChatList(uid, savedSummaries)
+            if (savedSummaries.isNotEmpty()) chatListTitleText.text = "Recent chats · saved"
+        }
+
         chatListListener = studentChatRepository.listenConversationSummaries(uid) { summaries, error ->
-            if (auth.currentUser?.uid != uid || currentStudentProfile?.uid != uid) return@listenConversationSummaries
+            if (generation != chatListSubscriptionGeneration ||
+                auth.currentUser?.uid != uid || currentStudentProfile?.uid != uid
+            ) return@listenConversationSummaries
             if (error != null || summaries == null) {
-                cachedChatSummaries = emptyList()
-                chatListContainer.removeAllViews()
-                chatListTitleText.text = "Recent chats"
-                chatListEmptyText.text = if (error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
-                    "Could not load recent chats. Confirm the current Firestore chat rules are published."
+                if (cachedChatSummaries.isNotEmpty()) {
+                    renderChatList(uid, cachedChatSummaries)
+                    chatListTitleText.text = "Recent chats · saved"
                 } else {
-                    "Could not load recent chats. Check your internet connection and return to try again."
+                    chatListEmptyText.text = if (error?.message.orEmpty().contains("PERMISSION_DENIED", ignoreCase = true)) {
+                        "Could not load recent chats. Confirm the current Firestore chat rules are published."
+                    } else {
+                        "Could not load recent chats. Check your internet connection and return to try again."
+                    }
+                    chatListEmptyText.visibility = View.VISIBLE
                 }
-                chatListEmptyText.visibility = View.VISIBLE
                 return@listenConversationSummaries
             }
 
+            chatListLiveSnapshotReceivedFor = uid
             cachedChatSummaries = summaries
+            localCache.saveChatSummaries(uid, summaries)
+            chatListTitleText.text = "Recent chats"
             renderChatList(uid, summaries)
         }
     }
 
     private fun stopChatListListener() {
+        chatListSubscriptionGeneration++
         chatListListener?.remove()
         chatListListener = null
         chatListListeningFor = null
+        chatListLiveSnapshotReceivedFor = null
         cachedChatSummaries = emptyList()
     }
 
