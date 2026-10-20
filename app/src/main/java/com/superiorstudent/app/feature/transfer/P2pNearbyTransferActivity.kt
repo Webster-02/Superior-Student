@@ -578,7 +578,10 @@ class P2pNearbyTransferActivity : AppCompatActivity() {
     }
 
     private fun requestNearbyWifiPermission(action: NearbyPermissionAction) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        // Android 16's opt-in local-network protections temporarily use NEARBY_WIFI_DEVICES.
+        // Avoid extra prompts on Android 13–15; this app still targets SDK 35, so Android 17+
+        // retains legacy local-network access without ACCESS_LOCAL_NETWORK.
+        if (Build.VERSION.SDK_INT != 36 ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) ==
             PackageManager.PERMISSION_GRANTED
         ) {
