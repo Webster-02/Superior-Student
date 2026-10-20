@@ -316,7 +316,9 @@ class P2pLanDiscovery(
 
 /** Pure protocol helpers kept separate so validation can be tested on the JVM. */
 object P2pLanDiscoveryProtocol {
-    const val SERVICE_TYPE = "_superiorstudentp2p._tcp."
+    // DNS-SD service-type labels are limited to 15 characters (excluding the underscore).
+    // Keep this protocol identifier within that limit so Android NSD can advertise and browse it.
+    const val SERVICE_TYPE = "_superiorp2p._tcp."
     const val PROTOCOL_VERSION = 1
     const val ATTRIBUTE_VERSION = "v"
     const val ATTRIBUTE_SESSION_ID = "sid"

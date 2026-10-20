@@ -44,15 +44,28 @@ class P2pLanDiscoveryProtocolTest {
 
     @Test
     fun acceptsDnsSdServiceTypeWithOptionalTrailingDot() {
-        assertTrue(P2pLanDiscoveryProtocol.isOurServiceType("_superiorstudentp2p._tcp"))
-        assertTrue(P2pLanDiscoveryProtocol.isOurServiceType("_SUPERIORSTUDENTP2P._TCP."))
+        assertTrue(P2pLanDiscoveryProtocol.isOurServiceType("_superiorp2p._tcp"))
+        assertTrue(P2pLanDiscoveryProtocol.isOurServiceType("_SUPERIORP2P._TCP."))
         assertFalse(P2pLanDiscoveryProtocol.isOurServiceType("_http._tcp."))
         assertFalse(P2pLanDiscoveryProtocol.isOurServiceType(null))
     }
 
     @Test
+    fun serviceTypeUsesDnsSdCompliantNameLengthAndCharacters() {
+        val serviceName = P2pLanDiscoveryProtocol.SERVICE_TYPE
+            .substringBefore("._tcp")
+            .removePrefix("_")
+
+        assertTrue("DNS-SD service names must be 1–15 characters.", serviceName.length in 1..15)
+        assertTrue("DNS-SD service names must contain only letters, digits, or hyphens.",
+            serviceName.matches(Regex("^[A-Za-z0-9-]+$")))
+        assertTrue("DNS-SD service names must start and end with a letter or digit.",
+            serviceName.first().isLetterOrDigit() && serviceName.last().isLetterOrDigit())
+    }
+
+    @Test
     fun protocolVersionAndServiceTypeRemainStable() {
         assertEquals(1, P2pLanDiscoveryProtocol.PROTOCOL_VERSION)
-        assertEquals("_superiorstudentp2p._tcp.", P2pLanDiscoveryProtocol.SERVICE_TYPE)
+        assertEquals("_superiorp2p._tcp.", P2pLanDiscoveryProtocol.SERVICE_TYPE)
     }
 }
