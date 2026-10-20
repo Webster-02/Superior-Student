@@ -1376,6 +1376,8 @@ class MainActivity : AppCompatActivity() {
                     keepCachedSessionAfterTransientFailure(
                         "The student profile check timed out. Showing saved data."
                     )
+                pendingAttendanceResolution ->
+                    failAttendanceDetailResolution()
                 else -> Unit
             }
         }
@@ -1659,6 +1661,7 @@ class MainActivity : AppCompatActivity() {
                     if (cachedMatchesScreen && cached != null) {
                         if (module == StudentModule.ATTENDANCE && cached.attendanceDetail == null) {
                             // A subject resolver interrupted by backgrounding must not run after the summary is restored.
+                            if (pendingAttendanceResolution) cancelSessionOperationTimeout()
                             pendingAttendanceResolution = false
                             pendingAttendanceCourse = ""
                             pendingAttendanceCode = ""
@@ -1811,6 +1814,7 @@ class MainActivity : AppCompatActivity() {
         profileFetchInProgress = true
         profileFetchStartedAtMs = android.os.SystemClock.elapsedRealtime()
         profileReadAttempts = 0
+        scheduleSessionOperationTimeout("profile_fetch")
         android.util.Log.i("ERPPerf", "module_fetch_start module=PROFILE source=network")
         // Keep the WebView attached while waiting for the visual DOM state.
         // This makes postVisualStateCallback reliable even though the ERP page is not shown to the user.
@@ -1874,6 +1878,7 @@ class MainActivity : AppCompatActivity() {
 
             val ready = ParsingUtils.isValidStudentName(name) && (cgpa.isNotBlank() || sgpa.isNotBlank())
             if (ready || (hasUsefulProfileFields && ParsingUtils.isValidStudentName(name))) {
+                cancelSessionOperationTimeout()
                 profileFetchInProgress = false
                 val elapsed = (android.os.SystemClock.elapsedRealtime() - profileFetchStartedAtMs).coerceAtLeast(0L)
                 android.util.Log.i("ERPPerf", "module_fetch module=PROFILE elapsed_ms=$elapsed source=network outcome=success")
@@ -1884,6 +1889,7 @@ class MainActivity : AppCompatActivity() {
             if (profileReadAttempts < MAX_PROFILE_READ_ATTEMPTS) {
                 handler.postDelayed({ extractAndApplyProfile(view) }, PROFILE_RETRY_DELAY_MS)
             } else {
+                cancelSessionOperationTimeout()
                 profileFetchInProgress = false
                 val elapsed = (android.os.SystemClock.elapsedRealtime() - profileFetchStartedAtMs).coerceAtLeast(0L)
                 android.util.Log.w("ERPPerf", "module_fetch module=PROFILE elapsed_ms=$elapsed source=network outcome=unusable_response")
@@ -2757,6 +2763,7 @@ class MainActivity : AppCompatActivity() {
         if (!loggedIn) return
 
         if (url.isNotBlank()) {
+            cancelSessionOperationTimeout()
             pendingAttendanceResolution = false
             pendingAttendanceCourse = ""
             pendingAttendanceCode = ""
@@ -2778,6 +2785,7 @@ class MainActivity : AppCompatActivity() {
         pendingAttendanceCourse = course
         pendingAttendanceCode = code
         pendingAttendanceResolution = true
+        scheduleSessionOperationTimeout("attendance_subject_resolver")
         beginAttendanceDetailNavigation(null)
         webView.loadUrl(ErpConfig.moduleUrl(StudentModule.ATTENDANCE.path))
     }
@@ -2806,6 +2814,7 @@ class MainActivity : AppCompatActivity() {
                         !resolvedUrl.contains("/student/attendancedetail", ignoreCase = true)) {
                         failAttendanceDetailResolution()
                     } else {
+                        cancelSessionOperationTimeout()
                         pendingAttendanceResolution = false
                         pendingAttendanceCourse = ""
                         pendingAttendanceCode = ""
@@ -2823,6 +2832,10 @@ class MainActivity : AppCompatActivity() {
                     if (ErpConfig.belongsToErp(currentUrl) &&
                         currentUrl.contains("/student/attendancedetail", ignoreCase = true)) {
                         if (activeAttendanceDetailUrl.isNullOrBlank()) {
+                            cancelSessionOperationTimeout()
+                            pendingAttendanceResolution = false
+                            pendingAttendanceCourse = ""
+                            pendingAttendanceCode = ""
                             activeAttendanceDetailUrl = currentUrl
                             moduleFetchInProgress = false
                             readModuleData(webView, StudentModule.ATTENDANCE, true)
@@ -2875,6 +2888,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun failAttendanceDetailResolution() {
+        cancelSessionOperationTimeout()
         pendingAttendanceResolution = false
         pendingAttendanceCourse = ""
         pendingAttendanceCode = ""
@@ -2898,6 +2912,7 @@ class MainActivity : AppCompatActivity() {
             returnToAttendanceSummary()
             return
         }
+        cancelSessionOperationTimeout()
         pendingAttendanceResolution = false
         pendingAttendanceCourse = ""
         pendingAttendanceCode = ""
