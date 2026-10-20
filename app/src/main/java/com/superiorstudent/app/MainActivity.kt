@@ -4313,7 +4313,12 @@ class MainActivity : AppCompatActivity() {
                 view.setTextColor(color)
             }
             is android.widget.ImageView -> {
-                view.imageTintList = ColorStateList.valueOf(Palette.primaryLight(this))
+                // Keep the multicolour Pachattar mark intact in the side-menu header.
+                view.imageTintList = if (view.id == R.id.moreBrandLogo) {
+                    null
+                } else {
+                    ColorStateList.valueOf(Palette.primaryLight(this))
+                }
             }
         }
         if (view is ViewGroup) {
