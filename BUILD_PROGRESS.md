@@ -58,11 +58,11 @@
 
 ## Part 6D — create-offer mapped completion path
 
-- **Status:** implementation added; CI verification pending.
+- **Status:** complete and verified on commit `254802a68631b83f8250db8fddeaa1ab55934cc6`. GitHub Actions run #16 (`39648819689`) passed all unit tests, JavaScript validation, APK build, APK verification, and artifact upload.
 - Added opt-in `MarketRepository.createOfferWithMappedError(...)`, mirroring the verified mapped-result path for task creation.
 - The original `createOffer(...): Task<String>` remains unchanged for existing callers. The new path reuses the already tested `MarketOperationTaskAdapter`; no offer write logic or transaction contents were changed.
 - No existing UI call site is redirected in this step. No rules/index, protected test, existing U2U feature, or view ID changes; no Firebase deployment or merge.
 
 ## Exact next step
 
-Run the Market data and APK workflow on this commit. Verify all unit tests, APK build/verification, and artifact upload. After verification, stop for review before mapping another operation.
+Part 6D is complete and verified. Stop for user review before mapping any additional Market operation; do not broaden integration until the user explicitly approves.
