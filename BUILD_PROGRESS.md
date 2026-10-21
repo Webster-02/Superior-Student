@@ -96,7 +96,7 @@ Stop for user review. After explicit approval, implement student reference scree
 
 ## UI-03 — Offers reference screen
 
-- **Status:** implementation committed; CI pending.
+- **Status:** implementation committed; CI pending. Kotlin Activity, pure UI policy/fixtures, and icon helpers are separated into their own source files before final build verification.
 - Added a dedicated native Offers screen using the same Market header and Paper/Night tokens; the existing Requests/Offers segment now opens this screen.
 - Matches the reference's All / Notes / Tutoring / Design / Typing chips, seller avatar/name, star rating + count, verified-student label, pastel category chip, title/description, price or Swap, dark Message button and lime Post an offer CTA.
 - Uses the reference ZIP's three listing samples as visual fixtures only. Live Firestore offers, authoritative profile verification/ratings, actual chat and offer-posting destinations remain later steps.
