@@ -1,5 +1,4 @@
 name: Firestore Rules Review Tests
-# Comment-only trigger marker to run the current Market Rules candidate in CI.
 
 on:
   workflow_dispatch:
@@ -76,10 +75,8 @@ jobs:
           static_status=${PIPESTATUS[0]}
           npm run test:emulator 2>&1 | tee artifacts/test-emulator-output.txt
           emulator_status=${PIPESTATUS[0]}
-          # Match the stable core of Firebase's expression-ceiling diagnostic.
-          # Case-insensitive matching tolerates prefixes/capitalization changes.
-          expression_message="maximum of 1000 expressions to evaluate has been reached"
-          diagnostic_count=$(grep -Fic -- "${expression_message}" artifacts/test-emulator-output.txt || true)
+          expression_message="Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached"
+          diagnostic_count=$(grep -Fc "${expression_message}" artifacts/test-emulator-output.txt || true)
           expression_ceiling_status=0
           if [[ "${diagnostic_count}" -gt 0 ]]; then
             echo "FAIL: Firestore Rules evaluator reached the 1,000-expression ceiling (${diagnostic_count} diagnostic line(s)). See artifacts/test-emulator-output.txt." | tee -a artifacts/test-emulator-output.txt

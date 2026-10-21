@@ -635,9 +635,12 @@ service cloud.firestore {
       function marketReportProfileCounterTargetValid(uid, targetType, targetId) {
         let reportId = targetType + '_' + targetId + '_' + uid;
         let path = /databases/$(database)/documents/reports/$(reportId);
-        let reportExistsAfter = existsAfter(path);
-        let reportAfter = getAfter(path).data;
-        return reportExistsAfter && reportAfter.reporterId == uid;
+        return existsAfter(path) && marketReportProfileCounterTargetFieldsValid(uid, path);
+      }
+
+      function marketReportProfileCounterTargetFieldsValid(uid, path) {
+        let targetAfter = getAfter(path).data;
+        return targetAfter.reporterId == uid;
       }
 
       function marketValidSupportProfileCounterMutation(uid, before, after, changed) {
@@ -689,10 +692,6 @@ service cloud.firestore {
         let before = resource.data;
         let after = request.resource.data;
         let changed = after.diff(before).affectedKeys();
-        let counterFieldsChanged = changed.hasAny([
-          'openTasks', 'activeOffers', 'proposalWindowCount', 'proposalWindowStartedAt',
-          'reportWindowCount', 'reportWindowStartedAt', 'openSupportTickets'
-        ]);
         return changed.hasAny(['skillTags', 'blockedUids', 'settings'])
           ? (request.auth.uid == uid
             && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
@@ -705,7 +704,6 @@ service cloud.firestore {
             && after.lastMutation.kind in ['task', 'offer', 'proposal', 'report', 'support'])
             ? (marketProfileCounterFieldsOnly(changed)
               && (request.auth.uid == uid || marketIsAdmin())
-              && counterFieldsChanged
               && marketValidProfileCounterUpdate(uid, before, after, changed))
             : (changed.hasAny(['status', 'suspendedUntil', 'warnings'])
               || (after.lastMutation is map
@@ -747,7 +745,6 @@ service cloud.firestore {
               && after.lastMutation != before.lastMutation
               && marketProfileCounterFieldsOnly(changed)
               && (request.auth.uid == uid || marketIsAdmin())
-              && counterFieldsChanged
               && marketValidProfileCounterUpdate(uid, before, after, changed)
             )
             || (
@@ -797,9 +794,9 @@ service cloud.firestore {
       allow list: if marketIsAdmin();
       allow create: if marketVerified()
         && request.auth.uid == uid
-        && marketValidProfileCreate(uid, request.resource.data)
         && exists(/databases/$(database)/documents/profiles/$(uid))
-        && !exists(marketProfilePath(uid));
+        && !exists(marketProfilePath(uid))
+        && marketValidProfileCreate(uid, request.resource.data);
       allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);
       allow delete: if false;
     }
@@ -845,23 +842,19 @@ service cloud.firestore {
         let hasAssignedTo = keys.hasAny(['assignedTo']);
         let createdAt = data.createdAt;
         let expectedKeyCount = 17 + (hasCourseTag ? 1 : 0) + (hasBudgetAmount ? 1 : 0) + (hasAssignedTo ? 1 : 0);
-        let status = data.status;
-        let posterName = data.posterName;
-        let posterInitials = data.posterInitials;
-        let updatedAt = data.updatedAt;
         return keys.size() == expectedKeyCount
-          && status == 'open'
+          && data.status == 'open'
           && data.moderation in ['ok', 'under_review']
           && data.pinned == false
           && data.posterId == request.auth.uid
-          && posterName is string && posterName.size() >= 2 && posterName.size() <= 60
-          && posterInitials is string && posterInitials.size() >= 1 && posterInitials.size() <= 4
+          && data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 60
+          && data.posterInitials is string && data.posterInitials.size() >= 1 && data.posterInitials.size() <= 4
           && data.proposalCount == 0
           && data.reportCount == 0
-          && marketValidTaskContent(data)
           && marketCreatedAtNearRequestTime(createdAt)
-          && updatedAt == request.time
-          && data.expiresAt == createdAt + duration.value(14, 'd');
+          && data.updatedAt == request.time
+          && data.expiresAt == createdAt + duration.value(14, 'd')
+          && marketValidTaskContent(data);
       }
 
       function marketValidTaskCreateLinkedState(taskId, data) {
@@ -884,66 +877,52 @@ service cloud.firestore {
 
       function marketTaskReportCounterValid(taskId) {
         let reportId = 'task_' + taskId + '_' + request.auth.uid;
-        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
-        let reportPath = /databases/$(database)/documents/reports/$(reportId);
-        let taskAfter = getAfter(taskPath).data;
-        let reportExistsAfter = existsAfter(reportPath);
-        let reportAfter = getAfter(reportPath).data;
-        let reportCountBefore = resource.data.reportCount;
-        let moderationBefore = resource.data.moderation;
-        return reportExistsAfter
-          && taskAfter.reportCount == reportCountBefore + 1
+        let taskAfter = getAfter(/databases/$(database)/documents/tasks/$(taskId)).data;
+        let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
+        return taskAfter.reportCount == resource.data.reportCount + 1
           && reportAfter.targetType == 'task'
           && reportAfter.targetId == taskId
           && reportAfter.reporterId == request.auth.uid
           && (
-            (taskAfter.reportCount < 3 && taskAfter.moderation == moderationBefore)
+            (taskAfter.reportCount < 3 && taskAfter.moderation == resource.data.moderation)
             || (taskAfter.reportCount >= 3
-              && ((moderationBefore == 'ok' && taskAfter.moderation == 'under_review')
-                || (moderationBefore != 'ok' && taskAfter.moderation == moderationBefore)))
+              && ((resource.data.moderation == 'ok' && taskAfter.moderation == 'under_review')
+                || (resource.data.moderation != 'ok' && taskAfter.moderation == resource.data.moderation)))
           );
       }
 
       function marketTaskOwnerUpdateValid(taskId, changed, before, after) {
-        let beforePosterId = before.posterId;
-        let beforeStatus = before.status;
-        let afterStatus = after.status;
-        let beforeAssignedTo = before.get('assignedTo', null);
-        let afterAssignedTo = after.get('assignedTo', null);
-        let beforeExpiresAt = before.expiresAt;
-        let afterExpiresAt = after.expiresAt;
-        let hasContentChanges = changed.hasAny([
-          'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline', 'skills'
-        ]);
-        return beforePosterId == request.auth.uid
-          && (!hasContentChanges || (marketValidTaskContent(after) && marketUserCanPost(request.auth.uid)))
+        return before.posterId == request.auth.uid
+          && (!changed.hasAny([
+                'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline', 'skills'
+              ]) || (marketValidTaskContent(after) && marketUserCanPost(request.auth.uid)))
           && after.updatedAt == request.time
-          && (afterStatus == 'open'
-            ? (beforeStatus == 'open'
-              && afterAssignedTo == beforeAssignedTo
-              && afterExpiresAt == beforeExpiresAt)
-            : afterStatus == 'cancelled'
-              ? (beforeStatus == 'open'
-                && afterAssignedTo == beforeAssignedTo
-                && afterExpiresAt == beforeExpiresAt
+          && (after.status == 'open'
+            ? (before.status == 'open'
+              && after.get('assignedTo', null) == before.get('assignedTo', null)
+              && after.expiresAt == before.expiresAt)
+            : after.status == 'cancelled'
+              ? (before.status == 'open'
+                && after.get('assignedTo', null) == before.get('assignedTo', null)
+                && after.expiresAt == before.expiresAt
                 && marketTaskCloseCounterValid(request.auth.uid, taskId))
-              : afterStatus == 'assigned'
-                ? (beforeStatus == 'open'
-                  && afterAssignedTo is string
-                  && afterAssignedTo != beforePosterId
-                  && afterExpiresAt == beforeExpiresAt
-                  && marketTaskAcceptCounterValid(taskId, afterAssignedTo, request.auth.uid))
-                : afterStatus == 'expired'
-                  ? (beforeStatus == 'open'
-                    && request.time > beforeExpiresAt
-                    && afterAssignedTo == beforeAssignedTo
-                    && afterExpiresAt == beforeExpiresAt
+              : after.status == 'assigned'
+                ? (before.status == 'open'
+                  && after.assignedTo is string
+                  && after.assignedTo != before.posterId
+                  && after.expiresAt == before.expiresAt
+                  && marketTaskAcceptCounterValid(taskId, after.assignedTo, request.auth.uid))
+                : after.status == 'expired'
+                  ? (before.status == 'open'
+                    && request.time > before.expiresAt
+                    && after.get('assignedTo', null) == before.get('assignedTo', null)
+                    && after.expiresAt == before.expiresAt
                     && marketTaskCloseCounterValid(request.auth.uid, taskId))
-                  : afterStatus == 'completed'
-                    ? (beforeStatus == 'assigned'
-                      && request.auth.uid == beforePosterId
-                      && afterAssignedTo == beforeAssignedTo
-                      && afterExpiresAt == beforeExpiresAt
+                  : after.status == 'completed'
+                    ? (before.status == 'assigned'
+                      && request.auth.uid == before.posterId
+                      && after.get('assignedTo', null) == before.get('assignedTo', null)
+                      && after.expiresAt == before.expiresAt
                       && changed.hasOnly(['status', 'updatedAt']))
                     : false);
       }
@@ -1032,8 +1011,15 @@ service cloud.firestore {
         return after.reportCount == before.reportCount + 1
           && after.updatedAt == request.time
           && request.auth.uid != before.posterId
+          && marketTaskReportExistsAfter(taskId)
           && marketTaskReportCounterValid(taskId)
           && marketReportWindowCounterValid(request.auth.uid);
+      }
+
+      function marketTaskReportExistsAfter(taskId) {
+        let reportId = 'task_' + taskId + '_' + request.auth.uid;
+        let path = /databases/$(database)/documents/reports/$(reportId);
+        return existsAfter(path);
       }
 
       function marketTaskCloseCounterValid(uid, taskId) {
@@ -1119,12 +1105,9 @@ service cloud.firestore {
       function marketProposalCreatePreflight(taskId, userId, data) {
         let taskPath = /databases/$(database)/documents/tasks/$(taskId);
         let taskBefore = get(taskPath).data;
-        let taskStatus = taskBefore.status;
-        let taskPosterId = taskBefore.posterId;
-        let proposalCount = taskBefore.proposalCount;
-        return taskStatus == 'open'
-          && taskPosterId != request.auth.uid
-          && proposalCount < 15
+        return taskBefore.status == 'open'
+          && taskBefore.posterId != request.auth.uid
+          && taskBefore.proposalCount < 15
           && marketValidProposalCreateLinkedState(taskId, data, taskBefore);
       }
 
@@ -1155,32 +1138,24 @@ service cloud.firestore {
       function marketValidProposalCreateLinkedState(taskId, data, taskBefore) {
         let uid = request.auth.uid;
         let taskPath = /databases/$(database)/documents/tasks/$(taskId);
-        let profilePath = marketProfilePath(uid);
-        let studentProfilePath = /databases/$(database)/documents/profiles/$(uid);
         let taskAfter = getAfter(taskPath).data;
-        let profileAfter = getAfter(profilePath).data;
-        let studentProfile = get(studentProfilePath).data;
-        let lastMutation = profileAfter.lastMutation;
-        let proposalCountBefore = taskBefore.proposalCount;
-        let proposalCountAfter = taskAfter.proposalCount;
+        let profileAfter = getAfter(marketProfilePath(uid)).data;
+        let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
         return data.proposerName == studentProfile.displayName
-          && proposalCountAfter == proposalCountBefore + 1
-          && lastMutation.kind == 'proposal'
-          && lastMutation.operation == 'create'
-          && lastMutation.targetId == taskId;
+          && taskAfter.proposalCount == taskBefore.proposalCount + 1
+          && profileAfter.lastMutation.kind == 'proposal'
+          && profileAfter.lastMutation.operation == 'create'
+          && profileAfter.lastMutation.targetId == taskId;
       }
 
       function marketProposalUpdateAllowed(taskId, userId) {
         let before = resource.data;
         let after = request.resource.data;
         let changed = after.diff(before).affectedKeys();
-        let hasContentChanges = changed.hasAny(['message', 'price', 'deliveryDays']);
-        let hasStatusChanges = changed.hasAny(['status']);
-        let afterStatus = after.status;
-        return hasContentChanges
+        return changed.hasAny(['message', 'price', 'deliveryDays'])
           ? marketProposalOwnerEditAllowed(taskId, userId, before, after, changed)
-          : hasStatusChanges
-            ? (afterStatus == 'withdrawn'
+          : changed.hasAny(['status'])
+            ? (after.status == 'withdrawn'
               ? marketProposalWithdrawAllowed(userId, before, after, changed)
               : marketProposalPosterUpdateAllowed(taskId, userId, before, after, changed))
             : (marketProposalOwnerEditAllowed(taskId, userId, before, after, changed)
@@ -1234,10 +1209,8 @@ service cloud.firestore {
 
       function marketProposalAcceptanceTaskStateValid(taskPath, userId) {
         let taskAfter = getAfter(taskPath).data;
-        let taskStatus = taskAfter.status;
-        let assignedTo = taskAfter.assignedTo;
-        return taskStatus == 'assigned'
-          && assignedTo == userId;
+        return taskAfter.status == 'assigned'
+          && taskAfter.assignedTo == userId;
       }
 
 
@@ -1281,23 +1254,17 @@ service cloud.firestore {
 
       function marketOfferReportCounterValid(offerId) {
         let reportId = 'offer_' + offerId + '_' + request.auth.uid;
-        let offerPath = /databases/$(database)/documents/offers/$(offerId);
-        let reportPath = /databases/$(database)/documents/reports/$(reportId);
-        let offerAfter = getAfter(offerPath).data;
-        let reportExistsAfter = existsAfter(reportPath);
-        let reportAfter = getAfter(reportPath).data;
-        let reportCountBefore = resource.data.reportCount;
-        let moderationBefore = resource.data.moderation;
-        return reportExistsAfter
-          && offerAfter.reportCount == reportCountBefore + 1
+        let offerAfter = getAfter(/databases/$(database)/documents/offers/$(offerId)).data;
+        let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
+        return offerAfter.reportCount == resource.data.reportCount + 1
           && reportAfter.targetType == 'offer'
           && reportAfter.targetId == offerId
           && reportAfter.reporterId == request.auth.uid
           && (
-            (offerAfter.reportCount < 3 && offerAfter.moderation == moderationBefore)
+            (offerAfter.reportCount < 3 && offerAfter.moderation == resource.data.moderation)
             || (offerAfter.reportCount >= 3
-              && ((moderationBefore == 'ok' && offerAfter.moderation == 'under_review')
-                || (moderationBefore != 'ok' && offerAfter.moderation == moderationBefore)))
+              && ((resource.data.moderation == 'ok' && offerAfter.moderation == 'under_review')
+                || (resource.data.moderation != 'ok' && offerAfter.moderation == resource.data.moderation)))
           );
       }
 
@@ -1309,22 +1276,19 @@ service cloud.firestore {
         let createdAt = data.createdAt;
         let renewedAt = data.renewedAt;
         let expectedKeyCount = 15 + (hasCourseTag ? 1 : 0) + (hasPriceAmount ? 1 : 0) + (hasThumbnail ? 1 : 0);
-        let status = data.status;
-        let sellerName = data.sellerName;
-        let sellerInitials = data.sellerInitials;
         return keys.size() == expectedKeyCount
-          && status == 'active'
+          && data.status == 'active'
           && data.moderation in ['ok', 'under_review']
           && data.pinned == false
           && data.sellerId == request.auth.uid
-          && sellerName is string && sellerName.size() >= 2 && sellerName.size() <= 60
-          && sellerInitials is string && sellerInitials.size() >= 1 && sellerInitials.size() <= 4
+          && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 60
+          && data.sellerInitials is string && data.sellerInitials.size() >= 1 && data.sellerInitials.size() <= 4
           && data.reportCount == 0
-          && marketValidOfferContent(data)
           && marketCreatedAtNearRequestTime(createdAt)
           && renewedAt == createdAt
           && data.updatedAt == request.time
-          && data.expiresAt == renewedAt + duration.value(30, 'd');
+          && data.expiresAt == renewedAt + duration.value(30, 'd')
+          && marketValidOfferContent(data);
       }
 
       function marketValidOfferCreateLinkedState(offerId, data) {
@@ -1346,46 +1310,39 @@ service cloud.firestore {
       }
 
       function marketOfferOwnerUpdateValid(offerId, changed, before, after) {
-        let beforeSellerId = before.sellerId;
-        let beforeStatus = before.status;
-        let afterStatus = after.status;
-        let beforeRenewedAt = before.renewedAt;
-        let afterRenewedAt = after.renewedAt;
-        let beforeExpiresAt = before.expiresAt;
-        let afterExpiresAt = after.expiresAt;
-        let hasContentChanges = changed.hasAny([
-          'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail'
-        ]);
-        return beforeSellerId == request.auth.uid
-          && (!hasContentChanges || (marketValidOfferContent(after) && marketUserCanPost(request.auth.uid)))
+        return before.sellerId == request.auth.uid
+          && (!changed.hasAny([
+                'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail'
+              ]) || (marketValidOfferContent(after) && marketUserCanPost(request.auth.uid)))
           && after.updatedAt == request.time
-          && (afterStatus == 'paused'
-            ? (beforeStatus == 'active'
-              && afterRenewedAt == beforeRenewedAt
-              && afterExpiresAt == beforeExpiresAt
+          && (after.status == 'paused'
+            ? (before.status == 'active'
+              && after.renewedAt == before.renewedAt
+              && after.expiresAt == before.expiresAt
               && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'deactivate', -1))
-            : afterStatus == 'expired'
-              ? (beforeStatus == 'active'
-                && afterRenewedAt == beforeRenewedAt
-                && afterExpiresAt == beforeExpiresAt
-                && request.time > beforeExpiresAt
+            : after.status == 'expired'
+              ? (before.status == 'active'
+                && after.renewedAt == before.renewedAt
+                && after.expiresAt == before.expiresAt
+                && request.time > before.expiresAt
                 && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'deactivate', -1))
-              : afterStatus == 'removed'
-                ? (beforeStatus in ['active', 'paused']
-                  && afterRenewedAt == beforeRenewedAt
-                  && afterExpiresAt == beforeExpiresAt
-                  && (beforeStatus == 'active'
+              : after.status == 'removed'
+                ? (before.status in ['active', 'paused']
+                  && after.renewedAt == before.renewedAt
+                  && after.expiresAt == before.expiresAt
+                  && (before.status == 'active'
                     ? marketOfferCounterTransitionValid(request.auth.uid, offerId, 'deactivate', -1)
                     : marketOfferPausedRemovalKeepsCounter(request.auth.uid)))
-                : afterStatus == beforeStatus
-                  ? ((afterRenewedAt == beforeRenewedAt && afterExpiresAt == beforeExpiresAt)
-                    || (afterStatus == 'active' && marketOfferRenewalValid(offerId, before, after)))
-                  : afterStatus == 'active'
-                    ? (beforeStatus == 'paused'
-                      && afterRenewedAt == beforeRenewedAt
-                      && afterExpiresAt == beforeExpiresAt
-                      && request.time <= beforeExpiresAt
-                      ? (marketOfferReactivationCounterValid(request.auth.uid, offerId))
+                : after.status == before.status
+                  ? ((after.renewedAt == before.renewedAt && after.expiresAt == before.expiresAt)
+                    || (after.status == 'active' && marketOfferRenewalValid(offerId, before, after)))
+                  : after.status == 'active'
+                    ? (before.status == 'paused'
+                      && after.renewedAt == before.renewedAt
+                      && after.expiresAt == before.expiresAt
+                      && request.time <= before.expiresAt
+                      ? (marketProfile(request.auth.uid).activeOffers < 5
+                        && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'reactivate', 1))
                       : marketOfferRenewalValid(offerId, before, after))
                     : false);
       }
@@ -1430,7 +1387,8 @@ service cloud.firestore {
           && request.time >= before.renewedAt + duration.value(7, 'd')
           && after.expiresAt == after.renewedAt + duration.value(30, 'd')
           && (before.status == 'active'
-            || (marketOfferReactivationCounterValid(request.auth.uid, offerId)));
+            || (marketProfile(request.auth.uid).activeOffers < 5
+              && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'reactivate', 1)));
       }
 
       function marketOfferAdminUpdateValid(offerId, before, after) {
@@ -1461,7 +1419,14 @@ service cloud.firestore {
         return after.reportCount == before.reportCount + 1
           && after.updatedAt == request.time
           && request.auth.uid != before.sellerId
+          && marketOfferReportExistsAfter(offerId)
           && marketOfferReportCounterValid(offerId);
+      }
+
+      function marketOfferReportExistsAfter(offerId) {
+        let reportId = 'offer_' + offerId + '_' + request.auth.uid;
+        let path = /databases/$(database)/documents/reports/$(reportId);
+        return existsAfter(path);
       }
 
       function marketOfferCounterTransitionValid(uid, offerId, operation, delta) {
@@ -1470,16 +1435,6 @@ service cloud.firestore {
         let profileAfter = getAfter(profilePath).data;
         return profileAfter.activeOffers == profileBefore.activeOffers + delta
           && profileAfter.lastMutation.operation == operation
-          && profileAfter.lastMutation.targetId == offerId;
-      }
-
-      function marketOfferReactivationCounterValid(uid, offerId) {
-        let profilePath = marketProfilePath(uid);
-        let profileBefore = get(profilePath).data;
-        let profileAfter = getAfter(profilePath).data;
-        return profileBefore.activeOffers < 5
-          && profileAfter.activeOffers == profileBefore.activeOffers + 1
-          && profileAfter.lastMutation.operation == 'reactivate'
           && profileAfter.lastMutation.targetId == offerId;
       }
 
@@ -1571,13 +1526,11 @@ service cloud.firestore {
       }
 
       function marketReportMutationMatches(data) {
-        let profilePath = marketProfilePath(request.auth.uid);
-        let profileAfter = getAfter(profilePath).data;
-        let lastMutation = profileAfter.lastMutation;
-        return lastMutation.kind == 'report'
-          && lastMutation.operation == 'create'
-          && lastMutation.targetType == data.targetType
-          && lastMutation.targetId == data.targetId;
+        let profileAfter = getAfter(marketProfilePath(request.auth.uid)).data;
+        return profileAfter.lastMutation.kind == 'report'
+          && profileAfter.lastMutation.operation == 'create'
+          && profileAfter.lastMutation.targetType == data.targetType
+          && profileAfter.lastMutation.targetId == data.targetId;
       }
 
 
@@ -1585,8 +1538,8 @@ service cloud.firestore {
       allow list: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
       allow create: if marketVerified() && marketValidReportCreate(reportId, request.resource.data);
       allow update: if resource != null && marketVerified() && marketIsAdmin()
-        && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed']
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed'];
       allow delete: if false;
     }
 
