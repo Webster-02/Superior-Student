@@ -148,7 +148,7 @@ class MarketConfigProviderTest {
     }
 
     private fun firestoreFailure(code: FirebaseFirestoreException.Code): FirebaseFirestoreException =
-        FirebaseFirestoreException("Test Firestore failure", null, code)
+        FirebaseFirestoreException("Test Firestore failure", code, null)
 
     private fun sampleConfig(): MarketConfig = MarketConfig(
         announcement = MarketAnnouncement("Market notice", true, Timestamp(1_800_000_000L, 123_000_000)),
