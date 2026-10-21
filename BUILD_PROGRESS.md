@@ -2,7 +2,7 @@
 
 **Branch:** `feature/market-step1`
 **Base:** `review/market-rules` at `aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3`
-**Build status:** Parts 1–3 complete. Part 4 Steps 4A and 4B1 (pure cache policy and versioned config cache codec) are complete and green in runs #596 (`39631043160`) and #598 (`39632795357`). Persistent local storage and the Firestore config reader are not wired yet.
+**Build status:** Parts 1–3 complete. Part 4 Steps 4A, 4B1 and 4B2 (cache policy, versioned codec, and persistent local store) are complete and green in runs #596 (`39631043160`), #598 (`39632795357`) and #600 (`39634123211`). The Firestore config reader is not wired yet.
 **Safety:** Do not modify `firestore.rules`, the protected top-level `tests/`, or `firestore.indexes.json`; do not change existing U2U chat/friend/Nearby logic or existing view IDs. No merge or Firebase deployment.
 
 ## Baseline gate
@@ -54,11 +54,14 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
   - **Step 4B1 — versioned cache codec:** complete. Added `MarketConfigCacheCodec.kt` and `MarketConfigCacheCodecTest.kt`. The pure codec versions its envelope, enforces a 64 KiB UTF-8 payload limit, preserves timestamps down to nanoseconds, nullable values, and nested supported scalar/map/list types in allowed extra limit fields. It rejects invalid config shapes, malformed/unknown-version payloads, oversized entries, and unsupported nested types rather than silently dropping values. This sub-step does not read/write Android storage or contact Firestore.
   - Six focused codec tests cover config round-trip and saved-at timestamps, nullable announcement timestamps, nested extra fields, invalid config/timestamps, malformed payloads and versioning, payload bounds, and unsupported types.
   - **GitHub Actions run #598:** [build and APK artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39632795357) — JavaScript validation, clean, unit tests, APK assembly, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,774,420 bytes, expires 2026-10-28.
-  - The next sub-step is Step 4B2: persistent local cache store. Firestore config reading remains deferred until the storage path is verified.
+  - **Step 4B2 — persistent local cache store:** complete. Added `MarketConfigCacheStore.kt` backed by a dedicated app-private `SharedPreferences` file and the Step 4B1 codec. It exposes write/read/clear, uses synchronous commit results for write/remove, enforces the codec's payload bound, returns stale entries for the caller's policy-controlled offline fallback, and clears malformed or incompatible cached payloads. Invalid configs and failed writes do not replace the previously saved value. The store has no Firestore dependency.
+  - Added `MarketConfigCacheStoreTest.kt` with seven local tests: write/read timestamp round-trip; overwrite; stale entry retained for policy-controlled fallback; clear affects only Market config; malformed entry cleanup; invalid config/rejected write preserve existing cache; and preference runtime failures do not escape.
+  - **GitHub Actions run #600:** [build and APK artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39634123211) — JavaScript validation, clean, all unit tests, APK assembly, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,777,383 bytes, expires 2026-10-28.
+  - Firestore config reading and wiring remote refresh with connectivity-only stale fallback remain deferred to Step 4C.
 
 - **Part 5 — pure ranking scorer and unit tests:** not started.
 - **Part 6 — Firestore error mapping:** not started.
 
 ## Exact next step
 
-Steps 4A and 4B1 are complete and their implementation builds, unit tests, APK verification, and artifact uploads passed. The next small step is Step 4B2: add the bounded persistent local cache store using an existing app-supported storage option, with storage-specific read/write/clear tests where the project test setup permits. Do not start Step 4B2 until the user says `continue`.
+Steps 4A, 4B1 and 4B2 are complete and their implementation builds, unit tests, APK verification, and artifact uploads passed. The next small step is Step 4C1: add a narrowly scoped read-only Firestore config reader for `config/market`, with focused tests for strict config conversion and document identity. Do not start Step 4C1 until the user says `continue`.
