@@ -151,7 +151,7 @@ UI-06 is complete and verified. Stop for user review before implementing referen
 
 ## UI-07 — Post a task, step 1 (Details)
 
-- **Status:** implementation committed; CI pending.
+- **Status:** implementation committed; CI pending. Added missing Paper/Night `market_bad` validation tokens in follow-up commit `5c665d254d19125501025a300cc0286363ff7e7a`; run #31 was created from the prior implementation commit and is not sufficient to verify this correction.
 - Inspected `07_post1_light.png`, `07_post1_dark.png`, and both HTML references.
 - Added the reference first step with the 3-part progress line, back/title/subtitle, editable title, exact six categories, optional searchable-course style field, multiline description with a live character counter, and fixed lime Next CTA. Paper/Night palettes and Poppins are used.
 - The Requests screen's Post a task CTA now opens this step. Input validation rejects blank/too-short titles, unknown category values and descriptions outside 20–500 characters; course remains optional. The visible counter shows actual characters from the supplied description (129/500); the ZIP mockup label says 142/500 despite the displayed text containing 129 characters, so code avoids a hard-coded inaccurate count.
