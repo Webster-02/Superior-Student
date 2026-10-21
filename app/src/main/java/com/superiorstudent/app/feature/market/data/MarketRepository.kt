@@ -1,6 +1,7 @@
 package com.superiorstudent.app.feature.market.data
 
 import com.google.android.gms.tasks.Task
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentReference
@@ -482,7 +483,6 @@ class MarketRepository(
             val task = tx.get(taskRef)
             val proposal = tx.get(proposalRef)
             val posterProfile = tx.get(posterProfileRef)
-            val conversation = tx.get(conversationRef)
             require(task.exists() && proposal.exists()) { "The task or proposal no longer exists." }
             require(task.getString("posterId") == uid) { "Only the task poster can accept a proposal." }
             require(task.getString("status") == MarketTaskStatus.OPEN.wireValue) {
@@ -498,15 +498,6 @@ class MarketRepository(
             val openTasks = posterProfile.long("openTasks").toInt()
             require(openTasks > 0) { "The poster's open task counter needs attention." }
 
-            if (conversation.exists()) {
-                val saved = MarketConverters.conversation(conversation)
-                require(saved != null && saved.kind == MarketListingKind.TASK &&
-                    saved.listingId == taskId && saved.listingOwnerUid == uid &&
-                    saved.participants == sortedParticipants) {
-                    "A conflicting Market conversation already exists."
-                }
-            }
-
             tx.update(taskRef, mapOf(
                 "status" to MarketTaskStatus.ASSIGNED.wireValue,
                 "assignedTo" to proposerUid,
@@ -521,17 +512,15 @@ class MarketRepository(
                 "lastMutation" to mutationMap("task", "close", taskId),
                 "updatedAt" to FieldValue.serverTimestamp()
             ))
-            if (!conversation.exists()) {
-                tx.set(conversationRef, linkedMapOf<String, Any?>(
-                    "participants" to sortedParticipants,
-                    "kind" to MarketListingKind.TASK.wireValue,
-                    "listingId" to taskId,
-                    "listingOwnerUid" to uid,
-                    "taskId" to taskId,
-                    "createdAt" to FieldValue.serverTimestamp(),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                ))
-            }
+            tx.set(conversationRef, linkedMapOf<String, Any?>(
+                "participants" to sortedParticipants,
+                "kind" to MarketListingKind.TASK.wireValue,
+                "listingId" to taskId,
+                "listingOwnerUid" to uid,
+                "taskId" to taskId,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            ))
             conversationId
         }
     }
@@ -780,10 +769,10 @@ class MarketRepository(
         }
 
         return firestore.runTransaction { tx ->
-            val existingReport = tx.get(reportRef)
-            require(!existingReport.exists()) { "You have already reported this item." }
-            val target = tx.get(targetRef)
-            require(target.exists()) { "The item you reported no longer exists." }
+            val target = if (targetType == MarketReportTargetType.USER) null else tx.get(targetRef)
+            if (targetType != MarketReportTargetType.USER) {
+                require(target?.exists() == true) { "The item you reported no longer exists." }
+            }
             val reporterProfile = tx.get(reporterProfileRef)
             require(reporterProfile.exists()) { "Create your Market profile before reporting." }
             val window = nextWindow(reporterProfile, "reportWindowCount", "reportWindowStartedAt")
@@ -801,9 +790,10 @@ class MarketRepository(
             ))
 
             if (targetType == MarketReportTargetType.TASK) {
-                require(target.getString("posterId") != uid) { "You cannot report your own task." }
-                val oldCount = target.long("reportCount").toInt()
-                val oldMod = target.getString("moderation") ?: MarketModerationStatus.OK.wireValue
+                val task = target ?: throw IllegalStateException("The task being reported is unavailable.")
+                require(task.getString("posterId") != uid) { "You cannot report your own task." }
+                val oldCount = task.long("reportCount").toInt()
+                val oldMod = task.getString("moderation") ?: MarketModerationStatus.OK.wireValue
                 val newCount = oldCount + 1
                 val newMod = if (newCount >= REPORTS_TO_HIDE && oldMod == MarketModerationStatus.OK.wireValue) {
                     MarketModerationStatus.UNDER_REVIEW.wireValue
@@ -814,9 +804,10 @@ class MarketRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 ))
             } else if (targetType == MarketReportTargetType.OFFER) {
-                require(target.getString("sellerId") != uid) { "You cannot report your own offer." }
-                val oldCount = target.long("reportCount").toInt()
-                val oldMod = target.getString("moderation") ?: MarketModerationStatus.OK.wireValue
+                val offer = target ?: throw IllegalStateException("The offer being reported is unavailable.")
+                require(offer.getString("sellerId") != uid) { "You cannot report your own offer." }
+                val oldCount = offer.long("reportCount").toInt()
+                val oldMod = offer.getString("moderation") ?: MarketModerationStatus.OK.wireValue
                 val newCount = oldCount + 1
                 val newMod = if (newCount >= REPORTS_TO_HIDE && oldMod == MarketModerationStatus.OK.wireValue) {
                     MarketModerationStatus.UNDER_REVIEW.wireValue
@@ -910,10 +901,14 @@ class MarketRepository(
     /**
      * Starts a separate Market conversation for a public offer, without using U2U chat.
      */
+    /**
+     * Starts a separate Market conversation for a public offer. It never uses U2U chat.
+     */
     fun openOfferConversation(offerId: String): Task<String> {
         val uid = requireVerifiedUid()
         require(offerId.isNotBlank()) { "An offer is required." }
         val offerRef = firestore.collection(OFFERS).document(offerId)
+        val ownProfileRef = marketProfileRef(uid)
 
         return offerRef.get().continueWithTask { initialTask ->
             if (!initialTask.isSuccessful) {
@@ -929,45 +924,68 @@ class MarketRepository(
                 MarketListingKind.OFFER, offerId, participants[0], participants[1]
             )
             val conversationRef = firestore.collection(MARKET_CONVERSATIONS).document(conversationId)
-            val ownProfileRef = marketProfileRef(uid)
 
-            firestore.runTransaction { tx ->
-                val offer = tx.get(offerRef)
-                val existing = tx.get(conversationRef)
-                val ownProfile = tx.get(ownProfileRef)
-                require(offer.exists()) { "This offer no longer exists." }
-                require(offer.getString("sellerId") == sellerUid) { "The offer owner changed. Refresh and try again." }
-                require(offer.getString("status") == MarketOfferStatus.ACTIVE.wireValue &&
-                    offer.getString("moderation") == MarketModerationStatus.OK.wireValue) {
-                    "This offer is no longer available for a new conversation."
-                }
-                val expiresAt = offer.getTimestamp("expiresAt")
-                require(expiresAt != null && nowMillis() < expiresAt.toDate().time) { "This offer has expired." }
-                require(offer.long("reportCount") < REPORTS_TO_HIDE) {
-                    "This offer is temporarily unavailable for review."
-                }
-                val blocked = ownProfile.get("blockedUids") as? List<*> ?: emptyList<Any>()
-                require(sellerUid !in blocked) { "Unblock this user before starting a Market conversation." }
-
-                if (existing.exists()) {
-                    val saved = MarketConverters.conversation(existing)
-                    require(saved != null && saved.kind == MarketListingKind.OFFER &&
-                        saved.listingId == offerId && saved.listingOwnerUid == sellerUid &&
-                        saved.participants == participants) {
-                        "A conflicting Market conversation already exists."
-                    }
+            conversationRef.get().continueWithTask { existingRead ->
+                if (existingRead.isSuccessful && existingRead.result.exists()) {
+                    requireOfferConversationMatches(
+                        existingRead.result, offerId, sellerUid, participants
+                    )
+                    Tasks.forResult(conversationId)
                 } else {
-                    tx.set(conversationRef, linkedMapOf<String, Any?>(
-                        "participants" to participants,
-                        "kind" to MarketListingKind.OFFER.wireValue,
-                        "listingId" to offerId,
-                        "listingOwnerUid" to sellerUid,
-                        "offerId" to offerId,
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    ))
+                    firestore.runTransaction { tx ->
+                        val offer = tx.get(offerRef)
+                        val ownProfile = tx.get(ownProfileRef)
+                        require(offer.exists()) { "This offer no longer exists." }
+                        require(offer.getString("sellerId") == sellerUid) {
+                            "The offer owner changed. Refresh and try again."
+                        }
+                        require(offer.getString("status") == MarketOfferStatus.ACTIVE.wireValue &&
+                            offer.getString("moderation") == MarketModerationStatus.OK.wireValue) {
+                            "This offer is no longer available for a new conversation."
+                        }
+                        val expiresAt = offer.getTimestamp("expiresAt")
+                        require(expiresAt != null && nowMillis() < expiresAt.toDate().time) {
+                            "This offer has expired."
+                        }
+                        require(offer.long("reportCount") < REPORTS_TO_HIDE) {
+                            "This offer is temporarily unavailable for review."
+                        }
+                        val blocked = ownProfile.get("blockedUids") as? List<*> ?: emptyList<Any>()
+                        require(sellerUid !in blocked) {
+                            "Unblock this user before starting a Market conversation."
+                        }
+
+                        // No conversation read occurs in this transaction: missing-document gets are
+                        // not allowed by the participant-only rule. A conflicting existing record
+                        // fails the protected update rule; the continuation below handles a race winner.
+                        tx.set(conversationRef, linkedMapOf<String, Any?>(
+                            "participants" to participants,
+                            "kind" to MarketListingKind.OFFER.wireValue,
+                            "listingId" to offerId,
+                            "listingOwnerUid" to sellerUid,
+                            "offerId" to offerId,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ))
+                        conversationId
+                    }.continueWithTask { createTask ->
+                        if (createTask.isSuccessful) {
+                            Tasks.forResult(createTask.result)
+                        } else {
+                            conversationRef.get().continueWithTask { retryRead ->
+                                if (retryRead.isSuccessful && retryRead.result.exists()) {
+                                    requireOfferConversationMatches(
+                                        retryRead.result, offerId, sellerUid, participants
+                                    )
+                                    conversationId
+                                } else {
+                                    throw createTask.exception
+                                        ?: IllegalStateException("Could not create the Market conversation.")
+                                }
+                            }
+                        }
+                    }
                 }
-                conversationId
             }
         }
     }
@@ -1033,6 +1051,20 @@ class MarketRepository(
                 )
             ))
             messageRef.id
+        }
+    }
+
+    private fun requireOfferConversationMatches(
+        snapshot: DocumentSnapshot,
+        offerId: String,
+        sellerUid: String,
+        participants: List<String>
+    ) {
+        val saved = MarketConverters.conversation(snapshot)
+        require(saved != null && saved.kind == MarketListingKind.OFFER &&
+            saved.listingId == offerId && saved.listingOwnerUid == sellerUid &&
+            saved.participants == participants) {
+            "A conflicting Market conversation already exists."
         }
     }
 
@@ -1123,13 +1155,11 @@ class MarketRepository(
 
         return firestore.runTransaction { tx ->
             val notice = tx.get(noticeRef)
-            val existingTicket = tx.get(ticketRef)
             val profile = tx.get(profileRef)
             require(notice.exists()) { "This notice no longer exists." }
             require(notice.getBoolean("canAppeal") == true && notice.getBoolean("appealed") == false) {
                 "This notice cannot be appealed again."
             }
-            require(!existingTicket.exists()) { "An appeal has already been submitted for this notice." }
             require(profile.exists()) { "Your Market profile is missing." }
             require(profile.long("openSupportTickets") < MAX_OPEN_SUPPORT_TICKETS) {
                 "You have reached the 5 open support ticket limit."
