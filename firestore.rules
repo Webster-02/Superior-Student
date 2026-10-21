@@ -6,8 +6,6 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
-
-
     // Chat access requires an existing accepted directional friend request.
     function acceptedChatConnectionExists(uidA, uidB) {
       let forwardId = uidA + '_' + uidB;
@@ -235,8 +233,7 @@ service cloud.firestore {
         && marketUserPostingStatusAllows(uid);
     }
 
-    function marketUserPostingStatusAllows(uid) {
-      let state = get(marketProfilePath(uid)).data;
+    function marketPostingStateAllows(state) {
       return state.status == 'active'
         || (
           state.status == 'suspended'
@@ -244,67 +241,12 @@ service cloud.firestore {
           && state.suspendedUntil <= request.time
         );
     }
-    function marketUserCanRead(uid) {
-      return marketSignedIn() && marketHasProfile(uid);
+
+    function marketUserPostingStatusAllows(uid) {
+      let state = get(marketProfilePath(uid)).data;
+      return marketPostingStateAllows(state);
     }
 
-    function marketIsBlockedEither(uidA, uidB) {
-      return (
-          marketHasProfile(uidA)
-          && marketProfile(uidA).blockedUids is list
-          && uidB in marketProfile(uidA).blockedUids
-        ) || (
-          marketHasProfile(uidB)
-          && marketProfile(uidB).blockedUids is list
-          && uidA in marketProfile(uidB).blockedUids
-        );
-    }
-
-    function marketValidSettings(settings) {
-      return settings is map
-        && settings.keys().hasAll([
-          'alertProposals', 'alertUpdates', 'alertNotices', 'alertMatchingTasks'
-        ])
-        && settings.keys().hasOnly([
-          'alertProposals', 'alertUpdates', 'alertNotices', 'alertMatchingTasks'
-        ])
-        && settings.alertProposals is bool
-        && settings.alertUpdates is bool
-        && settings.alertNotices is bool
-        && settings.alertMatchingTasks is bool;
-    }
-
-    function marketValidProfileCreate(uid, data) {
-      return data.keys().hasAll([
-          'uid', 'skillTags', 'blockedUids', 'status', 'suspendedUntil', 'warnings',
-          'settings', 'openTasks', 'activeOffers', 'proposalWindowCount',
-          'proposalWindowStartedAt', 'reportWindowCount', 'reportWindowStartedAt',
-          'openSupportTickets', 'lastMutation', 'createdAt', 'updatedAt'
-        ])
-        && data.keys().hasOnly([
-          'uid', 'skillTags', 'blockedUids', 'status', 'suspendedUntil', 'warnings',
-          'settings', 'openTasks', 'activeOffers', 'proposalWindowCount',
-          'proposalWindowStartedAt', 'reportWindowCount', 'reportWindowStartedAt',
-          'openSupportTickets', 'lastMutation', 'createdAt', 'updatedAt'
-        ])
-        && data.uid == uid
-        && data.skillTags is list && data.skillTags.size() <= 30
-        && data.blockedUids is list && data.blockedUids.size() <= 200
-        && data.status == 'active'
-        && data.suspendedUntil == null
-        && data.warnings == 0
-        && marketValidSettings(data.settings)
-        && data.openTasks == 0
-        && data.activeOffers == 0
-        && data.proposalWindowCount == 0
-        && data.proposalWindowStartedAt == null
-        && data.reportWindowCount == 0
-        && data.reportWindowStartedAt == null
-        && data.openSupportTickets == 0
-        && data.lastMutation == null
-        && data.createdAt == request.time
-        && data.updatedAt == request.time;
-    }
 
     function marketCreatedAtNearRequestTime(value) {
       return value is timestamp
@@ -325,266 +267,6 @@ service cloud.firestore {
         && (!mutation.keys().hasAny(['targetType']) || mutation.targetType is string);
     }
 
-    function marketWindowIncrementValid(oldCount, oldStart, newCount, newStart, maxCount) {
-      return (
-          oldStart == null
-          && oldCount == 0
-          && newStart == request.time
-          && newCount == 1
-        ) || (
-          oldStart is timestamp
-          && request.time >= oldStart + duration.value(24, 'h')
-          && newStart == request.time
-          && newCount == 1
-        ) || (
-          oldStart is timestamp
-          && request.time < oldStart + duration.value(24, 'h')
-          && newStart == oldStart
-          && newCount == oldCount + 1
-          && newCount <= maxCount
-        );
-    }
-
-    function marketProfileCounterFieldsOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'openTasks', 'activeOffers', 'proposalWindowCount', 'proposalWindowStartedAt',
-        'reportWindowCount', 'reportWindowStartedAt', 'openSupportTickets',
-        'lastMutation', 'updatedAt'
-      ]);
-    }
-
-    function marketValidProfileCounterUpdate(uid) {
-      let before = resource.data;
-      let after = request.resource.data;
-      let changed = after.diff(before).affectedKeys();
-      return changed.hasOnly([
-          'openTasks', 'activeOffers', 'proposalWindowCount', 'proposalWindowStartedAt',
-          'reportWindowCount', 'reportWindowStartedAt', 'openSupportTickets',
-          'lastMutation', 'updatedAt'
-        ])
-        && after.updatedAt == request.time
-        && marketValidMutationShape(after.lastMutation)
-        && (
-          (after.lastMutation.kind == 'task' && marketValidTaskProfileCounterMutation(uid, before, after, changed))
-          || (after.lastMutation.kind == 'offer' && marketValidOfferProfileCounterMutation(uid, before, after, changed))
-          || (after.lastMutation.kind == 'proposal' && marketValidProposalProfileCounterMutation(uid, before, after, changed))
-          || (after.lastMutation.kind == 'report' && marketValidReportProfileCounterMutation(uid, before, after, changed))
-          || (after.lastMutation.kind == 'support' && marketValidSupportProfileCounterMutation(uid, before, after, changed))
-        );
-    }
-
-    function marketValidTaskProfileCounterMutation(uid, before, after, changed) {
-      let targetPath = /databases/$(database)/documents/tasks/$(after.lastMutation.targetId);
-      let targetAfter = getAfter(targetPath).data;
-      return (
-            after.lastMutation.operation == 'create'
-            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
-            && after.openTasks == before.openTasks + 1
-            && after.activeOffers == before.activeOffers
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.reportWindowCount == before.reportWindowCount
-            && after.openSupportTickets == before.openSupportTickets
-            && existsAfter(targetPath)
-            && targetAfter.posterId == uid
-            && marketCreatedAtNearRequestTime(targetAfter.createdAt)
-          )
-          || (
-            after.lastMutation.operation == 'close'
-            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
-            && after.reportWindowCount == before.reportWindowCount
-            && after.reportWindowStartedAt == before.reportWindowStartedAt
-            && after.openSupportTickets == before.openSupportTickets
-            && before.openTasks > 0
-            && after.openTasks == before.openTasks - 1
-            && after.activeOffers == before.activeOffers
-            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
-            && existsAfter(targetPath)
-            && targetAfter.posterId == uid
-            && targetAfter.status in ['assigned', 'completed', 'cancelled', 'expired']
-          )
-          || (
-            after.lastMutation.operation == 'moderate_deactivate'
-            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
-            && before.openTasks > 0
-            && after.openTasks == before.openTasks - 1
-            && after.activeOffers == before.activeOffers
-            && existsAfter(targetPath)
-            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
-            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation in ['ok', 'under_review']
-            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
-            && targetAfter.status == 'open'
-            && targetAfter.moderation in ['hidden', 'removed']
-            && targetAfter.posterId == uid
-          )
-          || (
-            after.lastMutation.operation == 'moderate_restore'
-            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
-            && before.openTasks < 3
-            && after.openTasks == before.openTasks + 1
-            && after.activeOffers == before.activeOffers
-            && existsAfter(targetPath)
-            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
-            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed']
-            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
-            && targetAfter.status == 'open'
-            && targetAfter.moderation == 'ok'
-            && targetAfter.posterId == uid
-          );
-    }
-
-    function marketValidOfferProfileCounterMutation(uid, before, after, changed) {
-      let targetPath = /databases/$(database)/documents/offers/$(after.lastMutation.targetId);
-      let targetAfter = getAfter(targetPath).data;
-      return (
-            after.lastMutation.operation == 'create'
-            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
-            && after.activeOffers == before.activeOffers + 1
-            && after.openTasks == before.openTasks
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
-            && after.reportWindowCount == before.reportWindowCount
-            && after.reportWindowStartedAt == before.reportWindowStartedAt
-            && after.openSupportTickets == before.openSupportTickets
-            && existsAfter(targetPath)
-            && targetAfter.sellerId == uid
-            && marketCreatedAtNearRequestTime(targetAfter.createdAt)
-          )
-          || (
-            after.lastMutation.operation == 'reactivate'
-            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
-            && after.activeOffers == before.activeOffers + 1
-            && before.activeOffers < 5
-            && after.openTasks == before.openTasks
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
-            && after.reportWindowCount == before.reportWindowCount
-            && after.reportWindowStartedAt == before.reportWindowStartedAt
-            && after.openSupportTickets == before.openSupportTickets
-            && existsAfter(targetPath)
-            && targetAfter.sellerId == uid
-            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status in ['paused', 'expired']
-            && targetAfter.status == 'active'
-          )
-          || (
-            after.lastMutation.operation == 'moderate_deactivate'
-            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
-            && before.activeOffers > 0
-            && after.activeOffers == before.activeOffers - 1
-            && after.openTasks == before.openTasks
-            && existsAfter(targetPath)
-            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
-            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['ok', 'under_review']
-            && targetAfter.moderation in ['hidden', 'removed']
-            && targetAfter.sellerId == uid
-          )
-          || (
-            after.lastMutation.operation == 'moderate_restore'
-            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
-            && before.activeOffers < 5
-            && after.activeOffers == before.activeOffers + 1
-            && after.openTasks == before.openTasks
-            && existsAfter(targetPath)
-            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
-            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed', 'under_review']
-            && targetAfter.moderation == 'ok'
-            && targetAfter.sellerId == uid
-          )
-          || (
-            after.lastMutation.operation == 'deactivate'
-            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
-            && after.reportWindowCount == before.reportWindowCount
-            && after.reportWindowStartedAt == before.reportWindowStartedAt
-            && after.openSupportTickets == before.openSupportTickets
-            && before.activeOffers > 0
-            && after.activeOffers == before.activeOffers - 1
-            && after.openTasks == before.openTasks
-            && existsAfter(targetPath)
-            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
-            && targetAfter.sellerId == uid
-            && targetAfter.status in ['paused', 'expired', 'removed']
-            && (targetAfter.status != 'expired'
-              || request.time > get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.expiresAt)
-          );
-    }
-
-    function marketValidProposalProfileCounterMutation(uid, before, after, changed) {
-      let taskPath = /databases/$(database)/documents/tasks/$(after.lastMutation.targetId);
-      let proposalPath = /databases/$(database)/documents/tasks/$(after.lastMutation.targetId)/proposals/$(uid);
-      let taskBefore = get(taskPath).data;
-      let taskAfter = getAfter(taskPath).data;
-      let proposalAfter = getAfter(proposalPath).data;
-      return (
-            after.lastMutation.operation == 'create'
-            && changed.hasOnly(['proposalWindowCount', 'proposalWindowStartedAt', 'lastMutation', 'updatedAt'])
-            && after.openTasks == before.openTasks
-            && after.activeOffers == before.activeOffers
-            && after.reportWindowCount == before.reportWindowCount
-            && after.reportWindowStartedAt == before.reportWindowStartedAt
-            && after.openSupportTickets == before.openSupportTickets
-            && marketWindowIncrementValid(before.proposalWindowCount, before.proposalWindowStartedAt, after.proposalWindowCount, after.proposalWindowStartedAt, 10)
-            && existsAfter(taskPath)
-            && existsAfter(proposalPath)
-            && proposalAfter.status == 'sent'
-            && proposalAfter.createdAt == request.time
-            && taskAfter.proposalCount == taskBefore.proposalCount + 1
-          );
-    }
-
-    function marketValidReportProfileCounterMutation(uid, before, after, changed) {
-      let targetPath = /databases/$(database)/documents/reports/$(after.lastMutation.targetType + '_' + after.lastMutation.targetId + '_' + uid);
-      let targetAfter = getAfter(targetPath).data;
-      return (
-            after.lastMutation.operation == 'create'
-            && changed.hasOnly(['reportWindowCount', 'reportWindowStartedAt', 'lastMutation', 'updatedAt'])
-            && after.openTasks == before.openTasks
-            && after.activeOffers == before.activeOffers
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
-            && after.openSupportTickets == before.openSupportTickets
-            && marketWindowIncrementValid(before.reportWindowCount, before.reportWindowStartedAt, after.reportWindowCount, after.reportWindowStartedAt, 10)
-            && existsAfter(targetPath)
-            && targetAfter.reporterId == uid
-          );
-    }
-
-    function marketValidSupportProfileCounterMutation(uid, before, after, changed) {
-      let targetPath = /databases/$(database)/documents/support/$(after.lastMutation.targetId);
-      let targetAfter = getAfter(targetPath).data;
-      return (
-            after.lastMutation.operation == 'create'
-            && changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
-            && after.openSupportTickets == before.openSupportTickets + 1
-            && after.openTasks == before.openTasks
-            && after.activeOffers == before.activeOffers
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
-            && after.reportWindowCount == before.reportWindowCount
-            && after.reportWindowStartedAt == before.reportWindowStartedAt
-            && existsAfter(targetPath)
-            && targetAfter.userId == uid
-            && targetAfter.createdAt == request.time
-          )
-          || (
-            after.lastMutation.operation == 'resolve'
-            && changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
-            && after.proposalWindowCount == before.proposalWindowCount
-            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
-            && after.reportWindowCount == before.reportWindowCount
-            && after.reportWindowStartedAt == before.reportWindowStartedAt
-            && before.openSupportTickets > 0
-            && after.openSupportTickets == before.openSupportTickets - 1
-            && after.openTasks == before.openTasks
-            && after.activeOffers == before.activeOffers
-            && existsAfter(targetPath)
-            && targetAfter.userId == uid
-            && targetAfter.status == 'resolved'
-          );
-    }
-
 
     function marketTaskPublic(data) {
       return data.moderation == 'ok' && data.status == 'open';
@@ -596,104 +278,518 @@ service cloud.firestore {
 
     // Reused for both creation and any content edit. Lifecycle-only changes are
     // deliberately validated separately so cleanup remains possible while suspended.
-    function marketValidTaskContent(data) {
-      return data.title is string && data.title.size() >= 5 && data.title.size() <= 80
-        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
-        && (!data.keys().hasAny(['courseTag']) || (data.courseTag is string && data.courseTag.size() <= 60))
-        && data.description is string && data.description.size() >= 20 && data.description.size() <= 500
-        && data.budgetType in ['free', 'fixed', 'negotiable']
-        && data.deadline is timestamp
-        && data.skills is list && data.skills.size() <= 5
-        && (!data.keys().hasAny(['budgetAmount']) || (data.budgetAmount is number && data.budgetAmount >= 0))
-        && (data.budgetType != 'fixed' || (data.keys().hasAny(['budgetAmount']) && data.budgetAmount is number && data.budgetAmount >= 0))
-        && (data.skills.size() == 0 || (data.skills[0] is string && data.skills[0].size() >= 1 && data.skills[0].size() <= 40))
-        && (data.skills.size() < 2 || (data.skills[1] is string && data.skills[1].size() >= 1 && data.skills[1].size() <= 40))
-        && (data.skills.size() < 3 || (data.skills[2] is string && data.skills[2].size() >= 1 && data.skills[2].size() <= 40))
-        && (data.skills.size() < 4 || (data.skills[3] is string && data.skills[3].size() >= 1 && data.skills[3].size() <= 40))
-        && (data.skills.size() < 5 || (data.skills[4] is string && data.skills[4].size() >= 1 && data.skills[4].size() <= 40));
-    }
 
-    function marketValidOfferContent(data) {
-      return data.title is string && data.title.size() >= 5 && data.title.size() <= 80
-        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
-        && (!data.keys().hasAny(['courseTag']) || (data.courseTag is string && data.courseTag.size() <= 60))
-        && data.description is string && data.description.size() >= 1 && data.description.size() <= 400
-        && data.priceType in ['free', 'swap', 'amount']
-        && ((data.priceType == 'amount' && data.keys().hasAny(['priceAmount']) && data.priceAmount is number && data.priceAmount >= 0)
-          || (data.priceType != 'amount' && (!data.keys().hasAny(['priceAmount']) || (data.priceAmount is number && data.priceAmount >= 0))))
-        && (!data.keys().hasAny(['thumbnail']) || (data.thumbnail is string && data.thumbnail.size() <= 153600));
-    }
-
-    function marketValidTaskCreate(taskId, data) {
-      return data.keys().hasAll([
-          'title', 'category', 'description', 'budgetType', 'deadline', 'skills', 'status',
-          'moderation', 'pinned', 'posterId', 'posterName', 'posterInitials', 'proposalCount',
-          'reportCount', 'createdAt', 'updatedAt', 'expiresAt'
-        ])
-        && data.keys().hasOnly([
-          'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline',
-          'skills', 'status', 'moderation', 'pinned', 'posterId', 'posterName', 'posterInitials',
-          'proposalCount', 'assignedTo', 'reportCount', 'createdAt', 'updatedAt', 'expiresAt'
-        ])
-        && data.status == 'open'
-        && data.moderation in ['ok', 'under_review']
-        && data.pinned == false
-        && data.posterId == request.auth.uid
-        && data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 60
-        && data.posterInitials is string && data.posterInitials.size() >= 1 && data.posterInitials.size() <= 4
-        && data.proposalCount == 0
-        && data.reportCount == 0
-        && marketCreatedAtNearRequestTime(data.createdAt)
-        && data.updatedAt == request.time
-        && data.expiresAt == data.createdAt + duration.value(14, 'd')
-        && marketValidTaskContent(data)
-        && marketUserCanPost(request.auth.uid)
-        && marketValidTaskCreateLinkedState(taskId, data);
-    }
-
-    function marketValidTaskCreateLinkedState(taskId, data) {
-      let uid = request.auth.uid;
-      let profileBefore = marketProfile(uid);
-      let profileAfter = getAfter(marketProfilePath(uid)).data;
-      let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
-      return data.posterName == studentProfile.displayName
-        && profileBefore.openTasks < 3
-        && profileAfter.openTasks == profileBefore.openTasks + 1
-        && profileAfter.lastMutation.kind == 'task'
-        && profileAfter.lastMutation.operation == 'create'
-        && profileAfter.lastMutation.targetId == taskId;
-    }
-    function marketTaskReportCounterValid(taskId) {
-      let reportId = 'task_' + taskId + '_' + request.auth.uid;
-      let taskAfter = getAfter(/databases/$(database)/documents/tasks/$(taskId)).data;
-      let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
-      return taskAfter.reportCount == resource.data.reportCount + 1
-        && reportAfter.targetType == 'task'
-        && reportAfter.targetId == taskId
-        && reportAfter.reporterId == request.auth.uid
-        && (
-          (taskAfter.reportCount < 3 && taskAfter.moderation == resource.data.moderation)
-          || (taskAfter.reportCount >= 3
-            && ((resource.data.moderation == 'ok' && taskAfter.moderation == 'under_review')
-              || (resource.data.moderation != 'ok' && taskAfter.moderation == resource.data.moderation)))
-        );
-    }
-    function marketOfferReportCounterValid(offerId) {
-      let reportId = 'offer_' + offerId + '_' + request.auth.uid;
-      let offerAfter = getAfter(/databases/$(database)/documents/offers/$(offerId)).data;
-      let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
-      return offerAfter.reportCount == resource.data.reportCount + 1
-        && reportAfter.targetType == 'offer'
-        && reportAfter.targetId == offerId
-        && reportAfter.reporterId == request.auth.uid
-        && (
-          (offerAfter.reportCount < 3 && offerAfter.moderation == resource.data.moderation)
-          || (offerAfter.reportCount >= 3
-            && ((resource.data.moderation == 'ok' && offerAfter.moderation == 'under_review')
-              || (resource.data.moderation != 'ok' && offerAfter.moderation == resource.data.moderation)))
-        );
-    }
     match /marketProfiles/{uid} {
+      function marketValidSettings(settings) {
+        let keys = settings.keys();
+        let alertProposals = settings.alertProposals;
+        let alertUpdates = settings.alertUpdates;
+        let alertNotices = settings.alertNotices;
+        let alertMatchingTasks = settings.alertMatchingTasks;
+        return settings is map
+          && keys.size() == 4
+          && alertProposals is bool
+          && alertUpdates is bool
+          && alertNotices is bool
+          && alertMatchingTasks is bool;
+      }
+
+      function marketValidProfileCreate(uid, data) {
+        let keys = data.keys();
+        let skillTags = data.skillTags;
+        let blockedUids = data.blockedUids;
+        let status = data.status;
+        let suspendedUntil = data.suspendedUntil;
+        let warnings = data.warnings;
+        let settings = data.settings;
+        let createdAt = data.createdAt;
+        let updatedAt = data.updatedAt;
+        return keys.size() == 17
+          && keys.hasAll(['suspendedUntil', 'proposalWindowStartedAt', 'reportWindowStartedAt', 'lastMutation'])
+          && data.uid == uid
+          && status == 'active'
+          && suspendedUntil == null
+          && warnings == 0
+          && skillTags is list && skillTags.size() <= 30
+          && blockedUids is list && blockedUids.size() <= 200
+          && marketValidSettings(settings)
+          && data.openTasks == 0
+          && data.activeOffers == 0
+          && data.proposalWindowCount == 0
+          && data.proposalWindowStartedAt == null
+          && data.reportWindowCount == 0
+          && data.reportWindowStartedAt == null
+          && data.openSupportTickets == 0
+          && data.lastMutation == null
+          && createdAt == request.time
+          && updatedAt == request.time;
+      }
+
+      function marketWindowIncrementValid(oldCount, oldStart, newCount, newStart, maxCount) {
+        return (
+            oldStart == null
+            && oldCount == 0
+            && newStart == request.time
+            && newCount == 1
+          ) || (
+            oldStart is timestamp
+            && request.time >= oldStart + duration.value(24, 'h')
+            && newStart == request.time
+            && newCount == 1
+          ) || (
+            oldStart is timestamp
+            && request.time < oldStart + duration.value(24, 'h')
+            && newStart == oldStart
+            && newCount == oldCount + 1
+            && newCount <= maxCount
+          );
+      }
+
+      function marketProfileCounterFieldsOnly(changed) {
+        return changed.hasOnly([
+          'openTasks', 'activeOffers', 'proposalWindowCount', 'proposalWindowStartedAt',
+          'reportWindowCount', 'reportWindowStartedAt', 'openSupportTickets',
+          'lastMutation', 'updatedAt'
+        ]);
+      }
+
+      function marketValidTaskProfileCounterMutation(uid, before, after, changed) {
+        return after.lastMutation.operation == 'create'
+          ? marketTaskProfileCounterCreateValid(uid, before, after, changed, after.lastMutation.targetId)
+          : after.lastMutation.operation == 'close'
+            ? marketTaskProfileCounterCloseValid(uid, before, after, changed, after.lastMutation.targetId)
+            : after.lastMutation.operation == 'moderate_deactivate'
+              ? marketTaskProfileCounterModerateDeactivateValid(uid, before, after, changed, after.lastMutation.targetId)
+              : after.lastMutation.operation == 'moderate_restore'
+                ? marketTaskProfileCounterModerateRestoreValid(uid, before, after, changed, after.lastMutation.targetId)
+                : false;
+      }
+
+      function marketTaskProfileCounterCreateValid(uid, before, after, changed, taskId) {
+        return changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
+          && after.openTasks == before.openTasks + 1
+          && after.activeOffers == before.activeOffers
+          && after.proposalWindowCount == before.proposalWindowCount
+          && after.reportWindowCount == before.reportWindowCount
+          && after.openSupportTickets == before.openSupportTickets
+          && marketTaskProfileCounterCreateTargetValid(uid, taskId);
+      }
+
+      function marketTaskProfileCounterCreateTargetValid(uid, taskId) {
+        let path = /databases/$(database)/documents/tasks/$(taskId);
+        return existsAfter(path) && marketTaskProfileCounterCreateTargetFieldsValid(uid, path);
+      }
+
+      function marketTaskProfileCounterCreateTargetFieldsValid(uid, path) {
+        let targetAfter = getAfter(path).data;
+        return targetAfter.posterId == uid && marketCreatedAtNearRequestTime(targetAfter.createdAt);
+      }
+
+      function marketTaskProfileCounterCloseValid(uid, before, after, changed, taskId) {
+        return changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
+          && after.proposalWindowCount == before.proposalWindowCount
+          && after.proposalWindowStartedAt == before.proposalWindowStartedAt
+          && after.reportWindowCount == before.reportWindowCount
+          && after.reportWindowStartedAt == before.reportWindowStartedAt
+          && after.openSupportTickets == before.openSupportTickets
+          && before.openTasks > 0
+          && after.openTasks == before.openTasks - 1
+          && after.activeOffers == before.activeOffers
+          && marketTaskProfileCounterCloseTargetValid(uid, taskId);
+      }
+
+      function marketTaskProfileCounterCloseTargetValid(uid, taskId) {
+        let path = /databases/$(database)/documents/tasks/$(taskId);
+        return existsAfter(path) && marketTaskProfileCounterCloseTargetFieldsValid(uid, path);
+      }
+
+      function marketTaskProfileCounterCloseTargetFieldsValid(uid, path) {
+        let targetBefore = get(path).data;
+        let targetAfter = getAfter(path).data;
+        return targetBefore.status == 'open'
+          && targetAfter.posterId == uid
+          && targetAfter.status in ['assigned', 'completed', 'cancelled', 'expired'];
+      }
+
+      function marketTaskProfileCounterModerateDeactivateValid(uid, before, after, changed, taskId) {
+        return changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
+          && before.openTasks > 0
+          && after.openTasks == before.openTasks - 1
+          && after.activeOffers == before.activeOffers
+          && marketTaskProfileCounterModerateDeactivateTargetValid(uid, taskId);
+      }
+
+      function marketTaskProfileCounterModerateDeactivateTargetValid(uid, taskId) {
+        let path = /databases/$(database)/documents/tasks/$(taskId);
+        return existsAfter(path) && marketTaskProfileCounterModerateDeactivateTargetFieldsValid(uid, path);
+      }
+
+      function marketTaskProfileCounterModerateDeactivateTargetFieldsValid(uid, path) {
+        let targetBefore = get(path).data;
+        let targetAfter = getAfter(path).data;
+        return targetBefore.status == 'open'
+          && targetBefore.moderation in ['ok', 'under_review']
+          && targetBefore.posterId == uid
+          && targetAfter.status == 'open'
+          && targetAfter.moderation in ['hidden', 'removed']
+          && targetAfter.posterId == uid;
+      }
+
+      function marketTaskProfileCounterModerateRestoreValid(uid, before, after, changed, taskId) {
+        return changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
+          && before.openTasks < 3
+          && after.openTasks == before.openTasks + 1
+          && after.activeOffers == before.activeOffers
+          && marketTaskProfileCounterModerateRestoreTargetValid(uid, taskId);
+      }
+
+      function marketTaskProfileCounterModerateRestoreTargetValid(uid, taskId) {
+        let path = /databases/$(database)/documents/tasks/$(taskId);
+        return existsAfter(path) && marketTaskProfileCounterModerateRestoreTargetFieldsValid(uid, path);
+      }
+
+      function marketTaskProfileCounterModerateRestoreTargetFieldsValid(uid, path) {
+        let targetBefore = get(path).data;
+        let targetAfter = getAfter(path).data;
+        return targetBefore.status == 'open'
+          && targetBefore.moderation in ['hidden', 'removed']
+          && targetBefore.posterId == uid
+          && targetAfter.status == 'open'
+          && targetAfter.moderation == 'ok'
+          && targetAfter.posterId == uid;
+      }
+
+      function marketValidOfferProfileCounterMutation(uid, before, after, changed) {
+        return after.lastMutation.operation == 'create'
+          ? marketOfferProfileCounterCreateValid(uid, before, after, changed, after.lastMutation.targetId)
+          : after.lastMutation.operation == 'reactivate'
+            ? marketOfferProfileCounterReactivateValid(uid, before, after, changed, after.lastMutation.targetId)
+            : after.lastMutation.operation == 'moderate_deactivate'
+              ? marketOfferProfileCounterModerateDeactivateValid(uid, before, after, changed, after.lastMutation.targetId)
+              : after.lastMutation.operation == 'moderate_restore'
+                ? marketOfferProfileCounterModerateRestoreValid(uid, before, after, changed, after.lastMutation.targetId)
+                : after.lastMutation.operation == 'deactivate'
+                  ? marketOfferProfileCounterDeactivateValid(uid, before, after, changed, after.lastMutation.targetId)
+                  : false;
+      }
+
+      function marketOfferProfileCounterCreateValid(uid, before, after, changed, offerId) {
+        return changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
+          && after.activeOffers == before.activeOffers + 1
+          && after.openTasks == before.openTasks
+          && after.proposalWindowCount == before.proposalWindowCount
+          && after.reportWindowCount == before.reportWindowCount
+          && after.openSupportTickets == before.openSupportTickets
+          && marketOfferProfileCounterCreateTargetValid(uid, offerId);
+      }
+
+      function marketOfferProfileCounterCreateTargetValid(uid, offerId) {
+        let path = /databases/$(database)/documents/offers/$(offerId);
+        return existsAfter(path) && marketOfferProfileCounterCreateTargetFieldsValid(uid, path);
+      }
+
+      function marketOfferProfileCounterCreateTargetFieldsValid(uid, path) {
+        let targetAfter = getAfter(path).data;
+        return targetAfter.sellerId == uid && marketCreatedAtNearRequestTime(targetAfter.createdAt);
+      }
+
+      function marketOfferProfileCounterReactivateValid(uid, before, after, changed, offerId) {
+        return changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
+          && after.activeOffers == before.activeOffers + 1
+          && before.activeOffers < 5
+          && after.openTasks == before.openTasks
+          && after.proposalWindowCount == before.proposalWindowCount
+          && after.proposalWindowStartedAt == before.proposalWindowStartedAt
+          && after.reportWindowCount == before.reportWindowCount
+          && after.reportWindowStartedAt == before.reportWindowStartedAt
+          && after.openSupportTickets == before.openSupportTickets
+          && marketOfferProfileCounterReactivateTargetValid(uid, offerId);
+      }
+
+      function marketOfferProfileCounterReactivateTargetValid(uid, offerId) {
+        let path = /databases/$(database)/documents/offers/$(offerId);
+        return existsAfter(path) && marketOfferProfileCounterReactivateTargetFieldsValid(uid, path);
+      }
+
+      function marketOfferProfileCounterReactivateTargetFieldsValid(uid, path) {
+        let targetBefore = get(path).data;
+        let targetAfter = getAfter(path).data;
+        return targetBefore.status in ['paused', 'expired']
+          && targetAfter.sellerId == uid
+          && targetAfter.status == 'active';
+      }
+
+      function marketOfferProfileCounterModerateDeactivateValid(uid, before, after, changed, offerId) {
+        return changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
+          && before.activeOffers > 0
+          && after.activeOffers == before.activeOffers - 1
+          && after.openTasks == before.openTasks
+          && marketOfferProfileCounterModerateDeactivateTargetValid(uid, offerId);
+      }
+
+      function marketOfferProfileCounterModerateDeactivateTargetValid(uid, offerId) {
+        let path = /databases/$(database)/documents/offers/$(offerId);
+        return existsAfter(path) && marketOfferProfileCounterModerateDeactivateTargetFieldsValid(uid, path);
+      }
+
+      function marketOfferProfileCounterModerateDeactivateTargetFieldsValid(uid, path) {
+        let targetBefore = get(path).data;
+        let targetAfter = getAfter(path).data;
+        return targetBefore.status == 'active'
+          && targetBefore.moderation in ['ok', 'under_review']
+          && targetBefore.sellerId == uid
+          && targetAfter.moderation in ['hidden', 'removed']
+          && targetAfter.sellerId == uid;
+      }
+
+      function marketOfferProfileCounterModerateRestoreValid(uid, before, after, changed, offerId) {
+        return changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
+          && before.activeOffers < 5
+          && after.activeOffers == before.activeOffers + 1
+          && after.openTasks == before.openTasks
+          && marketOfferProfileCounterModerateRestoreTargetValid(uid, offerId);
+      }
+
+      function marketOfferProfileCounterModerateRestoreTargetValid(uid, offerId) {
+        let path = /databases/$(database)/documents/offers/$(offerId);
+        return existsAfter(path) && marketOfferProfileCounterModerateRestoreTargetFieldsValid(uid, path);
+      }
+
+      function marketOfferProfileCounterModerateRestoreTargetFieldsValid(uid, path) {
+        let targetBefore = get(path).data;
+        let targetAfter = getAfter(path).data;
+        return targetBefore.status == 'active'
+          && targetBefore.moderation in ['hidden', 'removed', 'under_review']
+          && targetAfter.moderation == 'ok'
+          && targetAfter.sellerId == uid;
+      }
+
+      function marketOfferProfileCounterDeactivateValid(uid, before, after, changed, offerId) {
+        return changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
+          && after.proposalWindowCount == before.proposalWindowCount
+          && after.proposalWindowStartedAt == before.proposalWindowStartedAt
+          && after.reportWindowCount == before.reportWindowCount
+          && after.reportWindowStartedAt == before.reportWindowStartedAt
+          && after.openSupportTickets == before.openSupportTickets
+          && before.activeOffers > 0
+          && after.activeOffers == before.activeOffers - 1
+          && after.openTasks == before.openTasks
+          && marketOfferProfileCounterDeactivateTargetValid(uid, offerId);
+      }
+
+      function marketOfferProfileCounterDeactivateTargetValid(uid, offerId) {
+        let path = /databases/$(database)/documents/offers/$(offerId);
+        return existsAfter(path) && marketOfferProfileCounterDeactivateTargetFieldsValid(uid, path);
+      }
+
+      function marketOfferProfileCounterDeactivateTargetFieldsValid(uid, path) {
+        let targetBefore = get(path).data;
+        let targetAfter = getAfter(path).data;
+        return targetBefore.status == 'active'
+          && targetAfter.sellerId == uid
+          && targetAfter.status in ['paused', 'expired', 'removed']
+          && (targetAfter.status != 'expired' || request.time > targetBefore.expiresAt);
+      }
+
+      function marketValidProposalProfileCounterMutation(uid, before, after, changed) {
+        return after.lastMutation.operation == 'create'
+          && changed.hasOnly(['proposalWindowCount', 'proposalWindowStartedAt', 'lastMutation', 'updatedAt'])
+          && after.openTasks == before.openTasks
+          && after.activeOffers == before.activeOffers
+          && after.reportWindowCount == before.reportWindowCount
+          && after.reportWindowStartedAt == before.reportWindowStartedAt
+          && after.openSupportTickets == before.openSupportTickets
+          && marketWindowIncrementValid(before.proposalWindowCount, before.proposalWindowStartedAt, after.proposalWindowCount, after.proposalWindowStartedAt, 10)
+          && marketProposalProfileCounterTargetValid(uid, after.lastMutation.targetId);
+      }
+
+      function marketProposalProfileCounterTargetValid(uid, taskId) {
+        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        let proposalPath = /databases/$(database)/documents/tasks/$(taskId)/proposals/$(uid);
+        return existsAfter(taskPath)
+          && existsAfter(proposalPath)
+          && marketProposalProfileCounterTargetFieldsValid(taskPath, proposalPath);
+      }
+
+      function marketProposalProfileCounterTargetFieldsValid(taskPath, proposalPath) {
+        let taskBefore = get(taskPath).data;
+        let taskAfter = getAfter(taskPath).data;
+        let proposalAfter = getAfter(proposalPath).data;
+        return proposalAfter.status == 'sent'
+          && proposalAfter.createdAt == request.time
+          && taskAfter.proposalCount == taskBefore.proposalCount + 1;
+      }
+
+      function marketValidReportProfileCounterMutation(uid, before, after, changed) {
+        return after.lastMutation.operation == 'create'
+          && changed.hasOnly(['reportWindowCount', 'reportWindowStartedAt', 'lastMutation', 'updatedAt'])
+          && after.openTasks == before.openTasks
+          && after.activeOffers == before.activeOffers
+          && after.proposalWindowCount == before.proposalWindowCount
+          && after.proposalWindowStartedAt == before.proposalWindowStartedAt
+          && after.openSupportTickets == before.openSupportTickets
+          && marketWindowIncrementValid(before.reportWindowCount, before.reportWindowStartedAt, after.reportWindowCount, after.reportWindowStartedAt, 10)
+          && marketReportProfileCounterTargetValid(uid, after.lastMutation.targetType, after.lastMutation.targetId);
+      }
+
+      function marketReportProfileCounterTargetValid(uid, targetType, targetId) {
+        let reportId = targetType + '_' + targetId + '_' + uid;
+        let path = /databases/$(database)/documents/reports/$(reportId);
+        return existsAfter(path) && marketReportProfileCounterTargetFieldsValid(uid, path);
+      }
+
+      function marketReportProfileCounterTargetFieldsValid(uid, path) {
+        let targetAfter = getAfter(path).data;
+        return targetAfter.reporterId == uid;
+      }
+
+      function marketValidSupportProfileCounterMutation(uid, before, after, changed) {
+        return after.lastMutation.operation == 'create'
+          ? (changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
+            && after.openSupportTickets == before.openSupportTickets + 1
+            && after.openTasks == before.openTasks
+            && after.activeOffers == before.activeOffers
+            && after.proposalWindowCount == before.proposalWindowCount
+            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
+            && after.reportWindowCount == before.reportWindowCount
+            && after.reportWindowStartedAt == before.reportWindowStartedAt
+            && marketSupportCounterCreateTargetValid(uid, after.lastMutation.targetId))
+          : after.lastMutation.operation == 'resolve'
+            ? (changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
+              && after.proposalWindowCount == before.proposalWindowCount
+              && after.proposalWindowStartedAt == before.proposalWindowStartedAt
+              && after.reportWindowCount == before.reportWindowCount
+              && after.reportWindowStartedAt == before.reportWindowStartedAt
+              && before.openSupportTickets > 0
+              && after.openSupportTickets == before.openSupportTickets - 1
+              && after.openTasks == before.openTasks
+              && after.activeOffers == before.activeOffers
+              && marketSupportCounterResolveTargetValid(uid, after.lastMutation.targetId))
+            : false;
+      }
+
+      function marketSupportCounterCreateTargetValid(uid, supportId) {
+        let path = /databases/$(database)/documents/support/$(supportId);
+        return existsAfter(path) && marketSupportCounterCreateTargetFieldsValid(uid, path);
+      }
+
+      function marketSupportCounterCreateTargetFieldsValid(uid, path) {
+        let targetAfter = getAfter(path).data;
+        return targetAfter.userId == uid && targetAfter.createdAt == request.time;
+      }
+
+      function marketSupportCounterResolveTargetValid(uid, supportId) {
+        let path = /databases/$(database)/documents/support/$(supportId);
+        return existsAfter(path) && marketSupportCounterResolveTargetFieldsValid(uid, path);
+      }
+
+      function marketSupportCounterResolveTargetFieldsValid(uid, path) {
+        let targetAfter = getAfter(path).data;
+        return targetAfter.userId == uid && targetAfter.status == 'resolved';
+      }
+
+      function marketProfileUpdateAllowed(uid) {
+        let before = resource.data;
+        let after = request.resource.data;
+        let changed = after.diff(before).affectedKeys();
+        return changed.hasAny(['skillTags', 'blockedUids', 'settings'])
+          ? (request.auth.uid == uid
+            && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
+            && after.skillTags is list && after.skillTags.size() <= 30
+            && after.blockedUids is list && after.blockedUids.size() <= 200
+            && marketValidSettings(after.settings)
+            && after.updatedAt == request.time)
+          : (after.lastMutation is map
+            && after.lastMutation != before.lastMutation
+            && after.lastMutation.kind in ['task', 'offer', 'proposal', 'report', 'support'])
+            ? (marketProfileCounterFieldsOnly(changed)
+              && (request.auth.uid == uid || marketIsAdmin())
+              && marketValidProfileCounterUpdate(uid, before, after, changed))
+            : (changed.hasAny(['status', 'suspendedUntil', 'warnings'])
+              || (after.lastMutation is map
+                && after.lastMutation.kind == 'user'
+                && changed.hasAny(['openTasks', 'activeOffers', 'lastMutation'])))
+              ? (changed.hasOnly([
+                  'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers', 'lastMutation'
+                ])
+                && marketIsAdmin()
+                && after.status in ['active', 'suspended', 'banned']
+                && after.warnings is number
+                && after.warnings >= 0
+                && after.warnings <= 1000
+                && (after.suspendedUntil == null || after.suspendedUntil is timestamp)
+                && after.updatedAt == request.time
+                && (
+                  (after.openTasks == before.openTasks
+                    && after.activeOffers == before.activeOffers
+                    && after.lastMutation == before.lastMutation)
+                  || (after.status in ['suspended', 'banned']
+                    && after.openTasks == 0
+                    && after.activeOffers == 0
+                    && marketValidMutationShape(after.lastMutation)
+                    && after.lastMutation.kind == 'user'
+                    && after.lastMutation.operation == 'suspend'
+                    && after.lastMutation.targetId == uid)
+                ))
+              : (
+            (
+              request.auth.uid == uid
+              && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
+              && after.skillTags is list && after.skillTags.size() <= 30
+              && after.blockedUids is list && after.blockedUids.size() <= 200
+              && marketValidSettings(after.settings)
+              && after.updatedAt == request.time
+            )
+            || (
+              after.lastMutation is map
+              && after.lastMutation != before.lastMutation
+              && marketProfileCounterFieldsOnly(changed)
+              && (request.auth.uid == uid || marketIsAdmin())
+              && marketValidProfileCounterUpdate(uid, before, after, changed)
+            )
+            || (
+              changed.hasOnly([
+                'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers', 'lastMutation'
+              ])
+              && marketIsAdmin()
+              && after.status in ['active', 'suspended', 'banned']
+              && after.warnings is number
+              && after.warnings >= 0
+              && after.warnings <= 1000
+              && (after.suspendedUntil == null || after.suspendedUntil is timestamp)
+              && after.updatedAt == request.time
+              && (
+                (after.openTasks == before.openTasks
+                  && after.activeOffers == before.activeOffers
+                  && after.lastMutation == before.lastMutation)
+                || (after.status in ['suspended', 'banned']
+                  && after.openTasks == 0
+                  && after.activeOffers == 0
+                  && marketValidMutationShape(after.lastMutation)
+                  && after.lastMutation.kind == 'user'
+                  && after.lastMutation.operation == 'suspend'
+                  && after.lastMutation.targetId == uid)
+              )
+            )
+          );
+      }
+
+            function marketValidProfileCounterUpdate(uid, before, after, changed) {
+        return after.updatedAt == request.time
+          && marketValidMutationShape(after.lastMutation)
+          && (after.lastMutation.kind == 'task'
+            ? marketValidTaskProfileCounterMutation(uid, before, after, changed)
+            : after.lastMutation.kind == 'offer'
+              ? marketValidOfferProfileCounterMutation(uid, before, after, changed)
+              : after.lastMutation.kind == 'proposal'
+                ? marketValidProposalProfileCounterMutation(uid, before, after, changed)
+                : after.lastMutation.kind == 'report'
+                  ? marketValidReportProfileCounterMutation(uid, before, after, changed)
+                  : after.lastMutation.kind == 'support'
+                    ? marketValidSupportProfileCounterMutation(uid, before, after, changed)
+                    : false);
+      }
+
       allow get: if marketSignedIn() && (request.auth.uid == uid || marketIsAdmin());
       allow list: if marketIsAdmin();
       allow create: if marketVerified()
@@ -701,51 +797,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/profiles/$(uid))
         && !exists(marketProfilePath(uid))
         && marketValidProfileCreate(uid, request.resource.data);
-      allow update: if marketSignedIn() && (
-        (
-          request.auth.uid == uid
-          && request.resource.data.uid == resource.data.uid
-          && request.resource.data.status == resource.data.status
-          && request.resource.data.suspendedUntil == resource.data.suspendedUntil
-          && request.resource.data.warnings == resource.data.warnings
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
-          && request.resource.data.skillTags is list && request.resource.data.skillTags.size() <= 30
-          && request.resource.data.blockedUids is list && request.resource.data.blockedUids.size() <= 200
-          && marketValidSettings(request.resource.data.settings)
-          && request.resource.data.updatedAt == request.time
-        )
-        || (request.auth.uid == uid
-          && marketProfileCounterFieldsOnly()
-          && marketValidProfileCounterUpdate(uid))
-        || (marketIsAdmin()
-          && marketProfileCounterFieldsOnly()
-          && marketValidProfileCounterUpdate(uid))
-        || (
-          marketIsAdmin()
-          && request.resource.data.uid == resource.data.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers', 'lastMutation'
-          ])
-          && request.resource.data.status in ['active', 'suspended', 'banned']
-          && request.resource.data.warnings is number
-          && request.resource.data.warnings >= 0
-          && request.resource.data.warnings <= 1000
-          && (request.resource.data.suspendedUntil == null || request.resource.data.suspendedUntil is timestamp)
-          && request.resource.data.updatedAt == request.time
-          && (
-            (request.resource.data.openTasks == resource.data.openTasks
-              && request.resource.data.activeOffers == resource.data.activeOffers
-              && request.resource.data.lastMutation == resource.data.lastMutation)
-            || (request.resource.data.status in ['suspended', 'banned']
-              && request.resource.data.openTasks == 0
-              && request.resource.data.activeOffers == 0
-              && marketValidMutationShape(request.resource.data.lastMutation)
-              && request.resource.data.lastMutation.kind == 'user'
-              && request.resource.data.lastMutation.operation == 'suspend'
-              && request.resource.data.lastMutation.targetId == uid)
-          )
-        )
-      );
+      allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);
       allow delete: if false;
     }
 
@@ -755,103 +807,280 @@ service cloud.firestore {
       allow get, list: if marketVerified() && resource.data.proposerId == request.auth.uid;
     }
 
-    function marketTaskOwnerUpdateValid(taskId) {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return (
-          resource.data.posterId == request.auth.uid
-          && request.resource.data.posterId == resource.data.posterId
-          && request.resource.data.moderation == resource.data.moderation
-          && request.resource.data.pinned == resource.data.pinned
-          && request.resource.data.reportCount == resource.data.reportCount
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.proposalCount == resource.data.proposalCount
-          && changed.hasOnly([
-            'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount',
-            'deadline', 'skills', 'status', 'assignedTo', 'updatedAt', 'expiresAt'
-          ])
-          && (!changed.hasAny([
-                'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline', 'skills'
-              ]) || (marketUserCanPost(request.auth.uid) && marketValidTaskContent(request.resource.data)))
-          && request.resource.data.updatedAt == request.time
-          && (
-            (resource.data.status == 'open' && request.resource.data.status == 'open'
-              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
-              && request.resource.data.expiresAt == resource.data.expiresAt)
-            || (resource.data.status == 'open' && request.resource.data.status == 'cancelled'
-              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'close'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
-            || (resource.data.status == 'open' && request.resource.data.status == 'assigned'
-              && request.resource.data.assignedTo is string
-              && request.resource.data.assignedTo != resource.data.posterId
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && get(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.resource.data.assignedTo)).data.status in ['sent', 'shortlisted']
-              && getAfter(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.resource.data.assignedTo)).data.status == 'accepted'
-              && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'close'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
-            || (resource.data.status == 'open' && request.resource.data.status == 'expired'
-              && request.time > resource.data.expiresAt
-              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'close'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
-            // Completing an assigned task is poster-only; the assigned helper may not complete it.
-            || (resource.data.status == 'assigned' && request.resource.data.status == 'completed'
-              && request.auth.uid == resource.data.posterId
-              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && changed.hasOnly(['status', 'updatedAt']))
-          )
-      );
-    }
-
-    function marketValidProposalCreate(taskId, userId, data) {
-      return data.keys().hasAll([
-          'proposerId', 'message', 'price', 'deliveryDays', 'status',
-          'proposerName', 'proposerInitials', 'createdAt', 'updatedAt'
-        ])
-        && data.keys().hasOnly([
-          'proposerId', 'message', 'price', 'deliveryDays', 'status',
-          'proposerName', 'proposerInitials', 'createdAt', 'updatedAt'
-        ])
-        && data.proposerId == userId
-        && data.proposerId == request.auth.uid
-        && data.message is string && data.message.size() >= 20 && data.message.size() <= 400
-        && data.price is number && data.price >= 0
-        && data.deliveryDays is int && data.deliveryDays >= 1 && data.deliveryDays <= 365
-        && data.status == 'sent'
-        && data.proposerName is string && data.proposerName.size() >= 2 && data.proposerName.size() <= 60
-        && data.proposerInitials is string && data.proposerInitials.size() >= 1 && data.proposerInitials.size() <= 4
-        && data.createdAt == request.time
-        && data.updatedAt == request.time
-        && marketValidProposalCreateLinkedState(taskId, data);
-    }
-
-    function marketValidProposalCreateLinkedState(taskId, data) {
-      let uid = request.auth.uid;
-      let taskPath = /databases/$(database)/documents/tasks/$(taskId);
-      let taskBefore = get(taskPath).data;
-      let taskAfter = getAfter(taskPath).data;
-      let profileAfter = getAfter(marketProfilePath(uid)).data;
-      let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
-      return taskBefore.status == 'open'
-        && taskBefore.posterId != uid
-        && taskBefore.proposalCount < 15
-        && data.proposerName == studentProfile.displayName
-        && taskAfter.proposalCount == taskBefore.proposalCount + 1
-        && profileAfter.lastMutation.kind == 'proposal'
-        && profileAfter.lastMutation.operation == 'create'
-        && profileAfter.lastMutation.targetId == taskId;
-    }
 
     match /tasks/{taskId} {
+      function marketValidTaskContent(data) {
+        let keys = data.keys();
+        let title = data.title;
+        let category = data.category;
+        let courseTag = data.get('courseTag', null);
+        let description = data.description;
+        let budgetType = data.budgetType;
+        let deadline = data.deadline;
+        let skills = data.skills;
+        let budgetAmount = data.get('budgetAmount', null);
+        return title is string && title.size() >= 5 && title.size() <= 80
+          && category is string && category.size() >= 1 && category.size() <= 60
+          && (!keys.hasAny(['courseTag']) || (courseTag is string && courseTag.size() <= 60))
+          && description is string && description.size() >= 20 && description.size() <= 500
+          && budgetType in ['free', 'fixed', 'negotiable']
+          && deadline is timestamp
+          && skills is list && skills.size() <= 5
+          && (!keys.hasAny(['budgetAmount']) || (budgetAmount is number && budgetAmount >= 0))
+          && (budgetType != 'fixed' || (keys.hasAny(['budgetAmount']) && budgetAmount is number && budgetAmount >= 0))
+          && (skills.size() == 0 || (skills[0] is string && skills[0].size() >= 1 && skills[0].size() <= 40))
+          && (skills.size() < 2 || (skills[1] is string && skills[1].size() >= 1 && skills[1].size() <= 40))
+          && (skills.size() < 3 || (skills[2] is string && skills[2].size() >= 1 && skills[2].size() <= 40))
+          && (skills.size() < 4 || (skills[3] is string && skills[3].size() >= 1 && skills[3].size() <= 40))
+          && (skills.size() < 5 || (skills[4] is string && skills[4].size() >= 1 && skills[4].size() <= 40));
+      }
+
+      function marketValidTaskCreate(taskId, data) {
+        let keys = data.keys();
+        let hasCourseTag = keys.hasAny(['courseTag']);
+        let hasBudgetAmount = keys.hasAny(['budgetAmount']);
+        let hasAssignedTo = keys.hasAny(['assignedTo']);
+        let createdAt = data.createdAt;
+        let expectedKeyCount = 17 + (hasCourseTag ? 1 : 0) + (hasBudgetAmount ? 1 : 0) + (hasAssignedTo ? 1 : 0);
+        return keys.size() == expectedKeyCount
+          && data.status == 'open'
+          && data.moderation in ['ok', 'under_review']
+          && data.pinned == false
+          && data.posterId == request.auth.uid
+          && data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 60
+          && data.posterInitials is string && data.posterInitials.size() >= 1 && data.posterInitials.size() <= 4
+          && data.proposalCount == 0
+          && data.reportCount == 0
+          && marketCreatedAtNearRequestTime(createdAt)
+          && data.updatedAt == request.time
+          && data.expiresAt == createdAt + duration.value(14, 'd')
+          && marketValidTaskContent(data);
+      }
+
+      function marketValidTaskCreateLinkedState(taskId, data) {
+        let uid = request.auth.uid;
+        let profilePath = marketProfilePath(uid);
+        return marketValidTaskCreateLinkedStateWithProfiles(taskId, data, uid, profilePath);
+      }
+
+      function marketValidTaskCreateLinkedStateWithProfiles(taskId, data, uid, profilePath) {
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
+        return data.posterName == studentProfile.displayName
+          && profileBefore.openTasks < 3
+          && profileAfter.openTasks == profileBefore.openTasks + 1
+          && profileAfter.lastMutation.kind == 'task'
+          && profileAfter.lastMutation.operation == 'create'
+          && profileAfter.lastMutation.targetId == taskId;
+      }
+
+      function marketTaskReportCounterValid(taskId) {
+        let reportId = 'task_' + taskId + '_' + request.auth.uid;
+        let taskAfter = getAfter(/databases/$(database)/documents/tasks/$(taskId)).data;
+        let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
+        return taskAfter.reportCount == resource.data.reportCount + 1
+          && reportAfter.targetType == 'task'
+          && reportAfter.targetId == taskId
+          && reportAfter.reporterId == request.auth.uid
+          && (
+            (taskAfter.reportCount < 3 && taskAfter.moderation == resource.data.moderation)
+            || (taskAfter.reportCount >= 3
+              && ((resource.data.moderation == 'ok' && taskAfter.moderation == 'under_review')
+                || (resource.data.moderation != 'ok' && taskAfter.moderation == resource.data.moderation)))
+          );
+      }
+
+      function marketTaskOwnerUpdateValid(taskId, changed, before, after) {
+        return before.posterId == request.auth.uid
+          && (!changed.hasAny([
+                'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline', 'skills'
+              ]) || (marketValidTaskContent(after) && marketUserCanPost(request.auth.uid)))
+          && after.updatedAt == request.time
+          && (after.status == 'open'
+            ? (before.status == 'open'
+              && after.get('assignedTo', null) == before.get('assignedTo', null)
+              && after.expiresAt == before.expiresAt)
+            : after.status == 'cancelled'
+              ? (before.status == 'open'
+                && after.get('assignedTo', null) == before.get('assignedTo', null)
+                && after.expiresAt == before.expiresAt
+                && marketTaskCloseCounterValid(request.auth.uid, taskId))
+              : after.status == 'assigned'
+                ? (before.status == 'open'
+                  && after.assignedTo is string
+                  && after.assignedTo != before.posterId
+                  && after.expiresAt == before.expiresAt
+                  && marketTaskAcceptCounterValid(taskId, after.assignedTo, request.auth.uid))
+                : after.status == 'expired'
+                  ? (before.status == 'open'
+                    && request.time > before.expiresAt
+                    && after.get('assignedTo', null) == before.get('assignedTo', null)
+                    && after.expiresAt == before.expiresAt
+                    && marketTaskCloseCounterValid(request.auth.uid, taskId))
+                  : after.status == 'completed'
+                    ? (before.status == 'assigned'
+                      && request.auth.uid == before.posterId
+                      && after.get('assignedTo', null) == before.get('assignedTo', null)
+                      && after.expiresAt == before.expiresAt
+                      && changed.hasOnly(['status', 'updatedAt']))
+                    : false);
+      }
+
+      function marketTaskUpdateAllowed(taskId) {
+        let before = resource.data;
+        let after = request.resource.data;
+        let changed = after.diff(before).affectedKeys();
+        return changed.hasAny([
+          'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount',
+          'deadline', 'skills', 'status', 'assignedTo', 'expiresAt'
+        ])
+          ? (changed.hasOnly([
+              'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount',
+              'deadline', 'skills', 'status', 'assignedTo', 'updatedAt', 'expiresAt'
+            ]) && marketTaskOwnerUpdateValid(taskId, changed, before, after))
+          : changed.hasAny(['proposalCount'])
+            ? (changed.hasOnly(['proposalCount', 'updatedAt'])
+              && marketTaskProposalCountUpdateValid(taskId, before, after))
+            : changed.hasAny(['reportCount'])
+              ? (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
+                && marketSignedIn()
+                && marketTaskReportUpdateValid(taskId, before, after))
+              : changed.hasAny(['pinned', 'moderation'])
+                ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+                  && marketIsAdmin()
+                  && marketTaskAdminUpdateValid(taskId, before, after))
+                : (
+                  (changed.hasOnly([
+                    'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount',
+                    'deadline', 'skills', 'status', 'assignedTo', 'updatedAt', 'expiresAt'
+                  ]) && marketTaskOwnerUpdateValid(taskId, changed, before, after))
+                  || (changed.hasOnly(['proposalCount', 'updatedAt'])
+                    && marketTaskProposalCountUpdateValid(taskId, before, after))
+                  || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+                    && marketIsAdmin()
+                    && marketTaskAdminUpdateValid(taskId, before, after))
+                  || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
+                    && marketSignedIn()
+                    && marketTaskReportUpdateValid(taskId, before, after))
+                );
+      }
+
+      
+      function marketTaskProposalCountUpdateValid(taskId, before, after) {
+        let proposalPath = /databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.auth.uid);
+        return before.status == 'open'
+          && request.auth.uid != before.posterId
+          && after.proposalCount == before.proposalCount + 1
+          && after.updatedAt == request.time
+          && marketTaskProposalCreatedInBatch(proposalPath);
+      }
+
+      function marketTaskProposalCreatedInBatch(proposalPath) {
+        return existsAfter(proposalPath) && marketTaskProposalAfterValid(proposalPath);
+      }
+
+      function marketTaskProposalAfterValid(proposalPath) {
+        let proposalAfter = getAfter(proposalPath).data;
+        return proposalAfter.status == 'sent';
+      }
+
+      function marketTaskAdminUpdateValid(taskId, before, after) {
+        // The caller has already restricted changed to moderation, pinned, and updatedAt.
+        return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
+          && after.pinned is bool
+          && after.updatedAt == request.time
+          && (
+            before.status != 'open'
+            || after.moderation == before.moderation
+            || (before.moderation == 'under_review' && after.moderation == 'ok')
+            || (before.moderation in ['hidden', 'removed'] && after.moderation == 'removed')
+            || (before.moderation in ['ok', 'under_review']
+              && after.moderation in ['hidden', 'removed']
+              && marketTaskModerateDeactivateCounterValid(before.posterId, taskId))
+            || (after.moderation == 'hidden'
+              && marketTaskSuspensionHideCounterValid(before.posterId))
+            || (before.moderation in ['hidden', 'removed']
+              && after.moderation == 'ok'
+              && marketTaskModerateRestoreCounterValid(before.posterId, taskId))
+          );
+      }
+
+      function marketTaskReportUpdateValid(taskId, before, after) {
+        // The caller has already restricted changed to reportCount, moderation, and updatedAt.
+        return after.reportCount == before.reportCount + 1
+          && after.updatedAt == request.time
+          && request.auth.uid != before.posterId
+          && marketTaskReportExistsAfter(taskId)
+          && marketTaskReportCounterValid(taskId)
+          && marketReportWindowCounterValid(request.auth.uid);
+      }
+
+      function marketTaskReportExistsAfter(taskId) {
+        let reportId = 'task_' + taskId + '_' + request.auth.uid;
+        let path = /databases/$(database)/documents/reports/$(reportId);
+        return existsAfter(path);
+      }
+
+      function marketTaskCloseCounterValid(uid, taskId) {
+        let profilePath = marketProfilePath(uid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return profileAfter.openTasks == profileBefore.openTasks - 1
+          && profileAfter.lastMutation.kind == 'task'
+          && profileAfter.lastMutation.operation == 'close'
+          && profileAfter.lastMutation.targetId == taskId;
+      }
+
+      function marketTaskAcceptCounterValid(taskId, helperUid, posterUid) {
+        let proposalPath = /databases/$(database)/documents/tasks/$(taskId)/proposals/$(helperUid);
+        let proposalBefore = get(proposalPath).data;
+        let proposalAfter = getAfter(proposalPath).data;
+        let profilePath = marketProfilePath(posterUid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return proposalBefore.status in ['sent', 'shortlisted']
+          && proposalAfter.status == 'accepted'
+          && profileAfter.openTasks == profileBefore.openTasks - 1
+          && profileAfter.lastMutation.kind == 'task'
+          && profileAfter.lastMutation.operation == 'close'
+          && profileAfter.lastMutation.targetId == taskId;
+      }
+
+      function marketTaskModerateDeactivateCounterValid(uid, taskId) {
+        let profilePath = marketProfilePath(uid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return profileAfter.openTasks == profileBefore.openTasks - 1
+          && profileAfter.lastMutation.kind == 'task'
+          && profileAfter.lastMutation.operation == 'moderate_deactivate'
+          && profileAfter.lastMutation.targetId == taskId;
+      }
+
+      function marketTaskModerateRestoreCounterValid(uid, taskId) {
+        let profilePath = marketProfilePath(uid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return profileBefore.openTasks < 3
+          && profileAfter.openTasks == profileBefore.openTasks + 1
+          && profileAfter.lastMutation.kind == 'task'
+          && profileAfter.lastMutation.operation == 'moderate_restore'
+          && profileAfter.lastMutation.targetId == taskId;
+      }
+
+      function marketTaskSuspensionHideCounterValid(uid) {
+        let profileAfter = getAfter(marketProfilePath(uid)).data;
+        return profileAfter.status in ['suspended', 'banned'] && profileAfter.openTasks == 0;
+      }
+
+      function marketReportWindowCounterValid(uid) {
+        let profilePath = marketProfilePath(uid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return profileAfter.reportWindowCount in [profileBefore.reportWindowCount + 1, 1];
+      }
+
+
       // Public feed reads must include moderation == 'ok' and status == 'open'.
       // Expiry and report threshold are intentionally client-filtered as requested;
       // rules never combine expiresAt with a createdAt ordering constraint.
@@ -865,346 +1094,455 @@ service cloud.firestore {
         || resource.data.posterId == request.auth.uid
         || marketTaskPublic(resource.data)
       );
-      allow create: if marketVerified() && marketValidTaskCreate(taskId, request.resource.data);
-      allow update: if marketVerified() && (
-        marketTaskOwnerUpdateValid(taskId)
-        // Proposal creation increments the cached count only alongside that student's new proposal.
-        || (resource.data.status == 'open'
-          && request.resource.data.status == 'open'
-          && request.resource.data.posterId == resource.data.posterId
-          && request.auth.uid != resource.data.posterId
-          && request.resource.data.moderation == resource.data.moderation
-          && request.resource.data.pinned == resource.data.pinned
-          && request.resource.data.reportCount == resource.data.reportCount
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.expiresAt == resource.data.expiresAt
-          && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
-          && request.resource.data.proposalCount == resource.data.proposalCount + 1
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['proposalCount', 'updatedAt'])
-          && request.resource.data.updatedAt == request.time
-          && existsAfter(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.auth.uid))
-          && getAfter(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.auth.uid)).data.status == 'sent')
-        // Admin moderation and pinning. Pin count is capped in the admin UI as approved.
-        || (marketIsAdmin()
-          && request.resource.data.posterId == resource.data.posterId
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderation', 'pinned', 'updatedAt'])
-          && request.resource.data.moderation in ['ok', 'under_review', 'hidden', 'removed']
-          && request.resource.data.pinned is bool
-          && request.resource.data.updatedAt == request.time
-          && (
-            resource.data.status != 'open'
-            || request.resource.data.moderation == resource.data.moderation
-            || (resource.data.moderation == 'under_review' && request.resource.data.moderation == 'ok')
-            || (resource.data.moderation in ['hidden', 'removed'] && request.resource.data.moderation == 'removed')
-            || (resource.data.moderation in ['ok', 'under_review']
-              && request.resource.data.moderation in ['hidden', 'removed']
-              && getAfter(marketProfilePath(resource.data.posterId)).data.openTasks == marketProfile(resource.data.posterId).openTasks - 1
-              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.kind == 'task'
-              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.operation == 'moderate_deactivate'
-              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.targetId == taskId)
-            || (request.resource.data.moderation == 'hidden'
-              && getAfter(marketProfilePath(resource.data.posterId)).data.status in ['suspended', 'banned']
-              && getAfter(marketProfilePath(resource.data.posterId)).data.openTasks == 0)
-            || (resource.data.moderation in ['hidden', 'removed']
-              && request.resource.data.moderation == 'ok'
-              && marketProfile(resource.data.posterId).openTasks < 3
-              && getAfter(marketProfilePath(resource.data.posterId)).data.openTasks == marketProfile(resource.data.posterId).openTasks + 1
-              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.kind == 'task'
-              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.operation == 'moderate_restore'
-              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.targetId == taskId)
-          ))
-        // Reporter must create its own deterministic report and update this item by exactly +1.
-        || (marketSignedIn()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount', 'moderation', 'updatedAt'])
-          && request.resource.data.posterId == resource.data.posterId
-          && request.resource.data.status == resource.data.status
-          && request.resource.data.pinned == resource.data.pinned
-          && request.resource.data.proposalCount == resource.data.proposalCount
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.expiresAt == resource.data.expiresAt
-          && request.resource.data.reportCount == resource.data.reportCount + 1
-          && request.resource.data.updatedAt == request.time
-          && marketTaskReportCounterValid(taskId)
-          && getAfter(marketProfilePath(request.auth.uid)).data.reportWindowCount in [marketProfile(request.auth.uid).reportWindowCount + 1, 1])
-      );
+      allow create: if marketVerified()
+        && marketValidTaskCreate(taskId, request.resource.data)
+        && marketUserCanPost(request.auth.uid)
+        && marketValidTaskCreateLinkedState(taskId, request.resource.data);
+      allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);
       allow delete: if false;
 
       match /proposals/{userId} {
+      function marketProposalCreatePreflight(taskId, userId, data) {
+        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        let taskBefore = get(taskPath).data;
+        return taskBefore.status == 'open'
+          && taskBefore.posterId != request.auth.uid
+          && taskBefore.proposalCount < 15
+          && marketValidProposalCreateLinkedState(taskId, data, taskBefore);
+      }
+
+      function marketValidProposalCreate(userId, data) {
+        let keys = data.keys();
+        let proposerId = data.proposerId;
+        let message = data.message;
+        let price = data.price;
+        let deliveryDays = data.deliveryDays;
+        let status = data.status;
+        let proposerName = data.proposerName;
+        let proposerInitials = data.proposerInitials;
+        let createdAt = data.createdAt;
+        let updatedAt = data.updatedAt;
+        return keys.size() == 9
+          && proposerId == userId
+          && proposerId == request.auth.uid
+          && message is string && message.size() >= 20 && message.size() <= 400
+          && price is number && price >= 0
+          && deliveryDays is int && deliveryDays >= 1 && deliveryDays <= 365
+          && status == 'sent'
+          && proposerName is string && proposerName.size() >= 2 && proposerName.size() <= 60
+          && proposerInitials is string && proposerInitials.size() >= 1 && proposerInitials.size() <= 4
+          && createdAt == request.time
+          && updatedAt == request.time;
+      }
+
+      function marketValidProposalCreateLinkedState(taskId, data, taskBefore) {
+        let uid = request.auth.uid;
+        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        let taskAfter = getAfter(taskPath).data;
+        let profileAfter = getAfter(marketProfilePath(uid)).data;
+        let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
+        return data.proposerName == studentProfile.displayName
+          && taskAfter.proposalCount == taskBefore.proposalCount + 1
+          && profileAfter.lastMutation.kind == 'proposal'
+          && profileAfter.lastMutation.operation == 'create'
+          && profileAfter.lastMutation.targetId == taskId;
+      }
+
+      function marketProposalUpdateAllowed(taskId, userId) {
+        let before = resource.data;
+        let after = request.resource.data;
+        let changed = after.diff(before).affectedKeys();
+        return changed.hasAny(['message', 'price', 'deliveryDays'])
+          ? marketProposalOwnerEditAllowed(taskId, userId, before, after, changed)
+          : changed.hasAny(['status'])
+            ? (after.status == 'withdrawn'
+              ? marketProposalWithdrawAllowed(userId, before, after, changed)
+              : marketProposalPosterUpdateAllowed(taskId, userId, before, after, changed))
+            : (marketProposalOwnerEditAllowed(taskId, userId, before, after, changed)
+              || marketProposalWithdrawAllowed(userId, before, after, changed)
+              || marketProposalPosterUpdateAllowed(taskId, userId, before, after, changed));
+      }
+
+      
+      function marketProposalOwnerEditAllowed(taskId, userId, before, after, changed) {
+        return changed.hasOnly(['message', 'price', 'deliveryDays', 'updatedAt']) &&
+          request.auth.uid == userId
+          && before.status in ['sent', 'shortlisted']
+          && after.message is string && after.message.size() >= 20 && after.message.size() <= 400
+          && after.price is number && after.price >= 0
+          && after.deliveryDays is int && after.deliveryDays >= 1 && after.deliveryDays <= 365
+          && after.updatedAt == request.time
+          && marketProposalTaskIsOpen(taskId);
+      }
+
+      function marketProposalTaskIsOpen(taskId) {
+        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        let taskBefore = get(taskPath).data;
+        return taskBefore.status == 'open';
+      }
+
+      function marketProposalWithdrawAllowed(userId, before, after, changed) {
+        return changed.hasOnly(['status', 'updatedAt']) &&
+          request.auth.uid == userId
+          && before.status in ['sent', 'shortlisted']
+          && after.status == 'withdrawn'
+          && after.updatedAt == request.time;
+      }
+
+      function marketProposalPosterUpdateAllowed(taskId, userId, before, after, changed) {
+        return changed.hasOnly(['status', 'updatedAt']) &&
+          before.status in ['sent', 'shortlisted']
+          && after.status in ['shortlisted', 'declined', 'accepted']
+          && after.updatedAt == request.time
+          && marketProposalPosterTransitionAllowed(taskId, userId, after.status);
+      }
+
+      function marketProposalPosterTransitionAllowed(taskId, userId, newStatus) {
+        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        let taskBefore = get(taskPath).data;
+        return taskBefore.posterId == request.auth.uid
+          && (
+            newStatus in ['shortlisted', 'declined']
+            || marketProposalAcceptanceTaskStateValid(taskPath, userId)
+          );
+      }
+
+      function marketProposalAcceptanceTaskStateValid(taskPath, userId) {
+        let taskAfter = getAfter(taskPath).data;
+        return taskAfter.status == 'assigned'
+          && taskAfter.assignedTo == userId;
+      }
+
+
         allow get: if marketVerified() && (
           request.auth.uid == userId
           || get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid
         );
         allow list: if marketVerified()
           && get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid;
-        allow create: if marketUserCanPost(request.auth.uid)
+        allow create: if marketVerified()
           && request.auth.uid == userId
+          && marketValidProposalCreate(userId, request.resource.data)
+          && marketUserCanPost(request.auth.uid)
           && exists(/databases/$(database)/documents/tasks/$(taskId))
-          && marketValidProposalCreate(taskId, userId, request.resource.data);
-        allow update: if marketVerified() && (
-          (
-            request.auth.uid == userId
-            && get(/databases/$(database)/documents/tasks/$(taskId)).data.status == 'open'
-            && resource.data.status in ['sent', 'shortlisted']
-            && request.resource.data.status == resource.data.status
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['message', 'price', 'deliveryDays', 'updatedAt'])
-            && request.resource.data.message is string && request.resource.data.message.size() >= 20 && request.resource.data.message.size() <= 400
-            && request.resource.data.price is number && request.resource.data.price >= 0
-            && request.resource.data.deliveryDays is int && request.resource.data.deliveryDays >= 1 && request.resource.data.deliveryDays <= 365
-            && request.resource.data.updatedAt == request.time
-          )
-          || (
-            request.auth.uid == userId
-            && resource.data.status in ['sent', 'shortlisted']
-            && request.resource.data.status == 'withdrawn'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
-            && request.resource.data.updatedAt == request.time
-          )
-          || (
-            get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid
-            && resource.data.status in ['sent', 'shortlisted']
-            && request.resource.data.status in ['shortlisted', 'declined']
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
-            && request.resource.data.updatedAt == request.time
-          )
-          || (
-            get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid
-            && resource.data.status in ['sent', 'shortlisted']
-            && request.resource.data.status == 'accepted'
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
-            && request.resource.data.updatedAt == request.time
-            && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.status == 'assigned'
-            && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.assignedTo == userId
-          )
-        );
+          && marketProposalCreatePreflight(taskId, userId, request.resource.data);
+        allow update: if resource != null && marketVerified() && marketProposalUpdateAllowed(taskId, userId);
         allow delete: if false;
       }
     }
 
-    function marketValidOfferCreate(offerId, data) {
-      return data.keys().hasAll([
-          'title', 'category', 'description', 'priceType', 'status', 'moderation', 'pinned',
-          'sellerId', 'sellerName', 'sellerInitials', 'reportCount', 'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
-        ])
-        && data.keys().hasOnly([
-          'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
-          'status', 'moderation', 'pinned', 'sellerId', 'sellerName', 'sellerInitials', 'reportCount',
-          'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
-        ])
-        && data.status == 'active'
-        && data.moderation in ['ok', 'under_review']
-        && data.pinned == false
-        && data.sellerId == request.auth.uid
-        && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 60
-        && data.sellerInitials is string && data.sellerInitials.size() >= 1 && data.sellerInitials.size() <= 4
-        && data.reportCount == 0
-        && marketCreatedAtNearRequestTime(data.createdAt)
-        && data.renewedAt == data.createdAt
-        && data.updatedAt == request.time
-        && data.expiresAt == data.renewedAt + duration.value(30, 'd')
-        && marketValidOfferContent(data)
-        && marketUserCanPost(request.auth.uid)
-        && marketValidOfferCreateLinkedState(offerId, data);
-    }
-
-    function marketValidOfferCreateLinkedState(offerId, data) {
-      let uid = request.auth.uid;
-      let profileBefore = marketProfile(uid);
-      let profileAfter = getAfter(marketProfilePath(uid)).data;
-      let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
-      return data.sellerName == studentProfile.displayName
-        && profileBefore.activeOffers < 5
-        && profileAfter.activeOffers == profileBefore.activeOffers + 1
-        && profileAfter.lastMutation.kind == 'offer'
-        && profileAfter.lastMutation.operation == 'create'
-        && profileAfter.lastMutation.targetId == offerId;
-    }
-    function marketOfferOwnerUpdateValid(offerId) {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return (
-          resource.data.sellerId == request.auth.uid
-          && request.resource.data.sellerId == resource.data.sellerId
-          && request.resource.data.moderation == resource.data.moderation
-          && request.resource.data.pinned == resource.data.pinned
-          && request.resource.data.reportCount == resource.data.reportCount
-          && request.resource.data.createdAt == resource.data.createdAt
-          && changed.hasOnly([
-            'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
-            'status', 'renewedAt', 'updatedAt', 'expiresAt'
-          ])
-          && (!changed.hasAny([
-                'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail'
-              ]) || (marketUserCanPost(request.auth.uid) && marketValidOfferContent(request.resource.data)))
-          && request.resource.data.updatedAt == request.time
-          && (
-            (resource.data.status == 'active' && request.resource.data.status == 'paused'
-              && request.resource.data.renewedAt == resource.data.renewedAt
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers - 1
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'deactivate'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
-            || (resource.data.status == 'paused' && request.resource.data.status == 'active'
-              && request.resource.data.renewedAt == resource.data.renewedAt
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && request.time <= resource.data.expiresAt
-              && marketProfile(request.auth.uid).activeOffers < 5
-              && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers + 1
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'reactivate'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
-            || (resource.data.status == 'active' && request.resource.data.status == 'expired'
-              && request.resource.data.renewedAt == resource.data.renewedAt
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && request.time > resource.data.expiresAt
-              && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers - 1
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'deactivate'
-              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
-            || (resource.data.status in ['active', 'paused'] && request.resource.data.status == 'removed'
-              && request.resource.data.renewedAt == resource.data.renewedAt
-              && request.resource.data.expiresAt == resource.data.expiresAt
-              && (
-                (resource.data.status == 'active'
-                  && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers - 1
-                  && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'deactivate'
-                  && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
-                || (resource.data.status == 'paused'
-                  && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers)
-              ))
-            || (request.resource.data.status == resource.data.status
-              && request.resource.data.renewedAt == resource.data.renewedAt
-              && request.resource.data.expiresAt == resource.data.expiresAt)
-            || (request.resource.data.status == 'active'
-              && request.resource.data.renewedAt is timestamp
-              && marketCreatedAtNearRequestTime(request.resource.data.renewedAt)
-              && request.time >= resource.data.renewedAt + duration.value(7, 'd')
-              && request.resource.data.expiresAt == request.resource.data.renewedAt + duration.value(30, 'd')
-              && (resource.data.status == 'active' || (marketProfile(request.auth.uid).activeOffers < 5
-                && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers + 1
-                && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'reactivate'
-                && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)))
-          )
-      );
-    }
 
     match /offers/{offerId} {
+      function marketValidOfferContent(data) {
+        let keys = data.keys();
+        let title = data.title;
+        let category = data.category;
+        let courseTag = data.get('courseTag', null);
+        let description = data.description;
+        let priceType = data.priceType;
+        let priceAmount = data.get('priceAmount', null);
+        let thumbnail = data.get('thumbnail', null);
+        return title is string && title.size() >= 5 && title.size() <= 80
+          && category is string && category.size() >= 1 && category.size() <= 60
+          && (!keys.hasAny(['courseTag']) || (courseTag is string && courseTag.size() <= 60))
+          && description is string && description.size() >= 1 && description.size() <= 400
+          && priceType in ['free', 'swap', 'amount']
+          && ((priceType == 'amount' && keys.hasAny(['priceAmount']) && priceAmount is number && priceAmount >= 0)
+            || (priceType != 'amount' && (!keys.hasAny(['priceAmount']) || (priceAmount is number && priceAmount >= 0))))
+          && (!keys.hasAny(['thumbnail']) || (thumbnail is string && thumbnail.size() <= 153600));
+      }
+
+      function marketOfferReportCounterValid(offerId) {
+        let reportId = 'offer_' + offerId + '_' + request.auth.uid;
+        let offerAfter = getAfter(/databases/$(database)/documents/offers/$(offerId)).data;
+        let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
+        return offerAfter.reportCount == resource.data.reportCount + 1
+          && reportAfter.targetType == 'offer'
+          && reportAfter.targetId == offerId
+          && reportAfter.reporterId == request.auth.uid
+          && (
+            (offerAfter.reportCount < 3 && offerAfter.moderation == resource.data.moderation)
+            || (offerAfter.reportCount >= 3
+              && ((resource.data.moderation == 'ok' && offerAfter.moderation == 'under_review')
+                || (resource.data.moderation != 'ok' && offerAfter.moderation == resource.data.moderation)))
+          );
+      }
+
+      function marketValidOfferCreate(offerId, data) {
+        let keys = data.keys();
+        let hasCourseTag = keys.hasAny(['courseTag']);
+        let hasPriceAmount = keys.hasAny(['priceAmount']);
+        let hasThumbnail = keys.hasAny(['thumbnail']);
+        let createdAt = data.createdAt;
+        let renewedAt = data.renewedAt;
+        let expectedKeyCount = 15 + (hasCourseTag ? 1 : 0) + (hasPriceAmount ? 1 : 0) + (hasThumbnail ? 1 : 0);
+        return keys.size() == expectedKeyCount
+          && data.status == 'active'
+          && data.moderation in ['ok', 'under_review']
+          && data.pinned == false
+          && data.sellerId == request.auth.uid
+          && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 60
+          && data.sellerInitials is string && data.sellerInitials.size() >= 1 && data.sellerInitials.size() <= 4
+          && data.reportCount == 0
+          && marketCreatedAtNearRequestTime(createdAt)
+          && renewedAt == createdAt
+          && data.updatedAt == request.time
+          && data.expiresAt == renewedAt + duration.value(30, 'd')
+          && marketValidOfferContent(data);
+      }
+
+      function marketValidOfferCreateLinkedState(offerId, data) {
+        let uid = request.auth.uid;
+        let profilePath = marketProfilePath(uid);
+        return marketValidOfferCreateLinkedStateWithProfiles(offerId, data, uid, profilePath);
+      }
+
+      function marketValidOfferCreateLinkedStateWithProfiles(offerId, data, uid, profilePath) {
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
+        return data.sellerName == studentProfile.displayName
+          && profileBefore.activeOffers < 5
+          && profileAfter.activeOffers == profileBefore.activeOffers + 1
+          && profileAfter.lastMutation.kind == 'offer'
+          && profileAfter.lastMutation.operation == 'create'
+          && profileAfter.lastMutation.targetId == offerId;
+      }
+
+      function marketOfferOwnerUpdateValid(offerId, changed, before, after) {
+        return before.sellerId == request.auth.uid
+          && (!changed.hasAny([
+                'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail'
+              ]) || (marketValidOfferContent(after) && marketUserCanPost(request.auth.uid)))
+          && after.updatedAt == request.time
+          && (after.status == 'paused'
+            ? (before.status == 'active'
+              && after.renewedAt == before.renewedAt
+              && after.expiresAt == before.expiresAt
+              && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'deactivate', -1))
+            : after.status == 'expired'
+              ? (before.status == 'active'
+                && after.renewedAt == before.renewedAt
+                && after.expiresAt == before.expiresAt
+                && request.time > before.expiresAt
+                && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'deactivate', -1))
+              : after.status == 'removed'
+                ? (before.status in ['active', 'paused']
+                  && after.renewedAt == before.renewedAt
+                  && after.expiresAt == before.expiresAt
+                  && (before.status == 'active'
+                    ? marketOfferCounterTransitionValid(request.auth.uid, offerId, 'deactivate', -1)
+                    : marketOfferPausedRemovalKeepsCounter(request.auth.uid)))
+                : after.status == before.status
+                  ? ((after.renewedAt == before.renewedAt && after.expiresAt == before.expiresAt)
+                    || (after.status == 'active' && marketOfferRenewalValid(offerId, before, after)))
+                  : after.status == 'active'
+                    ? (before.status == 'paused'
+                      && after.renewedAt == before.renewedAt
+                      && after.expiresAt == before.expiresAt
+                      && request.time <= before.expiresAt
+                      ? (marketProfile(request.auth.uid).activeOffers < 5
+                        && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'reactivate', 1))
+                      : marketOfferRenewalValid(offerId, before, after))
+                    : false);
+      }
+
+      function marketOfferUpdateAllowed(offerId) {
+        let before = resource.data;
+        let after = request.resource.data;
+        let changed = after.diff(before).affectedKeys();
+        return changed.hasAny([
+          'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount',
+          'thumbnail', 'status', 'renewedAt', 'expiresAt'
+        ])
+          ? (changed.hasOnly([
+              'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
+              'status', 'renewedAt', 'updatedAt', 'expiresAt'
+            ]) && marketOfferOwnerUpdateValid(offerId, changed, before, after))
+          : changed.hasAny(['reportCount'])
+            ? (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
+              && marketOfferReportUpdateValid(offerId, before, after))
+            : changed.hasAny(['pinned', 'moderation'])
+              ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+                && marketIsAdmin()
+                && marketOfferAdminUpdateValid(offerId, before, after))
+              : (
+                (changed.hasOnly([
+                  'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
+                  'status', 'renewedAt', 'updatedAt', 'expiresAt'
+                ]) && marketOfferOwnerUpdateValid(offerId, changed, before, after))
+                || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+                  && marketIsAdmin()
+                  && marketOfferAdminUpdateValid(offerId, before, after))
+                || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
+                  && marketOfferReportUpdateValid(offerId, before, after))
+              );
+      }
+
+      
+      function marketOfferRenewalValid(offerId, before, after) {
+        return after.status == 'active'
+          && after.renewedAt is timestamp
+          && marketCreatedAtNearRequestTime(after.renewedAt)
+          && request.time >= before.renewedAt + duration.value(7, 'd')
+          && after.expiresAt == after.renewedAt + duration.value(30, 'd')
+          && (before.status == 'active'
+            || (marketProfile(request.auth.uid).activeOffers < 5
+              && marketOfferCounterTransitionValid(request.auth.uid, offerId, 'reactivate', 1)));
+      }
+
+      function marketOfferAdminUpdateValid(offerId, before, after) {
+        // The caller has already restricted changed to moderation, pinned, and updatedAt.
+        return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
+          && after.pinned is bool
+          && after.updatedAt == request.time
+          && (
+            (before.status == 'active'
+              && before.moderation in ['ok', 'under_review']
+              && after.moderation in ['hidden', 'removed']
+              && marketOfferCounterTransitionValid(before.sellerId, offerId, 'moderate_deactivate', -1))
+            || (before.status == 'active'
+              && after.moderation == 'hidden'
+              && marketOfferSuspensionHideCounterValid(before.sellerId))
+            || (before.status == 'active'
+              && before.moderation in ['hidden', 'removed', 'under_review']
+              && after.moderation == 'ok'
+              && marketOfferModerateRestoreCounterValid(before.sellerId, offerId))
+            || (before.moderation == 'under_review' && after.moderation == 'ok')
+            || (before.moderation in ['hidden', 'removed'] && after.moderation == 'removed')
+            || (after.moderation == before.moderation)
+          );
+      }
+
+      function marketOfferReportUpdateValid(offerId, before, after) {
+        // The caller has already restricted changed to reportCount, moderation, and updatedAt.
+        return after.reportCount == before.reportCount + 1
+          && after.updatedAt == request.time
+          && request.auth.uid != before.sellerId
+          && marketOfferReportExistsAfter(offerId)
+          && marketOfferReportCounterValid(offerId);
+      }
+
+      function marketOfferReportExistsAfter(offerId) {
+        let reportId = 'offer_' + offerId + '_' + request.auth.uid;
+        let path = /databases/$(database)/documents/reports/$(reportId);
+        return existsAfter(path);
+      }
+
+      function marketOfferCounterTransitionValid(uid, offerId, operation, delta) {
+        let profilePath = marketProfilePath(uid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return profileAfter.activeOffers == profileBefore.activeOffers + delta
+          && profileAfter.lastMutation.operation == operation
+          && profileAfter.lastMutation.targetId == offerId;
+      }
+
+      function marketOfferPausedRemovalKeepsCounter(uid) {
+        let profilePath = marketProfilePath(uid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return profileAfter.activeOffers == profileBefore.activeOffers;
+      }
+
+      function marketOfferSuspensionHideCounterValid(uid) {
+        let profileAfter = getAfter(marketProfilePath(uid)).data;
+        return profileAfter.status in ['suspended', 'banned'] && profileAfter.activeOffers == 0;
+      }
+
+      function marketOfferModerateRestoreCounterValid(uid, offerId) {
+        let profilePath = marketProfilePath(uid);
+        let profileBefore = get(profilePath).data;
+        let profileAfter = getAfter(profilePath).data;
+        return profileBefore.activeOffers < 5
+          && profileAfter.activeOffers == profileBefore.activeOffers + 1
+          && profileAfter.lastMutation.operation == 'moderate_restore'
+          && profileAfter.lastMutation.targetId == offerId;
+      }
+
+
       allow get: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
       allow list: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
-      allow create: if marketVerified() && marketValidOfferCreate(offerId, request.resource.data);
-      allow update: if marketVerified() && (
-        marketOfferOwnerUpdateValid(offerId)
-        || (
-          marketIsAdmin()
-          && request.resource.data.sellerId == resource.data.sellerId
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderation', 'pinned', 'updatedAt'])
-          && request.resource.data.moderation in ['ok', 'under_review', 'hidden', 'removed']
-          && request.resource.data.pinned is bool
-          && request.resource.data.updatedAt == request.time
-          && (
-            (resource.data.status == 'active'
-              && resource.data.moderation in ['ok', 'under_review']
-              && request.resource.data.moderation in ['hidden', 'removed']
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.activeOffers == marketProfile(resource.data.sellerId).activeOffers - 1
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.operation == 'moderate_deactivate'
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.targetId == offerId)
-            || (resource.data.status == 'active'
-              && request.resource.data.moderation == 'hidden'
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.status in ['suspended', 'banned']
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.activeOffers == 0)
-            || (resource.data.status == 'active'
-              && resource.data.moderation in ['hidden', 'removed', 'under_review']
-              && request.resource.data.moderation == 'ok'
-              && marketProfile(resource.data.sellerId).activeOffers < 5
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.activeOffers == marketProfile(resource.data.sellerId).activeOffers + 1
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.operation == 'moderate_restore'
-              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.targetId == offerId)
-            || (resource.data.moderation == 'under_review' && request.resource.data.moderation == 'ok')
-            || (resource.data.moderation in ['hidden', 'removed'] && request.resource.data.moderation == 'removed')
-            || (request.resource.data.moderation == resource.data.moderation)
-          )
-        )
-        || (
-          request.resource.data.sellerId == resource.data.sellerId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount', 'moderation', 'updatedAt'])
-          && request.resource.data.status == resource.data.status
-          && request.resource.data.pinned == resource.data.pinned
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.reportCount == resource.data.reportCount + 1
-          && request.resource.data.updatedAt == request.time
-          && marketOfferReportCounterValid(offerId)
-        )
-      );
+      allow create: if marketVerified()
+        && marketValidOfferCreate(offerId, request.resource.data)
+        && marketUserCanPost(request.auth.uid)
+        && marketValidOfferCreateLinkedState(offerId, request.resource.data);
+      allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);
       allow delete: if false;
     }
 
+
     match /reports/{reportId} {
+      function marketValidReportCreate(reportId, data) {
+        let keys = data.keys();
+        let uid = request.auth.uid;
+        let targetType = data.targetType;
+        let targetId = data.targetId;
+        let reporterId = data.reporterId;
+        let reason = data.reason;
+        let createdAt = data.createdAt;
+        let status = data.status;
+        return keys.size() == 6
+          && targetType in ['task', 'offer', 'user']
+          && targetId is string && targetId.size() > 0 && targetId.size() <= 128
+          && reporterId == uid
+          && reportId == targetType + '_' + targetId + '_' + uid
+          && reason in ['graded_work', 'scam', 'spam', 'abusive', 'erp_login', 'other']
+          && createdAt == request.time
+          && status == 'open'
+          && targetId != uid
+          && marketReportTargetValid(targetType, targetId, uid)
+          && marketReportMutationMatches(data);
+      }
+
+      function marketReportTargetValid(targetType, targetId, uid) {
+        return targetType == 'task'
+          ? marketReportTaskTargetValid(targetId, uid)
+          : targetType == 'offer'
+            ? marketReportOfferTargetValid(targetId, uid)
+            : targetType == 'user'
+              ? exists(marketProfilePath(targetId))
+              : false;
+      }
+
+      function marketReportTaskTargetValid(taskId, uid) {
+        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        return exists(taskPath) && marketReportTaskTargetFieldsValid(taskPath, uid);
+      }
+
+      function marketReportTaskTargetFieldsValid(taskPath, uid) {
+        let taskData = get(taskPath).data;
+        return taskData.posterId != uid;
+      }
+
+      function marketReportOfferTargetValid(offerId, uid) {
+        let offerPath = /databases/$(database)/documents/offers/$(offerId);
+        return exists(offerPath) && marketReportOfferTargetFieldsValid(offerPath, uid);
+      }
+
+      function marketReportOfferTargetFieldsValid(offerPath, uid) {
+        let offerData = get(offerPath).data;
+        return offerData.sellerId != uid;
+      }
+
+      function marketReportMutationMatches(data) {
+        let profileAfter = getAfter(marketProfilePath(request.auth.uid)).data;
+        return profileAfter.lastMutation.kind == 'report'
+          && profileAfter.lastMutation.operation == 'create'
+          && profileAfter.lastMutation.targetType == data.targetType
+          && profileAfter.lastMutation.targetId == data.targetId;
+      }
+
+
       allow get: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
       allow list: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
-      allow create: if marketVerified()
-        && request.resource.data.keys().hasAll(['targetType', 'targetId', 'reporterId', 'reason', 'createdAt', 'status'])
-        && request.resource.data.keys().hasOnly(['targetType', 'targetId', 'reporterId', 'reason', 'createdAt', 'status'])
-        && request.resource.data.targetType in ['task', 'offer', 'user']
-        && request.resource.data.targetId is string && request.resource.data.targetId.size() > 0 && request.resource.data.targetId.size() <= 128
-        && request.resource.data.reporterId == request.auth.uid
-        && reportId == request.resource.data.targetType + '_' + request.resource.data.targetId + '_' + request.auth.uid
-        && request.resource.data.reason in ['graded_work', 'scam', 'spam', 'abusive', 'erp_login', 'other']
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.status == 'open'
-        && request.resource.data.targetId != request.auth.uid
-        && (
-          (request.resource.data.targetType == 'task'
-            && exists(/databases/$(database)/documents/tasks/$(request.resource.data.targetId))
-            && get(/databases/$(database)/documents/tasks/$(request.resource.data.targetId)).data.posterId != request.auth.uid)
-          || (request.resource.data.targetType == 'offer'
-            && exists(/databases/$(database)/documents/offers/$(request.resource.data.targetId))
-            && get(/databases/$(database)/documents/offers/$(request.resource.data.targetId)).data.sellerId != request.auth.uid)
-          || (request.resource.data.targetType == 'user' && exists(marketProfilePath(request.resource.data.targetId)))
-        )
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'report'
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetType == request.resource.data.targetType
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == request.resource.data.targetId;
-      allow update: if marketVerified() && marketIsAdmin()
+      allow create: if marketVerified() && marketValidReportCreate(reportId, request.resource.data);
+      allow update: if resource != null && marketVerified() && marketIsAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed'];
       allow delete: if false;
     }
 
-    function marketValidRatingStatsMutation(uid, data) {
-      let ratingId = data.lastMutation.targetId;
-      let ratingPath = /databases/$(database)/documents/ratings/$(ratingId);
-      return marketValidMutationShape(data.lastMutation)
-        && data.lastMutation.kind == 'rating'
-        && data.lastMutation.operation == 'create'
-        && existsAfter(ratingPath)
-        && getAfter(ratingPath).data.fromUid == request.auth.uid
-        && getAfter(ratingPath).data.toUid == uid
-        && getAfter(ratingPath).data.createdAt == request.time
-        && ratingId == getAfter(ratingPath).data.taskId + '_' + request.auth.uid;
-    }
-
-    function marketValidRatingStatsCreate(uid) {
-      return request.resource.data.keys().hasAll(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
-        && request.resource.data.keys().hasOnly(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
-        && request.resource.data.ratingSum is number
-        && request.resource.data.ratingCount == 1
-        && request.resource.data.completedCount == 1
-        && request.resource.data.updatedAt == request.time
-        && marketValidRatingStatsMutation(uid, request.resource.data)
-        && request.resource.data.ratingSum == getAfter(/databases/$(database)/documents/ratings/$(request.resource.data.lastMutation.targetId)).data.stars;
-    }
-
-    function marketValidRatingStatsUpdate(uid) {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      let ratingId = request.resource.data.lastMutation.targetId;
-      let ratingPath = /databases/$(database)/documents/ratings/$(ratingId);
-      return changed.hasOnly(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
-        && resource.data.ratingSum is number && resource.data.ratingCount is int && resource.data.completedCount is int
-        && request.resource.data.ratingSum == resource.data.ratingSum + getAfter(ratingPath).data.stars
-        && request.resource.data.ratingCount == resource.data.ratingCount + 1
-        && request.resource.data.completedCount == resource.data.completedCount + 1
-        && request.resource.data.updatedAt == request.time
-        && marketValidRatingStatsMutation(uid, request.resource.data);
-    }
 
     match /ratings/{ratingId} {
       allow get, list: if marketSignedIn();
@@ -1235,9 +1573,47 @@ service cloud.firestore {
     }
 
     match /userStats/{uid} {
+      function marketValidRatingStatsMutation(uid, data) {
+        let ratingId = data.lastMutation.targetId;
+        let ratingPath = /databases/$(database)/documents/ratings/$(ratingId);
+        return marketValidMutationShape(data.lastMutation)
+          && data.lastMutation.kind == 'rating'
+          && data.lastMutation.operation == 'create'
+          && existsAfter(ratingPath)
+          && getAfter(ratingPath).data.fromUid == request.auth.uid
+          && getAfter(ratingPath).data.toUid == uid
+          && getAfter(ratingPath).data.createdAt == request.time
+          && ratingId == getAfter(ratingPath).data.taskId + '_' + request.auth.uid;
+      }
+
+      function marketValidRatingStatsCreate(uid) {
+        return request.resource.data.keys().hasAll(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
+          && request.resource.data.ratingSum is number
+          && request.resource.data.ratingCount == 1
+          && request.resource.data.completedCount == 1
+          && request.resource.data.updatedAt == request.time
+          && marketValidRatingStatsMutation(uid, request.resource.data)
+          && request.resource.data.ratingSum == getAfter(/databases/$(database)/documents/ratings/$(request.resource.data.lastMutation.targetId)).data.stars;
+      }
+
+      function marketValidRatingStatsUpdate(uid) {
+        let changed = request.resource.data.diff(resource.data).affectedKeys();
+        let ratingId = request.resource.data.lastMutation.targetId;
+        let ratingPath = /databases/$(database)/documents/ratings/$(ratingId);
+        return changed.hasOnly(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
+          && resource.data.ratingSum is number && resource.data.ratingCount is int && resource.data.completedCount is int
+          && request.resource.data.ratingSum == resource.data.ratingSum + getAfter(ratingPath).data.stars
+          && request.resource.data.ratingCount == resource.data.ratingCount + 1
+          && request.resource.data.completedCount == resource.data.completedCount + 1
+          && request.resource.data.updatedAt == request.time
+          && marketValidRatingStatsMutation(uid, request.resource.data);
+      }
+
+
       allow get, list: if marketSignedIn();
       allow create: if marketVerified() && marketValidRatingStatsCreate(uid);
-      allow update: if marketVerified() && marketValidRatingStatsUpdate(uid);
+      allow update: if resource != null && marketVerified() && marketValidRatingStatsUpdate(uid);
       allow delete: if false;
     }
 
@@ -1253,7 +1629,7 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.canAppeal is bool
         && request.resource.data.appealed == false;
-      allow update: if marketVerified() && (
+      allow update: if resource != null && marketVerified() && (
         (request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'appealed'])
           && request.resource.data.read is bool
@@ -1297,7 +1673,7 @@ service cloud.firestore {
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'support'
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == ticketId;
-      allow update: if marketVerified() && (
+      allow update: if resource != null && marketVerified() && (
         (
           resource.data.userId == request.auth.uid
           && request.resource.data.userId == resource.data.userId
@@ -1400,46 +1776,60 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    function marketConversationParticipants(conversationId, data) {
-      return data.keys().hasAll(['participants', 'kind', 'listingId', 'listingOwnerUid', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['participants', 'kind', 'listingId', 'listingOwnerUid', 'taskId', 'offerId', 'createdAt', 'updatedAt', 'lastMessage', 'lastReadAt'])
-        && data.participants is list && data.participants.size() == 2
-        && data.participants[0] is string && data.participants[1] is string
-        && data.participants[0] != data.participants[1]
-        && data.participants[0] < data.participants[1]
-        && data.kind in ['task', 'offer']
-        && data.listingId is string && data.listingId.size() > 0 && data.listingId.size() <= 128
-        && conversationId == data.kind + '_' + data.listingId + '_' + data.participants[0] + '_' + data.participants[1]
-        && data.listingOwnerUid in data.participants
-        && data.createdAt is timestamp && data.updatedAt is timestamp
-        && (!data.keys().hasAny(['lastMessage']) || (
-          data.lastMessage is map
-          && data.lastMessage.keys().hasAll(['text', 'senderUid', 'at'])
-          && data.lastMessage.keys().hasOnly(['text', 'senderUid', 'at'])
-          && data.lastMessage.text is string && data.lastMessage.text.size() >= 1 && data.lastMessage.text.size() <= 100
-          && data.lastMessage.senderUid in data.participants
-          && data.lastMessage.at is timestamp
-        ))
-        && (!data.keys().hasAny(['lastReadAt']) || (
-          data.lastReadAt is map
-          && data.lastReadAt.keys().hasOnly(data.participants)
-          && data.lastReadAt.keys().size() <= 2
-          && (!data.lastReadAt.keys().hasAny([data.participants[0]]) || data.lastReadAt[data.participants[0]] is timestamp)
-          && (!data.lastReadAt.keys().hasAny([data.participants[1]]) || data.lastReadAt[data.participants[1]] is timestamp)
-        ));
-    }
-
-    function marketConversationMember(conversationId) {
-      let p = /databases/$(database)/documents/marketConversations/$(conversationId);
-      let conversation = get(p).data;
-      return marketVerified()
-        && exists(p)
-        && request.auth.uid in conversation.participants
-        && !marketIsAdmin()
-        && !marketIsBlockedEither(conversation.participants[0], conversation.participants[1]);
-    }
 
     match /marketConversations/{conversationId} {
+      function marketIsBlockedEither(uidA, uidB) {
+        return (
+            marketHasProfile(uidA)
+            && marketProfile(uidA).blockedUids is list
+            && uidB in marketProfile(uidA).blockedUids
+          ) || (
+            marketHasProfile(uidB)
+            && marketProfile(uidB).blockedUids is list
+            && uidA in marketProfile(uidB).blockedUids
+          );
+      }
+
+      function marketConversationParticipants(conversationId, data) {
+        return data.keys().hasAll(['participants', 'kind', 'listingId', 'listingOwnerUid', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['participants', 'kind', 'listingId', 'listingOwnerUid', 'taskId', 'offerId', 'createdAt', 'updatedAt', 'lastMessage', 'lastReadAt'])
+          && data.participants is list && data.participants.size() == 2
+          && data.participants[0] is string && data.participants[1] is string
+          && data.participants[0] != data.participants[1]
+          && data.participants[0] < data.participants[1]
+          && data.kind in ['task', 'offer']
+          && data.listingId is string && data.listingId.size() > 0 && data.listingId.size() <= 128
+          && conversationId == data.kind + '_' + data.listingId + '_' + data.participants[0] + '_' + data.participants[1]
+          && data.listingOwnerUid in data.participants
+          && data.createdAt is timestamp && data.updatedAt is timestamp
+          && (!data.keys().hasAny(['lastMessage']) || (
+            data.lastMessage is map
+            && data.lastMessage.keys().hasAll(['text', 'senderUid', 'at'])
+            && data.lastMessage.keys().hasOnly(['text', 'senderUid', 'at'])
+            && data.lastMessage.text is string && data.lastMessage.text.size() >= 1 && data.lastMessage.text.size() <= 100
+            && data.lastMessage.senderUid in data.participants
+            && data.lastMessage.at is timestamp
+          ))
+          && (!data.keys().hasAny(['lastReadAt']) || (
+            data.lastReadAt is map
+            && data.lastReadAt.keys().hasOnly(data.participants)
+            && data.lastReadAt.keys().size() <= 2
+            && (!data.lastReadAt.keys().hasAny([data.participants[0]]) || data.lastReadAt[data.participants[0]] is timestamp)
+            && (!data.lastReadAt.keys().hasAny([data.participants[1]]) || data.lastReadAt[data.participants[1]] is timestamp)
+          ));
+      }
+
+      function marketConversationMember(conversationId) {
+        let p = /databases/$(database)/documents/marketConversations/$(conversationId);
+        let conversation = get(p).data;
+        return marketVerified()
+          && exists(p)
+          && request.auth.uid in conversation.participants
+          && !marketIsAdmin()
+          && !marketIsBlockedEither(conversation.participants[0], conversation.participants[1]);
+      }
+
+
       allow get: if marketVerified()
         && marketConversationParticipants(conversationId, resource.data)
         && request.auth.uid in resource.data.participants
@@ -1482,7 +1872,7 @@ service cloud.firestore {
             && marketOfferPublic(get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data)
             && request.resource.data.listingOwnerUid == get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data.sellerId)
         );
-      allow update: if marketVerified()
+      allow update: if resource != null && marketVerified()
         && marketConversationMember(conversationId)
         && resource.data.participants == request.resource.data.participants
         && resource.data.kind == request.resource.data.kind
@@ -1729,7 +2119,6 @@ service cloud.firestore {
       allow delete: if signedInWithVerifiedEmail()
         && request.auth.uid == uid;
     }
-
 
     // Student Connect one-to-one chat. Existing rules remain in place.
     match /chatConversations/{conversationId} {
