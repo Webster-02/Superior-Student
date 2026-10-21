@@ -689,6 +689,10 @@ service cloud.firestore {
         let before = resource.data;
         let after = request.resource.data;
         let changed = after.diff(before).affectedKeys();
+        let counterFieldsChanged = changed.hasAny([
+          'openTasks', 'activeOffers', 'proposalWindowCount', 'proposalWindowStartedAt',
+          'reportWindowCount', 'reportWindowStartedAt', 'openSupportTickets'
+        ]);
         return changed.hasAny(['skillTags', 'blockedUids', 'settings'])
           ? (request.auth.uid == uid
             && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
@@ -701,6 +705,7 @@ service cloud.firestore {
             && after.lastMutation.kind in ['task', 'offer', 'proposal', 'report', 'support'])
             ? (marketProfileCounterFieldsOnly(changed)
               && (request.auth.uid == uid || marketIsAdmin())
+              && counterFieldsChanged
               && marketValidProfileCounterUpdate(uid, before, after, changed))
             : (changed.hasAny(['status', 'suspendedUntil', 'warnings'])
               || (after.lastMutation is map
@@ -742,6 +747,7 @@ service cloud.firestore {
               && after.lastMutation != before.lastMutation
               && marketProfileCounterFieldsOnly(changed)
               && (request.auth.uid == uid || marketIsAdmin())
+              && counterFieldsChanged
               && marketValidProfileCounterUpdate(uid, before, after, changed)
             )
             || (
@@ -791,9 +797,9 @@ service cloud.firestore {
       allow list: if marketIsAdmin();
       allow create: if marketVerified()
         && request.auth.uid == uid
+        && marketValidProfileCreate(uid, request.resource.data)
         && exists(/databases/$(database)/documents/profiles/$(uid))
-        && !exists(marketProfilePath(uid))
-        && marketValidProfileCreate(uid, request.resource.data);
+        && !exists(marketProfilePath(uid));
       allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);
       allow delete: if false;
     }
@@ -1113,9 +1119,12 @@ service cloud.firestore {
       function marketProposalCreatePreflight(taskId, userId, data) {
         let taskPath = /databases/$(database)/documents/tasks/$(taskId);
         let taskBefore = get(taskPath).data;
-        return taskBefore.status == 'open'
-          && taskBefore.posterId != request.auth.uid
-          && taskBefore.proposalCount < 15
+        let taskStatus = taskBefore.status;
+        let taskPosterId = taskBefore.posterId;
+        let proposalCount = taskBefore.proposalCount;
+        return taskStatus == 'open'
+          && taskPosterId != request.auth.uid
+          && proposalCount < 15
           && marketValidProposalCreateLinkedState(taskId, data, taskBefore);
       }
 
@@ -1146,24 +1155,32 @@ service cloud.firestore {
       function marketValidProposalCreateLinkedState(taskId, data, taskBefore) {
         let uid = request.auth.uid;
         let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        let profilePath = marketProfilePath(uid);
+        let studentProfilePath = /databases/$(database)/documents/profiles/$(uid);
         let taskAfter = getAfter(taskPath).data;
-        let profileAfter = getAfter(marketProfilePath(uid)).data;
-        let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
+        let profileAfter = getAfter(profilePath).data;
+        let studentProfile = get(studentProfilePath).data;
+        let lastMutation = profileAfter.lastMutation;
+        let proposalCountBefore = taskBefore.proposalCount;
+        let proposalCountAfter = taskAfter.proposalCount;
         return data.proposerName == studentProfile.displayName
-          && taskAfter.proposalCount == taskBefore.proposalCount + 1
-          && profileAfter.lastMutation.kind == 'proposal'
-          && profileAfter.lastMutation.operation == 'create'
-          && profileAfter.lastMutation.targetId == taskId;
+          && proposalCountAfter == proposalCountBefore + 1
+          && lastMutation.kind == 'proposal'
+          && lastMutation.operation == 'create'
+          && lastMutation.targetId == taskId;
       }
 
       function marketProposalUpdateAllowed(taskId, userId) {
         let before = resource.data;
         let after = request.resource.data;
         let changed = after.diff(before).affectedKeys();
-        return changed.hasAny(['message', 'price', 'deliveryDays'])
+        let hasContentChanges = changed.hasAny(['message', 'price', 'deliveryDays']);
+        let hasStatusChanges = changed.hasAny(['status']);
+        let afterStatus = after.status;
+        return hasContentChanges
           ? marketProposalOwnerEditAllowed(taskId, userId, before, after, changed)
-          : changed.hasAny(['status'])
-            ? (after.status == 'withdrawn'
+          : hasStatusChanges
+            ? (afterStatus == 'withdrawn'
               ? marketProposalWithdrawAllowed(userId, before, after, changed)
               : marketProposalPosterUpdateAllowed(taskId, userId, before, after, changed))
             : (marketProposalOwnerEditAllowed(taskId, userId, before, after, changed)
@@ -1217,8 +1234,10 @@ service cloud.firestore {
 
       function marketProposalAcceptanceTaskStateValid(taskPath, userId) {
         let taskAfter = getAfter(taskPath).data;
-        return taskAfter.status == 'assigned'
-          && taskAfter.assignedTo == userId;
+        let taskStatus = taskAfter.status;
+        let assignedTo = taskAfter.assignedTo;
+        return taskStatus == 'assigned'
+          && assignedTo == userId;
       }
 
 
