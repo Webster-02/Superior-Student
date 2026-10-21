@@ -11,6 +11,8 @@ on:
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketRankingScorerTest.kt'
       - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketErrorMapper.kt'
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketErrorMapperTest.kt'
+      - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketConfigProvider.kt'
+      - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketConfigProviderDisplayTest.kt'
       - '.github/workflows/market-ranking-check.yml'
       - 'BUILD_PROGRESS.md'
 
