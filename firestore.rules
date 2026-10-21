@@ -6,8 +6,6 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
-
-
     // Chat access requires an existing accepted directional friend request.
     function acceptedChatConnectionExists(uidA, uidB) {
       let forwardId = uidA + '_' + uidB;
@@ -247,9 +245,6 @@ service cloud.firestore {
     function marketUserPostingStatusAllows(uid) {
       let state = get(marketProfilePath(uid)).data;
       return marketPostingStateAllows(state);
-    }
-    function marketUserCanRead(uid) {
-      return marketSignedIn() && marketHasProfile(uid);
     }
 
     function marketIsBlockedEither(uidA, uidB) {
@@ -619,10 +614,9 @@ service cloud.firestore {
       let proposalPath = /databases/$(database)/documents/tasks/$(taskId)/proposals/$(uid);
       return existsAfter(taskPath)
         && existsAfter(proposalPath)
-        && marketProposalProfileCounterTargetFieldsValid(uid, taskPath, proposalPath);
+        && marketProposalProfileCounterTargetFieldsValid(taskPath, proposalPath);
     }
-
-    function marketProposalProfileCounterTargetFieldsValid(uid, taskPath, proposalPath) {
+    function marketProposalProfileCounterTargetFieldsValid(taskPath, proposalPath) {
       let taskBefore = get(taskPath).data;
       let taskAfter = getAfter(taskPath).data;
       let proposalAfter = getAfter(proposalPath).data;
@@ -754,25 +748,17 @@ service cloud.firestore {
       let hasCourseTag = keys.hasAny(['courseTag']);
       let hasBudgetAmount = keys.hasAny(['budgetAmount']);
       let hasAssignedTo = keys.hasAny(['assignedTo']);
-      let status = data.status;
-      let moderation = data.moderation;
-      let pinned = data.pinned;
-      let posterId = data.posterId;
-      let posterName = data.posterName;
-      let posterInitials = data.posterInitials;
-      let proposalCount = data.proposalCount;
-      let reportCount = data.reportCount;
       let createdAt = data.createdAt;
       let expectedKeyCount = 17 + (hasCourseTag ? 1 : 0) + (hasBudgetAmount ? 1 : 0) + (hasAssignedTo ? 1 : 0);
       return keys.size() == expectedKeyCount
-        && status == 'open'
-        && moderation in ['ok', 'under_review']
-        && pinned == false
-        && posterId == request.auth.uid
-        && posterName is string && posterName.size() >= 2 && posterName.size() <= 60
-        && posterInitials is string && posterInitials.size() >= 1 && posterInitials.size() <= 4
-        && proposalCount == 0
-        && reportCount == 0
+        && data.status == 'open'
+        && data.moderation in ['ok', 'under_review']
+        && data.pinned == false
+        && data.posterId == request.auth.uid
+        && data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 60
+        && data.posterInitials is string && data.posterInitials.size() >= 1 && data.posterInitials.size() <= 4
+        && data.proposalCount == 0
+        && data.reportCount == 0
         && marketCreatedAtNearRequestTime(createdAt)
         && data.updatedAt == request.time
         && data.expiresAt == createdAt + duration.value(14, 'd')
@@ -994,17 +980,17 @@ service cloud.firestore {
           'deadline', 'skills', 'status', 'assignedTo', 'updatedAt', 'expiresAt'
         ]) && marketTaskOwnerUpdateValid(taskId, changed, before, after))
         || (changed.hasOnly(['proposalCount', 'updatedAt'])
-          && marketTaskProposalCountUpdateValid(taskId, changed, before, after))
+          && marketTaskProposalCountUpdateValid(taskId, before, after))
         || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
           && marketIsAdmin()
-          && marketTaskAdminUpdateValid(taskId, changed, before, after))
+          && marketTaskAdminUpdateValid(taskId, before, after))
         || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
           && marketSignedIn()
-          && marketTaskReportUpdateValid(taskId, changed, before, after))
+          && marketTaskReportUpdateValid(taskId, before, after))
       );
     }
 
-    function marketTaskProposalCountUpdateValid(taskId, changed, before, after) {
+    function marketTaskProposalCountUpdateValid(taskId, before, after) {
       let proposalPath = /databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.auth.uid);
       return before.status == 'open'
         && after.status == 'open'
@@ -1020,7 +1006,6 @@ service cloud.firestore {
         && after.updatedAt == request.time
         && marketTaskProposalCreatedInBatch(proposalPath);
     }
-
     function marketTaskProposalCreatedInBatch(proposalPath) {
       return existsAfter(proposalPath) && marketTaskProposalAfterValid(proposalPath);
     }
@@ -1029,7 +1014,7 @@ service cloud.firestore {
       let proposalAfter = getAfter(proposalPath).data;
       return proposalAfter.status == 'sent';
     }
-    function marketTaskAdminUpdateValid(taskId, changed, before, after) {
+    function marketTaskAdminUpdateValid(taskId, before, after) {
       return after.posterId == before.posterId
         && after.createdAt == before.createdAt
         && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
@@ -1050,8 +1035,7 @@ service cloud.firestore {
             && marketTaskModerateRestoreCounterValid(before.posterId, taskId))
         );
     }
-
-    function marketTaskReportUpdateValid(taskId, changed, before, after) {
+    function marketTaskReportUpdateValid(taskId, before, after) {
       return after.posterId == before.posterId
         && after.status == before.status
         && after.pinned == before.pinned
@@ -1065,7 +1049,6 @@ service cloud.firestore {
         && marketTaskReportCounterValid(taskId)
         && marketReportWindowCounterValid(request.auth.uid);
     }
-
     function marketTaskReportExistsAfter(taskId) {
       let reportId = 'task_' + taskId + '_' + request.auth.uid;
       let path = /databases/$(database)/documents/reports/$(reportId);
@@ -1229,24 +1212,17 @@ service cloud.firestore {
       let hasCourseTag = keys.hasAny(['courseTag']);
       let hasPriceAmount = keys.hasAny(['priceAmount']);
       let hasThumbnail = keys.hasAny(['thumbnail']);
-      let status = data.status;
-      let moderation = data.moderation;
-      let pinned = data.pinned;
-      let sellerId = data.sellerId;
-      let sellerName = data.sellerName;
-      let sellerInitials = data.sellerInitials;
-      let reportCount = data.reportCount;
       let createdAt = data.createdAt;
       let renewedAt = data.renewedAt;
       let expectedKeyCount = 15 + (hasCourseTag ? 1 : 0) + (hasPriceAmount ? 1 : 0) + (hasThumbnail ? 1 : 0);
       return keys.size() == expectedKeyCount
-        && status == 'active'
-        && moderation in ['ok', 'under_review']
-        && pinned == false
-        && sellerId == request.auth.uid
-        && sellerName is string && sellerName.size() >= 2 && sellerName.size() <= 60
-        && sellerInitials is string && sellerInitials.size() >= 1 && sellerInitials.size() <= 4
-        && reportCount == 0
+        && data.status == 'active'
+        && data.moderation in ['ok', 'under_review']
+        && data.pinned == false
+        && data.sellerId == request.auth.uid
+        && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 60
+        && data.sellerInitials is string && data.sellerInitials.size() >= 1 && data.sellerInitials.size() <= 4
+        && data.reportCount == 0
         && marketCreatedAtNearRequestTime(createdAt)
         && renewedAt == createdAt
         && data.updatedAt == request.time
@@ -1332,13 +1308,13 @@ service cloud.firestore {
         ]) && marketOfferOwnerUpdateValid(offerId, changed, before, after))
         || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
           && marketIsAdmin()
-          && marketOfferAdminUpdateValid(offerId, changed, before, after))
+          && marketOfferAdminUpdateValid(offerId, before, after))
         || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
-          && marketOfferReportUpdateValid(offerId, changed, before, after))
+          && marketOfferReportUpdateValid(offerId, before, after))
       );
     }
 
-    function marketOfferAdminUpdateValid(offerId, changed, before, after) {
+    function marketOfferAdminUpdateValid(offerId, before, after) {
       return after.sellerId == before.sellerId
         && after.createdAt == before.createdAt
         && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
@@ -1361,8 +1337,7 @@ service cloud.firestore {
           || (after.moderation == before.moderation)
         );
     }
-
-    function marketOfferReportUpdateValid(offerId, changed, before, after) {
+    function marketOfferReportUpdateValid(offerId, before, after) {
       return after.sellerId == before.sellerId
         && after.status == before.status
         && after.pinned == before.pinned
@@ -1373,7 +1348,6 @@ service cloud.firestore {
         && marketOfferReportExistsAfter(offerId)
         && marketOfferReportCounterValid(offerId);
     }
-
     function marketOfferReportExistsAfter(offerId) {
       let reportId = 'offer_' + offerId + '_' + request.auth.uid;
       let path = /databases/$(database)/documents/reports/$(reportId);
@@ -2046,7 +2020,6 @@ service cloud.firestore {
       allow delete: if signedInWithVerifiedEmail()
         && request.auth.uid == uid;
     }
-
 
     // Student Connect one-to-one chat. Existing rules remain in place.
     match /chatConversations/{conversationId} {

@@ -14,7 +14,10 @@ const checks = [
   ['Firestore Rules version 2', () => assert.match(rules, /rules_version\s*=\s*'2';/)],
   ['verified email is part of Market authorization', () => assert.match(rules, /function marketVerified\(\)[\s\S]{0,700}email_verified/)],
   ['legacy U2U chat helper is preserved', () => { assert.ok(base.includes('function activeChatConversationMember')); assert.ok(rules.includes('function activeChatConversationMember')); }],
-  ['profile creation keeps the exact required key shape while allowing only safe defaults', () => assert.match(rules, /function marketValidProfileCreate\(uid, data\)[\s\S]{0,220}keys\.size\(\) == 17[\s\S]{0,180}keys\.hasAll\(\['suspendedUntil', 'proposalWindowStartedAt', 'reportWindowStartedAt', 'lastMutation'\]\)/)],
+  ['profile creation keeps the exact required key shape while allowing only safe defaults', () => {
+    assert.match(rules, /function marketValidProfileCreate\(uid, data\)[\s\S]{0,700}keys\.size\(\) == 17/);
+    assert.ok(rules.includes("keys.hasAll(['suspendedUntil', 'proposalWindowStartedAt', 'reportWindowStartedAt', 'lastMutation'])"));
+  }],
   ['task create checks verified posting eligibility before content validation', () => assert.match(rules, /allow create: if marketVerified\(\)[\s\S]{0,120}marketUserCanPost\(request\.auth\.uid\)[\s\S]{0,120}marketValidTaskCreate\(taskId, request\.resource\.data\)/)],
   ['offer create checks verified posting eligibility before content validation', () => assert.match(rules, /allow create: if marketVerified\(\)[\s\S]{0,120}marketUserCanPost\(request\.auth\.uid\)[\s\S]{0,120}marketValidOfferCreate\(offerId, request\.resource\.data\)/)],
   ['assigned task completion is explicitly poster-only', () => assert.match(rules, /Completing an assigned task is poster-only[\s\S]{0,260}request\.auth\.uid == (?:resource\.data|before)\.posterId/)],
@@ -23,10 +26,10 @@ const checks = [
   ['student Market writes without U2U profile are denied in tests', () => assert.ok(tests.includes('denies student Market writes when profiles/{uid} does not exist'))],
   ['admin operations without a U2U profile are tested', () => assert.ok(tests.includes('admin without profiles/{uid} and marketProfiles/{uid} can hide/restore'))],
   ['admin suspension batch deliberately omits admin U2U profile', () => assert.ok(tests.includes('admin without a U2U profile suspends/hides with notice and log in one access-limit batch'))],
-  ['proposal documents require proposerId equal to caller/document id and preflight task state', () => assert.ok(rules.includes('data.proposerId == userId') && rules.includes('data.proposerId == request.auth.uid') && rules.includes('marketProposalCreatePreflight(taskId, userId, request.resource.data)') && rules.includes('marketValidProposalCreateLinkedState(taskId, data, taskBefore)'))],
+  ['proposal documents require proposerId equal to caller/document id and preflight task state', () => assert.ok(rules.includes('proposerId == userId') && rules.includes('proposerId == request.auth.uid') && rules.includes('marketProposalCreatePreflight(taskId, userId, request.resource.data)') && rules.includes('marketValidProposalCreateLinkedState(taskId, data, taskBefore)'))],
   ['Applied collection-group reads are self-scoped', () => assert.match(rules, /match \/\{path=\*\*\}\/proposals\/\{proposalId\}[\s\S]{0,260}resource\.data\.proposerId == request\.auth\.uid/)],
   ['proposal collection-group composite index exists', () => assert.ok(indexes.indexes.some(i => i.collectionGroup === 'proposals' && i.queryScope === 'COLLECTION_GROUP' && i.fields?.some(f => f.fieldPath === 'proposerId' && f.order === 'ASCENDING') && i.fields?.some(f => f.fieldPath === 'updatedAt' && f.order === 'DESCENDING')))],
-  ['deterministic report IDs and caller ownership are validated', () => assert.match(rules, /function marketValidReportCreate\(reportId, data\)[\s\S]{0,900}data\.reporterId == uid[\s\S]{0,300}reportId == data\.targetType \+ '_'/)],
+  ['deterministic report IDs and caller ownership are validated', () => assert.match(rules, /function marketValidReportCreate\(reportId, data\)[\s\S]{0,1200}reporterId == uid[\s\S]{0,300}reportId == targetType \+ '_'/)],
   ['deterministic appeal ticket IDs are validated', () => assert.ok(rules.includes("'appeal_' + request.resource.data.relatedId + '_' + request.auth.uid"))],
   ['rating writes validate paired stats mutations', () => assert.ok(rules.includes("lastMutation.kind == 'rating'"))],
   ['both participants can rate a completed task in the Emulator suite', () => assert.ok(tests.includes('keeps both participants able to rate a completed task with stats in each same batch'))],
