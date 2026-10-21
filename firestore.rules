@@ -350,12 +350,8 @@ service cloud.firestore {
     }
 
     function marketValidProfileCounterUpdate(uid, before, after, changed) {
-      return changed.hasOnly([
-          'openTasks', 'activeOffers', 'proposalWindowCount', 'proposalWindowStartedAt',
-          'reportWindowCount', 'reportWindowStartedAt', 'openSupportTickets',
-          'lastMutation', 'updatedAt'
-        ])
-        && after.updatedAt == request.time
+      // marketProfileUpdateAllowed already restricts changed to this same counter allowlist.
+      return after.updatedAt == request.time
         && marketValidMutationShape(after.lastMutation)
         && (
           (after.lastMutation.kind == 'task' && marketValidTaskProfileCounterMutation(uid, before, after, changed))
@@ -365,7 +361,6 @@ service cloud.firestore {
           || (after.lastMutation.kind == 'support' && marketValidSupportProfileCounterMutation(uid, before, after, changed))
         );
     }
-
     function marketValidTaskProfileCounterMutation(uid, before, after, changed) {
       return (
         (after.lastMutation.operation == 'create'
@@ -762,8 +757,7 @@ service cloud.firestore {
         && marketCreatedAtNearRequestTime(createdAt)
         && data.updatedAt == request.time
         && data.expiresAt == createdAt + duration.value(14, 'd')
-        && marketValidTaskContent(data)
-        && marketValidTaskCreateLinkedState(taskId, data);
+        && marketValidTaskContent(data);
     }
     function marketValidTaskCreateLinkedState(taskId, data) {
       let uid = request.auth.uid;
@@ -818,32 +812,24 @@ service cloud.firestore {
       return (
         (
           request.auth.uid == uid
-          && after.uid == before.uid
-          && after.status == before.status
-          && after.suspendedUntil == before.suspendedUntil
-          && after.warnings == before.warnings
           && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
           && after.skillTags is list && after.skillTags.size() <= 30
           && after.blockedUids is list && after.blockedUids.size() <= 200
           && marketValidSettings(after.settings)
           && after.updatedAt == request.time
         )
-        || (request.auth.uid == uid
-          && marketProfileCounterFieldsOnly(changed)
-          && after.lastMutation is map
-          && after.lastMutation != before.lastMutation
-          && marketValidProfileCounterUpdate(uid, before, after, changed))
-        || (marketIsAdmin()
-          && marketProfileCounterFieldsOnly(changed)
-          && after.lastMutation is map
-          && after.lastMutation != before.lastMutation
-          && marketValidProfileCounterUpdate(uid, before, after, changed))
         || (
-          marketIsAdmin()
-          && after.uid == before.uid
-          && changed.hasOnly([
+          after.lastMutation is map
+          && after.lastMutation != before.lastMutation
+          && marketProfileCounterFieldsOnly(changed)
+          && (request.auth.uid == uid || marketIsAdmin())
+          && marketValidProfileCounterUpdate(uid, before, after, changed)
+        )
+        || (
+          changed.hasOnly([
             'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers', 'lastMutation'
           ])
+          && marketIsAdmin()
           && after.status in ['active', 'suspended', 'banned']
           && after.warnings is number
           && after.warnings >= 0
@@ -865,15 +851,14 @@ service cloud.firestore {
         )
       );
     }
-
     match /marketProfiles/{uid} {
       allow get: if marketSignedIn() && (request.auth.uid == uid || marketIsAdmin());
       allow list: if marketIsAdmin();
       allow create: if marketVerified()
         && request.auth.uid == uid
+        && marketValidProfileCreate(uid, request.resource.data)
         && exists(/databases/$(database)/documents/profiles/$(uid))
-        && !exists(marketProfilePath(uid))
-        && marketValidProfileCreate(uid, request.resource.data);
+        && !exists(marketProfilePath(uid));
       allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);
       allow delete: if false;
     }
@@ -885,17 +870,13 @@ service cloud.firestore {
     }
 
     function marketTaskOwnerUpdateValid(taskId, changed, before, after) {
+      // marketTaskUpdateAllowed dispatches here only when changed contains owner-edit fields.
+      // Moderator-owned fields and cached counters are excluded by that parent allowlist.
       return (
           before.posterId == request.auth.uid
-          && after.posterId == before.posterId
-          && after.moderation == before.moderation
-          && after.pinned == before.pinned
-          && after.reportCount == before.reportCount
-          && after.createdAt == before.createdAt
-          && after.proposalCount == before.proposalCount
           && (!changed.hasAny([
                 'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline', 'skills'
-              ]) || (marketUserCanPost(request.auth.uid) && marketValidTaskContent(after)))
+              ]) || (marketValidTaskContent(after) && marketUserCanPost(request.auth.uid)))
           && after.updatedAt == request.time
           && (
             (before.status == 'open' && after.status == 'open'
@@ -924,17 +905,15 @@ service cloud.firestore {
           )
       );
     }
-
     function marketProposalCreatePreflight(taskId, userId, data) {
       let taskPath = /databases/$(database)/documents/tasks/$(taskId);
       let taskBefore = get(taskPath).data;
       return taskBefore.status == 'open'
         && taskBefore.posterId != request.auth.uid
         && taskBefore.proposalCount < 15
-        && marketValidProposalCreate(taskId, userId, data, taskBefore);
+        && marketValidProposalCreateLinkedState(taskId, data, taskBefore);
     }
-
-    function marketValidProposalCreate(taskId, userId, data, taskBefore) {
+    function marketValidProposalCreate(userId, data) {
       let keys = data.keys();
       let proposerId = data.proposerId;
       let message = data.message;
@@ -955,8 +934,7 @@ service cloud.firestore {
         && proposerName is string && proposerName.size() >= 2 && proposerName.size() <= 60
         && proposerInitials is string && proposerInitials.size() >= 1 && proposerInitials.size() <= 4
         && createdAt == request.time
-        && updatedAt == request.time
-        && marketValidProposalCreateLinkedState(taskId, data, taskBefore);
+        && updatedAt == request.time;
     }
     function marketValidProposalCreateLinkedState(taskId, data, taskBefore) {
       let uid = request.auth.uid;
@@ -993,15 +971,7 @@ service cloud.firestore {
     function marketTaskProposalCountUpdateValid(taskId, before, after) {
       let proposalPath = /databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.auth.uid);
       return before.status == 'open'
-        && after.status == 'open'
-        && after.posterId == before.posterId
         && request.auth.uid != before.posterId
-        && after.moderation == before.moderation
-        && after.pinned == before.pinned
-        && after.reportCount == before.reportCount
-        && after.createdAt == before.createdAt
-        && after.expiresAt == before.expiresAt
-        && after.get('assignedTo', null) == before.get('assignedTo', null)
         && after.proposalCount == before.proposalCount + 1
         && after.updatedAt == request.time
         && marketTaskProposalCreatedInBatch(proposalPath);
@@ -1015,9 +985,8 @@ service cloud.firestore {
       return proposalAfter.status == 'sent';
     }
     function marketTaskAdminUpdateValid(taskId, before, after) {
-      return after.posterId == before.posterId
-        && after.createdAt == before.createdAt
-        && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
+      // The caller has already restricted changed to moderation, pinned, and updatedAt.
+      return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
         && after.pinned is bool
         && after.updatedAt == request.time
         && (
@@ -1036,13 +1005,8 @@ service cloud.firestore {
         );
     }
     function marketTaskReportUpdateValid(taskId, before, after) {
-      return after.posterId == before.posterId
-        && after.status == before.status
-        && after.pinned == before.pinned
-        && after.proposalCount == before.proposalCount
-        && after.createdAt == before.createdAt
-        && after.expiresAt == before.expiresAt
-        && after.reportCount == before.reportCount + 1
+      // The caller has already restricted changed to reportCount, moderation, and updatedAt.
+      return after.reportCount == before.reportCount + 1
         && after.updatedAt == request.time
         && request.auth.uid != before.posterId
         && marketTaskReportExistsAfter(taskId)
@@ -1125,7 +1089,6 @@ service cloud.firestore {
     function marketProposalOwnerEditAllowed(taskId, userId, before, after, changed) {
       return request.auth.uid == userId
         && before.status in ['sent', 'shortlisted']
-        && after.status == before.status
         && changed.hasOnly(['message', 'price', 'deliveryDays', 'updatedAt'])
         && after.message is string && after.message.size() >= 20 && after.message.size() <= 400
         && after.price is number && after.price >= 0
@@ -1133,7 +1096,6 @@ service cloud.firestore {
         && after.updatedAt == request.time
         && marketProposalTaskIsOpen(taskId);
     }
-
     function marketProposalTaskIsOpen(taskId) {
       let taskPath = /databases/$(database)/documents/tasks/$(taskId);
       let taskBefore = get(taskPath).data;
@@ -1186,8 +1148,9 @@ service cloud.firestore {
         || marketTaskPublic(resource.data)
       );
       allow create: if marketVerified()
+        && marketValidTaskCreate(taskId, request.resource.data)
         && marketUserCanPost(request.auth.uid)
-        && marketValidTaskCreate(taskId, request.resource.data);
+        && marketValidTaskCreateLinkedState(taskId, request.resource.data);
       allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);
       allow delete: if false;
 
@@ -1198,8 +1161,10 @@ service cloud.firestore {
         );
         allow list: if marketVerified()
           && get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid;
-        allow create: if marketUserCanPost(request.auth.uid)
+        allow create: if marketVerified()
           && request.auth.uid == userId
+          && marketValidProposalCreate(userId, request.resource.data)
+          && marketUserCanPost(request.auth.uid)
           && exists(/databases/$(database)/documents/tasks/$(taskId))
           && marketProposalCreatePreflight(taskId, userId, request.resource.data);
         allow update: if resource != null && marketVerified() && marketProposalUpdateAllowed(taskId, userId);
@@ -1227,8 +1192,7 @@ service cloud.firestore {
         && renewedAt == createdAt
         && data.updatedAt == request.time
         && data.expiresAt == renewedAt + duration.value(30, 'd')
-        && marketValidOfferContent(data)
-        && marketValidOfferCreateLinkedState(offerId, data);
+        && marketValidOfferContent(data);
     }
     function marketValidOfferCreateLinkedState(offerId, data) {
       let uid = request.auth.uid;
@@ -1247,16 +1211,13 @@ service cloud.firestore {
         && profileAfter.lastMutation.targetId == offerId;
     }
     function marketOfferOwnerUpdateValid(offerId, changed, before, after) {
+      // marketOfferUpdateAllowed dispatches here only for seller-owned content/lifecycle fields.
+      // Seller id, moderation, pinned, report count, and creation time are excluded by that allowlist.
       return (
           before.sellerId == request.auth.uid
-          && after.sellerId == before.sellerId
-          && after.moderation == before.moderation
-          && after.pinned == before.pinned
-          && after.reportCount == before.reportCount
-          && after.createdAt == before.createdAt
           && (!changed.hasAny([
                 'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail'
-              ]) || (marketUserCanPost(request.auth.uid) && marketValidOfferContent(after)))
+              ]) || (marketValidOfferContent(after) && marketUserCanPost(request.auth.uid)))
           && after.updatedAt == request.time
           && (
             (before.status == 'active' && after.status == 'paused'
@@ -1296,7 +1257,6 @@ service cloud.firestore {
           )
       );
     }
-
     function marketOfferUpdateAllowed(offerId) {
       let before = resource.data;
       let after = request.resource.data;
@@ -1315,9 +1275,8 @@ service cloud.firestore {
     }
 
     function marketOfferAdminUpdateValid(offerId, before, after) {
-      return after.sellerId == before.sellerId
-        && after.createdAt == before.createdAt
-        && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
+      // The caller has already restricted changed to moderation, pinned, and updatedAt.
+      return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
         && after.pinned is bool
         && after.updatedAt == request.time
         && (
@@ -1338,11 +1297,8 @@ service cloud.firestore {
         );
     }
     function marketOfferReportUpdateValid(offerId, before, after) {
-      return after.sellerId == before.sellerId
-        && after.status == before.status
-        && after.pinned == before.pinned
-        && after.createdAt == before.createdAt
-        && after.reportCount == before.reportCount + 1
+      // The caller has already restricted changed to reportCount, moderation, and updatedAt.
+      return after.reportCount == before.reportCount + 1
         && after.updatedAt == request.time
         && request.auth.uid != before.sellerId
         && marketOfferReportExistsAfter(offerId)
@@ -1389,8 +1345,9 @@ service cloud.firestore {
       allow get: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
       allow list: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
       allow create: if marketVerified()
+        && marketValidOfferCreate(offerId, request.resource.data)
         && marketUserCanPost(request.auth.uid)
-        && marketValidOfferCreate(offerId, request.resource.data);
+        && marketValidOfferCreateLinkedState(offerId, request.resource.data);
       allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);
       allow delete: if false;
     }
