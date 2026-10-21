@@ -813,7 +813,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/profiles/$(uid))
         && !exists(marketProfilePath(uid))
         && marketValidProfileCreate(uid, request.resource.data);
-      allow update: if marketSignedIn() && (
+      allow update: if resource != null && marketSignedIn() && (
         (
           request.auth.uid == uid
           && request.resource.data.uid == resource.data.uid
@@ -828,9 +828,13 @@ service cloud.firestore {
         )
         || (request.auth.uid == uid
           && marketProfileCounterFieldsOnly()
+          && request.resource.data.lastMutation is map
+          && request.resource.data.lastMutation != resource.data.lastMutation
           && marketValidProfileCounterUpdate(uid))
         || (marketIsAdmin()
           && marketProfileCounterFieldsOnly()
+          && request.resource.data.lastMutation is map
+          && request.resource.data.lastMutation != resource.data.lastMutation
           && marketValidProfileCounterUpdate(uid))
         || (
           marketIsAdmin()
@@ -1025,8 +1029,16 @@ service cloud.firestore {
         && request.resource.data.expiresAt == resource.data.expiresAt
         && request.resource.data.reportCount == resource.data.reportCount + 1
         && request.resource.data.updatedAt == request.time
+        && request.auth.uid != resource.data.posterId
+        && marketTaskReportExistsAfter(taskId)
         && marketTaskReportCounterValid(taskId)
         && marketReportWindowCounterValid(request.auth.uid);
+    }
+
+    function marketTaskReportExistsAfter(taskId) {
+      let reportId = 'task_' + taskId + '_' + request.auth.uid;
+      let path = /databases/$(database)/documents/reports/$(reportId);
+      return existsAfter(path);
     }
 
     function marketTaskCloseCounterValid(uid, taskId) {
@@ -1102,7 +1114,7 @@ service cloud.firestore {
         || marketTaskPublic(resource.data)
       );
       allow create: if marketVerified() && marketValidTaskCreate(taskId, request.resource.data);
-      allow update: if marketVerified() && marketTaskUpdateAllowed(taskId);
+      allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);
       allow delete: if false;
 
       match /proposals/{userId} {
@@ -1116,7 +1128,7 @@ service cloud.firestore {
           && request.auth.uid == userId
           && exists(/databases/$(database)/documents/tasks/$(taskId))
           && marketValidProposalCreate(taskId, userId, request.resource.data);
-        allow update: if marketVerified() && (
+        allow update: if resource != null && marketVerified() && (
           (
             request.auth.uid == userId
             && get(/databases/$(database)/documents/tasks/$(taskId)).data.status == 'open'
@@ -1297,7 +1309,15 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.reportCount == resource.data.reportCount + 1
         && request.resource.data.updatedAt == request.time
+        && request.auth.uid != resource.data.sellerId
+        && marketOfferReportExistsAfter(offerId)
         && marketOfferReportCounterValid(offerId);
+    }
+
+    function marketOfferReportExistsAfter(offerId) {
+      let reportId = 'offer_' + offerId + '_' + request.auth.uid;
+      let path = /databases/$(database)/documents/reports/$(reportId);
+      return existsAfter(path);
     }
 
     function marketOfferCounterTransitionValid(uid, offerId, operation, delta) {
@@ -1335,7 +1355,7 @@ service cloud.firestore {
       allow get: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
       allow list: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
       allow create: if marketVerified() && marketValidOfferCreate(offerId, request.resource.data);
-      allow update: if marketVerified() && marketOfferUpdateAllowed(offerId);
+      allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);
       allow delete: if false;
     }
 
@@ -1366,7 +1386,7 @@ service cloud.firestore {
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetType == request.resource.data.targetType
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == request.resource.data.targetId;
-      allow update: if marketVerified() && marketIsAdmin()
+      allow update: if resource != null && marketVerified() && marketIsAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed'];
       allow delete: if false;
@@ -1440,7 +1460,7 @@ service cloud.firestore {
     match /userStats/{uid} {
       allow get, list: if marketSignedIn();
       allow create: if marketVerified() && marketValidRatingStatsCreate(uid);
-      allow update: if marketVerified() && marketValidRatingStatsUpdate(uid);
+      allow update: if resource != null && marketVerified() && marketValidRatingStatsUpdate(uid);
       allow delete: if false;
     }
 
@@ -1456,7 +1476,7 @@ service cloud.firestore {
         && request.resource.data.createdAt == request.time
         && request.resource.data.canAppeal is bool
         && request.resource.data.appealed == false;
-      allow update: if marketVerified() && (
+      allow update: if resource != null && marketVerified() && (
         (request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'appealed'])
           && request.resource.data.read is bool
@@ -1500,7 +1520,7 @@ service cloud.firestore {
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'support'
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == ticketId;
-      allow update: if marketVerified() && (
+      allow update: if resource != null && marketVerified() && (
         (
           resource.data.userId == request.auth.uid
           && request.resource.data.userId == resource.data.userId
@@ -1685,7 +1705,7 @@ service cloud.firestore {
             && marketOfferPublic(get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data)
             && request.resource.data.listingOwnerUid == get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data.sellerId)
         );
-      allow update: if marketVerified()
+      allow update: if resource != null && marketVerified()
         && marketConversationMember(conversationId)
         && resource.data.participants == request.resource.data.participants
         && resource.data.kind == request.resource.data.kind

@@ -42,6 +42,15 @@ const checks = [
   ['index map lists proposerId collection-group scope', () => assert.ok(indexMap.includes('proposerId') && indexMap.includes('COLLECTION_GROUP'))],
   ['deploy checklist mandates production export and rollback', () => assert.ok(checklist.toLowerCase().includes('production') && checklist.toLowerCase().includes('rollback'))],
   ['workflow fails when Emulator output has expression-ceiling diagnostics', () => assert.match(workflow, /grep -Fq "Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached"/)],
+  ['Market update rules guard null resource before update validators', () => {
+    assert.ok(rules.includes('allow update: if resource != null && marketSignedIn() && ('));
+    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);'));
+    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);'));
+  }],
+  ['task and offer report counters require a report document before linked reads', () => {
+    assert.ok(rules.includes('marketTaskReportExistsAfter(taskId)'));
+    assert.ok(rules.includes('marketOfferReportExistsAfter(offerId)'));
+  }],
   ['workflow specifies Node.js 20 and Java 21', () => { assert.match(workflow, /node-version:\s*['"]?20/); assert.match(workflow, /java-version:\s*['"]?21/); }],
 ];
 let passed = 0;
