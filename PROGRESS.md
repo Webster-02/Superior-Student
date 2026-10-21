@@ -1,7 +1,7 @@
 # Market Rules Review Progress
 
 **Branch:** `review/market-rules`  
-**State:** Step Zero baseline verified; **P1–P4 candidates implemented and untested** — review-only. No merge to `main` and no Firebase deployment. CI is intentionally not run for the current P4 change.
+**State:** Step Zero baseline verified; **P1–P4 candidates implemented and untested** — review-only. P6 addendum byte-integrity and contradiction review recorded. No merge to `main` and no Firebase deployment. The current candidate remains unverified by CI.
 
 ## Step Zero verification record
 
@@ -17,8 +17,21 @@
 - **P3 — Profile + proposals (current candidate):** validates profile-create payload before existence reads, skips the expensive profile counter dispatcher unless numeric/window counter fields actually change (while preserving the separate exact admin suspension reset path), caches proposal preflight/linked-state values, and caches proposal update routing predicates. Existing counter, ownership, lifecycle, allowlist, and mutation checks remain in place. **Not tested in CI by instruction.**
 - **P4 — CI diagnostic guard (current candidate):** the workflow scans captured Emulator output for the stable core phrase `maximum of 1000 expressions to evaluate has been reached` case-insensitively, records the diagnostic count and guard status, and fails the job for any match. Static validation asserts the log source, matcher, positive-count failure branch, and final nonzero exit path. **This P4 change has not been run in CI.**
 - **P5 — Run CI:** Step Zero baseline run #20 completed successfully. **No CI run for the current P1/P2/P3/P4 candidates**, as requested.
-- **P6 — Original addendum:** added as `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` from the supplied Library file without editing its bytes. Source SHA-256: `ff60be0137604b27f93fe8f12ee3e5f0dcbcf7a38e250b3351bdea2a1da4c899`; Git blob SHA: `7cec066773fb5f40cdcf4e921e09ab9c92119800`. The static suite verifies the SHA-256 at test time.
+- **P6 — Original addendum (integrity verified):** the attached `MARKET_SPEC_ADDENDUM_RULES_PHASE (1).md` is 7,793 bytes / 68 lines; source SHA-256 is `ff60be0137604b27f93fe8f12ee3e5f0dcbcf7a38e250b3351bdea2a1da4c899`, matching the existing branch path `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` (Git blob SHA `7cec066773fb5f40cdcf4e921e09ab9c92119800`). The file was already present on the branch byte-for-byte, so it was preserved unchanged rather than duplicated or rewritten. Static validation already pins this source SHA-256. The contradiction/gap review is recorded below; no rules or tests were changed to resolve it.
 - **Deployment safety:** `DEPLOY_CHECKLIST.md` remains unchanged (blob SHA `ba9dd664d3348ef3d25a1c7e1717ee9519110b93`). No merge to `main`, production export overwrite, Firebase deployment, or staging deployment occurred. Production remains blocked pending the checklist's live rules/index baseline comparison, legacy `proposerId` backfill, staging verification, and explicit approval.
+
+## P6 addendum contradiction / gap review (no fixes made)
+
+Compared the attached addendum (unchanged) with the current `firestore.rules` and `tests/firestore.rules.test.mjs`. These are review findings only; P1–P4 remain untested.
+
+1. **§4, lifecycle counter decrements (addendum L22):** The blanket requirement that cancel, expire, pause, remove, and complete must all carry a counter decrement is too broad for the implemented lifecycle. Task completion is a status-only update (`firestore.rules` L942–947; `tests/firestore.rules.test.mjs` L759–764); `openTasks` is decremented when the proposal is accepted (rules L935 and test L713–718). Removing an already-paused offer keeps `activeOffers` unchanged (rules L1373–1379), because pause already decremented it. The owner removal branch also permits removal only from `active` or `paused`, not `expired` (rules L1373–1375).
+2. **§6, verified email (addendum L45):** “All Market writes require `email_verified == true`” conflicts with Market profile updates: the match uses `marketSignedIn()` rather than `marketVerified()` (`firestore.rules` L803), and the self-service `skillTags` / `blockedUids` / `settings` path does not check email verification (rules L696–702). The rules therefore do not enforce that blanket statement for this update path.
+3. **§8, admin audit/notice linkage (addendum L63):** The rules validate `adminLogs` create independently (`firestore.rules` L1782–1794) and do not require every admin action to create a related log and notice in the same batch. Tests explicitly accept a standalone admin pin update without companion log/notice (`tests/firestore.rules.test.mjs` L743–747) and a standalone admin report-status update (tests L749–754). The suspension test proves one batched example, not the universal requirement.
+4. **§7, task chat at acceptance (addendum L58):** The accept flow can be committed with a same-transaction task chat, and the positive test includes it (`tests/firestore.rules.test.mjs` L697–723). However, task assignment/counter validation does not require a corresponding `marketConversations` document, and there is no negative test showing acceptance fails when that conversation is omitted. The “same batch” requirement is therefore not enforced by these rules/tests.
+5. **§1, profile counter wording (addendum L6 and L9):** “Can never edit … counters afterwards” is ambiguous against the implemented atomic counter mutations. Rules and tests allow changes to `openTasks`, `activeOffers`, proposal/report windows, etc. when bound to a valid `lastMutation` and matching operation. If the intent is “no direct or unpaired counter edits,” that narrower meaning is consistent; the literal blanket wording is not.
+6. **§9, expression-ceiling note (addendum L67):** The addendum says the Emulator log contains 1,000-expression-limit diagnostics. The recorded Step Zero run #20 in this progress file reports zero diagnostics; an earlier run #18 recorded 39. This is a version/history mismatch, not proof that the current P1–P4 candidate is clear—the current candidate has not been rerun in CI.
+
+No other files, rules, test cases, indexes, or workflow files were modified for P6. No CI run or Firebase deployment was performed.
 
 ## Current P1/P2/P3/P4 scope and verification status
 
