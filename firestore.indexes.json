@@ -1,0 +1,773 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "adminLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "action",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "adminLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "targetId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "read",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "marketConversations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "participants",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "marketProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "suspendedUntil",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "marketProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "marketProfiles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "warnings",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "read",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "category",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pinned",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "category",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pinned",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "pinned",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sellerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sellerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sellerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "offers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "renewedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "proposals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ratings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fromUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ratings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "taskId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "ratings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "toUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "reporterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "reporterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "targetType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "targetId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "support",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "support",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "support",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "support",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "category",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "category",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pinned",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pinned",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "pinned",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "moderation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "pinned",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "posterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "posterId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "proposals",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "proposerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

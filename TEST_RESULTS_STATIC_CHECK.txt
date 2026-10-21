@@ -1,0 +1,1 @@
+Local preflight on the staged candidate: 25 checks passed. This is historical local output, not the result for the committed branch tree. The GitHub Actions artifact is authoritative for the committed run. Emulator and access-call-limit checks remain unverified until real Emulator output is available.

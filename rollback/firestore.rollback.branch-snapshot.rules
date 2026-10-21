@@ -1,0 +1,878 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInWithVerifiedEmail() {
+      return request.auth != null
+        && request.auth.token.email_verified == true;
+    }
+
+
+
+    // Chat access requires an existing accepted directional friend request.
+    function acceptedChatConnectionExists(uidA, uidB) {
+      let forwardId = uidA + '_' + uidB;
+      let reverseId = uidB + '_' + uidA;
+      let forwardPath = /databases/$(database)/documents/friendRequests/$(forwardId);
+      let reversePath = /databases/$(database)/documents/friendRequests/$(reverseId);
+      return (
+        exists(forwardPath)
+        && get(forwardPath).data.senderUid == uidA
+        && get(forwardPath).data.receiverUid == uidB
+        && get(forwardPath).data.status == 'accepted'
+      ) || (
+        exists(reversePath)
+        && get(reversePath).data.senderUid == uidB
+        && get(reversePath).data.receiverUid == uidA
+        && get(reversePath).data.status == 'accepted'
+      );
+    }
+
+    function validChatConversation(conversationId, data) {
+      return data.keys().hasAll(['participantUids', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['participantUids', 'createdAt', 'updatedAt'])
+        && data.participantUids is list
+        && data.participantUids.size() == 2
+        && data.participantUids[0] is string
+        && data.participantUids[0].size() > 0
+        && data.participantUids[0].size() <= 128
+        && data.participantUids[1] is string
+        && data.participantUids[1].size() > 0
+        && data.participantUids[1].size() <= 128
+        && data.participantUids[0] != data.participantUids[1]
+        && conversationId == data.participantUids[0] + '_' + data.participantUids[1]
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function activeChatConversationMember(conversationId) {
+      let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+      return exists(conversationPath)
+        && validChatConversation(conversationId, get(conversationPath).data)
+        && request.auth.uid in get(conversationPath).data.participantUids
+        && acceptedChatConnectionExists(
+          get(conversationPath).data.participantUids[0],
+          get(conversationPath).data.participantUids[1]
+        );
+    }
+
+    // Optional reply metadata must quote a real message in this same conversation.
+    // This prevents a client from fabricating the quoted sender or message text.
+    function validReplyToMessage(conversationId, data, participantUids) {
+      return !data.keys().hasAny([
+          'replyToMessageId', 'replyToSenderName', 'replyToText'
+        ]) || (
+          data.keys().hasAll([
+            'replyToMessageId', 'replyToSenderName', 'replyToText'
+          ])
+          && data.replyToMessageId is string
+          && data.replyToMessageId.size() >= 1
+          && data.replyToMessageId.size() <= 128
+          && data.replyToSenderName is string
+          && data.replyToSenderName.size() >= 2
+          && data.replyToSenderName.size() <= 60
+          && data.replyToText is string
+          && data.replyToText.size() >= 1
+          && data.replyToText.size() <= 2000
+          && exists(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId))
+          && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.participantUids == participantUids
+          && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.senderName == data.replyToSenderName
+          && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.text == data.replyToText
+        );
+    }
+
+    function validChatMessage(conversationId, data, participantUids) {
+      return data.keys().hasAll([
+          'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt',
+          'replyToMessageId', 'replyToSenderName', 'replyToText'
+        ])
+        && data.participantUids == participantUids
+        && data.participantUids is list
+        && data.participantUids.size() == 2
+        && data.senderUid is string
+        && data.recipientUid is string
+        && data.senderUid != data.recipientUid
+        && (
+          (data.senderUid == participantUids[0] && data.recipientUid == participantUids[1])
+          || (data.senderUid == participantUids[1] && data.recipientUid == participantUids[0])
+        )
+        && conversationId == data.participantUids[0] + '_' + data.participantUids[1]
+        && data.senderName is string
+        && data.senderName.size() >= 2
+        && data.senderName.size() <= 60
+        && data.text is string
+        && data.text.size() >= 1
+        && data.text.size() <= 2000
+        && data.createdAt is timestamp
+        && validReplyToMessage(conversationId, data, participantUids);
+    }
+    // Reactions may reference only an existing message from this conversation.
+    function validChatMessageReaction(conversationId, reactionId, data) {
+      let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+      let messagePath = /databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.messageId);
+      return data.keys().hasAll(['messageId', 'uid', 'emoji', 'updatedAt'])
+        && data.keys().hasOnly(['messageId', 'uid', 'emoji', 'updatedAt'])
+        && data.messageId is string
+        && data.messageId.size() >= 1
+        && data.messageId.size() <= 128
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && reactionId == data.messageId + '_' + data.uid
+        && data.emoji in ['👍', '❤️', '😂', '😮', '😢', '🙏']
+        && data.updatedAt is timestamp
+        && exists(conversationPath)
+        && validChatConversation(conversationId, get(conversationPath).data)
+        && data.uid in get(conversationPath).data.participantUids
+        && exists(messagePath)
+        && get(messagePath).data.participantUids == get(conversationPath).data.participantUids
+        && (
+          get(messagePath).data.senderUid == data.uid
+          || get(messagePath).data.recipientUid == data.uid
+        );
+    }
+
+    function validNotificationShape(uid, data) {
+      return data.keys().hasAll([
+          'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
+          'title', 'body', 'eventAt', 'createdAt', 'read', 'readAt'
+        ])
+        && data.keys().hasOnly([
+          'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
+          'title', 'body', 'eventAt', 'createdAt', 'read', 'readAt'
+        ])
+        && data.recipientUid == uid
+        && data.actorUid is string
+        && data.actorUid.size() > 0
+        && data.actorName is string
+        && data.actorName.size() >= 2
+        && data.actorName.size() <= 60
+        && data.type in ['friend_request', 'friend_request_accepted']
+        && data.requestId is string
+        && data.requestId.size() > 0
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 100
+        && data.body is string
+        && data.body.size() >= 1
+        && data.body.size() <= 300
+        && data.eventAt is timestamp
+        && data.createdAt is timestamp
+        && data.read is bool
+        && (data.readAt == null || data.readAt is timestamp);
+    }
+
+    function matchesPendingRequestNotification(uid, notificationId, data) {
+      let requestPath = /databases/$(database)/documents/friendRequests/$(data.requestId);
+      return data.type == 'friend_request'
+        && notificationId == data.requestId + '_request'
+        && exists(requestPath)
+        && get(requestPath).data.senderUid == request.auth.uid
+        && get(requestPath).data.receiverUid == uid
+        && get(requestPath).data.senderName == data.actorName
+        && get(requestPath).data.status == 'pending'
+        && get(requestPath).data.updatedAt == data.eventAt
+        && data.title == 'New friend request'
+        && data.body == get(requestPath).data.senderName + ' sent you a friend request.';
+    }
+
+    function matchesAcceptedRequestNotification(uid, notificationId, data) {
+      let requestPath = /databases/$(database)/documents/friendRequests/$(data.requestId);
+      return data.type == 'friend_request_accepted'
+        && notificationId == data.requestId + '_accepted'
+        && exists(requestPath)
+        && get(requestPath).data.senderUid == uid
+        && get(requestPath).data.receiverUid == request.auth.uid
+        && get(requestPath).data.receiverName == data.actorName
+        && get(requestPath).data.status == 'accepted'
+        && get(requestPath).data.updatedAt == data.eventAt
+        && data.title == 'Friend request accepted'
+        && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
+    }
+
+    match /profiles/{uid} {
+      allow get: if signedInWithVerifiedEmail()
+        && resource.data.uid == uid
+        && resource.data.keys().hasOnly([
+          'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
+        ])
+        && resource.data.publicId is string
+        && resource.data.publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && resource.data.displayName is string
+        && resource.data.displayName.size() >= 2
+        && resource.data.displayName.size() <= 60
+        && get(
+          /databases/$(database)/documents/studentIds/$(resource.data.publicId)
+        ).data.uid == uid;
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid
+        && !exists(/databases/$(database)/documents/profiles/$(uid))
+        && request.resource.data.keys().hasAll([
+          'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.publicId is string
+        && request.resource.data.publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 60
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/studentIds/$(request.resource.data.publicId)
+        ).data.uid == uid;
+
+      allow update, delete: if false;
+    }
+
+    match /friendRequests/{requestId} {
+      // A sender can read their own directional request path before the document exists.
+      allow get: if signedInWithVerifiedEmail()
+        && (
+          requestId.matches('^' + request.auth.uid + '_[^/]+$')
+          || resource.data.senderUid == request.auth.uid
+          || resource.data.receiverUid == request.auth.uid
+        );
+
+      allow list: if signedInWithVerifiedEmail()
+        && (
+          resource.data.senderUid == request.auth.uid
+          || resource.data.receiverUid == request.auth.uid
+        );
+
+      allow create: if signedInWithVerifiedEmail()
+        && requestId == request.resource.data.senderUid + "_" + request.resource.data.receiverUid
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.receiverUid is string
+        && request.resource.data.receiverUid != request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() >= 2
+        && request.resource.data.senderName.size() <= 60
+        && request.resource.data.receiverName is string
+        && request.resource.data.receiverName.size() >= 2
+        && request.resource.data.receiverName.size() <= 60
+        && request.resource.data.senderPublicId is string
+        && request.resource.data.senderPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && request.resource.data.receiverPublicId is string
+        && request.resource.data.receiverPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid))
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.uid == request.resource.data.senderUid
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.displayName == request.resource.data.senderName
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.publicId == request.resource.data.senderPublicId
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid))
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.uid == request.resource.data.receiverUid
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.displayName == request.resource.data.receiverName
+        && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.publicId == request.resource.data.receiverPublicId;
+
+      allow update: if signedInWithVerifiedEmail()
+        && request.resource.data.keys().hasAll([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+          'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && (
+          (
+            resource.data.receiverUid == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status in ['accepted', 'rejected']
+          )
+          || (
+            resource.data.senderUid == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'cancelled'
+          )
+          || (
+            (resource.data.senderUid == request.auth.uid
+              || resource.data.receiverUid == request.auth.uid)
+            && resource.data.status == 'accepted'
+            && request.resource.data.status == 'removed'
+          )
+          || (
+            resource.data.senderUid == request.auth.uid
+            && resource.data.status in ['rejected', 'cancelled', 'removed']
+            && request.resource.data.status == 'pending'
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    match /studentNotifications/{uid}/items/{notificationId} {
+      allow get, list: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid;
+
+      allow create: if signedInWithVerifiedEmail()
+        && validNotificationShape(uid, request.resource.data)
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.read == false
+        && request.resource.data.readAt == null
+        && (
+          matchesPendingRequestNotification(uid, notificationId, request.resource.data)
+          || matchesAcceptedRequestNotification(uid, notificationId, request.resource.data)
+        );
+
+      allow update: if signedInWithVerifiedEmail()
+        && validNotificationShape(uid, request.resource.data)
+        && (
+          (
+            request.auth.uid == uid
+            && resource.data.recipientUid == uid
+            && resource.data.read == false
+            && request.resource.data.read == true
+            && request.resource.data.readAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+          )
+          || (
+            request.auth.uid == resource.data.actorUid
+            && request.auth.uid != uid
+            && resource.data.type == 'friend_request'
+            && request.resource.data.type == 'friend_request'
+            && request.resource.data.eventAt != resource.data.eventAt
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.read == false
+            && request.resource.data.readAt == null
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'eventAt', 'createdAt', 'read', 'readAt'
+            ])
+            && matchesPendingRequestNotification(uid, notificationId, request.resource.data)
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    // A student can register only their own FCM device token. Tokens are
+    // intentionally not readable by clients; trusted server code sends messages.
+    match /studentNotificationTokens/{uid} {
+      allow get, list: if false;
+
+      allow create, update: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid
+        && exists(/databases/$(database)/documents/profiles/$(uid))
+        && request.resource.data.keys().hasAll(['uid', 'token', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'token', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.token is string
+        && request.resource.data.token.size() >= 1
+        && request.resource.data.token.size() <= 4096
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid;
+    }
+
+
+    // Student Connect one-to-one chat. Existing rules remain in place.
+    match /chatConversations/{conversationId} {
+      // Allow a verified student to check their own deterministic pair path when no
+      // conversation exists yet. Existing metadata is visible only to participants.
+      allow get: if signedInWithVerifiedEmail()
+        && (
+          (
+            !exists(/databases/$(database)/documents/chatConversations/$(conversationId))
+            && (
+              conversationId.matches('^' + request.auth.uid + '_[^/]+$')
+              || conversationId.matches('^[^/]+_' + request.auth.uid + '$')
+            )
+          )
+          || (
+            validChatConversation(conversationId, resource.data)
+            && request.auth.uid in resource.data.participantUids
+          )
+        );
+
+      allow list: if signedInWithVerifiedEmail()
+        && request.auth.uid in resource.data.participantUids;
+
+      allow create: if signedInWithVerifiedEmail()
+        && validChatConversation(conversationId, request.resource.data)
+        && request.auth.uid in request.resource.data.participantUids
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.participantUids[0]))
+        && exists(/databases/$(database)/documents/profiles/$(request.resource.data.participantUids[1]))
+        && acceptedChatConnectionExists(
+          request.resource.data.participantUids[0],
+          request.resource.data.participantUids[1]
+        );
+
+      allow update: if signedInWithVerifiedEmail()
+        && validChatConversation(conversationId, resource.data)
+        && validChatConversation(conversationId, request.resource.data)
+        && request.auth.uid in resource.data.participantUids
+        && request.resource.data.participantUids == resource.data.participantUids
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && acceptedChatConnectionExists(
+          resource.data.participantUids[0],
+          resource.data.participantUids[1]
+        );
+
+      allow delete: if false;
+
+      match /readStates/{uid} {
+        // Active participants may read either participant's individual read marker
+        // to display message receipts. Listing/querying remains disabled, and only
+        // each marker owner can create or update their own read state below.
+        allow get: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId)
+          && uid in get(
+            /databases/$(database)/documents/chatConversations/$(conversationId)
+          ).data.participantUids;
+        allow list: if false;
+
+        allow create: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.keys().hasAll(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.lastReadAt is timestamp
+          && request.resource.data.lastReadAt == request.time
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && resource.data.uid == uid
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.keys().hasAll(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'lastReadAt', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.lastReadAt is timestamp
+          && request.resource.data.lastReadAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastReadAt', 'updatedAt']);
+
+        allow delete: if false;
+      }
+
+      match /messages/{messageId} {
+        // Reading the messages subcollection is scoped to the parent conversation.
+        // It is blocked as soon as the accepted friend connection is removed.
+        allow list: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId);
+
+        allow get: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId)
+          && validChatMessage(
+            conversationId,
+            resource.data,
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.participantUids
+          )
+          && request.auth.uid in resource.data.participantUids;
+
+        allow create: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId)
+          && validChatMessage(
+            conversationId,
+            request.resource.data,
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.participantUids
+          )
+          && request.auth.uid == request.resource.data.senderUid
+          && request.resource.data.createdAt == request.time
+          && exists(/databases/$(database)/documents/profiles/$(request.auth.uid))
+          && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
+            == request.resource.data.senderName;
+
+        // Sent messages are immutable.
+        allow update, delete: if false;
+      }
+
+      // Reactions are separate from immutable message documents. Participants can
+      // read reactions in an active chat, but each student can write only their own.
+      match /messageReactions/{reactionId} {
+        allow get, list: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId);
+
+        allow create: if signedInWithVerifiedEmail()
+          && request.auth.uid == request.resource.data.uid
+          && activeChatConversationMember(conversationId)
+          && validChatMessageReaction(conversationId, reactionId, request.resource.data)
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if signedInWithVerifiedEmail()
+          && request.auth.uid == resource.data.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.messageId == resource.data.messageId
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emoji', 'updatedAt'])
+          && validChatMessageReaction(conversationId, reactionId, request.resource.data)
+          && request.resource.data.updatedAt == request.time;
+
+        allow delete: if signedInWithVerifiedEmail()
+          && request.auth.uid == resource.data.uid
+          && activeChatConversationMember(conversationId)
+          && validChatMessageReaction(conversationId, reactionId, resource.data);
+      }
+
+      // Ephemeral one-to-one typing state. Active participants can read it;
+      // each account can write only its own document.
+      match /typing/{uid} {
+        allow get, list: if signedInWithVerifiedEmail()
+          && activeChatConversationMember(conversationId);
+
+        allow create: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && activeChatConversationMember(conversationId)
+          && request.resource.data.keys().hasAll(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.isTyping == true
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && activeChatConversationMember(conversationId)
+          && resource.data.uid == uid
+          && resource.data.isTyping == true
+          && request.resource.data.keys().hasAll(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['uid', 'isTyping', 'updatedAt'])
+          && request.resource.data.uid == uid
+          && request.resource.data.isTyping == true
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']);
+
+        // Cleanup of one's own state is allowed even if the accepted connection disappears.
+        allow delete: if signedInWithVerifiedEmail()
+          && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/chatConversations/$(conversationId))
+          && validChatConversation(
+            conversationId,
+            get(/databases/$(database)/documents/chatConversations/$(conversationId)).data
+          )
+          && request.auth.uid in get(
+            /databases/$(database)/documents/chatConversations/$(conversationId)
+          ).data.participantUids;
+      }
+    }
+
+    // Presence is scoped to a student's own document and accepted connections.
+    // Heartbeat timestamps are server-generated; clients cannot list presence documents.
+
+    // P2P transfers store metadata/signaling only; encrypted file bytes never enter Firestore.
+    function validP2pTransferOffer(conversationId, transferId, data) {
+      let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+      return exists(conversationPath)
+        && validChatConversation(conversationId, get(conversationPath).data)
+        && data.keys().hasAll([
+          'transferId', 'conversationId', 'senderUid', 'receiverUid',
+          'fileName', 'sizeBytes', 'mimeType', 'sha256', 'chunkSize',
+          'senderPublicKey', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'transferId', 'conversationId', 'senderUid', 'receiverUid',
+          'fileName', 'sizeBytes', 'mimeType', 'sha256', 'chunkSize',
+          'senderPublicKey', 'thumbnailBase64', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.transferId == transferId
+        && data.conversationId == conversationId
+        && data.senderUid is string
+        && data.receiverUid is string
+        && data.senderUid != data.receiverUid
+        && data.senderUid in get(conversationPath).data.participantUids
+        && data.receiverUid in get(conversationPath).data.participantUids
+        && data.fileName is string
+        && data.fileName.size() > 0
+        && data.fileName.size() <= 180
+        && data.sizeBytes is int
+        && data.sizeBytes > 0
+        && data.mimeType is string
+        && data.mimeType.size() > 0
+        && data.mimeType.size() <= 160
+        && data.sha256 is string
+        && data.sha256.matches('^[A-Fa-f0-9]{64}$')
+        && data.chunkSize is int
+        && data.chunkSize >= 1024
+        && data.chunkSize <= 65536
+        && data.senderPublicKey is string
+        && data.senderPublicKey.size() >= 40
+        && data.senderPublicKey.size() <= 2048
+        && data.senderPublicKey.matches('^[A-Za-z0-9+/]+={0,2}$')
+        && data.status in [
+          'offered', 'accepted', 'rejected', 'transferring',
+          'paused', 'completed', 'failed', 'cancelled'
+        ]
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (!data.keys().hasAny(['thumbnailBase64']) ||
+          (data.thumbnailBase64 is string && data.thumbnailBase64.size() <= 20480));
+    }
+
+    function validP2pSignalPayload(signalType, payload) {
+      return payload is map && (
+        ((signalType == 'webrtc_offer' || signalType == 'webrtc_answer')
+          && payload.keys().hasAll(['sdp'])
+          && payload.keys().hasOnly(['sdp'])
+          && payload.sdp is string
+          && payload.sdp.size() > 0
+          && payload.sdp.size() <= 120000)
+        ||
+        (signalType == 'key_exchange'
+          && payload.keys().hasAll(['publicKey'])
+          && payload.keys().hasOnly(['publicKey'])
+          && payload.publicKey is string
+          && payload.publicKey.size() >= 40
+          && payload.publicKey.size() <= 2048
+          && payload.publicKey.matches('^[A-Za-z0-9+/]+={0,2}$'))
+        ||
+        (signalType == 'ice_candidate'
+          && payload.keys().hasAll(['candidate', 'sdpMid', 'sdpMLineIndex'])
+          && payload.keys().hasOnly(['candidate', 'sdpMid', 'sdpMLineIndex'])
+          && payload.candidate is string
+          && payload.candidate.size() > 0
+          && payload.candidate.size() <= 4096
+          && (payload.sdpMid == null ||
+            (payload.sdpMid is string && payload.sdpMid.size() <= 128))
+          && payload.sdpMLineIndex is int
+          && payload.sdpMLineIndex >= 0
+          && payload.sdpMLineIndex <= 256)
+        ||
+        (signalType == 'lan_candidates'
+          && payload.keys().hasAll(['ip', 'port', 'token'])
+          && payload.keys().hasOnly(['ip', 'port', 'token'])
+          && payload.ip is string
+          && payload.ip.size() > 0
+          && payload.ip.size() <= 64
+          && payload.port is int
+          && payload.port >= 1
+          && payload.port <= 65535
+          && payload.token is string
+          && payload.token.size() >= 32
+          && payload.token.size() <= 128)
+        ||
+        (signalType == 'resume_request'
+          && payload.keys().hasAll(['bitmapBase64', 'fileSha256'])
+          && payload.keys().hasOnly(['bitmapBase64', 'fileSha256'])
+          && payload.bitmapBase64 is string
+          && payload.bitmapBase64.size() <= 80000
+          && payload.fileSha256 is string
+          && payload.fileSha256.matches('^[A-Fa-f0-9]{64}$'))
+        ||
+        (signalType == 'transfer_progress'
+          && payload.keys().hasAll(['bytesDone', 'totalBytes', 'bytesPerSecond', 'etaSeconds'])
+          && payload.keys().hasOnly(['bytesDone', 'totalBytes', 'bytesPerSecond', 'etaSeconds'])
+          && payload.bytesDone is int
+          && payload.totalBytes is int
+          && payload.bytesPerSecond is int
+          && payload.etaSeconds is int
+          && payload.bytesDone >= 0
+          && payload.totalBytes > 0
+          && payload.bytesDone <= payload.totalBytes
+          && payload.bytesPerSecond >= 0
+          && payload.etaSeconds >= 0)
+        ||
+        (signalType == 'transfer_complete'
+          && payload.keys().hasAll(['sha256'])
+          && payload.keys().hasOnly(['sha256'])
+          && payload.sha256 is string
+          && payload.sha256.matches('^[A-Fa-f0-9]{64}$'))
+        ||
+        (signalType == 'transfer_cancel'
+          && payload.keys().hasAll(['reason'])
+          && payload.keys().hasOnly(['reason'])
+          && payload.reason is string
+          && payload.reason.size() <= 200)
+        ||
+        (signalType == 'error'
+          && payload.keys().hasAll(['code', 'message'])
+          && payload.keys().hasOnly(['code', 'message'])
+          && payload.code is string
+          && payload.code.size() > 0
+          && payload.code.size() <= 80
+          && payload.message is string
+          && payload.message.size() <= 300)
+      );
+    }
+
+    match /chatConversations/{conversationId}/transferOffers/{transferId} {
+      allow get: if signedInWithVerifiedEmail()
+        && activeChatConversationMember(conversationId)
+        && validP2pTransferOffer(conversationId, transferId, resource.data)
+        && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid];
+
+      // Every client-created offer is validated by allow create above. Keep the
+      // list rule query-provable by constraining the receiver field queried by Android.
+      // The client still validates every returned document before showing it.
+      allow list: if signedInWithVerifiedEmail()
+        && activeChatConversationMember(conversationId)
+        && request.auth.uid == resource.data.receiverUid;
+
+      allow create: if signedInWithVerifiedEmail()
+        && activeChatConversationMember(conversationId)
+        && validP2pTransferOffer(conversationId, transferId, request.resource.data)
+        && request.auth.uid == request.resource.data.senderUid
+        && request.resource.data.status == 'offered'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedInWithVerifiedEmail()
+        && activeChatConversationMember(conversationId)
+        && validP2pTransferOffer(conversationId, transferId, resource.data)
+        && validP2pTransferOffer(conversationId, transferId, request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && (
+          (resource.data.status == 'offered'
+            && request.auth.uid == resource.data.receiverUid
+            && request.resource.data.status in ['accepted', 'rejected'])
+          ||
+          (request.resource.data.status == 'cancelled'
+            && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid]
+            && resource.data.status in ['offered', 'accepted', 'transferring', 'paused', 'failed'])
+          ||
+          (request.resource.data.status == 'transferring'
+            && request.auth.uid == resource.data.senderUid
+            && resource.data.status in ['accepted', 'paused'])
+          ||
+          (request.resource.data.status == 'paused'
+            && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid]
+            && resource.data.status in ['accepted', 'transferring'])
+          ||
+          (request.resource.data.status == 'completed'
+            && request.auth.uid == resource.data.receiverUid
+            && resource.data.status == 'transferring')
+          ||
+          (request.resource.data.status == 'failed'
+            && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid]
+            && resource.data.status in ['offered', 'accepted', 'transferring', 'paused'])
+        );
+
+      allow delete: if false;
+    }
+
+    match /chatConversations/{conversationId}/transferOffers/{transferId}/signals/{signalId} {
+      function parentOfferPath() {
+        return /databases/$(database)/documents/chatConversations/$(conversationId)/transferOffers/$(transferId);
+      }
+
+      allow get, list: if signedInWithVerifiedEmail()
+        && activeChatConversationMember(conversationId)
+        && exists(parentOfferPath())
+        && validP2pTransferOffer(conversationId, transferId, get(parentOfferPath()).data)
+        && resource.data.targetUid == request.auth.uid
+        && request.auth.uid in [
+          get(parentOfferPath()).data.senderUid,
+          get(parentOfferPath()).data.receiverUid
+        ];
+
+      allow create: if signedInWithVerifiedEmail()
+        && activeChatConversationMember(conversationId)
+        && exists(parentOfferPath())
+        && validP2pTransferOffer(conversationId, transferId, get(parentOfferPath()).data)
+        && request.resource.data.keys().hasAll([
+          'transferId', 'senderUid', 'targetUid', 'type', 'payload', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'transferId', 'senderUid', 'targetUid', 'type', 'payload', 'createdAt'
+        ])
+        && request.resource.data.transferId == transferId
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.senderUid in [
+          get(parentOfferPath()).data.senderUid,
+          get(parentOfferPath()).data.receiverUid
+        ]
+        && request.resource.data.targetUid != request.auth.uid
+        && request.resource.data.targetUid in [
+          get(parentOfferPath()).data.senderUid,
+          get(parentOfferPath()).data.receiverUid
+        ]
+        && request.resource.data.type in [
+          'lan_candidates', 'key_exchange', 'webrtc_offer', 'webrtc_answer', 'ice_candidate',
+          'resume_request', 'transfer_progress', 'transfer_complete',
+          'transfer_cancel', 'error'
+        ]
+        && validP2pSignalPayload(request.resource.data.type, request.resource.data.payload)
+        && (request.resource.data.type != 'transfer_complete' ||
+          request.resource.data.payload.sha256 == get(parentOfferPath()).data.sha256)
+        && request.resource.data.createdAt == request.time;
+
+      allow delete: if signedInWithVerifiedEmail()
+        && activeChatConversationMember(conversationId)
+        && exists(parentOfferPath())
+        && validP2pTransferOffer(conversationId, transferId, get(parentOfferPath()).data)
+        && resource.data.targetUid == request.auth.uid;
+
+      allow update: if false;
+    }
+
+    match /studentPresence/{uid} {
+      allow get: if signedInWithVerifiedEmail()
+        && (
+          request.auth.uid == uid
+          || acceptedChatConnectionExists(request.auth.uid, uid)
+        );
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.isOnline is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if signedInWithVerifiedEmail()
+        && request.auth.uid == uid
+        && resource.data.uid == uid
+        && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.isOnline is bool
+        && request.resource.data.lastSeenAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isOnline', 'lastSeenAt', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /studentIds/{publicId} {
+      allow get: if signedInWithVerifiedEmail();
+      allow list: if false;
+
+      allow create: if signedInWithVerifiedEmail()
+        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+        && !exists(/databases/$(database)/documents/studentIds/$(publicId))
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.uid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+        ).data.publicId == publicId;
+
+      allow update, delete: if false;
+    }
+  }
+}

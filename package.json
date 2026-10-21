@@ -1,0 +1,14 @@
+{
+  "name": "u2u-market-firestore-rules-review",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:static": "node tests/static-validate.mjs",
+    "test:emulator": "firebase emulators:exec --project u2u-market-rules-review --only firestore \"node --test tests/firestore.rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^14.0.0"
+  }
+}

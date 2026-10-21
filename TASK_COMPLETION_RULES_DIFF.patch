@@ -1,0 +1,12 @@
+--- /mnt/data/review-work/firestore.rules	2026-10-21 01:47:33.121252434 +0000
++++ /mnt/data/market-repo-work/firestore.rules	2026-10-21 01:52:09.250267106 +0000
+@@ -773,7 +773,9 @@
+               && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
+               && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'close'
+               && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
++            // Completing an assigned task is poster-only; the assigned helper may not complete it.
+             || (resource.data.status == 'assigned' && request.resource.data.status == 'completed'
++              && request.auth.uid == resource.data.posterId
+               && request.resource.data.assignedTo == resource.data.assignedTo
+               && request.resource.data.expiresAt == resource.data.expiresAt
+               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))

@@ -1,0 +1,99 @@
+name: Firestore Rules Review Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'review/market-rules'
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'tests/**'
+      - 'package.json'
+      - 'firebase.json'
+      - '.github/workflows/firestore-rules-test.yml'
+      - 'MARKET_FINAL_SPEC.md'
+      - 'DEPLOY_CHECKLIST.md'
+  pull_request:
+    paths:
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'tests/**'
+      - 'package.json'
+      - 'firebase.json'
+      - '.github/workflows/firestore-rules-test.yml'
+      - 'MARKET_FINAL_SPEC.md'
+      - 'DEPLOY_CHECKLIST.md'
+
+permissions:
+  contents: read
+
+jobs:
+  firestore-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install npm dependencies
+        id: install
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set +e
+          if [[ -f package-lock.json ]]; then
+            npm ci --no-audit --no-fund 2>&1 | tee artifacts/npm-install-output.txt
+          else
+            npm install --no-audit --no-fund 2>&1 | tee artifacts/npm-install-output.txt
+          fi
+          install_status=${PIPESTATUS[0]}
+          if [[ -f package-lock.json ]]; then cp package-lock.json artifacts/package-lock.json; fi
+          echo "INSTALL_EXIT_CODE=${install_status}" | tee -a artifacts/npm-install-output.txt
+          echo "exit_code=${install_status}" >> "$GITHUB_OUTPUT"
+          exit "${install_status}"
+      - name: Run static and emulator suites; retain real console output
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set +e
+          npm run test:static 2>&1 | tee artifacts/test-static-output.txt
+          static_status=${PIPESTATUS[0]}
+          npm run test:emulator 2>&1 | tee artifacts/test-emulator-output.txt
+          emulator_status=${PIPESTATUS[0]}
+          install_status="not-run"
+          if [[ -f artifacts/npm-install-output.txt ]]; then
+            install_status=$(sed -n 's/^INSTALL_EXIT_CODE=//p' artifacts/npm-install-output.txt | tail -n 1)
+          fi
+          {
+            echo "npm install exit code: ${install_status}"
+            echo "test:static exit code: ${static_status}"
+            echo "test:emulator exit code: ${emulator_status}"
+            if [[ "${install_status}" == "0" && "${static_status}" -eq 0 && "${emulator_status}" -eq 0 ]]; then
+              echo 'Overall: PASS'
+            else
+              echo 'Overall: FAIL or BLOCKED; inspect individual logs.'
+            fi
+          } | tee artifacts/test-summary.txt
+          if [[ "${install_status}" != "0" || "${static_status}" -ne 0 || "${emulator_status}" -ne 0 ]]; then exit 1; fi
+      - name: Upload test logs and result artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-rules-test-results
+          if-no-files-found: warn
+          path: |
+            artifacts/**
+            package-lock.json
+            TEST_RESULTS.md
+            TEST_RESULTS_STATIC_CHECK.txt
