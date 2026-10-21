@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/pachattar-design-foundation-phase-1
+      - feature/market-step1
 
 permissions:
   contents: read
