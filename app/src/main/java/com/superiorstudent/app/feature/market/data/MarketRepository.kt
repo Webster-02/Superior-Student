@@ -726,7 +726,7 @@ class MarketRepository(
             require(offer.getString("sellerId") == uid) { "Only the seller can renew this offer." }
             val oldRenewedAt = offer.getTimestamp("renewedAt")
             require(oldRenewedAt != null &&
-                nowMillis() >= oldRenewedAt.toDate().time + MarketRepositoryPolicy.RENEWAL_INTERVAL_MS) {
+                renewedAt.toDate().time >= oldRenewedAt.toDate().time + MarketRepositoryPolicy.RENEWAL_INTERVAL_MS) {
                 "Renewal is available once every 7 days."
             }
             val beforeStatus = offer.getString("status") ?: ""
@@ -904,6 +904,71 @@ class MarketRepository(
             )
             if (stats.exists()) tx.update(statsRef, statsData) else tx.set(statsRef, statsData)
             ratingId
+        }
+    }
+
+    /**
+     * Starts a separate Market conversation for a public offer, without using U2U chat.
+     */
+    fun openOfferConversation(offerId: String): Task<String> {
+        val uid = requireVerifiedUid()
+        require(offerId.isNotBlank()) { "An offer is required." }
+        val offerRef = firestore.collection(OFFERS).document(offerId)
+
+        return offerRef.get().continueWithTask { initialTask ->
+            if (!initialTask.isSuccessful) {
+                throw initialTask.exception ?: IllegalStateException("Could not load this offer.")
+            }
+            val initialOffer = initialTask.result
+            require(initialOffer.exists()) { "This offer no longer exists." }
+            val sellerUid = initialOffer.getString("sellerId")
+                ?: throw IllegalStateException("The offer is missing its seller ID.")
+            require(sellerUid != uid) { "You cannot start a Market chat with yourself." }
+            val participants = listOf(uid, sellerUid).sorted()
+            val conversationId = MarketRepositoryPolicy.conversationId(
+                MarketListingKind.OFFER, offerId, participants[0], participants[1]
+            )
+            val conversationRef = firestore.collection(MARKET_CONVERSATIONS).document(conversationId)
+            val ownProfileRef = marketProfileRef(uid)
+
+            firestore.runTransaction { tx ->
+                val offer = tx.get(offerRef)
+                val existing = tx.get(conversationRef)
+                val ownProfile = tx.get(ownProfileRef)
+                require(offer.exists()) { "This offer no longer exists." }
+                require(offer.getString("sellerId") == sellerUid) { "The offer owner changed. Refresh and try again." }
+                require(offer.getString("status") == MarketOfferStatus.ACTIVE.wireValue &&
+                    offer.getString("moderation") == MarketModerationStatus.OK.wireValue) {
+                    "This offer is no longer available for a new conversation."
+                }
+                val expiresAt = offer.getTimestamp("expiresAt")
+                require(expiresAt != null && nowMillis() < expiresAt.toDate().time) { "This offer has expired." }
+                require(offer.long("reportCount") < REPORTS_TO_HIDE) {
+                    "This offer is temporarily unavailable for review."
+                }
+                val blocked = ownProfile.get("blockedUids") as? List<*> ?: emptyList<Any>()
+                require(sellerUid !in blocked) { "Unblock this user before starting a Market conversation." }
+
+                if (existing.exists()) {
+                    val saved = MarketConverters.conversation(existing)
+                    require(saved != null && saved.kind == MarketListingKind.OFFER &&
+                        saved.listingId == offerId && saved.listingOwnerUid == sellerUid &&
+                        saved.participants == participants) {
+                        "A conflicting Market conversation already exists."
+                    }
+                } else {
+                    tx.set(conversationRef, linkedMapOf<String, Any?>(
+                        "participants" to participants,
+                        "kind" to MarketListingKind.OFFER.wireValue,
+                        "listingId" to offerId,
+                        "listingOwnerUid" to sellerUid,
+                        "offerId" to offerId,
+                        "createdAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ))
+                }
+                conversationId
+            }
         }
     }
 
@@ -1111,7 +1176,7 @@ class MarketRepository(
             updatedReplies.add(mapOf(
                 "from" to "user",
                 "text" to normalizedText,
-                "at" to FieldValue.serverTimestamp()
+                "at" to MarketRepositoryPolicy.safeClientTimestamp(nowMillis())
             ))
             tx.update(ref, mapOf(
                 "replies" to updatedReplies,
@@ -1270,8 +1335,7 @@ class MarketRepository(
                 beforeMod in listOf(MarketModerationStatus.OK.wireValue, MarketModerationStatus.UNDER_REVIEW.wireValue) &&
                 afterMod in listOf(MarketModerationStatus.HIDDEN.wireValue, MarketModerationStatus.REMOVED.wireValue)
             val restore = active &&
-                beforeMod in listOf(MarketModerationStatus.HIDDEN.wireValue, MarketModerationStatus.REMOVED.wireValue,
-                    MarketModerationStatus.UNDER_REVIEW.wireValue) &&
+                beforeMod in listOf(MarketModerationStatus.HIDDEN.wireValue, MarketModerationStatus.REMOVED.wireValue) &&
                 afterMod == MarketModerationStatus.OK.wireValue
             val profileRef = marketProfileRef(ownerUid)
             val ownerProfile = if (deactivate || restore) tx.get(profileRef) else null
@@ -1507,7 +1571,7 @@ class MarketRepository(
             updatedReplies.add(mapOf(
                 "from" to "admin",
                 "text" to normalizedText,
-                "at" to FieldValue.serverTimestamp()
+                "at" to MarketRepositoryPolicy.safeClientTimestamp(nowMillis())
             ))
             tx.update(ticketRef, mapOf(
                 "status" to MarketSupportStatus.REPLIED.wireValue,
@@ -1524,6 +1588,159 @@ class MarketRepository(
         }
     }
 
+    /**
+     * Approves or rejects an appeal. Listing restoration and support resolution
+     * deliberately use two atomic transactions: Firestore rules allow only one
+     * lastMutation kind on the owner's profile per update, so task/offer and support
+     * counter mutations cannot be combined into the same profile update.
+     */
+    fun adminDecideAppeal(
+        ticketId: String,
+        approved: Boolean,
+        reason: String,
+        note: String = ""
+    ): Task<Boolean> {
+        val adminUid = requireVerifiedUid()
+        require(ticketId.isNotBlank()) { "An appeal ticket is required." }
+        require(reason.isNotBlank()) { "Provide the appeal decision reason." }
+        val ticketRef = firestore.collection(SUPPORT).document(ticketId)
+        val restoreLogRef = firestore.collection(ADMIN_LOGS).document()
+
+        val restoreStep = firestore.runTransaction { tx ->
+            val ticket = tx.get(ticketRef)
+            require(ticket.exists()) { "This appeal no longer exists." }
+            require(ticket.getString("type") == MarketSupportType.APPEAL.wireValue) {
+                "This ticket is not an appeal."
+            }
+            require(ticket.getString("status") != MarketSupportStatus.RESOLVED.wireValue) {
+                "This appeal is already resolved."
+            }
+            val userId = ticket.getString("userId")
+                ?: throw IllegalStateException("The appeal is missing its owner.")
+            if (!approved) return@runTransaction false
+            require(ticket.getString("relatedType") == "notice") { "The appeal is not linked to a Market notice." }
+            val noticeId = ticket.getString("relatedId")
+                ?: throw IllegalStateException("The appeal is missing its notice ID.")
+            val noticeRef = firestore.collection(USERS).document(userId).collection(NOTICES).document(noticeId)
+            val notice = tx.get(noticeRef)
+            require(notice.exists()) { "The notice linked to this appeal no longer exists." }
+            val linkedType = notice.getString("relatedType")
+            val linkedId = notice.getString("relatedId")
+            if (linkedId.isNullOrBlank() || linkedType !in listOf("task", "offer")) {
+                return@runTransaction false
+            }
+
+            val isTask = linkedType == "task"
+            val listingRef = if (isTask) firestore.collection(TASKS).document(linkedId)
+                else firestore.collection(OFFERS).document(linkedId)
+            val listing = tx.get(listingRef)
+            require(listing.exists()) { "The listing linked to this appeal no longer exists." }
+            val ownerUid = if (isTask) listing.getString("posterId") else listing.getString("sellerId")
+            require(ownerUid == userId) { "The appealed listing does not belong to the ticket owner." }
+            val beforeMod = listing.getString("moderation") ?: MarketModerationStatus.OK.wireValue
+            if (beforeMod == MarketModerationStatus.OK.wireValue) return@runTransaction false
+            require(beforeMod in listOf(
+                MarketModerationStatus.HIDDEN.wireValue,
+                MarketModerationStatus.REMOVED.wireValue,
+                MarketModerationStatus.UNDER_REVIEW.wireValue
+            )) { "The listing has an unsupported moderation state." }
+            val listingStatus = listing.getString("status") ?: ""
+            if (!isTask && listingStatus != MarketOfferStatus.ACTIVE.wireValue &&
+                beforeMod in listOf(MarketModerationStatus.HIDDEN.wireValue, MarketModerationStatus.REMOVED.wireValue)
+            ) {
+                throw IllegalStateException("Only an active offer can be restored by this appeal operation.")
+            }
+            val counterNeeded = beforeMod in listOf(
+                MarketModerationStatus.HIDDEN.wireValue, MarketModerationStatus.REMOVED.wireValue
+            ) && (if (isTask) listingStatus == MarketTaskStatus.OPEN.wireValue
+                else listingStatus == MarketOfferStatus.ACTIVE.wireValue)
+            val ownerProfileRef = marketProfileRef(userId)
+            val ownerProfile = if (counterNeeded) tx.get(ownerProfileRef) else null
+            val nextCounter = if (counterNeeded) {
+                val field = if (isTask) "openTasks" else "activeOffers"
+                val count = ownerProfile!!.long(field).toInt()
+                val limit = if (isTask) MAX_OPEN_TASKS else MAX_ACTIVE_OFFERS
+                require(count < limit) { "The owner's listing limit prevents restoration." }
+                count + 1
+            } else null
+
+            // All reads are complete before any writes.
+            tx.update(listingRef, mapOf(
+                "moderation" to MarketModerationStatus.OK.wireValue,
+                "updatedAt" to FieldValue.serverTimestamp()
+            ))
+            if (counterNeeded && ownerProfile != null && nextCounter != null) {
+                val field = if (isTask) "openTasks" else "activeOffers"
+                tx.update(ownerProfileRef, mapOf(
+                    field to nextCounter,
+                    "lastMutation" to mutationMap(
+                        if (isTask) "task" else "offer", "moderate_restore", linkedId
+                    ),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+            }
+            tx.set(restoreLogRef, adminLogMap(
+                adminUid, "approve_appeal_restore", linkedType, linkedId, reason, note
+            ))
+            createNoticeInTransaction(
+                tx, userId, null, MarketNoticeType.APPEAL_RESULT,
+                "Appeal approved", "Your appeal was approved and the listing was restored.",
+                relatedType = linkedType, relatedId = linkedId, canAppeal = false
+            )
+            true
+        }
+
+        return restoreStep.continueWithTask { restoreResult ->
+            if (!restoreResult.isSuccessful) {
+                throw restoreResult.exception ?: IllegalStateException("Could not process the appeal.")
+            }
+            val listingRestored = restoreResult.result == true
+            val resolveLogRef = firestore.collection(ADMIN_LOGS).document()
+            firestore.runTransaction { tx ->
+                val ticket = tx.get(ticketRef)
+                require(ticket.exists()) { "This appeal no longer exists." }
+                require(ticket.getString("type") == MarketSupportType.APPEAL.wireValue) {
+                    "This ticket is not an appeal."
+                }
+                require(ticket.getString("status") != MarketSupportStatus.RESOLVED.wireValue) {
+                    "This appeal is already resolved."
+                }
+                val userId = ticket.getString("userId")
+                    ?: throw IllegalStateException("The appeal is missing its owner.")
+                val profileRef = marketProfileRef(userId)
+                val profile = tx.get(profileRef)
+                require(profile.exists()) { "The appeal owner's Market profile is missing." }
+                val count = profile.long("openSupportTickets").toInt()
+                require(count > 0) { "The owner's support ticket counter needs attention." }
+
+                tx.update(ticketRef, mapOf(
+                    "status" to MarketSupportStatus.RESOLVED.wireValue,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+                tx.update(profileRef, mapOf(
+                    "openSupportTickets" to count - 1,
+                    "lastMutation" to mutationMap("support", "resolve", ticketId),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ))
+                tx.set(resolveLogRef, adminLogMap(
+                    adminUid, if (approved) "approve_appeal" else "reject_appeal",
+                    "support", ticketId, reason, note
+                ))
+                createNoticeInTransaction(
+                    tx, userId, null, MarketNoticeType.APPEAL_RESULT,
+                    if (approved) "Appeal approved" else "Appeal rejected",
+                    when {
+                        approved && listingRestored -> "Your appeal was approved and the listing was restored. Reason: " + reason.trim()
+                        approved -> "Your appeal was approved. Reason: " + reason.trim()
+                        else -> "Your appeal was rejected. Reason: " + reason.trim()
+                    },
+                    relatedType = "support", relatedId = ticketId, canAppeal = false
+                )
+                true
+            }
+        }
+    }
+
     fun adminResolveSupportTicket(
         ticketId: String,
         reason: String = "Support ticket resolved",
@@ -1535,16 +1752,19 @@ class MarketRepository(
         return firestore.runTransaction { tx ->
             val ticket = tx.get(ticketRef)
             require(ticket.exists()) { "This support ticket no longer exists." }
-            val userId = ticket.getString("userId")
-                ?: throw IllegalStateException("The support ticket is missing its owner.")
+            require(ticket.getString("type") != MarketSupportType.APPEAL.wireValue) {
+                "Use adminDecideAppeal to approve or reject an appeal."
+            }
             require(ticket.getString("status") != MarketSupportStatus.RESOLVED.wireValue) {
                 "This support ticket is already resolved."
             }
+            val userId = ticket.getString("userId")
+                ?: throw IllegalStateException("The support ticket is missing its owner.")
             val profileRef = marketProfileRef(userId)
             val profile = tx.get(profileRef)
             require(profile.exists()) { "The ticket owner's Market profile is missing." }
             val count = profile.long("openSupportTickets").toInt()
-            require(count > 0) { "The owner's support counter needs attention." }
+            require(count > 0) { "The owner's support ticket counter needs attention." }
 
             tx.update(ticketRef, mapOf(
                 "status" to MarketSupportStatus.RESOLVED.wireValue,
@@ -1557,8 +1777,7 @@ class MarketRepository(
             ))
             tx.set(logRef, adminLogMap(adminUid, "resolve_support_ticket", "support", ticketId, reason, note))
             createNoticeInTransaction(
-                tx, userId, null,
-                if (ticket.getString("type") == MarketSupportType.APPEAL.wireValue) MarketNoticeType.APPEAL_RESULT else MarketNoticeType.SUPPORT_REPLY,
+                tx, userId, null, MarketNoticeType.SUPPORT_REPLY,
                 "Support ticket resolved", reason.ifBlank { "Your support ticket has been resolved." },
                 relatedType = "support", relatedId = ticketId, canAppeal = false
             )
