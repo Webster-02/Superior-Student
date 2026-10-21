@@ -66,3 +66,18 @@
 ## Exact next step
 
 Part 6D is complete and verified. Stop for user review before mapping any additional Market operation; do not broaden integration until the user explicitly approves.
+
+
+## Market UI reference rollout — Step UI-01
+
+- **Scope:** first visual increment for the user-provided `pachattar_market_final(1).zip` reference set.
+- Added a Market entry tile between Nearby share and Your space on the existing U2U Home screen, matching the reference's peach surface, 24dp corner radius, 44dp icon tile, briefcase icon, Poppins title/subtitle, and chevron.
+- Added Paper/Night resource values for the tile colours so the component follows the app's existing appearance selection.
+- This is a **visual-only increment**: the tile is not yet connected to the Market Requests destination, and the rest of the Home screen has not yet been certified pixel-matched. The next screen step should implement the reference Requests screen and wire this entry to it.
+- Reference inventory from the uploaded ZIP: 32 student screens in both light and dark themes, plus 9 light-theme desktop admin pages. The HTML files are static layout references; behavior and Firebase data paths must be wired separately.
+- No existing U2U auth, friend, chat, Nearby-transfer logic, view IDs, Firestore rules/indexes, or Firebase deployment changed.
+- **CI pending:** the Market workflow now includes `feature/market-ui-reference` and monitors the Home layout/resource files.
+
+## Exact next step
+
+Run GitHub Actions for the UI-01 change. Verify clean, unit tests, APK build and artifact upload. Then stop for user review before connecting the Market tile or implementing the next reference screen.
