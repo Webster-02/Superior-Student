@@ -151,7 +151,7 @@ UI-06 is complete and verified. Stop for user review before implementing referen
 
 ## UI-07 — Post a task, step 1 (Details)
 
-- **Status:** implementation committed; CI pending. Run #31 (`39680517633`) found the missing field layout helper, icon visibility scope, invalid second-row layout property, and missing validation color. These focused compile issues are fixed on the current branch; the new run on this corrected source is the authoritative checkpoint.
+- **Status:** complete and verified on commit `04090cc221cd7beeb90fd8189ce79bd267a395c7`. GitHub Actions run #34 (`39680950379`) passed tests, JavaScript validation, clean, APK build, APK verification and artifact upload. The earlier run #31 exposed compile errors; those were fixed before run #34.
 - Inspected `07_post1_light.png`, `07_post1_dark.png`, and both HTML references.
 - Added the reference first step with the 3-part progress line, back/title/subtitle, editable title, exact six categories, optional searchable-course style field, multiline description with a live character counter, and fixed lime Next CTA. Paper/Night palettes and Poppins are used.
 - The Requests screen's Post a task CTA now opens this step. Input validation rejects blank/too-short titles, unknown category values and descriptions outside 20–500 characters; course remains optional. The visible counter shows actual characters from the supplied description (129/500); the ZIP mockup label says 142/500 despite the displayed text containing 129 characters, so code avoids a hard-coded inaccurate count.
@@ -160,4 +160,4 @@ UI-06 is complete and verified. Stop for user review before implementing referen
 
 ## Exact next step
 
-Run UI-07 CI; fix only errors in the first-step screen/tests, verify APK build/artifact upload, then stop for review before screen 08 (Post task step 2).
+UI-07 is complete and verified. Stop for user review before implementing screen 08 (Post task step 2). Do not wire any Firestore write or continue the next screen without explicit approval.
