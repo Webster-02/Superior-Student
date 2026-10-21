@@ -99,7 +99,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), 0, dp(16), dp(96))
         }
-        scroll.addView(list, ScrollView.LayoutParams(-1, -2))
+        scroll.addView(list, FrameLayout.LayoutParams(-1, -2))
         emptyState = makeText("No requests found\nTry another category or search term.",14f,false,color(R.color.market_ink2)).apply {
             gravity = Gravity.CENTER; visibility = View.GONE
             setPadding(dp(24),dp(24),dp(24),dp(24))
@@ -215,7 +215,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             chipMap[name]=chip
         }
         categoryChips=chipMap
-        scroll.addView(chips,HorizontalScrollView.LayoutParams(-2,-1))
+        scroll.addView(chips,FrameLayout.LayoutParams(-2,-1))
         row.addView(scroll,LinearLayout.LayoutParams(0,-1,1f))
         row.addView(iconButton(MarketIcon.FILTER,"Sort requests",38) { showSortDialog() },
             LinearLayout.LayoutParams(dp(38),dp(38)).apply { marginStart=dp(8) })
