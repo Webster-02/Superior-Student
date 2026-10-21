@@ -2,7 +2,7 @@
 
 **Branch:** `feature/market-step1`
 **Base:** `review/market-rules` at `aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3`
-**Build status:** Part 1 complete. Latest green APK and unit-test run: #580 (`39609435088`) on `d586f8af6b195e7759bff6a53d9f4613289d9ba1`. No Market UI or repository write methods are wired yet.
+**Build status:** Parts 1 and 2 complete. Latest green APK and unit-test run: #587 (`39619771793`) on `7c376fed7f68ac37bf06e7fb713a5f0cd3967b69`. No Market UI or query-builder/cache/scoring integration is wired yet.
 **Safety:** Do not modify `firestore.rules`, the protected top-level `tests/`, or `firestore.indexes.json`; do not change existing U2U chat/friend/Nearby logic or existing view IDs. No merge or Firebase deployment.
 
 ## Baseline gate
@@ -32,14 +32,14 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
   - Coverage: typed wire enums and models for Market profile, tasks, proposals, offers, Market conversations/messages, reports, ratings/userStats, notices, support tickets/replies, admin logs and config. Converters validate exact top-level allowed fields, deterministic IDs, conditional conversation IDs, optional field types, and preserve support-reply and limits-map extras where rules permit them. No UI or repository writes were added.
   - Source/schema assertions: 19/19 passed. Six Kotlin unit tests added covering profile key shape, task optional fields, proposal ID, conversation ID, report ID/values, and config weights/extra limits.
   - **GitHub Actions run #580:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39609435088) — JavaScript validation PASS; clean PASS; `gradle testDebugUnitTest` PASS; `gradle assembleDebug` PASS; APK verification PASS; artifact upload PASS. Artifact: `superior-student-debug-apk` (40,696,162 bytes; available until 2026-10-28).
-- **Part 2 — MarketRepository:** implementation committed; validation pending.
-  - Added `MarketRepository.kt` as the single Android Market Firestore write boundary. The implementation groups linked counter/listing changes transactionally, includes deterministic IDs and timestamp policies, and adds Market-specific task/offer/proposal/report/rating/chat/support/admin operations.
-  - Added `MarketRepositoryPolicyTest.kt` for client timestamp safety margin, 14/30-day expiry calculations, deterministic conversation/report/rating/appeal IDs, and initials.
-  - Initial validation run #582 (`39613624938`) failed in `MarketRepository.kt` because the Android Firestore transaction API does not support query reads. Corrected suspension to query candidate listings first, then re-read their document references inside the transaction. Run #583 (`39614293580`) passed unit tests, APK build, verification, and artifact upload for that fix.
-  - Follow-up before final validation: added offer-based Market conversation creation; fixed support reply timestamps (server transforms inside reply arrays are avoided); fixed renewal-window boundary calculations; added an appeal decision method that separates listing restoration and support-ticket counter mutations into two rule-compatible atomic transactions. This split is necessary because a profile update accepts one operation-specific `lastMutation` shape at a time.
-  - Additional rule review found missing-document reads that are not permitted to ordinary users for deterministic reports/chats/appeal tickets, and a private-profile read in user reports. Removed those unnecessary reads; deterministic report/ticket writes remain protected by existing create/update rules and the appeal notice's single-use `appealed` transition. User-report writes now rely on rules to verify the target Market profile exists, without reading another user's private profile.
-  - Run #584 (`39618256123`) failed compilation because appeal notice `linkedType`/`linkedId` were nullable at the audit-log call; explicit non-null branches were added.
-  - Run #586 (`39619364641`) found a nested `continueWithTask` branch returning a raw `String` instead of `Task<String>` in offer-chat race recovery. It now returns `Tasks.forResult(conversationId)`. Current code remains pending a fresh green Actions run.
+- **Part 2 — MarketRepository:** complete.
+  - Main implementation commit: `666030fac6d21e97baab70fb4396bae0040a274a`; subsequent reviewed fixes are `3b331433e36ef24351bc2d9b3b9f1a66f310e1ba`, `bdc2ecec5ddf63ec57feec25dc738fc392804955`, `cf6e375f4b195bd8c12a0359e32c818817cf05ac`, `8ac056a4300223345b2c790b7e12413ddfe3f9de`, and final code commit `7c376fed7f68ac37bf06e7fb713a5f0cd3967b69`.
+  - Added `MarketRepository.kt` as the sole Android Market Firestore write boundary, plus `MarketRepositoryPolicyTest.kt`. Methods cover Market profile setup/preferences/blocking, task and offer create/edit/lifecycle, proposals and poster decisions, atomic accept + deterministic task conversation, offer conversations, reports and rolling counters, ratings and `userStats`, text-only Market messages, notice read state, support tickets/replies/appeals, admin report/listing/user/settings/support actions, audit logs and notices.
+  - Cross-document mutations are grouped into Firestore transactions with operation-specific `lastMutation` shapes and linked counter changes. Task/offer creation and renewal use the 30-second client timestamp safety margin and exact 14/30-day expiry. Posting limits and deterministic report/appeal/rating IDs are checked locally while Firestore rules remain authoritative.
+  - Appeal listing restoration and support-ticket resolution are two separate atomic transactions when a listing counter must also change, because Firestore rules accept only one operation-specific `lastMutation` shape for a profile update. Each phase includes its own audit record and affected-user notice.
+  - Validation history: #582 failed because the client transaction API cannot read queries; fixed and tested query candidates by document reference. #584 and #585 found nullable appeal fields; #586 identified a nested `continueWithTask` return type. Those were fixed in the final code commit. Run #587 on that final code passed all steps.
+  - **GitHub Actions run #587:** [build and APK artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39619771793) — embedded JavaScript validation PASS; clean PASS; `gradle testDebugUnitTest` PASS; `gradle assembleDebug` PASS; APK verification PASS; artifact upload PASS.
+  - Artifact: `superior-student-debug-apk`, 40,759,949 bytes, SHA-256 `d81b5e8ef60a0999742a263cebc31e2e9c4877a879d51a0670906422bb0b5db7`, expires 2026-10-28. No UI, protected rules/tests/indexes, Firebase deployment or merge changes were made.
 - **Part 3 — query builders:** not started.
 - **Part 4 — config and persistent 6-hour cache:** not started.
 - **Part 5 — pure ranking scorer and unit tests:** not started.
@@ -47,4 +47,4 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
 
 ## Exact next step
 
-Finish Part 2 validation: confirm the APK build and unit tests pass, review any compiler/test failures, then record the successful Actions run and APK artifact. Part 3 query builders must wait until the user says `continue`.
+Part 2 is complete. The next step, Part 3, adds rule-constrained Market query builders for public feeds, own tasks/offers, Applied proposals, chats, reports, notices and support. Do not begin Part 3 until the user says `continue`.
