@@ -9,6 +9,7 @@ on:
       - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketRankingScorer.kt'
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketRankingScorerTest.kt'
       - '.github/workflows/market-ranking-check.yml'
+      - 'BUILD_PROGRESS.md'
 
 permissions:
   contents: read
