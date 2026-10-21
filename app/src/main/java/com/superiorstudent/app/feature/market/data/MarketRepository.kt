@@ -977,7 +977,7 @@ class MarketRepository(
                                     requireOfferConversationMatches(
                                         retryRead.result, offerId, sellerUid, participants
                                     )
-                                    conversationId
+                                    Tasks.forResult(conversationId)
                                 } else {
                                     throw createTask.exception
                                         ?: IllegalStateException("Could not create the Market conversation.")
