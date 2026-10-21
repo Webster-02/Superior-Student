@@ -96,7 +96,7 @@ Stop for user review. After explicit approval, implement student reference scree
 
 ## UI-03 — Offers reference screen
 
-- **Status:** implementation committed; CI pending. Kotlin Activity, pure UI policy/fixtures, and icon helpers are separated into their own source files before final build verification.
+- **Status:** complete and verified on commit `deee30156e387519a95fba6d2c2d33b0252d8c73`. GitHub Actions run #23 (`39674447312`) passed unit tests, JavaScript validation, clean, APK build, APK verification, and artifact upload.
 - Added a dedicated native Offers screen using the same Market header and Paper/Night tokens; the existing Requests/Offers segment now opens this screen.
 - Matches the reference's All / Notes / Tutoring / Design / Typing chips, seller avatar/name, star rating + count, verified-student label, pastel category chip, title/description, price or Swap, dark Message button and lime Post an offer CTA.
 - Uses the reference ZIP's three listing samples as visual fixtures only. Live Firestore offers, authoritative profile verification/ratings, actual chat and offer-posting destinations remain later steps.
@@ -104,4 +104,4 @@ Stop for user review. After explicit approval, implement student reference scree
 
 ## Exact next step
 
-Run the Market CI workflow for UI-03. Fix only any errors in the Offers screen, then verify unit tests and APK upload before stopping for user review.
+UI-03 is complete. Stop for user review before implementing reference screen 04 Menu or connecting live Firestore offers. Do not expand into the next screen until the user explicitly approves.
