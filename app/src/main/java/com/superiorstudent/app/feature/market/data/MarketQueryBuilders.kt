@@ -98,6 +98,132 @@ object MarketQueryBuilders {
         )
     }
 
+    /**
+     * Proposals under one task. Firestore Rules scope this nested collection to the task poster.
+     */
+    fun taskProposals(
+        firestore: FirebaseFirestore,
+        taskId: String,
+        status: MarketProposalStatus? = null,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): Query = execute(
+        firestore,
+        taskProposalsPlan(taskId = taskId, status = status, pageSize = pageSize)
+    )
+
+    internal fun taskProposalsPlan(
+        taskId: String,
+        status: MarketProposalStatus? = null,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): MarketQueryPlan {
+        requireValidDocumentId(taskId, "task")
+        val filters = buildList {
+            status?.let { add(equals("status", it.wireValue)) }
+        }
+        return MarketQueryPlan(
+            collection = "proposals",
+            filters = filters,
+            ordering = listOf(descending("createdAt")),
+            limit = validatedPageSize(pageSize),
+            collectionPath = "tasks/$taskId/proposals"
+        )
+    }
+
+    /** Reports filed by this user only; reporterId is mandatory under Firestore Rules. */
+    fun myReports(
+        firestore: FirebaseFirestore,
+        uid: String,
+        targetType: MarketReportTargetType? = null,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): Query = execute(
+        firestore,
+        myReportsPlan(uid = uid, targetType = targetType, pageSize = pageSize)
+    )
+
+    internal fun myReportsPlan(
+        uid: String,
+        targetType: MarketReportTargetType? = null,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): MarketQueryPlan {
+        requireValidUid(uid)
+        val filters = buildList {
+            add(equals("reporterId", uid))
+            targetType?.let { add(equals("targetType", it.wireValue)) }
+        }
+        return MarketQueryPlan(
+            collection = "reports",
+            filters = filters,
+            ordering = listOf(descending("createdAt")),
+            limit = validatedPageSize(pageSize)
+        )
+    }
+
+    /** Notices are read only from this user's own /users/{uid}/notices subcollection. */
+    fun myNotices(
+        firestore: FirebaseFirestore,
+        uid: String,
+        read: Boolean? = null,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): Query = execute(
+        firestore,
+        myNoticesPlan(uid = uid, read = read, pageSize = pageSize)
+    )
+
+    internal fun myNoticesPlan(
+        uid: String,
+        read: Boolean? = null,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): MarketQueryPlan {
+        requireValidUid(uid)
+        val filters = buildList {
+            read?.let { add(MarketQueryFilter("read", MarketQueryOperator.EQUALS, it)) }
+        }
+        return MarketQueryPlan(
+            collection = "notices",
+            filters = filters,
+            ordering = listOf(descending("createdAt")),
+            limit = validatedPageSize(pageSize),
+            collectionPath = "users/$uid/notices"
+        )
+    }
+
+    /**
+     * Support inbox scoped to one user. Status is required to match the
+     * indexed userId/status/updatedAt-descending query shape.
+     */
+    fun mySupportTickets(
+        firestore: FirebaseFirestore,
+        uid: String,
+        status: MarketSupportStatus,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): Query = execute(
+        firestore,
+        mySupportTicketsPlan(uid = uid, status = status, pageSize = pageSize)
+    )
+
+    internal fun mySupportTicketsPlan(
+        uid: String,
+        status: MarketSupportStatus,
+        pageSize: Int = DEFAULT_PAGE_SIZE
+    ): MarketQueryPlan {
+        requireValidUid(uid)
+        return MarketQueryPlan(
+            collection = "support",
+            filters = listOf(
+                equals("userId", uid),
+                equals("status", status.wireValue)
+            ),
+            ordering = listOf(descending("updatedAt")),
+            limit = validatedPageSize(pageSize)
+        )
+    }
+
+    private fun requireValidDocumentId(value: String, label: String) {
+        require(value.isNotBlank() && value.length <= 128 && !value.contains('/')) {
+            "A valid $label document ID is required for this Market query."
+        }
+    }
+
     internal fun appliedProposalsPlan(uid: String): MarketQueryPlan {
         requireValidUid(uid)
         return MarketQueryPlan(
@@ -192,10 +318,13 @@ object MarketQueryBuilders {
     }
 
     private fun execute(firestore: FirebaseFirestore, plan: MarketQueryPlan): Query {
-        var query: Query = if (plan.collectionGroup) {
-            firestore.collectionGroup(plan.collection)
-        } else {
-            firestore.collection(plan.collection)
+        require(!(plan.collectionGroup && plan.collectionPath != null)) {
+            "A Market query cannot target a collection group and a nested collection path simultaneously."
+        }
+        var query: Query = when {
+            plan.collectionGroup -> firestore.collectionGroup(plan.collection)
+            plan.collectionPath != null -> firestore.collection(plan.collectionPath)
+            else -> firestore.collection(plan.collection)
         }
         plan.filters.forEach { filter ->
             query = when (filter.operator) {
@@ -255,5 +384,7 @@ internal data class MarketQueryPlan(
     val filters: List<MarketQueryFilter>,
     val ordering: List<MarketQueryOrder>,
     val limit: Int,
-    val collectionGroup: Boolean = false
+    val collectionGroup: Boolean = false,
+    /** Explicit path for nested collections such as user notices and task proposals. */
+    val collectionPath: String? = null
 )

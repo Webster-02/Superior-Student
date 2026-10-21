@@ -2,7 +2,7 @@
 
 **Branch:** `feature/market-step1`
 **Base:** `review/market-rules` at `aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3`
-**Build status:** Parts 1, 2, and Part 3A–3C (student feeds, Applied proposals, and Market Chats queries) complete. Latest green APK and unit-test run #593 (`39624509141`) on `50a332a93911c2674f5867c52d76e470a294753a`. No Market UI or later query-builder/cache/scoring integration is wired yet.
+**Build status:** Parts 1 and 2, and Part 3 query builders are implemented. Final Part 3 CI validation is pending. No Market UI or cache/scoring integration is wired yet.
 **Safety:** Do not modify `firestore.rules`, the protected top-level `tests/`, or `firestore.indexes.json`; do not change existing U2U chat/friend/Nearby logic or existing view IDs. No merge or Firebase deployment.
 
 ## Baseline gate
@@ -47,10 +47,11 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
   - **GitHub Actions run #591:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39623231607) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,763,189 bytes, SHA-256 `ffe7924435591b273489bcc66bd6859272843eb24499df8b017924b310ed0e73`, expires 2026-10-28.
   - **Slice 3C — Market Chats query:** complete. Added `marketChats(firestore, uid)` using the `marketConversations` collection, mandatory `participants ARRAY_CONTAINS uid`, `updatedAt DESC`, and the default page-size limit of 20. Added focused tests for collection scope, array-contains field/value, ordering, limit, and blank-UID rejection. Caller must pass the currently authenticated verified user's UID.
   - **GitHub Actions run #593:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39624509141) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,763,170 bytes, SHA-256 `18ea3bf13c9cff5195536217030baa66d1b895def1f0664ada7cc8b32a32915b`, expires 2026-10-28.
+  - **Remaining Part 3 queries:** added parent-task proposal queries (nested under `tasks/{taskId}/proposals`, optional indexed status filter, newest created first); My Reports (mandatory `reporterId == uid`, optional target type); My Notices (only `users/{uid}/notices`, optional read-state filter); and My Support Tickets (mandatory `userId == uid` plus required status to match the `userId/status/updatedAt DESC` index). The shared executor now supports explicit nested collection paths as well as base collections and collection groups. Added focused tests for each query shape, owner scoping, indexed filters, ordering, limits, and invalid identifiers.
 - **Part 4 — config and persistent 6-hour cache:** not started.
 - **Part 5 — pure ranking scorer and unit tests:** not started.
 - **Part 6 — Firestore error mapping:** not started.
 
 ## Exact next step
 
-Slice 3C is complete and its build, tests and APK verification passed. The next small slice is 3D: the My Reports query, scoped to the current user's `reporterId` with newest-first ordering and focused tests. Do not start slice 3D until the user says `continue`.
+Part 3 query builders are now implemented as one bounded read-only data-layer step. Validate the final CI run before starting Part 4 (Market config and persistent six-hour cache). Do not start Part 4 until the user approves.

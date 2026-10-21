@@ -177,4 +177,110 @@ class MarketQueryBuildersTest {
             MarketQueryBuilders.marketChatsPlan(" ")
         }
     }
+
+    @Test
+    fun taskProposalsStayWithinParentTaskAndUseOptionalStatusFilter() {
+        val plan = MarketQueryBuilders.taskProposalsPlan(
+            taskId = "task-123",
+            status = MarketProposalStatus.SHORTLISTED,
+            pageSize = 15
+        )
+
+        assertEquals("proposals", plan.collection)
+        assertEquals("tasks/task-123/proposals", plan.collectionPath)
+        assertFalse(plan.collectionGroup)
+        assertEquals(
+            listOf(MarketQueryFilter("status", MarketQueryOperator.EQUALS, "shortlisted")),
+            plan.filters
+        )
+        assertEquals(listOf(MarketQueryOrder("createdAt", descending = true)), plan.ordering)
+        assertEquals(15, plan.limit)
+    }
+
+    @Test
+    fun taskProposalQueryRejectsInvalidParentTaskId() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MarketQueryBuilders.taskProposalsPlan("../task")
+        }
+    }
+
+    @Test
+    fun myReportsAlwaysScopesReporterAndSupportsIndexedTargetType() {
+        val uid = "student-reporter"
+        val plan = MarketQueryBuilders.myReportsPlan(uid, MarketReportTargetType.OFFER)
+
+        assertEquals("reports", plan.collection)
+        assertEquals(
+            listOf(
+                MarketQueryFilter("reporterId", MarketQueryOperator.EQUALS, uid),
+                MarketQueryFilter("targetType", MarketQueryOperator.EQUALS, "offer")
+            ),
+            plan.filters
+        )
+        assertEquals(listOf(MarketQueryOrder("createdAt", descending = true)), plan.ordering)
+        assertEquals(20, plan.limit)
+    }
+
+    @Test
+    fun myReportsRejectsBlankUid() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MarketQueryBuilders.myReportsPlan(" ")
+        }
+    }
+
+    @Test
+    fun myNoticesUseOnlyOwnSubcollectionAndFilterReadWhenRequested() {
+        val uid = "student-notices"
+        val plan = MarketQueryBuilders.myNoticesPlan(uid, read = false)
+
+        assertEquals("notices", plan.collection)
+        assertEquals("users/$uid/notices", plan.collectionPath)
+        assertFalse(plan.collectionGroup)
+        assertEquals(
+            listOf(MarketQueryFilter("read", MarketQueryOperator.EQUALS, false)),
+            plan.filters
+        )
+        assertEquals(listOf(MarketQueryOrder("createdAt", descending = true)), plan.ordering)
+        assertEquals(20, plan.limit)
+    }
+
+    @Test
+    fun myNoticesCanListAllReadStatesWithoutLeavingOwnPath() {
+        val uid = "student-notices"
+        val plan = MarketQueryBuilders.myNoticesPlan(uid)
+
+        assertEquals("users/$uid/notices", plan.collectionPath)
+        assertTrue(plan.filters.isEmpty())
+        assertEquals(listOf(MarketQueryOrder("createdAt", descending = true)), plan.ordering)
+    }
+
+    @Test
+    fun mySupportTicketsAlwaysUseOwnUidAndRequiredIndexedStatus() {
+        val uid = "student-support"
+        val plan = MarketQueryBuilders.mySupportTicketsPlan(uid, MarketSupportStatus.REPLIED)
+
+        assertEquals("support", plan.collection)
+        assertEquals(
+            listOf(
+                MarketQueryFilter("userId", MarketQueryOperator.EQUALS, uid),
+                MarketQueryFilter("status", MarketQueryOperator.EQUALS, "replied")
+            ),
+            plan.filters
+        )
+        assertEquals(listOf(MarketQueryOrder("updatedAt", descending = true)), plan.ordering)
+        assertEquals(20, plan.limit)
+    }
+
+    @Test
+    fun userScopedQueriesRejectBlankUid() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MarketQueryBuilders.myReportsPlan("")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MarketQueryBuilders.myNoticesPlan(" ")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MarketQueryBuilders.mySupportTicketsPlan("", MarketSupportStatus.OPEN)
+        }
+    }
 }
