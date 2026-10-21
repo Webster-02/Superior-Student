@@ -173,6 +173,16 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 - Added six focused JVM tests for reference values, budget/amount constraints, optional amount modes, date checks, and skill limits.
 - No Firestore writes, rules/index edits, Firebase deployment, merge or existing chat/Nearby changes.
 
+
+## UI-09 — Post a task, step 3 (Review)
+
+- **Status:** implementation and CI verification pending.
+- Inspected the exact `09_post3_light.png`, `09_post3_dark.png`, and matching light/dark `09_post3.html` reference files from `pachattar_market_final(1).zip`.
+- Added the final review step using existing Market Paper/Night semantic colours, Poppins typography, three active progress segments, task preview card, budget/deadline/proposal summary, posting-rules acknowledgement, and fixed Back / Post task actions.
+- Step 2 passes the draft into Step 3 through internal Intent extras. Back from Step 3 returns to the still-open Step 2 activity, preserving entered values.
+- Post task revalidates prior-step fields and acknowledgement locally, then shows a clearly preview-only message. **No task is published or written to Firestore.**
+- Changes are limited to the Step 2 → Step 3 flow, new Step 3 files, manifest registration, focused workflow path filters, and this progress record. No rules/indexes, protected top-level tests, Firebase deployment, merge, or unrelated U2U features changed.
+
 ## Exact next step
 
-UI-08 is complete and verified. Stop for user review before implementing screen 09 (Post task step 3). Do not add a live task save or continue the next screen without explicit approval.
+UI-09 is the stopping point. Wait for explicit user instruction `continue` before working on any other screen.

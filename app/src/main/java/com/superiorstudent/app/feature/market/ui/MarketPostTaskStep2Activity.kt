@@ -377,7 +377,16 @@ class MarketPostTaskStep2Activity : AppCompatActivity() {
             toast("Please check the highlighted fields.")
             return
         }
-        toast("Budget and deadline look valid. Step 3 will be added in the next screen step.")
+        startActivity(Intent(this@MarketPostTaskStep2Activity, MarketPostTaskStep3Activity::class.java).apply {
+            putExtra(EXTRA_TITLE, intent.getStringExtra(EXTRA_TITLE).orEmpty())
+            putExtra(EXTRA_CATEGORY, intent.getStringExtra(EXTRA_CATEGORY).orEmpty())
+            putExtra(EXTRA_COURSE, intent.getStringExtra(EXTRA_COURSE).orEmpty())
+            putExtra(EXTRA_DESCRIPTION, intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty())
+            putExtra(EXTRA_BUDGET_TYPE, selectedBudget)
+            putExtra(EXTRA_AMOUNT, amountInput.text?.toString().orEmpty())
+            putExtra(EXTRA_DEADLINE_ISO, SimpleDateFormat("yyyy-MM-dd", Locale.US).format(selectedDeadline.time))
+            putStringArrayListExtra(EXTRA_SKILLS, ArrayList(selectedSkills))
+        })
     }
 
     private fun buildFooter(): View {
@@ -494,5 +503,9 @@ class MarketPostTaskStep2Activity : AppCompatActivity() {
         const val EXTRA_CATEGORY = "market.post_task.category"
         const val EXTRA_COURSE = "market.post_task.course"
         const val EXTRA_DESCRIPTION = "market.post_task.description"
+        const val EXTRA_BUDGET_TYPE = "market.post_task.budget_type"
+        const val EXTRA_AMOUNT = "market.post_task.amount"
+        const val EXTRA_DEADLINE_ISO = "market.post_task.deadline_iso"
+        const val EXTRA_SKILLS = "market.post_task.skills"
     }
 }
