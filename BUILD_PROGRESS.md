@@ -2,7 +2,7 @@
 
 **Branch:** `feature/market-step1`
 **Base:** `review/market-rules` at `aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3`
-**Build status:** Parts 1, 2 and Part 3A complete. Part 3B (Applied proposals query) is implemented and committed; CI validation pending. Latest previously green APK/unit-test run: `39622343191` on `59335843c9169e5a48a596ef895b61953f71c23b`. No Market UI or later query-builder/cache/scoring integration is wired yet.
+**Build status:** Parts 1, 2, Part 3A, and Part 3B (Applied proposals collection-group query) complete. Latest green APK and unit-test run #591 (`39623231607`) on `51d7b5eab9aff6d52531a320905de4914983e5c2`. No Market UI or later query-builder/cache/scoring integration is wired yet.
 **Safety:** Do not modify `firestore.rules`, the protected top-level `tests/`, or `firestore.indexes.json`; do not change existing U2U chat/friend/Nearby logic or existing view IDs. No merge or Firebase deployment.
 
 ## Baseline gate
@@ -43,11 +43,12 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
 - **Part 3 — query builders:** in progress; split into small reviewable slices.
   - **Slice 3A — student feed and own-list query builders:** complete. Added `MarketQueryBuilders.kt` with public task and offer feeds (mandatory public moderation/status filters), and owner-scoped My Tasks/My Offers queries; optional category/status filtering and index-map-aligned sorting; page size is bounded to 1–50 (default 20). Added `MarketQueryBuildersTest.kt` for query-plan contract, mandatory filters, ordering, owner scoping, and page-size/UID validation. No UI calls these builders yet.
   - **GitHub Actions run `39621871146`:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39621871146) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,763,087 bytes, SHA-256 `6733096c078f975769f77c7e976339b510525587d6a2f08cae32564af272bc45`, expires 2026-10-28.
-  - **Slice 3B — Applied proposals query:** implementation committed; CI validation pending. Added `appliedProposals(firestore, uid)` using `collectionGroup("proposals")`, mandatory `proposerId == uid`, `updatedAt DESC`, and a fixed 20-result limit. Updated the shared query executor to use collection-group queries only when the plan explicitly marks `collectionGroup = true`. Added tests for exact filter, ordering, limit, and blank-UID rejection.
+  - **Slice 3B — Applied proposals query:** complete. Added `appliedProposals(firestore, uid)` using `collectionGroup("proposals")`, mandatory `proposerId == uid`, `updatedAt DESC`, and a fixed 20-result limit. Updated the shared query executor to use collection-group queries only when the plan explicitly marks `collectionGroup = true`. Added tests for exact filter, ordering, limit, and blank-UID rejection.
+  - **GitHub Actions run #591:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39623231607) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,763,189 bytes, SHA-256 `ffe7924435591b273489bcc66bd6859272843eb24499df8b017924b310ed0e73`, expires 2026-10-28.
 - **Part 4 — config and persistent 6-hour cache:** not started.
 - **Part 5 — pure ranking scorer and unit tests:** not started.
 - **Part 6 — Firestore error mapping:** not started.
 
 ## Exact next step
 
-Slice 3B implementation is committed; CI validation is pending. After the build is green and the user reviews it, the next small slice is 3C: the Market Chats list query (`participants array-contains current UID`, `updatedAt DESC`) with its own tests. Do not start slice 3C until the user says `continue`.
+Slice 3B is complete and its build, tests and APK verification passed. The next small slice is 3C: the Market Chats list query (`participants array-contains current UID`, `updatedAt DESC`) with focused tests. Do not start slice 3C until the user says `continue`.
