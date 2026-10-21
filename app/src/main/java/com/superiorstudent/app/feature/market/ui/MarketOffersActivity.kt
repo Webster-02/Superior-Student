@@ -1,6 +1,7 @@
 package com.superiorstudent.app.feature.market.ui
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -286,7 +287,13 @@ class MarketOffersActivity : AppCompatActivity() {
     }
 
     private fun showMenu(anchor: View) {
-        MarketMenuSheet.show(this) { item -> toast(item.feedbackMessage) }
+        MarketMenuSheet.show(this) { item ->
+            if (item.label == "My tasks") {
+                startActivity(Intent(this, MarketTaskPosterDetailActivity::class.java))
+            } else {
+                toast(item.feedbackMessage)
+            }
+        }
     }
 
     private fun showSortDialog() {
