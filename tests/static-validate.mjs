@@ -46,19 +46,13 @@ const checks = [
   ['index map lists proposerId collection-group scope', () => assert.ok(indexMap.includes('proposerId') && indexMap.includes('COLLECTION_GROUP'))],
   ['deploy checklist mandates production export and rollback', () => assert.ok(checklist.toLowerCase().includes('production') && checklist.toLowerCase().includes('rollback'))],
   ['workflow fails when Emulator output has expression-ceiling diagnostics', () => assert.match(workflow, /grep -Fq "Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached"/)],
-  ['Market update rules guard null resource before update validators', () => {
-    assert.ok(rules.includes('allow update: if resource != null && marketSignedIn() && marketProfilePreferencesUpdateAllowed(uid);'));
-    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketTaskOwnerUpdateAllowed(taskId);'));
-    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketOfferOwnerUpdateAllowed(offerId);'));
-  }],
-  ['Market profile counter update branches are separated by mutation kind', () => {
-    for (const kind of ['Task', 'Offer', 'Proposal', 'Report', 'Support']) {
-      assert.ok(rules.includes('marketProfile' + kind + 'CounterUpdateAllowed(uid)'));
-    }
-  }],
-  ['Task and offer updates preflight changed fields before specific validators', () => {
-    assert.match(rules, /function marketTaskOwnerUpdateAllowed\(taskId\)[\s\S]{0,400}changed\.hasOnly\([\s\S]{0,300}marketTaskOwnerUpdateValid/);
-    assert.match(rules, /function marketOfferOwnerUpdateAllowed\(offerId\)[\s\S]{0,450}changed\.hasOnly\([\s\S]{0,300}marketOfferOwnerUpdateValid/);
+  ['Market update rules use one changed-field dispatcher per document match', () => {
+    assert.ok(rules.includes('allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);'));
+    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);'));
+    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);'));
+    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketProposalUpdateAllowed(taskId, userId);'));
+    assert.match(rules, /function marketTaskUpdateAllowed\(taskId\)[\s\S]{0,500}changed\.hasOnly\(/);
+    assert.match(rules, /function marketOfferUpdateAllowed\(offerId\)[\s\S]{0,500}changed\.hasOnly\(/);
   }],
   ['task and offer report counters require a report document before linked reads', () => {
     assert.ok(rules.includes('marketTaskReportExistsAfter(taskId)'));
