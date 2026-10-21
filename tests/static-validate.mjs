@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 const rules = fs.readFileSync('firestore.rules', 'utf8');
 const base = fs.readFileSync('firestore.base.rules', 'utf8');
@@ -9,6 +10,8 @@ const spec = fs.readFileSync('MARKET_FINAL_SPEC.md', 'utf8');
 const indexMap = fs.readFileSync('INDEX_QUERY_MAP.md', 'utf8');
 const checklist = fs.readFileSync('DEPLOY_CHECKLIST.md', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/firestore-rules-test.yml', 'utf8');
+const addendumBytes = fs.readFileSync('MARKET_SPEC_ADDENDUM_RULES_PHASE.md');
+const addendum = addendumBytes.toString('utf8');
 
 const checks = [
   ['Firestore Rules version 2', () => assert.match(rules, /rules_version\s*=\s*'2';/)],
@@ -45,7 +48,19 @@ const checks = [
   ['rank weights have non-negative rule checks', () => assert.match(rules, /rankWeights\.newness is number && request\.resource\.data\.rankWeights\.newness >= 0[\s\S]*rankWeights\.rating is number && request\.resource\.data\.rankWeights\.rating >= 0[\s\S]*rankWeights\.match is number && request\.resource\.data\.rankWeights\.match >= 0/)],
   ['index map lists proposerId collection-group scope', () => assert.ok(indexMap.includes('proposerId') && indexMap.includes('COLLECTION_GROUP'))],
   ['deploy checklist mandates production export and rollback', () => assert.ok(checklist.toLowerCase().includes('production') && checklist.toLowerCase().includes('rollback'))],
-  ['workflow fails when Emulator output has expression-ceiling diagnostics', () => assert.match(workflow, /grep -Fq "Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached"/)],
+  ['workflow counts, reports and fails on expression-ceiling diagnostics', () => {
+    assert.ok(workflow.includes('diagnostic_count=$(grep -Fc "${expression_message}" artifacts/test-emulator-output.txt || true)'));
+    assert.ok(workflow.includes('expression_ceiling_status=0'));
+    assert.ok(workflow.includes('expression_ceiling_status=1'));
+    assert.ok(workflow.includes('echo "expression-ceiling diagnostic count: ${diagnostic_count}"'));
+    assert.ok(workflow.includes('echo "expression-ceiling guard exit code: ${expression_ceiling_status}"'));
+    assert.ok(workflow.includes('|| "${expression_ceiling_status}" -ne 0'));
+  }],
+  ['original Market rules addendum is byte-identical to the supplied reference', () => {
+    assert.equal(createHash('sha256').update(addendumBytes).digest('hex'), 'ff60be0137604b27f93fe8f12ee3e5f0dcbcf7a38e250b3351bdea2a1da4c899');
+    assert.ok(addendum.startsWith('# Addendum to MARKET_FINAL_SPEC.md'));
+    assert.ok(addendum.includes('## 9. Not production-ready yet'));
+  }],
   ['Market update rules use one changed-field dispatcher per document match', () => {
     assert.ok(rules.includes('allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);'));
     assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);'));
