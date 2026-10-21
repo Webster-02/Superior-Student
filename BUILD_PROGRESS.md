@@ -32,7 +32,10 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
   - Coverage: typed wire enums and models for Market profile, tasks, proposals, offers, Market conversations/messages, reports, ratings/userStats, notices, support tickets/replies, admin logs and config. Converters validate exact top-level allowed fields, deterministic IDs, conditional conversation IDs, optional field types, and preserve support-reply and limits-map extras where rules permit them. No UI or repository writes were added.
   - Source/schema assertions: 19/19 passed. Six Kotlin unit tests added covering profile key shape, task optional fields, proposal ID, conversation ID, report ID/values, and config weights/extra limits.
   - **GitHub Actions run #580:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39609435088) — JavaScript validation PASS; clean PASS; `gradle testDebugUnitTest` PASS; `gradle assembleDebug` PASS; APK verification PASS; artifact upload PASS. Artifact: `superior-student-debug-apk` (40,696,162 bytes; available until 2026-10-28).
-- **Part 2 — MarketRepository:** not started.
+- **Part 2 — MarketRepository:** implementation committed; validation pending.
+  - Added `MarketRepository.kt` as the single Android Market Firestore write boundary. The implementation groups linked counter/listing changes transactionally, includes deterministic IDs and timestamp policies, and adds Market-specific task/offer/proposal/report/rating/chat/support/admin operations.
+  - Added `MarketRepositoryPolicyTest.kt` for client timestamp safety margin, 14/30-day expiry calculations, deterministic conversation/report/rating/appeal IDs, and initials.
+  - Current commit is intentionally marked pending until GitHub Actions unit tests and APK build pass.
 - **Part 3 — query builders:** not started.
 - **Part 4 — config and persistent 6-hour cache:** not started.
 - **Part 5 — pure ranking scorer and unit tests:** not started.
@@ -40,4 +43,4 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
 
 ## Exact next step
 
-Part 2: add one `MarketRepository` as the only location allowed to write Market documents. Map every operation to the rule-specific mutation shape, same-batch counter changes, timestamps, deterministic IDs, and required linked documents. Do not begin Part 2 until the user says `continue`.
+Finish Part 2 validation: confirm the APK build and unit tests pass, review any compiler/test failures, then record the successful Actions run and APK artifact. Part 3 query builders must wait until the user says `continue`.
