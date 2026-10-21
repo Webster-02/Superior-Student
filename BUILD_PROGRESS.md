@@ -165,7 +165,7 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 
 ## UI-08 — Post a task, step 2 (Budget and time)
 
-- **Status:** implementation committed; CI pending.
+- **Status:** implementation committed; CI pending. Initial run #36 (`39682666980`) found one Android `EditText` setter typo (`singleLine`); replaced it with `setSingleLine(true)`. Re-run is the authoritative validation.
 - Inspected `08_post2_light.png`, `08_post2_dark.png` and the light/dark HTML references.
 - Added the second-step layout with two completed progress segments, Free help / Fixed / Negotiable choices, an amount field with PKR prefix, a date picker that defaults to the reference date (24 Oct 2026 while it is not in the past), selectable skill chips, the money-safety notice and fixed Back / Next actions.
 - Step 1's validated Next now opens this screen and passes title, category, optional course and description as intent extras; the Back action returns to the still-open Step 1 form. No Step 3 navigation or task save is performed yet.

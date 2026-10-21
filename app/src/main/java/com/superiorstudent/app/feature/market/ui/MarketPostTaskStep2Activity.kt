@@ -110,7 +110,7 @@ class MarketPostTaskStep2Activity : AppCompatActivity() {
         amountInput = EditText(this).apply {
             setText("1,500")
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             keyListener = DigitsKeyListener.getInstance("0123456789,")
             filters = arrayOf(InputFilter.LengthFilter(12))
