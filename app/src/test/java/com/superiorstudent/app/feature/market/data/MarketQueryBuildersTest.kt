@@ -152,4 +152,29 @@ class MarketQueryBuildersTest {
             MarketQueryBuilders.appliedProposalsPlan(" ")
         }
     }
+
+    @Test
+    fun marketChatsUsesParticipantArrayContainsAndNewestUpdatedFirst() {
+        val uid = "student-246"
+        val plan = MarketQueryBuilders.marketChatsPlan(uid)
+
+        assertEquals("marketConversations", plan.collection)
+        assertFalse(plan.collectionGroup)
+        assertEquals(
+            listOf(MarketQueryFilter("participants", MarketQueryOperator.ARRAY_CONTAINS, uid)),
+            plan.filters
+        )
+        assertEquals(
+            listOf(MarketQueryOrder("updatedAt", descending = true)),
+            plan.ordering
+        )
+        assertEquals(20, plan.limit)
+    }
+
+    @Test
+    fun marketChatsRejectsBlankUid() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MarketQueryBuilders.marketChatsPlan(" ")
+        }
+    }
 }

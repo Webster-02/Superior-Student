@@ -45,10 +45,11 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
   - **GitHub Actions run `39621871146`:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39621871146) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,763,087 bytes, SHA-256 `6733096c078f975769f77c7e976339b510525587d6a2f08cae32564af272bc45`, expires 2026-10-28.
   - **Slice 3B — Applied proposals query:** complete. Added `appliedProposals(firestore, uid)` using `collectionGroup("proposals")`, mandatory `proposerId == uid`, `updatedAt DESC`, and a fixed 20-result limit. Updated the shared query executor to use collection-group queries only when the plan explicitly marks `collectionGroup = true`. Added tests for exact filter, ordering, limit, and blank-UID rejection.
   - **GitHub Actions run #591:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39623231607) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,763,189 bytes, SHA-256 `ffe7924435591b273489bcc66bd6859272843eb24499df8b017924b310ed0e73`, expires 2026-10-28.
+  - **Slice 3C — Market Chats query:** implementation committed; CI validation pending. Added `marketChats(firestore, uid)` using the `marketConversations` collection, mandatory `participants ARRAY_CONTAINS uid`, `updatedAt DESC`, and the default page-size limit of 20. Added focused tests for collection scope, array-contains field/value, ordering, limit, and blank-UID rejection. Caller must pass the currently authenticated verified user's UID.
 - **Part 4 — config and persistent 6-hour cache:** not started.
 - **Part 5 — pure ranking scorer and unit tests:** not started.
 - **Part 6 — Firestore error mapping:** not started.
 
 ## Exact next step
 
-Slice 3B is complete and its build, tests and APK verification passed. The next small slice is 3C: the Market Chats list query (`participants array-contains current UID`, `updatedAt DESC`) with focused tests. Do not start slice 3C until the user says `continue`.
+Slice 3C implementation is committed; CI validation is pending. After this slice has a green build and you review it, the next small slice is 3D: the My Reports query, scoped to the current user's `reporterId` with newest-first ordering and focused tests. Do not start slice 3D until the user says `continue`.

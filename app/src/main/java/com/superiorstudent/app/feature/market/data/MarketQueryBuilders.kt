@@ -77,6 +77,27 @@ object MarketQueryBuilders {
         uid: String
     ): Query = execute(firestore, appliedProposalsPlan(uid))
 
+    /**
+     * Market Chats for the current verified user.
+     *
+     * The participants array-contains filter is mandatory for participant-only
+     * list access; callers must pass the authenticated user's UID.
+     */
+    fun marketChats(
+        firestore: FirebaseFirestore,
+        uid: String
+    ): Query = execute(firestore, marketChatsPlan(uid))
+
+    internal fun marketChatsPlan(uid: String): MarketQueryPlan {
+        requireValidUid(uid)
+        return MarketQueryPlan(
+            collection = "marketConversations",
+            filters = listOf(contains("participants", uid)),
+            ordering = listOf(descending("updatedAt")),
+            limit = DEFAULT_PAGE_SIZE
+        )
+    }
+
     internal fun appliedProposalsPlan(uid: String): MarketQueryPlan {
         requireValidUid(uid)
         return MarketQueryPlan(
@@ -205,6 +226,9 @@ object MarketQueryBuilders {
 
     private fun equals(field: String, value: String) =
         MarketQueryFilter(field, MarketQueryOperator.EQUALS, value)
+
+    private fun contains(field: String, value: String) =
+        MarketQueryFilter(field, MarketQueryOperator.ARRAY_CONTAINS, value)
 
     private fun descending(field: String) = MarketQueryOrder(field, descending = true)
 }
