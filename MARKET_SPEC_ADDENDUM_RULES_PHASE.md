@@ -65,4 +65,3 @@ These were added after the rules review and the first successful CI run. They do
 
 ## 9. Not production-ready yet
 - Latest green verification: GitHub Actions run #22 on restore commit `2a136f1cc8478a27b0ef101a7a3c0ec8bde86ad9` passed 37 static checks and 65 Firestore Emulator tests, with zero expression-ceiling diagnostics. The protected rules, test and workflow files in that commit are byte-identical to the verified Step Zero commit `6249b60165cbe96d2aa2102e22d22ac99469c1c1`, which also passed in run #20 with the same counts. These are repository test results, not permission to deploy. Before any deploy, compare against exported live rules/indexes, backfill `proposerId` on old proposals, and deploy to staging first.
-- Before any deploy: compare against exported live rules/indexes, backfill `proposerId` on old proposals, deploy to staging first.
