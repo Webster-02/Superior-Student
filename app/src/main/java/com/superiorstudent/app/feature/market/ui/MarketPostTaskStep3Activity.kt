@@ -277,7 +277,7 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
 
     private fun rounded(fill: Int, radius: Float, stroke: Int? = null) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(radius).toFloat()
+        cornerRadius = radius * resources.displayMetrics.density
         setColor(fill)
         stroke?.let { setStroke(dp(1), it) }
     }
