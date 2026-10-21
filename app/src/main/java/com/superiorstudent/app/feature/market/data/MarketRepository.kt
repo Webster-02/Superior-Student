@@ -1376,53 +1376,83 @@ class MarketRepository(
             .whereEqualTo("status", MarketOfferStatus.ACTIVE.wireValue)
         val logRef = firestore.collection(ADMIN_LOGS).document()
 
-        return firestore.runTransaction { tx ->
-            val profile = tx.get(profileRef)
-            val tasks = tx.get(tasksQuery)
-            val offers = tx.get(offersQuery)
-            require(profile.exists()) { "The target user does not have a Market profile." }
-            val taskDocs = tasks.documents.filter { it.getString("moderation") in listOf(
-                MarketModerationStatus.OK.wireValue, MarketModerationStatus.UNDER_REVIEW.wireValue
-            ) }
-            val offerDocs = offers.documents.filter { it.getString("moderation") in listOf(
-                MarketModerationStatus.OK.wireValue, MarketModerationStatus.UNDER_REVIEW.wireValue
-            ) }
-            require(taskDocs.size + offerDocs.size <= 450) {
-                "This account has too many active listings for one safe moderation transaction."
+        // Firestore's client transaction API supports document reads, not query reads.
+        // Discover candidates first, then re-read each candidate reference inside the
+        // transaction and revalidate its current owner/status/moderation before writing.
+        return tasksQuery.get().continueWithTask { tasksTask ->
+            if (!tasksTask.isSuccessful) {
+                throw tasksTask.exception ?: IllegalStateException("Could not load the user's tasks.")
             }
-            val banned = durationDays == null
-            val until = durationDays?.let { Timestamp(Date(nowMillis() + it * MarketRepositoryPolicy.DAY_MS)) }
+            val taskRefs = tasksTask.result.documents.map { it.reference }
+            offersQuery.get().continueWithTask { offersTask ->
+                if (!offersTask.isSuccessful) {
+                    throw offersTask.exception ?: IllegalStateException("Could not load the user's offers.")
+                }
+                val offerRefs = offersTask.result.documents.map { it.reference }
+                firestore.runTransaction { tx ->
+                    val profile = tx.get(profileRef)
+                    val taskSnapshots = taskRefs.map { ref -> tx.get(ref) }
+                    val offerSnapshots = offerRefs.map { ref -> tx.get(ref) }
+                    require(profile.exists()) { "The target user does not have a Market profile." }
 
-            for (snapshot in taskDocs) {
-                tx.update(snapshot.reference, mapOf(
-                    "moderation" to MarketModerationStatus.HIDDEN.wireValue,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                ))
+                    val taskDocs = taskSnapshots.filter { snapshot ->
+                        snapshot.exists() &&
+                            snapshot.getString("posterId") == targetUid &&
+                            snapshot.getString("status") == MarketTaskStatus.OPEN.wireValue &&
+                            snapshot.getString("moderation") in listOf(
+                                MarketModerationStatus.OK.wireValue,
+                                MarketModerationStatus.UNDER_REVIEW.wireValue
+                            )
+                    }
+                    val offerDocs = offerSnapshots.filter { snapshot ->
+                        snapshot.exists() &&
+                            snapshot.getString("sellerId") == targetUid &&
+                            snapshot.getString("status") == MarketOfferStatus.ACTIVE.wireValue &&
+                            snapshot.getString("moderation") in listOf(
+                                MarketModerationStatus.OK.wireValue,
+                                MarketModerationStatus.UNDER_REVIEW.wireValue
+                            )
+                    }
+                    require(taskDocs.size + offerDocs.size <= 450) {
+                        "This account has too many active listings for one safe moderation transaction."
+                    }
+                    val banned = durationDays == null
+                    val until = durationDays?.let {
+                        Timestamp(Date(nowMillis() + it * MarketRepositoryPolicy.DAY_MS))
+                    }
+
+                    for (snapshot in taskDocs) {
+                        tx.update(snapshot.reference, mapOf(
+                            "moderation" to MarketModerationStatus.HIDDEN.wireValue,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ))
+                    }
+                    for (snapshot in offerDocs) {
+                        tx.update(snapshot.reference, mapOf(
+                            "moderation" to MarketModerationStatus.HIDDEN.wireValue,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ))
+                    }
+                    tx.update(profileRef, mapOf(
+                        "status" to if (banned) MarketProfileStatus.BANNED.wireValue else MarketProfileStatus.SUSPENDED.wireValue,
+                        "suspendedUntil" to until,
+                        "openTasks" to 0,
+                        "activeOffers" to 0,
+                        "lastMutation" to mutationMap("user", "suspend", targetUid),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ))
+                    tx.set(logRef, adminLogMap(
+                        adminUid, if (banned) "ban_user" else "suspend_user", "user", targetUid, reason, note
+                    ))
+                    createNoticeInTransaction(
+                        tx, targetUid, null, MarketNoticeType.REMOVAL,
+                        if (banned) "Market account banned" else "Market account suspended",
+                        reason.trim() + if (durationDays == null) "" else " Suspension duration: " + durationDays + " days.",
+                        relatedType = null, relatedId = null, canAppeal = true
+                    )
+                    true
+                }
             }
-            for (snapshot in offerDocs) {
-                tx.update(snapshot.reference, mapOf(
-                    "moderation" to MarketModerationStatus.HIDDEN.wireValue,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                ))
-            }
-            tx.update(profileRef, mapOf(
-                "status" to if (banned) MarketProfileStatus.BANNED.wireValue else MarketProfileStatus.SUSPENDED.wireValue,
-                "suspendedUntil" to until,
-                "openTasks" to 0,
-                "activeOffers" to 0,
-                "lastMutation" to mutationMap("user", "suspend", targetUid),
-                "updatedAt" to FieldValue.serverTimestamp()
-            ))
-            tx.set(logRef, adminLogMap(
-                adminUid, if (banned) "ban_user" else "suspend_user", "user", targetUid, reason, note
-            ))
-            createNoticeInTransaction(
-                tx, targetUid, null, MarketNoticeType.REMOVAL,
-                if (banned) "Market account banned" else "Market account suspended",
-                reason.trim() + if (durationDays == null) "" else " Suspension duration: " + durationDays + " days.",
-                relatedType = null, relatedId = null, canAppeal = true
-            )
-            true
         }
     }
 

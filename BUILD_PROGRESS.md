@@ -35,7 +35,7 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
 - **Part 2 — MarketRepository:** implementation committed; validation pending.
   - Added `MarketRepository.kt` as the single Android Market Firestore write boundary. The implementation groups linked counter/listing changes transactionally, includes deterministic IDs and timestamp policies, and adds Market-specific task/offer/proposal/report/rating/chat/support/admin operations.
   - Added `MarketRepositoryPolicyTest.kt` for client timestamp safety margin, 14/30-day expiry calculations, deterministic conversation/report/rating/appeal IDs, and initials.
-  - Current commit is intentionally marked pending until GitHub Actions unit tests and APK build pass.
+  - Initial validation run #582 (`39613624938`) failed in `MarketRepository.kt` because the Android Firestore transaction API does not support query reads. The suspend operation was corrected to query candidates first and re-read candidate document references inside the transaction; validation remains pending until the next run passes.
 - **Part 3 — query builders:** not started.
 - **Part 4 — config and persistent 6-hour cache:** not started.
 - **Part 5 — pure ranking scorer and unit tests:** not started.
