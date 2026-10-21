@@ -2,7 +2,7 @@
 
 **Branch:** `feature/market-step1`
 **Base:** `review/market-rules` at `aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3`
-**Build status:** Parts 1 and 2, and all Part 3 query builders complete. Latest green query-builder implementation build/test/APK run #595 (`39629560052`) on `395ee199099cedea2a27330459d38a883d2c4bb2`. No Market UI, cache, scoring, or error-mapping integration is wired yet.
+**Build status:** Parts 1–3 complete. Part 4 Step 4A (pure six-hour cache freshness/fallback policy) is implemented; its CI run is pending. Config persistence/Firestore reading is not wired yet.
 **Safety:** Do not modify `firestore.rules`, the protected top-level `tests/`, or `firestore.indexes.json`; do not change existing U2U chat/friend/Nearby logic or existing view IDs. No merge or Firebase deployment.
 
 ## Baseline gate
@@ -48,10 +48,13 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
   - The shared executor explicitly supports base collections, nested collection paths, and collection groups. No UI calls these query builders yet; Firestore Rules remain the authorization boundary.
   - `MarketQueryBuildersTest.kt` now contains 19 focused query-plan tests covering required moderation/status constraints, owner scoping, participant-only chats, Applied proposals, nested paths, report/notices/support filters, sort order, limits, and invalid UIDs/IDs.
   - **GitHub Actions run #595:** [build and APK artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39629560052) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,766,614 bytes, SHA-256 `ccb73b24fca205db18b78d4a2fa85697f75bbfae11e39792c72146ce84373d50`, expires 2026-10-28.
-- **Part 4 — config and persistent 6-hour cache:** not started.
+- **Part 4 — config and persistent 6-hour cache:** in progress, divided into small reviewable steps.
+  - **Step 4A — pure cache policy:** implemented, CI validation pending. Added `MarketConfigCachePolicy.kt` with a strict six-hour freshness boundary; missing/invalid/future saved timestamps are stale. Stale cache is eligible as fallback only when a cached value exists and the caller identifies a connectivity failure, not for authorization or invalid-data errors. Added `MarketConfigCachePolicyTest.kt` for TTL boundary, invalid/future timestamps, fallback gating, and exact TTL.
+  - Persistence, config serialization, and Firestore reader are intentionally deferred to Step 4B/4C.
+
 - **Part 5 — pure ranking scorer and unit tests:** not started.
 - **Part 6 — Firestore error mapping:** not started.
 
 ## Exact next step
 
-Part 3 is complete and the implementation CI run passed. The next planned feature is Part 4: a Market config reader plus persistent six-hour cache, with tests for cache freshness and fallback behavior. Do not start Part 4 until the user says `continue`.
+Step 4A is implemented and committed; wait for its CI result and user's review. The next small step is Step 4B: add a bounded persistent local cache store for the already-typed MarketConfig, using an existing app-supported storage option and round-trip tests. Do not start Step 4B until the user says `continue`.
