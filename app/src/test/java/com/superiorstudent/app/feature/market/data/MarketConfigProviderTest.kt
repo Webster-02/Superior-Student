@@ -1,14 +1,8 @@
 package com.superiorstudent.app.feature.market.data
 
-import com.google.android.gms.tasks.Task
-import com.google.android.gms.tasks.Tasks
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.FirebaseFirestoreException
 import java.net.UnknownHostException
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executor
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -28,19 +22,23 @@ class MarketConfigProviderTest {
         var remoteCalls = 0
         val provider = provider {
             remoteCalls += 1
-            Tasks.forResult<MarketConfig?>(null)
+            it(null, null)
         }
 
-        assertEquals(config, await(provider.load()))
+        val result = load(provider)
+        assertEquals(config, result.config)
+        assertNull(result.failure)
         assertEquals(0, remoteCalls)
     }
 
     @Test
     fun missingCacheReadsRemoteAndPersistsValidResult() {
         val remote = sampleConfig()
-        val provider = provider { Tasks.forResult<MarketConfig?>(remote) }
+        val provider = provider { complete -> complete(remote, null) }
 
-        assertEquals(remote, await(provider.load()))
+        val result = load(provider)
+        assertEquals(remote, result.config)
+        assertNull(result.failure)
         assertEquals(remote, cacheStore.read()!!.config)
         assertEquals(nowMillis, cacheStore.read()!!.savedAtMillis)
     }
@@ -53,42 +51,48 @@ class MarketConfigProviderTest {
         val refreshed = sampleConfig().copy(
             announcement = MarketAnnouncement("Updated remotely", true, null)
         )
-        val provider = provider { Tasks.forResult<MarketConfig?>(refreshed) }
+        val provider = provider { complete -> complete(refreshed, null) }
 
-        assertEquals(refreshed, await(provider.load()))
+        val result = load(provider)
+        assertEquals(refreshed, result.config)
+        assertNull(result.failure)
         assertEquals(refreshed, cacheStore.read()!!.config)
         assertEquals(nowMillis, cacheStore.read()!!.savedAtMillis)
     }
 
     @Test
-    fun staleCacheIsUsedOnlyForRecognizedFirestoreConnectivityFailure() {
+    fun staleCacheIsUsedOnlyForRecognizedConnectivityFailure() {
         val cached = sampleConfig()
         assertTrue(cacheStore.write(cached))
         nowMillis += MarketConfigCachePolicy.CACHE_TTL_MILLIS + 1L
-        val unavailable = firestoreFailure(FirebaseFirestoreException.Code.UNAVAILABLE)
-        val provider = provider { Tasks.forException<MarketConfig?>(unavailable) }
+        val provider = provider { complete ->
+            complete(null, UnknownHostException("offline"))
+        }
 
-        assertEquals(cached, await(provider.load()))
+        val result = load(provider)
+        assertEquals(cached, result.config)
+        assertNull(result.failure)
         assertEquals(cached, cacheStore.read()!!.config)
     }
 
     @Test
-    fun deadlineExceededCanUseStaleCacheButPermissionDeniedCannot() {
+    fun timeoutCanUseStaleCacheButAuthorizationFailureCannot() {
         val cached = sampleConfig()
         assertTrue(cacheStore.write(cached))
         nowMillis += MarketConfigCachePolicy.CACHE_TTL_MILLIS + 1L
 
-        val timeoutProvider = provider {
-            Tasks.forException<MarketConfig?>(
-                firestoreFailure(FirebaseFirestoreException.Code.DEADLINE_EXCEEDED)
-            )
+        val timeoutProvider = provider { complete ->
+            complete(null, TimeoutException("request timed out"))
         }
-        assertEquals(cached, await(timeoutProvider.load()))
+        assertEquals(cached, load(timeoutProvider).config)
 
-        val denied = firestoreFailure(FirebaseFirestoreException.Code.PERMISSION_DENIED)
-        val deniedProvider = provider { Tasks.forException<MarketConfig?>(denied) }
-        val thrown = expectFailure(deniedProvider.load())
-        assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, (thrown as FirebaseFirestoreException).code)
+        val authorizationFailure = IllegalStateException("permission denied")
+        val deniedProvider = provider { complete ->
+            complete(null, authorizationFailure)
+        }
+        val denied = load(deniedProvider)
+        assertNull(denied.config)
+        assertEquals(authorizationFailure, denied.failure)
         assertEquals(cached, cacheStore.read()!!.config)
     }
 
@@ -97,79 +101,60 @@ class MarketConfigProviderTest {
         val cached = sampleConfig()
         assertTrue(cacheStore.write(cached))
         nowMillis += MarketConfigCachePolicy.CACHE_TTL_MILLIS + 1L
-        val provider = provider { Tasks.forResult<MarketConfig?>(null) }
+        val provider = provider { complete -> complete(null, null) }
 
-        assertNull(await(provider.load()))
+        val result = load(provider)
+        assertNull(result.config)
+        assertNull(result.failure)
         assertEquals(cached, cacheStore.read()!!.config)
     }
 
     @Test
     fun unknownFailuresAndNetworkFailuresWithoutCachePropagate() {
-        val cached = sampleConfig()
-        assertTrue(cacheStore.write(cached))
-        nowMillis += MarketConfigCachePolicy.CACHE_TTL_MILLIS + 1L
         val programmingError = IllegalStateException("Unexpected data processing failure.")
-        val thrown = expectFailure(provider {
-            Tasks.forException<MarketConfig?>(programmingError)
-        }.load())
-        assertEquals(programmingError, thrown)
+        val provider = provider { complete -> complete(null, programmingError) }
+
+        val result = load(provider)
+        assertNull(result.config)
+        assertEquals(programmingError, result.failure)
 
         assertTrue(cacheStore.clear())
-        val networkFailure = provider {
-            Tasks.forException<MarketConfig?>(UnknownHostException("offline"))
+        val networkFailure = provider { complete ->
+            complete(null, UnknownHostException("offline"))
         }
-        assertTrue(expectFailure(networkFailure.load()) is UnknownHostException)
+        val networkResult = load(networkFailure)
+        assertNull(networkResult.config)
+        assertTrue(networkResult.failure is UnknownHostException)
     }
 
     @Test
-    fun connectivityClassifierDoesNotTreatPermissionOrGenericErrorsAsNetworkFailures() {
-        assertTrue(MarketConfigFailurePolicy.isConnectivityFailure(
-            firestoreFailure(FirebaseFirestoreException.Code.UNAVAILABLE)
-        ))
+    fun connectivityClassifierOnlyAcceptsKnownFirestoreCodesAndNetworkExceptions() {
+        assertTrue(MarketConfigFailurePolicy.isConnectivityFailureCodeName("UNAVAILABLE"))
+        assertTrue(MarketConfigFailurePolicy.isConnectivityFailureCodeName("DEADLINE_EXCEEDED"))
+        assertFalse(MarketConfigFailurePolicy.isConnectivityFailureCodeName("PERMISSION_DENIED"))
+        assertFalse(MarketConfigFailurePolicy.isConnectivityFailureCodeName("INVALID_ARGUMENT"))
         assertTrue(MarketConfigFailurePolicy.isConnectivityFailure(UnknownHostException("offline")))
-        assertFalse(MarketConfigFailurePolicy.isConnectivityFailure(
-            firestoreFailure(FirebaseFirestoreException.Code.PERMISSION_DENIED)
-        ))
         assertFalse(MarketConfigFailurePolicy.isConnectivityFailure(IllegalArgumentException("bad data")))
     }
 
-    private fun provider(remoteReader: () -> Task<MarketConfig?>): MarketConfigProvider =
-        MarketConfigProvider(remoteReader, cacheStore) { nowMillis }
+    private fun provider(
+        remoteReader: ((MarketConfig?, Exception?) -> Unit) -> Unit
+    ): MarketConfigProvider = MarketConfigProvider(remoteReader, cacheStore) { nowMillis }
 
-    private fun await(task: Task<MarketConfig?>): MarketConfig? {
-        val completed = CountDownLatch(1)
-        var result: MarketConfig? = null
+    private fun load(provider: MarketConfigProvider): Outcome {
+        var callbackCount = 0
+        var config: MarketConfig? = null
         var failure: Exception? = null
-
-        task.addOnCompleteListener(DIRECT_EXECUTOR) { finished ->
-            if (finished.isSuccessful) {
-                result = finished.result
-            } else {
-                failure = finished.exception
-                    ?: IllegalStateException("Test task failed without an exception.")
-            }
-            completed.countDown()
+        provider.load { value, error ->
+            callbackCount += 1
+            config = value
+            failure = error
         }
-
-        if (!completed.await(5, TimeUnit.SECONDS)) {
-            throw AssertionError("Timed out waiting for Market config task.")
-        }
-        failure?.let { throw ExecutionException(it) }
-        return result
+        assertEquals("Provider callback should run exactly once for synchronous test reader.", 1, callbackCount)
+        return Outcome(config, failure)
     }
 
-    private fun expectFailure(task: Task<MarketConfig?>): Exception {
-        try {
-            await(task)
-            throw AssertionError("Expected task to fail.")
-        } catch (failure: ExecutionException) {
-            return failure.cause as? Exception
-                ?: throw AssertionError("Expected an Exception cause.", failure)
-        }
-    }
-
-    private fun firestoreFailure(code: FirebaseFirestoreException.Code): FirebaseFirestoreException =
-        FirebaseFirestoreException("Test Firestore failure", code, null)
+    private data class Outcome(val config: MarketConfig?, val failure: Exception?)
 
     private fun sampleConfig(): MarketConfig = MarketConfig(
         announcement = MarketAnnouncement("Market notice", true, Timestamp(1_800_000_000L, 123_000_000)),
@@ -183,10 +168,6 @@ class MarketConfigProviderTest {
             reportsToHide = 3
         )
     )
-
-    private companion object {
-        val DIRECT_EXECUTOR: Executor = Executor { command -> command.run() }
-    }
 
     private class FakePreferences : MarketConfigCachePreferences {
         private val values = linkedMapOf<String, String>()

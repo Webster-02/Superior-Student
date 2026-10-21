@@ -2,7 +2,7 @@ package com.superiorstudent.app.feature.market.data
 
 import android.content.Context
 import com.google.android.gms.tasks.Task
-import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.tasks.TaskCompletionSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import java.net.ConnectException
@@ -22,7 +22,7 @@ import java.util.concurrent.TimeoutException
  * A successful read that returns invalid/missing config does not use fallback.
  */
 class MarketConfigProvider internal constructor(
-    private val remoteReader: () -> Task<MarketConfig?>,
+    private val remoteReader: ((MarketConfig?, Exception?) -> Unit) -> Unit,
     private val cacheStore: MarketConfigCacheStore,
     private val nowMillis: () -> Long = System::currentTimeMillis
 ) {
@@ -30,59 +30,86 @@ class MarketConfigProvider internal constructor(
         context: Context,
         firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
     ) : this(
-        MarketConfigReader(firestore)::read,
-        MarketConfigCacheStore(context.applicationContext),
-        System::currentTimeMillis
+        remoteReader = { onComplete ->
+            MarketConfigReader(firestore).read().addOnCompleteListener(DIRECT_EXECUTOR) { completed ->
+                if (completed.isSuccessful) {
+                    onComplete(completed.result, null)
+                } else {
+                    onComplete(
+                        null,
+                        completed.exception
+                            ?: IllegalStateException("Market config read was cancelled or failed without an exception.")
+                    )
+                }
+            }
+        },
+        cacheStore = MarketConfigCacheStore(context.applicationContext),
+        nowMillis = System::currentTimeMillis
     )
 
+    /** Production entry point. The callback-based core keeps policy tests JVM-only. */
     fun load(): Task<MarketConfig?> {
+        val source = TaskCompletionSource<MarketConfig?>()
+        load { config, failure ->
+            if (failure == null) {
+                source.trySetResult(config)
+            } else {
+                source.trySetException(failure)
+            }
+        }
+        return source.task
+    }
+
+    /** Internal decision path for deterministic tests; does not depend on Google Task internals. */
+    internal fun load(onComplete: (MarketConfig?, Exception?) -> Unit) {
         val cached = cacheStore.read()
         val now = try {
             nowMillis()
         } catch (failure: Exception) {
-            return Tasks.forException(failure)
+            onComplete(null, failure)
+            return
         }
 
         if (cached != null && MarketConfigCachePolicy.isFresh(cached.savedAtMillis, now)) {
-            return Tasks.forResult(cached.config)
+            onComplete(cached.config, null)
+            return
         }
 
-        val remoteTask = try {
-            remoteReader()
-        } catch (failure: Exception) {
-            return cachedFallbackOrFailure(cached, failure)
-        }
-
-        return remoteTask.continueWithTask(DIRECT_EXECUTOR) { completed ->
-            if (completed.isSuccessful) {
+        val finishRemote: (MarketConfig?, Exception?) -> Unit = { remoteConfig, failure ->
+            if (failure == null) {
                 // A null config indicates a missing or invalid remote document.
                 // Treat that as data failure, not a connectivity failure.
-                val remoteConfig = completed.result
                 if (remoteConfig != null) cacheStore.write(remoteConfig)
-                Tasks.forResult(remoteConfig)
+                onComplete(remoteConfig, null)
             } else {
-                val failure = completed.exception
-                    ?: IllegalStateException("Market config read was cancelled or failed without an exception.")
-                cachedFallbackOrFailure(cached, failure)
+                cachedFallbackOrFailure(cached, failure, onComplete)
             }
+        }
+
+        try {
+            remoteReader(finishRemote)
+        } catch (failure: Exception) {
+            cachedFallbackOrFailure(cached, failure, onComplete)
         }
     }
 
     private fun cachedFallbackOrFailure(
         cached: MarketConfigCacheEntry?,
-        failure: Exception
-    ): Task<MarketConfig?> {
+        failure: Exception,
+        onComplete: (MarketConfig?, Exception?) -> Unit
+    ) {
         val connectivityFailure = MarketConfigFailurePolicy.isConnectivityFailure(failure)
-        return if (MarketConfigCachePolicy.shouldFallbackToCachedConfig(
+        if (MarketConfigCachePolicy.shouldFallbackToCachedConfig(
                 hasCachedConfig = cached != null,
                 connectivityFailure = connectivityFailure
             )
         ) {
-            Tasks.forResult(cached!!.config)
+            onComplete(cached!!.config, null)
         } else {
-            Tasks.forException(failure)
+            onComplete(null, failure)
         }
     }
+
     private companion object {
         val DIRECT_EXECUTOR: Executor = Executor { command -> command.run() }
     }
@@ -95,13 +122,9 @@ internal object MarketConfigFailurePolicy {
         var current: Throwable? = failure
 
         while (current != null && visited.add(current)) {
-            if (current is FirebaseFirestoreException) {
-                when (current.code) {
-                    FirebaseFirestoreException.Code.UNAVAILABLE,
-                    FirebaseFirestoreException.Code.DEADLINE_EXCEEDED -> return true
-                    else -> Unit
-                }
-            }
+            if (current is FirebaseFirestoreException &&
+                isConnectivityFailureCodeName(current.code.name)
+            ) return true
 
             if (current is UnknownHostException ||
                 current is ConnectException ||
@@ -115,4 +138,8 @@ internal object MarketConfigFailurePolicy {
         }
         return false
     }
+
+    /** Kept separate so the exact Firestore code mapping is testable on a plain JVM. */
+    internal fun isConnectivityFailureCodeName(codeName: String?): Boolean =
+        codeName == "UNAVAILABLE" || codeName == "DEADLINE_EXCEEDED"
 }
