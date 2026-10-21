@@ -123,7 +123,7 @@ UI-04 is complete. ZIP numbering confirms screen 05 is Task detail (helper), whi
 
 ## UI-05 — Task detail (helper view)
 
-- **Status:** implementation committed; CI pending.
+- **Status:** complete and verified on commit `7e8680c2925c1cd9c78369553a28495a0397c66e`. GitHub Actions run #27 (`39678143928`) passed unit tests, JavaScript validation, clean, APK build, APK verification and artifact upload.
 - Corrected the numbered reference order: `05_detail_helper` is the task detail screen for a prospective helper; `15_mytasks` is the separate My Tasks screen.
 - Added a native detail screen with back/bookmark/report header, category/course chips, large title, poster avatar/name/rating/verified label, three pastel Budget/Deadline/Proposals cards, detail text, skills chips, locked-contact notice and a fixed lime Send proposal CTA.
 - Tapping a Requests card now opens detail and passes its sample listing fields. The exact Design reference uses the ZIP's extended description and 24 Oct / 3 days / 4 of 15 values.
@@ -132,4 +132,4 @@ UI-04 is complete. ZIP numbering confirms screen 05 is Task detail (helper), whi
 
 ## Exact next step
 
-Run GitHub Actions for UI-05. Fix only compile/test issues in the new detail screen. Verify the APK artifact and stop for review before screen 06 (poster detail) or real data wiring.
+UI-05 is complete and verified. Stop for user review before implementing screen 06 (poster detail). My Tasks remains reference screen 15. Do not start another screen or connect live writes until explicitly approved.
