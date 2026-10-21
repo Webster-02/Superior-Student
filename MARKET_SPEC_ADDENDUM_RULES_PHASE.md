@@ -3,7 +3,7 @@
 Where this addendum and MARKET_FINAL_SPEC.md differ, THIS FILE WINS. The Firestore rules package (firestore.rules, firestore.indexes.json, tests) is the source of truth for data shapes.
 
 ## 1. Data model changes
-- Market account state lives in `marketProfiles/{uid}` (NOT in `users/{uid}.market`). Fields: uid, skillTags[], blockedUids[], status (active|suspended|banned), suspendedUntil, warnings, settings{alertProposals, alertUpdates, alertNotices, alertMatchingTasks}, openTasks, activeOffers, proposalWindowCount, proposalWindowStartedAt, reportWindowCount, reportWindowStartedAt, openSupportTickets, lastMutation, createdAt, updatedAt. The client creates it once with fixed safe defaults and can never edit status, warnings, suspension or counters afterwards.
+- Market account state lives in `marketProfiles/{uid}` (NOT in `users/{uid}.market`). Fields: uid, skillTags[], blockedUids[], status (active|suspended|banned), suspendedUntil, warnings, settings{alertProposals, alertUpdates, alertNotices, alertMatchingTasks}, openTasks, activeOffers, proposalWindowCount, proposalWindowStartedAt, reportWindowCount, reportWindowStartedAt, openSupportTickets, lastMutation, createdAt, updatedAt. The client creates it once with fixed safe defaults. The client must never directly write Market profile moderation fields (`status`, `warnings`, `suspendedUntil`) or counters. Moderation changes must use permitted admin rule branches; each counter mutation must be atomic with its linked Market document operation and use a matching profile `lastMutation` (`kind`, `operation`, `targetId`, `at`, and `targetType` when applicable). Listing lifecycle statuses follow their own rule branches. A user's own `skillTags`, `blockedUids`, and `settings` are self-service fields.
 - `tasks/{taskId}/proposals/{userId}` documents now also carry `proposerId` (== document id == author uid, immutable). The helper's "Applied" list uses a collection-group query: `collectionGroup('proposals').where('proposerId','==',myUid)` ordered by updatedAt desc.
 - `marketConversations/{conversationId}`: id = `kind_listingId_uidLow_uidHigh` (uids sorted). Fields: participants[2], kind (task|offer), listingId, listingOwnerUid, taskId|offerId, createdAt, updatedAt, optional lastMessage {text<=100, senderUid, at}, optional lastReadAt (per participant). The Chats list reads these fields, not the messages, to show last message and unread state. The task conversation is created in the SAME batch as the accept.
 - `lastMutation` {kind, operation, targetId, at (== request.time), targetType?} on the profile ties every counter change to the exact document written in the same batch. Every Market write must go through ONE repository class that builds these batches. Do not write Market documents from anywhere else.
@@ -19,7 +19,7 @@ Where this addendum and MARKET_FINAL_SPEC.md differ, THIS FILE WINS. The Firesto
 - Admin uses a separate Google account that is NOT a U2U student. Existing U2U chat and Nearby rules are unchanged (the rules file only adds Market blocks).
 
 ## 4. Client rules for writing safely
-- Content edits of own listings are validated like creates and require the user to be allowed to post. Cancel, expire, pause, remove and complete are lifecycle transitions that stay allowed and must carry the matching counter decrement.
+- Content edits of own listings are validated like creates and require the user to be allowed to post. The `openTasks` slot is released when a proposal is accepted, or an open task is cancelled or owner-expired; completing an assigned task is status-only and must not decrement `openTasks` again. Pausing an active offer releases one `activeOffers` slot; removing an already-paused offer changes no counter because pause already released it. Moderation/suspension cleanup may also change listing counters only through the specific rule-validated mutation. Lifecycle transitions remain subject to their exact source/target states and counter rules.
 - A Market write that fails with permission-denied must show a friendly message and never loop. If the phone clock is far from real time, show "Check your phone's date and time".
 - Reads: feed queries must carry the constraints the rules require (moderation == 'ok', status open/active) and use the indexes listed in INDEX_QUERY_MAP.md. Expiry and reportCount >= 3 are filtered on the client.
 
@@ -42,7 +42,7 @@ These were added after the rules review and the first successful CI run. They do
 ## 6. Writing correctly (client checklist)
 - **Phone clock.** `createdAt`/`renewedAt` must be <= server time and not older than 2 minutes. The client uses local time **minus 30 seconds** so a phone that is slightly ahead is not denied. `expiresAt` = that same value + 14 days (tasks) or + 30 days (offers).
 - **Names.** `posterName`, `proposerName` and message `senderName` must equal `profiles/{uid}.displayName` exactly. The student's U2U `profiles/{uid}` document must exist before they can create a marketProfile, listing, proposal or chat message. Admin accounts do NOT need a U2U profile.
-- **Verified email.** All Market writes require `email_verified == true`.
+- **Verified email.** Verified email (`marketVerified()`) is required for Market profile creation and student listing/task, offer, proposal, report, rating, Market conversation/message, support-ticket and appeal writes, plus other student writes whose rule branch requires verification. A user's own `skillTags`, `blockedUids`, and `settings` edits on `marketProfiles/{uid}` require only a signed-in session (`marketSignedIn()`), matching the update rule. Admin writes still require verified email and admin authorization where the rules specify them. The existing U2U `profiles/{uid}` document is required wherever the particular write rule explicitly checks it.
 - **Deterministic IDs.**
   - report: `{targetType}_{targetId}_{reporterUid}`
   - appeal ticket: `appeal_{noticeId}_{uid}`
@@ -55,14 +55,14 @@ These were added after the rules review and the first successful CI run. They do
 ## 7. Market chat (v1 decision): separate and text-only
 - Market chats use `marketConversations/{id}/messages`. They do NOT use the existing `chatConversations` engine.
 - v1 is **text only**: no file sending, reactions, typing indicators, read-state subcollection or Nearby transfer inside Market chats. This overrides MARKET_FINAL_SPEC.md screens 14 and 17 wherever they mention files or Nearby.
-- Task chat opens at accept time (created in the same batch as the accept). Offer chat opens from the offer detail while the offer is public.
+- Task chat opens at accept time. The rules do not require a conversation document for the accept write to succeed; the repository MUST create the deterministic task conversation in the same batch/transaction as the accept. Offer chat opens from the offer detail while the offer is public.
 - Blocking prevents creating a new Market chat between the two users.
 
 ## 8. Admin notes
 - Admin operations (hide/restore, pin, suspend + listing hide + notice + audit log, support reply, config edit) do not require a U2U profile and are not available to non-admins.
-- Every admin action writes an `adminLogs` document in the same batch and, where it affects the user, a notice.
+- Admin UI/repository contract: every admin action MUST write an `adminLogs` document in the same batch and also write a notice when a user is affected. The rules do not universally enforce this pairing: logs/notices have their own validation, and only selected hide/suspension state transitions have related cross-document checks. The repository must always include the required audit log and notice rather than assuming the rules guarantee them.
 - Pins: the rules do not cap pinned items; the admin UI blocks a 4th pin.
 
 ## 9. Not production-ready yet
-- Rules passed the Firestore Emulator suite in CI, but the Emulator log contains diagnostics about the 1,000-expression evaluation limit. Until that is reviewed and resolved, rules must not be deployed to production.
+- Latest green verification: GitHub Actions run #22 on restore commit `2a136f1cc8478a27b0ef101a7a3c0ec8bde86ad9` passed 37 static checks and 65 Firestore Emulator tests, with zero expression-ceiling diagnostics. The protected rules, test and workflow files in that commit are byte-identical to the verified Step Zero commit `6249b60165cbe96d2aa2102e22d22ac99469c1c1`, which also passed in run #20 with the same counts. These are repository test results, not permission to deploy. Before any deploy, compare against exported live rules/indexes, backfill `proposerId` on old proposals, and deploy to staging first.
 - Before any deploy: compare against exported live rules/indexes, backfill `proposerId` on old proposals, deploy to staging first.
