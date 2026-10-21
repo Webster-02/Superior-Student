@@ -161,3 +161,18 @@ UI-06 is complete and verified. Stop for user review before implementing referen
 ## Exact next step
 
 UI-07 is complete and verified. Stop for user review before implementing screen 08 (Post task step 2). Do not wire any Firestore write or continue the next screen without explicit approval.
+
+
+## UI-08 — Post a task, step 2 (Budget and time)
+
+- **Status:** implementation committed; CI pending.
+- Inspected `08_post2_light.png`, `08_post2_dark.png` and the light/dark HTML references.
+- Added the second-step layout with two completed progress segments, Free help / Fixed / Negotiable choices, an amount field with PKR prefix, a date picker that defaults to the reference date (24 Oct 2026 while it is not in the past), selectable skill chips, the money-safety notice and fixed Back / Next actions.
+- Step 1's validated Next now opens this screen and passes title, category, optional course and description as intent extras; the Back action returns to the still-open Step 1 form. No Step 3 navigation or task save is performed yet.
+- Fixed amount must be a positive whole PKR amount; Free help and Negotiable may omit amount. Deadline may be today or later. Skills must be known, unique and no more than five; three reference skills are selected by default. Figma is offered as a fifth option so the displayed “up to 5” limit is usable.
+- Added six focused JVM tests for reference values, budget/amount constraints, optional amount modes, date checks, and skill limits.
+- No Firestore writes, rules/index edits, Firebase deployment, merge or existing chat/Nearby changes.
+
+## Exact next step
+
+Run UI-08 CI; fix only issues within this screen and its navigation/tests, verify APK artifact, then stop for review before screen 09 (Post task step 3).

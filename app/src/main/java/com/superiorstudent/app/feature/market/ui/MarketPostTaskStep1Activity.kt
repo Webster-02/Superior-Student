@@ -1,6 +1,7 @@
 package com.superiorstudent.app.feature.market.ui
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -312,7 +313,14 @@ class MarketPostTaskStep1Activity : AppCompatActivity() {
             toast("Please check the highlighted fields.")
             return
         }
-        toast("Step 1 details look valid. Step 2 will be added in the next screen step.")
+        startActivity(
+            Intent(this@MarketPostTaskStep1Activity, MarketPostTaskStep2Activity::class.java).apply {
+                putExtra(MarketPostTaskStep2Activity.EXTRA_TITLE, titleInput.text?.toString().orEmpty().trim())
+                putExtra(MarketPostTaskStep2Activity.EXTRA_CATEGORY, selectedCategory)
+                putExtra(MarketPostTaskStep2Activity.EXTRA_COURSE, courseInput.text?.toString().orEmpty().trim())
+                putExtra(MarketPostTaskStep2Activity.EXTRA_DESCRIPTION, descriptionInput.text?.toString().orEmpty().trim())
+            }
+        )
     }
 
     private fun applyWindowInsets() {
