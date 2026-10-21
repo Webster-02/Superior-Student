@@ -1,8 +1,5 @@
 package com.superiorstudent.app.feature.market.data
 
-import java.util.Locale
-import kotlin.math.max
-
 /**
  * Pure, on-device ranking for an already-loaded Market page.
  *
@@ -44,7 +41,13 @@ object MarketRankingScorer {
 
         val ranked = items.withIndex().sortedWith(
             compareByDescending<IndexedValue<OfferSignals>> { it.value.offer.pinned }
-                .thenByDescending { if (it.value.offer.pinned) it.value.pinnedAtMillis ?: it.value.offer.renewedAt.toMillis() else Long.MIN_VALUE }
+                .thenByDescending {
+                    if (it.value.offer.pinned) {
+                        it.value.pinnedAtMillis ?: it.value.offer.renewedAt.toMillis()
+                    } else {
+                        Long.MIN_VALUE
+                    }
+                }
                 .thenByDescending { score(it.value, weights, nowMillis) }
                 .thenByDescending { it.value.offer.renewedAt.toMillis() }
                 .thenByDescending { it.value.offer.createdAt.toMillis() }
@@ -58,8 +61,8 @@ object MarketRankingScorer {
     fun rankTasks(
         items: List<TaskSignals>,
         nowMillis: Long
-    ): List<TaskSignals> {
-        return items.withIndex()
+    ): List<TaskSignals> =
+        items.withIndex()
             .filter { (_, item) ->
                 item.task.deadline.toMillis() > nowMillis &&
                     item.task.expiresAt.toMillis() > nowMillis
@@ -71,7 +74,6 @@ object MarketRankingScorer {
                     .thenBy { it.index }
             )
             .map { it.value }
-    }
 
     fun score(
         signals: OfferSignals,
@@ -79,18 +81,24 @@ object MarketRankingScorer {
         nowMillis: Long
     ): Double {
         requireValidWeights(weights)
-        val offer = signals.offer
-        val ageMillis = (nowMillis - offer.renewedAt.toMillis()).coerceAtLeast(0L)
+        val renewedAtMillis = signals.offer.renewedAt.toMillis()
+        val ageMillis = (nowMillis - renewedAtMillis).coerceAtLeast(0L)
         val ageDays = ageMillis.toDouble() / MILLIS_PER_DAY
         val newness = (1.0 - ageDays / OFFER_LIFETIME_DAYS).coerceIn(0.0, 1.0)
 
         val ratingCount = signals.ratingCount.coerceAtLeast(0)
         val ratingSum = signals.ratingSum.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
-        val quality = (((5.0 * PRIOR_RATING) + ratingSum) /
-            (PRIOR_RATING_COUNT + ratingCount).toDouble() / 5.0).coerceIn(0.0, 1.0)
+        val quality = (
+            (PRIOR_RATING * PRIOR_RATING_COUNT + ratingSum) /
+                (PRIOR_RATING_COUNT + ratingCount).toDouble() / 5.0
+            ).coerceIn(0.0, 1.0)
         val match = if (signals.matchesSkillTags || signals.matchesCourse) 1.0 else 0.0
 
-        return (weights.newness * newness + weights.rating * quality + weights.match * match) / 100.0
+        return (
+            weights.newness * newness +
+                weights.rating * quality +
+                weights.match * match
+            ) / 100.0
     }
 
     private fun avoidConsecutiveSellers(ranked: List<OfferSignals>): List<OfferSignals> {
