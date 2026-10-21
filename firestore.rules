@@ -228,16 +228,18 @@ service cloud.firestore {
     // A suspended account is permitted to post again at/after suspendedUntil, using
     // Firestore's request.time. Banned users are never allowed to post.
     function marketUserCanPost(uid) {
+      let p = marketProfilePath(uid);
+      let state = get(p).data;
       return marketVerified()
         && request.auth.uid == uid
         && exists(/databases/$(database)/documents/profiles/$(uid))
-        && marketHasProfile(uid)
+        && exists(p)
         && (
-          marketProfile(uid).status == 'active'
+          state.status == 'active'
           || (
-            marketProfile(uid).status == 'suspended'
-            && marketProfile(uid).suspendedUntil is timestamp
-            && marketProfile(uid).suspendedUntil <= request.time
+            state.status == 'suspended'
+            && state.suspendedUntil is timestamp
+            && state.suspendedUntil <= request.time
           )
         );
     }
@@ -355,9 +357,17 @@ service cloud.firestore {
         && after.updatedAt == request.time
         && marketValidMutationShape(after.lastMutation)
         && (
-          (
-            after.lastMutation.kind == 'task'
-            && after.lastMutation.operation == 'create'
+          (after.lastMutation.kind == 'task' && marketValidTaskProfileCounterMutation(uid, before, after, changed))
+          || (after.lastMutation.kind == 'offer' && marketValidOfferProfileCounterMutation(uid, before, after, changed))
+          || (after.lastMutation.kind == 'proposal' && marketValidProposalProfileCounterMutation(uid, before, after, changed))
+          || (after.lastMutation.kind == 'report' && marketValidReportProfileCounterMutation(uid, before, after, changed))
+          || (after.lastMutation.kind == 'support' && marketValidSupportProfileCounterMutation(uid, before, after, changed))
+        );
+    }
+
+    function marketValidTaskProfileCounterMutation(uid, before, after, changed) {
+      return (
+            after.lastMutation.operation == 'create'
             && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
             && after.openTasks == before.openTasks + 1
             && after.activeOffers == before.activeOffers
@@ -367,9 +377,9 @@ service cloud.firestore {
             && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId))
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
             && marketCreatedAtNearRequestTime(getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.createdAt)
-          ) || (
-            after.lastMutation.kind == 'task'
-            && after.lastMutation.operation == 'close'
+          )
+          || (
+            after.lastMutation.operation == 'close'
             && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
             && after.proposalWindowCount == before.proposalWindowCount
             && after.proposalWindowStartedAt == before.proposalWindowStartedAt
@@ -383,9 +393,9 @@ service cloud.firestore {
             && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId))
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status in ['assigned', 'completed', 'cancelled', 'expired']
-          ) || (
-            after.lastMutation.kind == 'task'
-            && after.lastMutation.operation == 'moderate_deactivate'
+          )
+          || (
+            after.lastMutation.operation == 'moderate_deactivate'
             && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
             && before.openTasks > 0
             && after.openTasks == before.openTasks - 1
@@ -397,9 +407,9 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed']
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
-          ) || (
-            after.lastMutation.kind == 'task'
-            && after.lastMutation.operation == 'moderate_restore'
+          )
+          || (
+            after.lastMutation.operation == 'moderate_restore'
             && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
             && before.openTasks < 3
             && after.openTasks == before.openTasks + 1
@@ -411,9 +421,12 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation == 'ok'
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
-          ) || (
-            after.lastMutation.kind == 'offer'
-            && after.lastMutation.operation == 'create'
+          );
+    }
+
+    function marketValidOfferProfileCounterMutation(uid, before, after, changed) {
+      return (
+            after.lastMutation.operation == 'create'
             && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
             && after.activeOffers == before.activeOffers + 1
             && after.openTasks == before.openTasks
@@ -425,9 +438,9 @@ service cloud.firestore {
             && existsAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId))
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
             && marketCreatedAtNearRequestTime(getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.createdAt)
-          ) || (
-            after.lastMutation.kind == 'offer'
-            && after.lastMutation.operation == 'reactivate'
+          )
+          || (
+            after.lastMutation.operation == 'reactivate'
             && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
             && after.activeOffers == before.activeOffers + 1
             && before.activeOffers < 5
@@ -441,9 +454,9 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
             && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status in ['paused', 'expired']
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
-          ) || (
-            after.lastMutation.kind == 'offer'
-            && after.lastMutation.operation == 'moderate_deactivate'
+          )
+          || (
+            after.lastMutation.operation == 'moderate_deactivate'
             && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
             && before.activeOffers > 0
             && after.activeOffers == before.activeOffers - 1
@@ -453,9 +466,9 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['ok', 'under_review']
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed']
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
-          ) || (
-            after.lastMutation.kind == 'offer'
-            && after.lastMutation.operation == 'moderate_restore'
+          )
+          || (
+            after.lastMutation.operation == 'moderate_restore'
             && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
             && before.activeOffers < 5
             && after.activeOffers == before.activeOffers + 1
@@ -465,9 +478,9 @@ service cloud.firestore {
             && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed', 'under_review']
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation == 'ok'
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
-          ) || (
-            after.lastMutation.kind == 'offer'
-            && after.lastMutation.operation == 'deactivate'
+          )
+          || (
+            after.lastMutation.operation == 'deactivate'
             && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
             && after.proposalWindowCount == before.proposalWindowCount
             && after.proposalWindowStartedAt == before.proposalWindowStartedAt
@@ -483,9 +496,12 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status in ['paused', 'expired', 'removed']
             && (getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status != 'expired'
               || request.time > get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.expiresAt)
-          ) || (
-            after.lastMutation.kind == 'proposal'
-            && after.lastMutation.operation == 'create'
+          );
+    }
+
+    function marketValidProposalProfileCounterMutation(uid, before, after, changed) {
+      return (
+            after.lastMutation.operation == 'create'
             && changed.hasOnly(['proposalWindowCount', 'proposalWindowStartedAt', 'lastMutation', 'updatedAt'])
             && after.openTasks == before.openTasks
             && after.activeOffers == before.activeOffers
@@ -498,9 +514,12 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)/proposals/$(uid)).data.status == 'sent'
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)/proposals/$(uid)).data.createdAt == request.time
             && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.proposalCount == get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.proposalCount + 1
-          ) || (
-            after.lastMutation.kind == 'report'
-            && after.lastMutation.operation == 'create'
+          );
+    }
+
+    function marketValidReportProfileCounterMutation(uid, before, after, changed) {
+      return (
+            after.lastMutation.operation == 'create'
             && changed.hasOnly(['reportWindowCount', 'reportWindowStartedAt', 'lastMutation', 'updatedAt'])
             && after.openTasks == before.openTasks
             && after.activeOffers == before.activeOffers
@@ -510,9 +529,12 @@ service cloud.firestore {
             && marketWindowIncrementValid(before.reportWindowCount, before.reportWindowStartedAt, after.reportWindowCount, after.reportWindowStartedAt, 10)
             && existsAfter(/databases/$(database)/documents/reports/$(after.lastMutation.targetType + '_' + after.lastMutation.targetId + '_' + uid))
             && getAfter(/databases/$(database)/documents/reports/$(after.lastMutation.targetType + '_' + after.lastMutation.targetId + '_' + uid)).data.reporterId == uid
-          ) || (
-            after.lastMutation.kind == 'support'
-            && after.lastMutation.operation == 'create'
+          );
+    }
+
+    function marketValidSupportProfileCounterMutation(uid, before, after, changed) {
+      return (
+            after.lastMutation.operation == 'create'
             && changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
             && after.openSupportTickets == before.openSupportTickets + 1
             && after.openTasks == before.openTasks
@@ -524,9 +546,9 @@ service cloud.firestore {
             && existsAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId))
             && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.userId == uid
             && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.createdAt == request.time
-          ) || (
-            after.lastMutation.kind == 'support'
-            && after.lastMutation.operation == 'resolve'
+          )
+          || (
+            after.lastMutation.operation == 'resolve'
             && changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
             && after.proposalWindowCount == before.proposalWindowCount
             && after.proposalWindowStartedAt == before.proposalWindowStartedAt
@@ -539,9 +561,9 @@ service cloud.firestore {
             && existsAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId))
             && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.userId == uid
             && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.status == 'resolved'
-          )
-        );
+          );
     }
+
 
     function marketTaskPublic(data) {
       return data.moderation == 'ok' && data.status == 'open';
@@ -582,6 +604,9 @@ service cloud.firestore {
     }
 
     function marketValidTaskCreate(taskId, data) {
+      let profileBefore = marketProfile(request.auth.uid);
+      let profileAfter = getAfter(marketProfilePath(request.auth.uid)).data;
+      let studentProfile = get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
       return marketUserCanPost(request.auth.uid)
         && marketValidTaskContent(data)
         && data.keys().hasAll([
@@ -594,29 +619,23 @@ service cloud.firestore {
           'skills', 'status', 'moderation', 'pinned', 'posterId', 'posterName', 'posterInitials',
           'proposalCount', 'assignedTo', 'reportCount', 'createdAt', 'updatedAt', 'expiresAt'
         ])
-        && data.title is string && data.title.size() >= 5 && data.title.size() <= 80
-        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
-        && data.description is string && data.description.size() >= 20 && data.description.size() <= 500
-        && data.budgetType in ['free', 'fixed', 'negotiable']
-        && data.deadline is timestamp
-        && data.skills is list && data.skills.size() <= 5
         && data.status == 'open'
         && data.moderation in ['ok', 'under_review']
         && data.pinned == false
         && data.posterId == request.auth.uid
         && data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 60
-        && data.posterName == get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
+        && data.posterName == studentProfile.displayName
         && data.posterInitials is string && data.posterInitials.size() >= 1 && data.posterInitials.size() <= 4
         && data.proposalCount == 0
         && data.reportCount == 0
         && marketCreatedAtNearRequestTime(data.createdAt)
         && data.updatedAt == request.time
         && data.expiresAt == data.createdAt + duration.value(14, 'd')
-        && marketProfile(request.auth.uid).openTasks < 3
-        && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks + 1
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId;
+        && profileBefore.openTasks < 3
+        && profileAfter.openTasks == profileBefore.openTasks + 1
+        && profileAfter.lastMutation.kind == 'task'
+        && profileAfter.lastMutation.operation == 'create'
+        && profileAfter.lastMutation.targetId == taskId;
     }
 
     function marketTaskReportCounterValid(taskId) {
@@ -746,10 +765,10 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time
           && (
             (resource.data.status == 'open' && request.resource.data.status == 'open'
-              && request.resource.data.assignedTo == resource.data.assignedTo
+              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
               && request.resource.data.expiresAt == resource.data.expiresAt)
             || (resource.data.status == 'open' && request.resource.data.status == 'cancelled'
-              && request.resource.data.assignedTo == resource.data.assignedTo
+              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
               && request.resource.data.expiresAt == resource.data.expiresAt
               && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
               && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
@@ -767,7 +786,7 @@ service cloud.firestore {
               && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
             || (resource.data.status == 'open' && request.resource.data.status == 'expired'
               && request.time > resource.data.expiresAt
-              && request.resource.data.assignedTo == resource.data.assignedTo
+              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
               && request.resource.data.expiresAt == resource.data.expiresAt
               && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
               && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
@@ -776,7 +795,7 @@ service cloud.firestore {
             // Completing an assigned task is poster-only; the assigned helper may not complete it.
             || (resource.data.status == 'assigned' && request.resource.data.status == 'completed'
               && request.auth.uid == resource.data.posterId
-              && request.resource.data.assignedTo == resource.data.assignedTo
+              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
               && request.resource.data.expiresAt == resource.data.expiresAt
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
           )
@@ -791,7 +810,7 @@ service cloud.firestore {
           && request.resource.data.reportCount == resource.data.reportCount
           && request.resource.data.createdAt == resource.data.createdAt
           && request.resource.data.expiresAt == resource.data.expiresAt
-          && request.resource.data.assignedTo == resource.data.assignedTo
+          && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
           && request.resource.data.proposalCount == resource.data.proposalCount + 1
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['proposalCount', 'updatedAt'])
           && request.resource.data.updatedAt == request.time
@@ -913,45 +932,44 @@ service cloud.firestore {
       }
     }
 
-    match /offers/{offerId} {
-      allow get: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
-      allow list: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
-      allow create: if marketUserCanPost(request.auth.uid)
-        && marketValidOfferContent(request.resource.data)
-        && request.resource.data.keys().hasAll([
+    function marketValidOfferCreate(offerId, data) {
+      let profileBefore = marketProfile(request.auth.uid);
+      let profileAfter = getAfter(marketProfilePath(request.auth.uid)).data;
+      let studentProfile = get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
+      return marketUserCanPost(request.auth.uid)
+        && marketValidOfferContent(data)
+        && data.keys().hasAll([
           'title', 'category', 'description', 'priceType', 'status', 'moderation', 'pinned',
           'sellerId', 'sellerName', 'sellerInitials', 'reportCount', 'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
         ])
-        && request.resource.data.keys().hasOnly([
+        && data.keys().hasOnly([
           'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
           'status', 'moderation', 'pinned', 'sellerId', 'sellerName', 'sellerInitials', 'reportCount',
           'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
         ])
-        && request.resource.data.title is string && request.resource.data.title.size() >= 5 && request.resource.data.title.size() <= 80
-        && request.resource.data.category is string && request.resource.data.category.size() >= 1 && request.resource.data.category.size() <= 60
-        && request.resource.data.description is string && request.resource.data.description.size() >= 1 && request.resource.data.description.size() <= 400
-        && request.resource.data.priceType in ['free', 'swap', 'amount']
-        && ((request.resource.data.priceType == 'amount' && request.resource.data.priceAmount is number && request.resource.data.priceAmount >= 0)
-          || (request.resource.data.priceType != 'amount' && (!request.resource.data.keys().hasAny(['priceAmount']) || (request.resource.data.priceAmount is number && request.resource.data.priceAmount >= 0))))
-        && (!request.resource.data.keys().hasAny(['priceAmount']) || (request.resource.data.priceAmount is number && request.resource.data.priceAmount >= 0))
-        && (!request.resource.data.keys().hasAny(['thumbnail']) || (request.resource.data.thumbnail is string && request.resource.data.thumbnail.size() <= 153600))
-        && request.resource.data.status == 'active'
-        && request.resource.data.moderation in ['ok', 'under_review']
-        && request.resource.data.pinned == false
-        && request.resource.data.sellerId == request.auth.uid
-        && request.resource.data.sellerName is string && request.resource.data.sellerName.size() >= 2 && request.resource.data.sellerName.size() <= 60
-        && request.resource.data.sellerName == get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
-        && request.resource.data.sellerInitials is string && request.resource.data.sellerInitials.size() >= 1 && request.resource.data.sellerInitials.size() <= 4
-        && request.resource.data.reportCount == 0
-        && marketCreatedAtNearRequestTime(request.resource.data.createdAt)
-        && request.resource.data.renewedAt == request.resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.expiresAt == request.resource.data.renewedAt + duration.value(30, 'd')
-        && marketProfile(request.auth.uid).activeOffers < 5
-        && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers + 1
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'offer'
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
-        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId;
+        && data.status == 'active'
+        && data.moderation in ['ok', 'under_review']
+        && data.pinned == false
+        && data.sellerId == request.auth.uid
+        && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 60
+        && data.sellerName == studentProfile.displayName
+        && data.sellerInitials is string && data.sellerInitials.size() >= 1 && data.sellerInitials.size() <= 4
+        && data.reportCount == 0
+        && marketCreatedAtNearRequestTime(data.createdAt)
+        && data.renewedAt == data.createdAt
+        && data.updatedAt == request.time
+        && data.expiresAt == data.renewedAt + duration.value(30, 'd')
+        && profileBefore.activeOffers < 5
+        && profileAfter.activeOffers == profileBefore.activeOffers + 1
+        && profileAfter.lastMutation.kind == 'offer'
+        && profileAfter.lastMutation.operation == 'create'
+        && profileAfter.lastMutation.targetId == offerId;
+    }
+
+    match /offers/{offerId} {
+      allow get: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
+      allow list: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
+      allow create: if marketVerified() && marketValidOfferCreate(offerId, request.resource.data);
       allow update: if marketVerified() && (
         (
           resource.data.sellerId == request.auth.uid
@@ -1355,12 +1373,12 @@ service cloud.firestore {
 
     function marketConversationMember(conversationId) {
       let p = /databases/$(database)/documents/marketConversations/$(conversationId);
+      let conversation = get(p).data;
       return marketVerified()
         && exists(p)
-        && marketConversationParticipants(conversationId, get(p).data)
-        && request.auth.uid in get(p).data.participants
+        && request.auth.uid in conversation.participants
         && !marketIsAdmin()
-        && !marketIsBlockedEither(get(p).data.participants[0], get(p).data.participants[1]);
+        && !marketIsBlockedEither(conversation.participants[0], conversation.participants[1]);
     }
 
     match /marketConversations/{conversationId} {
@@ -1408,8 +1426,6 @@ service cloud.firestore {
         );
       allow update: if marketVerified()
         && marketConversationMember(conversationId)
-        && marketConversationParticipants(conversationId, resource.data)
-        && marketConversationParticipants(conversationId, request.resource.data)
         && resource.data.participants == request.resource.data.participants
         && resource.data.kind == request.resource.data.kind
         && resource.data.listingId == request.resource.data.listingId

@@ -25,3 +25,17 @@ The static preflight extracts and compares both sections exactly. The unified di
 `firestore.base.rules` and `rollback/firestore.rollback.branch-snapshot.rules` are byte-identical to the selected branch snapshot. Static validation compares the original Git blob SHA. This is not proof that the selected branch matches live Firebase production rules; export the live Console rules/indexes and reconcile them before any deployment.
 
 The static test suite validates the additive-only diff shape and Market invariants but is not the Firebase Rules compiler. The Emulator suite has not run in this environment because `registry.npmjs.org` could not be resolved. See `TEST_RESULTS.md` for real command output. This review follow-up adds a single commit to `review/market-rules` only. It does not merge to `main` or deploy to Firebase.
+
+
+## Follow-up: first real Emulator run and evaluation-budget fixes
+
+The first committed candidate's real GitHub Actions run was `39531687165` (65 tests: 56 passed, 9 failed; static preflight passed). Its artifacts are linked in `TEST_RESULTS.md`. The rerun candidate:
+- fixes test fixtures that were not actually changing owner-protected fields;
+- fixes the Nearby transfer public-key fixture to meet the preserved baseline validation;
+- dispatches profile-counter validation by mutation kind, keeping the common immutable/allowed-key/timestamp checks while evaluating the matching operation helper;
+- caches profile/counter/profile-name reads in task/offer/posting validators;
+- makes equality on optional `assignedTo` null-safe for unassigned tasks;
+- removes duplicate create-time content checks already covered by the canonical validator; and
+- avoids running the full participant-shape validator twice on every Market conversation metadata update while retaining member, verified-email, admin, block, and changed-key checks.
+
+The candidate fixes are intentionally limited to Market rule helpers and tests. Existing U2U chat/Nearby rule blocks remain unchanged.

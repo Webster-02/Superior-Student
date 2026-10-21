@@ -108,7 +108,7 @@ describe('marketProfiles', () => {
   });
   it('denies owner edits to status, warnings, counters and suspension fields', async () => {
     await seedProfile('alice');
-    await assertFails(updateDoc(doc(user('alice'), 'marketProfiles', 'alice'), { status: 'active', warnings: 0, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(user('alice'), 'marketProfiles', 'alice'), { status: 'banned', warnings: 1, updatedAt: serverTimestamp() }));
     await assertFails(updateDoc(doc(user('alice'), 'marketProfiles', 'alice'), { openTasks: 3, updatedAt: serverTimestamp() }));
   });
   it('allows owner preferences but denies deleting the profile', async () => {
@@ -163,7 +163,7 @@ describe('tasks', () => {
     await seedTask('alice_task', 'alice');
     const db = user('alice');
     await assertFails(updateDoc(doc(db, 'tasks', 'alice_task'), { pinned: true, updatedAt: serverTimestamp() }));
-    await assertFails(updateDoc(doc(db, 'tasks', 'alice_task'), { moderation: 'ok', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(db, 'tasks', 'alice_task'), { moderation: 'hidden', updatedAt: serverTimestamp() }));
     await assertFails(updateDoc(doc(db, 'tasks', 'alice_task'), { reportCount: 1, updatedAt: serverTimestamp() }));
   });
   it('denies early expiry cleanup, allows only rule-valid lifecycle transitions', async () => {
@@ -222,7 +222,7 @@ describe('offers', () => {
     await seedOffer('o1', 'alice');
     const db = user('alice');
     await assertFails(updateDoc(doc(db, 'offers', 'o1'), { pinned: true, updatedAt: serverTimestamp() }));
-    await assertFails(updateDoc(doc(db, 'offers', 'o1'), { moderation: 'ok', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(db, 'offers', 'o1'), { moderation: 'hidden', updatedAt: serverTimestamp() }));
     await assertFails(updateDoc(doc(db, 'offers', 'o1'), { reportCount: 1, updatedAt: serverTimestamp() }));
     await assertFails(deleteDoc(doc(db, 'offers', 'o1')));
   });
@@ -402,7 +402,7 @@ describe('Market conversations and existing U2U regression', () => {
     await seed('profiles', 'bob', { uid: 'bob', publicId: 'UNI-BCDEFGH', displayName: 'Bob', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
     await seed('friendRequests', 'alice_bob', { senderUid: 'alice', receiverUid: 'bob', senderName: 'Alice', senderPublicId: 'UNI-ABCDEFG', receiverName: 'Bob', receiverPublicId: 'UNI-BCDEFGH', status: 'accepted', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
     await seed('chatConversations', 'alice_bob', { participantUids: ['alice', 'bob'], createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
-    await seed('chatConversations/alice_bob/transferOffers', 'x1', { transferId: 'x1', conversationId: 'alice_bob', senderUid: 'alice', receiverUid: 'bob', fileName: 'note.pdf', sizeBytes: 10, mimeType: 'application/pdf', sha256: 'a'.repeat(64), chunkSize: 16384, senderPublicKey: 'key', status: 'offered', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
+    await seed('chatConversations/alice_bob/transferOffers', 'x1', { transferId: 'x1', conversationId: 'alice_bob', senderUid: 'alice', receiverUid: 'bob', fileName: 'note.pdf', sizeBytes: 10, mimeType: 'application/pdf', sha256: 'a'.repeat(64), chunkSize: 16384, senderPublicKey: 'A'.repeat(64), status: 'offered', createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
     await assertSucceeds(getDoc(doc(user('alice'), 'chatConversations/alice_bob/transferOffers/x1')));
   });
 });

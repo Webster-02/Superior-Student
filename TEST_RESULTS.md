@@ -102,3 +102,21 @@ If these operations pass in the Firestore Emulator, that is evidence the tested 
 ## GitHub Actions status
 
 `.github/workflows/firestore-rules-test.yml` is included inside this package. It selects Node 20 and Java 21, captures npm install and test logs, runs `npm run test:static` and `npm run test:emulator`, and uploads `artifacts/**` even on failure. It was not executed by GitHub because the file has not been added to a repository or branch; this package-only workflow choice avoids repository changes. When copied to an approved non-main review branch, use the resulting uploaded artifacts as the CI record and require both suites to pass before approval.
+
+
+## First real GitHub Actions run (commit 9023d4a2377e89486a5b2f1b85ee3d3d9ae5e22a)
+
+Workflow: [Firestore Rules Review Tests, run 39531687165](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165)
+
+- npm install: exit 0
+- `npm run test:static`: exit 0 (29 checks)
+- `npm run test:emulator`: exit 1
+- Emulator summary: 65 tests, 56 passed, 9 failed, 0 skipped.
+- Artifacts: [firestore-rules-test-results.zip](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165/artifacts/12315966279), SHA-256 `59d4fef2f0eec5b342caea66c0f83c2fc5f1893c8f5e2b782efc1da12451c318`.
+
+Failures found and fixes prepared:
+1. Two owner-denial test fixtures attempted to write values that already existed; fixtures now request actual changes.
+2. The Nearby fixture supplied `senderPublicKey: 'key'`, below the baseline rule's minimum length; it now supplies a 64-character public key.
+3. Rules evaluation exhausted the maximum-expression budget on task/profile counter and Market conversation paths, and unassigned tasks triggered an unsafe read of the optional `assignedTo` field. Candidate fixes split the counter mutation dispatcher by mutation kind, cache repeated profile/counter reads, remove redundant create-time revalidation already covered by content validators, use null-safe `assignedTo` comparisons, and avoid repeating whole immutable-parent validation on each Market conversation update.
+
+**The second run is pending. Do not treat the Emulator suite or document access-call limits as verified until the subsequent run demonstrates it.**
