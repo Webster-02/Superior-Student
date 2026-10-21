@@ -76,16 +76,13 @@ Part 6D is complete and verified. Stop for user review before mapping any additi
 - This is a **visual-only increment**: the tile is not yet connected to the Market Requests destination, and the rest of the Home screen has not yet been certified pixel-matched. The next screen step should implement the reference Requests screen and wire this entry to it.
 - Reference inventory from the uploaded ZIP: 32 student screens in both light and dark themes, plus 9 light-theme desktop admin pages. The HTML files are static layout references; behavior and Firebase data paths must be wired separately.
 - No existing U2U auth, friend, chat, Nearby-transfer logic, view IDs, Firestore rules/indexes, or Firebase deployment changed.
-- **CI pending:** the Market workflow now includes `feature/market-ui-reference` and monitors the Home layout/resource files.
-
-## Exact next step
-
-Run GitHub Actions for the UI-01 change. Verify clean, unit tests, APK build and artifact upload. Then stop for user review before connecting the Market tile or implementing the next reference screen.
+- **Verification:** UI-01 passed in GitHub Actions run #18 (`39654835518`), including unit tests, debug APK build, APK verification and artifact upload.
+- The Market workflow includes `feature/market-ui-reference` and monitors the Home layout/resource files.
 
 
 ## UI-02 — Requests reference screen
 
-- **Status:** implementation committed; CI pending.
+- **Status:** complete and verified on commit `d99e824b1b06806a6a39d0264f32cc714b084bda`. Run #20 (`39672533073`) passed unit tests, JavaScript validation, clean, debug APK build, APK verification and upload. The initial run #19 identified two unsupported `ScrollView.LayoutParams` references; those were corrected to `FrameLayout.LayoutParams` and the full run then passed.
 - Added a dedicated native Market Requests Activity and connected the Home Market card to open it. Existing Student Connect routes and view IDs are otherwise unchanged.
 - Reproduced the reference structure and tokens: Paper/Night colours, Poppins, header/back/search/menu, segmented Requests/Offers tabs, category chips, sort control, request cards, deadline/proposal row, author row, “Matches you” badge, and floating “Post a task” button.
 - The three listings intentionally mirror the ZIP's **visual reference fixtures**, not live Firestore data. Search, category filtering and local sorting work over those fixtures. Cache/feed/pagination, detail, Offers, menu destinations and task posting remain later steps.
@@ -94,4 +91,4 @@ Run GitHub Actions for the UI-01 change. Verify clean, unit tests, APK build and
 
 ## Exact next step
 
-Run GitHub Actions for UI-02; verify unit tests, APK build, verification and artifact upload. After that, stop for user review before implementing screen 03 Offers or wiring live Market data.
+Stop for user review. After explicit approval, implement student reference screen 03 Offers as a separate step. Keep live Firestore data/cache/rules integration separate and present any required rule changes for review before writing them.
