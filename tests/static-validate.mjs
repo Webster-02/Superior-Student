@@ -16,7 +16,7 @@ const checks = [
   ['legacy U2U chat helper is preserved', () => { assert.ok(base.includes('function activeChatConversationMember')); assert.ok(rules.includes('function activeChatConversationMember')); }],
   ['task create has a dedicated validator', () => assert.ok(rules.includes('marketValidTaskCreate'))],
   ['offer content has a dedicated validator', () => assert.ok(rules.includes('marketValidOfferContent'))],
-  ['assigned task completion is explicitly poster-only', () => assert.match(rules, /Completing an assigned task is poster-only[\s\S]{0,260}request\.auth\.uid == resource\.data\.posterId/)],
+  ['assigned task completion is explicitly poster-only', () => assert.match(rules, /Completing an assigned task is poster-only[\s\S]{0,260}request\.auth\.uid == (?:resource\.data|before)\.posterId/)],
   ['assigned-helper completion override is absent', () => assert.doesNotMatch(rules, /The assigned helper may mark completion/)],
   ['poster completion allow and helper deny test exists', () => assert.ok(tests.includes('allows the poster but denies the assigned helper from completing a task'))],
   ['student Market writes without U2U profile are denied in tests', () => assert.ok(tests.includes('denies student Market writes when profiles/{uid} does not exist'))],
@@ -25,7 +25,7 @@ const checks = [
   ['proposal documents require proposerId equal to caller/document id', () => assert.ok(rules.includes('data.proposerId == userId') && rules.includes('data.proposerId == request.auth.uid') && rules.includes('marketValidProposalCreateLinkedState(taskId, data)'))],
   ['Applied collection-group reads are self-scoped', () => assert.match(rules, /match \/\{path=\*\*\}\/proposals\/\{proposalId\}[\s\S]{0,260}resource\.data\.proposerId == request\.auth\.uid/)],
   ['proposal collection-group composite index exists', () => assert.ok(indexes.indexes.some(i => i.collectionGroup === 'proposals' && i.queryScope === 'COLLECTION_GROUP' && i.fields?.some(f => f.fieldPath === 'proposerId' && f.order === 'ASCENDING') && i.fields?.some(f => f.fieldPath === 'updatedAt' && f.order === 'DESCENDING')))],
-  ['deterministic report IDs are validated', () => assert.ok(rules.includes('request.resource.data.reporterId == request.auth.uid') && rules.includes('reportId'))],
+  ['deterministic report IDs and caller ownership are validated', () => assert.match(rules, /function marketValidReportCreate\(reportId, data\)[\s\S]{0,900}data\.reporterId == uid[\s\S]{0,300}reportId == data\.targetType \+ '_'/)],
   ['deterministic appeal ticket IDs are validated', () => assert.ok(rules.includes("'appeal_' + request.resource.data.relatedId + '_' + request.auth.uid"))],
   ['rating writes validate paired stats mutations', () => assert.ok(rules.includes("lastMutation.kind == 'rating'"))],
   ['both participants can rate a completed task in the Emulator suite', () => assert.ok(tests.includes('keeps both participants able to rate a completed task with stats in each same batch'))],
@@ -43,7 +43,7 @@ const checks = [
   ['deploy checklist mandates production export and rollback', () => assert.ok(checklist.toLowerCase().includes('production') && checklist.toLowerCase().includes('rollback'))],
   ['workflow fails when Emulator output has expression-ceiling diagnostics', () => assert.match(workflow, /grep -Fq "Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached"/)],
   ['Market update rules guard null resource before update validators', () => {
-    assert.ok(rules.includes('allow update: if resource != null && marketSignedIn() && ('));
+    assert.ok(rules.includes('allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);'));
     assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);'));
     assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);'));
   }],
