@@ -358,7 +358,22 @@ class MarketRequestsActivity : AppCompatActivity() {
         author.addView(makeText(item.ageLabel,12f,false,color(R.color.market_ink2)),
             LinearLayout.LayoutParams(-2,-2).apply { marginStart=dp(6) })
         card.addView(author,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(10) })
-        card.setOnClickListener { toast("Task detail is a separate reference-screen step.") }
+        card.setOnClickListener {
+            startActivity(Intent(this@MarketRequestsActivity, MarketTaskDetailActivity::class.java).apply {
+                putExtra(MarketTaskDetailActivity.EXTRA_ID, item.id)
+                putExtra(MarketTaskDetailActivity.EXTRA_CATEGORY, item.category)
+                putExtra(MarketTaskDetailActivity.EXTRA_COURSE, item.courseTag)
+                putExtra(MarketTaskDetailActivity.EXTRA_TITLE, item.title)
+                putExtra(MarketTaskDetailActivity.EXTRA_DESCRIPTION, item.description)
+                putExtra(MarketTaskDetailActivity.EXTRA_BUDGET, item.budgetLabel)
+                putExtra(MarketTaskDetailActivity.EXTRA_DUE, item.dueLabel)
+                putExtra(MarketTaskDetailActivity.EXTRA_PROPOSALS, item.proposalCount)
+                putExtra(MarketTaskDetailActivity.EXTRA_AUTHOR, item.posterName)
+                putExtra(MarketTaskDetailActivity.EXTRA_INITIALS, item.initials)
+                putExtra(MarketTaskDetailActivity.EXTRA_AGE, item.ageLabel)
+                putExtra(MarketTaskDetailActivity.EXTRA_AVATAR_COLOR, item.avatarColor)
+            })
+        }
         return card
     }
 

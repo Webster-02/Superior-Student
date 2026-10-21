@@ -118,4 +118,18 @@ UI-03 is complete. Stop for user review before implementing reference screen 04 
 
 ## Exact next step
 
-UI-04 is complete. Stop for user review before implementing reference screen 05 My Tasks or wiring the remaining menu destinations. Do not start the next screen until the user explicitly approves.
+UI-04 is complete. ZIP numbering confirms screen 05 is Task detail (helper), while My Tasks is screen 15. Screen 05 has been approved for implementation in this step.
+
+
+## UI-05 — Task detail (helper view)
+
+- **Status:** implementation committed; CI pending.
+- Corrected the numbered reference order: `05_detail_helper` is the task detail screen for a prospective helper; `15_mytasks` is the separate My Tasks screen.
+- Added a native detail screen with back/bookmark/report header, category/course chips, large title, poster avatar/name/rating/verified label, three pastel Budget/Deadline/Proposals cards, detail text, skills chips, locked-contact notice and a fixed lime Send proposal CTA.
+- Tapping a Requests card now opens detail and passes its sample listing fields. The exact Design reference uses the ZIP's extended description and 24 Oct / 3 days / 4 of 15 values.
+- Bookmark is preview-only and not persisted. Report and proposal submission are not connected to live services yet; taps state this clearly. No Firestore rules/indexes, chat, or Nearby logic changed.
+- Added three focused policy tests for reference metrics/tags, generic request mapping and lock message/proposal bounds.
+
+## Exact next step
+
+Run GitHub Actions for UI-05. Fix only compile/test issues in the new detail screen. Verify the APK artifact and stop for review before screen 06 (poster detail) or real data wiring.
