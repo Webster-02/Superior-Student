@@ -1,7 +1,7 @@
 # Market Rules Review Progress
 
 **Branch:** `review/market-rules`  
-**State:** Step Zero baseline verified; **P1–P3 candidates implemented and untested** — review-only. No merge to `main` and no Firebase deployment. CI is intentionally not run for the current P3 change.
+**State:** Step Zero baseline verified; **P1–P4 candidates implemented and untested** — review-only. No merge to `main` and no Firebase deployment. CI is intentionally not run for the current P4 change.
 
 ## Step Zero verification record
 
@@ -15,14 +15,14 @@
 - **P1 — Tasks + offers (current candidate):** reduced repeated field access in create validators, cached status/owner/assignment/timestamp fields in owner-update validators, retained the single `affectedKeys()` diff per update dispatcher, cached pre-update report counters/moderation, and combined offer reactivation limit/counter checks around one cached profile before/after snapshot. Cheap create payload checks now run before timestamp checks. Existing allowlists, ownership checks, status transitions, and counter predicates remain in place. **Not tested in CI by instruction.**
 - **P2 — Reports (current candidate):** cached report-create profile mutation and report post-state snapshots; consolidated report existence validation with the task/offer report-counter validators while retaining explicit `existsAfter`, target identity, reporter identity, report-count, moderation-threshold, and profile-counter checks. The admin report update checks the status allowlist before the field diff. **Not tested in CI by instruction.**
 - **P3 — Profile + proposals (current candidate):** validates profile-create payload before existence reads, skips the expensive profile counter dispatcher unless numeric/window counter fields actually change (while preserving the separate exact admin suspension reset path), caches proposal preflight/linked-state values, and caches proposal update routing predicates. Existing counter, ownership, lifecycle, allowlist, and mutation checks remain in place. **Not tested in CI by instruction.**
-- **P4 — CI diagnostic guard:** corrected. The guard counts the exact diagnostic lines, records the count and exit status in the final summary, and makes any nonzero diagnostic count fail the job. Static validation covers the guard.
-- **P5 — Run CI:** Step Zero baseline run #20 completed successfully. **No CI run for the P1/P2/P3 candidates**, as requested.
+- **P4 — CI diagnostic guard (current candidate):** the workflow scans captured Emulator output for the stable core phrase `maximum of 1000 expressions to evaluate has been reached` case-insensitively, records the diagnostic count and guard status, and fails the job for any match. Static validation asserts the log source, matcher, positive-count failure branch, and final nonzero exit path. **This P4 change has not been run in CI.**
+- **P5 — Run CI:** Step Zero baseline run #20 completed successfully. **No CI run for the current P1/P2/P3/P4 candidates**, as requested.
 - **P6 — Original addendum:** added as `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` from the supplied Library file without editing its bytes. Source SHA-256: `ff60be0137604b27f93fe8f12ee3e5f0dcbcf7a38e250b3351bdea2a1da4c899`; Git blob SHA: `7cec066773fb5f40cdcf4e921e09ab9c92119800`. The static suite verifies the SHA-256 at test time.
 - **Deployment safety:** `DEPLOY_CHECKLIST.md` remains unchanged (blob SHA `ba9dd664d3348ef3d25a1c7e1717ee9519110b93`). No merge to `main`, production export overwrite, Firebase deployment, or staging deployment occurred. Production remains blocked pending the checklist's live rules/index baseline comparison, legacy `proposerId` backfill, staging verification, and explicit approval.
 
-## Current P1/P2/P3 scope and verification status
+## Current P1/P2/P3/P4 scope and verification status
 
-P1 changed task/offer create and update helpers. P2 changed report-create/profile-counter validation, task/offer report-counter validation used by report updates, and the admin report-status update rule. P3 changed Market profile create/update validation and proposal create/update helpers. No test files, CI workflow, deployment checklist, indexes, or Firebase project were changed. The current P1/P2/P3 candidate has not been run through CI or Emulator; the previous Step Zero CI result applies to the earlier Rules snapshot only.
+P1 changed task/offer create and update helpers. P2 changed report-create/profile-counter validation, task/offer report-counter validation used by report updates, and the admin report-status update rule. P3 changed Market profile create/update validation and proposal create/update helpers. P4 hardened the workflow's Emulator-log expression-ceiling guard and the static assertions that protect it. No Firestore Rules, index, Emulator test case, deployment checklist, or Firebase project was changed by P4. The current P1/P2/P3/P4 candidate has not been run through CI or Emulator; the previous Step Zero CI result applies to the earlier snapshot only.
 
 The mapping and cost patterns below are retained as historical diagnostic documentation for the earlier run; they are not a claim that the discarded experimental refactor is present in the current Rules file.
 

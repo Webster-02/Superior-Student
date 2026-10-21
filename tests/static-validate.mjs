@@ -68,8 +68,11 @@ const checks = [
   }],
   ['workflow specifies Node.js 20 and Java 21', () => { assert.match(workflow, /node-version:\s*['"]?20/); assert.match(workflow, /java-version:\s*['"]?21/); }],
 
-  ['workflow counts, reports and fails on expression-ceiling diagnostics', () => {
-    assert.ok(workflow.includes('diagnostic_count=$(grep -Fc "${expression_message}" artifacts/test-emulator-output.txt || true)'));
+  ['workflow fails when the Emulator output contains the expression-ceiling message', () => {
+    assert.ok(workflow.includes('npm run test:emulator 2>&1 | tee artifacts/test-emulator-output.txt'));
+    assert.ok(workflow.includes('expression_message="maximum of 1000 expressions to evaluate has been reached"'));
+    assert.ok(workflow.includes('diagnostic_count=$(grep -Fic -- "${expression_message}" artifacts/test-emulator-output.txt || true)'));
+    assert.ok(workflow.includes('if [[ "${diagnostic_count}" -gt 0 ]]; then'));
     assert.ok(workflow.includes('expression_ceiling_status=0'));
     assert.ok(workflow.includes('expression_ceiling_status=1'));
     assert.ok(workflow.includes('echo "expression-ceiling diagnostic count: ${diagnostic_count}"'));
