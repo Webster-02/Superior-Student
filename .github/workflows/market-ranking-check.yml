@@ -20,6 +20,8 @@ on:
       - 'app/src/main/java/com/superiorstudent/app/feature/market/ui/MarketOffersActivity.kt'
       - 'app/src/main/java/com/superiorstudent/app/feature/market/ui/MarketOffersUiPolicy.kt'
       - 'app/src/main/java/com/superiorstudent/app/feature/market/ui/MarketOffersIcons.kt'
+      - 'app/src/main/java/com/superiorstudent/app/feature/market/ui/MarketMenuSheet.kt'
+      - 'app/src/test/java/com/superiorstudent/app/feature/market/ui/MarketMenuItemsTest.kt'
       - 'app/src/main/java/com/superiorstudent/app/feature/market/ui/MarketOffersUiPolicy.kt'
       - 'app/src/test/java/com/superiorstudent/app/feature/market/ui/MarketOffersUiPolicyTest.kt'
       - 'app/src/main/AndroidManifest.xml'

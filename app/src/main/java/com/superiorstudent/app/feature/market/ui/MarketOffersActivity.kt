@@ -23,7 +23,6 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.PopupMenu
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -287,14 +286,7 @@ class MarketOffersActivity : AppCompatActivity() {
     }
 
     private fun showMenu(anchor: View) {
-        PopupMenu(this, anchor).apply {
-            listOf("My tasks", "My offers", "Notices", "Help and safety", "Market settings").forEach { menu.add(it) }
-            setOnMenuItemClickListener { item ->
-                toast(item.title.toString() + " is coming in its own reference-screen step.")
-                true
-            }
-            show()
-        }
+        MarketMenuSheet.show(this) { item -> toast(item.feedbackMessage) }
     }
 
     private fun showSortDialog() {

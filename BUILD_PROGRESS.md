@@ -105,3 +105,17 @@ Stop for user review. After explicit approval, implement student reference scree
 ## Exact next step
 
 UI-03 is complete. Stop for user review before implementing reference screen 04 Menu or connecting live Firestore offers. Do not expand into the next screen until the user explicitly approves.
+
+
+## UI-04 — Market menu bottom sheet
+
+- **Status:** implementation committed; CI pending.
+- Inspected the ZIP's light/dark `04_menu` references. Replaced the generic PopupMenu on both Requests and Offers with one shared, reference-style dimmed bottom sheet.
+- Reproduced the grab handle, "Market menu" heading, bordered rounded list card, five icon tiles and subtitles: My tasks, My offers, Notices (badge 2), Help and safety, Market settings. Uses existing Market Paper/Night resources and Poppins.
+- Menu rows currently dismiss and provide honest in-progress feedback; the destination screens are separate steps, so no placeholder navigation is presented as complete.
+- Added unit tests for reference row order/labels, Notices badge/subtitle, and non-empty helper text. No Firestore rules/index changes, deployments or merges.
+- UI-03 code checkpoint passed in run #23 (`39674447312`) with APK artifact.
+
+## Exact next step
+
+Run CI for UI-04, fix only any menu-sheet compile/test issues, verify APK artifact, and stop for user review.
