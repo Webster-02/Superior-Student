@@ -101,3 +101,13 @@ These patterns were recorded from the earlier Rules snapshot that produced the 3
 3. Profile counter mutation validators repeatedly read the same target documents, especially with `getAfter()`, and dispatch through long operation OR chains. A proposed target-read cache and changed-counter-field prefilter were not retained after the failed experiment.
 4. Proposal creation repeatedly reads task/proposal/profile-linked state while validating payload fields. Moving payload checks ahead of linked-state validation and caching task/profile maps was a hypothesis, not a verified fix.
 5. Posting eligibility originally read Market profile status before auth and document-existence checks. Guard ordering may be reviewed in a separate change, with the Emulator suite and raw diagnostic guard run after each candidate.
+
+
+## Current-head CI trigger verification (2026-10-21)
+
+- Candidate tested: `9fbb8a423be36badce22e1f799d87658dda640c7`. A comment-only marker was added to `.github/workflows/firestore-rules-test.yml` to trigger the path-filtered workflow; trigger commit: `55260cbe0c1be04a05f8439aea46289ad2cab6b1`.
+- Run #21: https://github.com/Webster-02/Superior-Student/actions/runs/39601819592 — **failure**.
+- Static suite: **34 passed, 3 failed**. Failed assertions: (1) “assigned task completion is explicitly poster-only”; (2) “Market mutation validators route to one operation-specific branch”; (3) “task and offer report counters require a report document before linked reads.” These are existing static assertions and were not changed for the trigger.
+- Firestore Emulator suite: **65 passed, 0 failed**.
+- Raw `artifacts/test-emulator-output.txt`: `grep -Fic -- "maximum of 1000 expressions to evaluate has been reached"` = **0**; `grep -ci "expression"` = **0**; literal `PERMISSION_DENIED` diagnostics = **77** (expected-denial classification to be checked against their test context before final reporting).
+- No rules, indexes, Emulator tests, UI, or build code were changed for this check. No merge or deployment occurred. The CI run is not green; do not start Market build work until the static failures are resolved or verified-baseline fallback is explicitly approved.
