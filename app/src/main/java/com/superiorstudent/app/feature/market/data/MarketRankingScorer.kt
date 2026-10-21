@@ -43,14 +43,14 @@ object MarketRankingScorer {
             compareByDescending<IndexedValue<OfferSignals>> { it.value.offer.pinned }
                 .thenByDescending {
                     if (it.value.offer.pinned) {
-                        it.value.pinnedAtMillis ?: it.value.offer.renewedAt.toMillis()
+                        it.value.pinnedAtMillis ?: it.value.offer.renewedAt.seconds * 1000L
                     } else {
                         Long.MIN_VALUE
                     }
                 }
                 .thenByDescending { score(it.value, weights, nowMillis) }
-                .thenByDescending { it.value.offer.renewedAt.toMillis() }
-                .thenByDescending { it.value.offer.createdAt.toMillis() }
+                .thenByDescending { it.value.offer.renewedAt.seconds * 1000L }
+                .thenByDescending { it.value.offer.createdAt.seconds * 1000L }
                 .thenBy { it.index }
         ).map { it.value }
 
@@ -64,13 +64,13 @@ object MarketRankingScorer {
     ): List<TaskSignals> =
         items.withIndex()
             .filter { (_, item) ->
-                item.task.deadline.toMillis() > nowMillis &&
-                    item.task.expiresAt.toMillis() > nowMillis
+                item.task.deadline.seconds * 1000L > nowMillis &&
+                    item.task.expiresAt.seconds * 1000L > nowMillis
             }
             .sortedWith(
                 compareByDescending<IndexedValue<TaskSignals>> { it.value.task.pinned }
                     .thenByDescending { it.value.matchesSkillTags || it.value.matchesCourse }
-                    .thenByDescending { it.value.task.createdAt.toMillis() }
+                    .thenByDescending { it.value.task.createdAt.seconds * 1000L }
                     .thenBy { it.index }
             )
             .map { it.value }
@@ -81,7 +81,7 @@ object MarketRankingScorer {
         nowMillis: Long
     ): Double {
         requireValidWeights(weights)
-        val renewedAtMillis = signals.offer.renewedAt.toMillis()
+        val renewedAtMillis = signals.offer.renewedAt.seconds * 1000L
         val ageMillis = (nowMillis - renewedAtMillis).coerceAtLeast(0L)
         val ageDays = ageMillis.toDouble() / MILLIS_PER_DAY
         val newness = (1.0 - ageDays / OFFER_LIFETIME_DAYS).coerceIn(0.0, 1.0)
