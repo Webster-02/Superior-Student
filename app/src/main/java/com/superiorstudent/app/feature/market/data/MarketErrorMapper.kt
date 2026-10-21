@@ -57,6 +57,13 @@ internal object MarketErrorMapper {
         )
     }
 
+    /** A successful read with absent or invalid config is a data error, not an offline fallback. */
+    internal fun invalidRemoteConfig(): MarketMappedError = MarketMappedError(
+        kind = MarketErrorKind.INVALID_CONFIG,
+        message = "Market settings could not be loaded because their configuration is missing or invalid. Existing content remains visible.",
+        retryable = false
+    )
+
     /** Separate string-based mapper so every Firestore code can be tested without Android services. */
     internal fun mapFirestoreCode(codeName: String?): MarketMappedError = when (codeName) {
         "UNAUTHENTICATED" -> MarketMappedError(
@@ -139,6 +146,7 @@ internal object MarketErrorMapper {
 
 internal enum class MarketErrorKind {
     OFFLINE,
+    INVALID_CONFIG,
     SIGN_IN_REQUIRED,
     PERMISSION_DENIED,
     ITEM_NOT_FOUND,
