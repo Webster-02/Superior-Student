@@ -23,7 +23,7 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
 
 ## Parts and checkpoints
 
-- **Part 0 — gate and docs-only wording:** gate passed. Approved addendum wording changes are being recorded now. No build implementation, rules, tests, indexes, UI, or deployment changes.
+- **Part 0 — gate and docs-only wording:** complete. Protected-file baseline gate passed; addendum wording fixes committed in `fa0a96e84bca50a48abdb7b8772fa12fa3ebf957`. Clarified task/offer counter lifecycle, verified-email vs self-service profile edits (including `blockedUids`), admin audit/notice responsibility, required task conversation batching, and current green CI verification. No build implementation, rules, tests, indexes, UI, or deployment changes.
 - **Part 1 — typed models and converters:** not started.
 - **Part 2 — MarketRepository:** not started.
 - **Part 3 — query builders:** not started.
