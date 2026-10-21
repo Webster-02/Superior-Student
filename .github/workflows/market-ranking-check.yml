@@ -1,13 +1,16 @@
-name: Market Ranking Step Check
+name: Market Data Step Check
 
 on:
   workflow_dispatch:
   push:
     branches:
       - feature/market-step5-ranking
+      - feature/market-step6-errors
     paths:
       - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketRankingScorer.kt'
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketRankingScorerTest.kt'
+      - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketErrorMapper.kt'
+      - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketErrorMapperTest.kt'
       - '.github/workflows/market-ranking-check.yml'
       - 'BUILD_PROGRESS.md'
 
@@ -16,7 +19,7 @@ permissions:
 
 jobs:
   verify:
-    name: Verify ranking scorer and APK
+    name: Verify Market data and APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
