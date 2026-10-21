@@ -109,7 +109,7 @@ UI-03 is complete. Stop for user review before implementing reference screen 04 
 
 ## UI-04 — Market menu bottom sheet
 
-- **Status:** implementation committed; CI pending.
+- **Status:** complete and verified on commit `674a51ba55d4f815990c65c768f32255700e21a7`. GitHub Actions run #25 (`39676655510`) passed unit tests, JavaScript validation, clean, APK build, APK verification and artifact upload.
 - Inspected the ZIP's light/dark `04_menu` references. Replaced the generic PopupMenu on both Requests and Offers with one shared, reference-style dimmed bottom sheet.
 - Reproduced the grab handle, "Market menu" heading, bordered rounded list card, five icon tiles and subtitles: My tasks, My offers, Notices (badge 2), Help and safety, Market settings. Uses existing Market Paper/Night resources and Poppins.
 - Menu rows currently dismiss and provide honest in-progress feedback; the destination screens are separate steps, so no placeholder navigation is presented as complete.
@@ -118,4 +118,4 @@ UI-03 is complete. Stop for user review before implementing reference screen 04 
 
 ## Exact next step
 
-Run CI for UI-04, fix only any menu-sheet compile/test issues, verify APK artifact, and stop for user review.
+UI-04 is complete. Stop for user review before implementing reference screen 05 My Tasks or wiring the remaining menu destinations. Do not start the next screen until the user explicitly approves.
