@@ -7,9 +7,9 @@ import android.graphics.Path
 import android.view.View
 import kotlin.math.min
 
-private enum class PostTaskIcon { BACK, SEARCH, NEXT }
+internal enum class PostTaskIcon { BACK, SEARCH, NEXT }
 
-private class PostTaskIconView(
+internal class PostTaskIconView(
     context: Context,
     private val icon: PostTaskIcon,
     private val tint: Int

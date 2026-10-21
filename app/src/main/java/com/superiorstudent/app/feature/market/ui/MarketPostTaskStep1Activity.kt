@@ -231,10 +231,6 @@ class MarketPostTaskStep1Activity : AppCompatActivity() {
         }
         parent.addView(row, LinearLayout.LayoutParams(-1, dp(38)).apply {
             if (topMargin > 0) this.topMargin = dp(topMargin)
-            if (labels.size == 2) {
-                // Keep the second row chips compact and left-aligned like the reference.
-                weightSum = 1f
-            }
         })
         if (labels.size == 2) {
             row.removeAllViews()
@@ -333,6 +329,12 @@ class MarketPostTaskStep1Activity : AppCompatActivity() {
         }
         ViewCompat.requestApplyInsets(root)
     }
+
+    private fun fieldParams(top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(-1, -2).apply {
+            if (top > 0) topMargin = dp(top)
+            if (bottom > 0) bottomMargin = dp(bottom)
+        }
 
     private fun rounded(fill: Int, radius: Float, stroke: Int? = null) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
