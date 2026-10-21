@@ -5,7 +5,9 @@ import com.google.android.gms.tasks.Tasks
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestoreException
 import java.net.UnknownHostException
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -134,8 +136,27 @@ class MarketConfigProviderTest {
     private fun provider(remoteReader: () -> Task<MarketConfig?>): MarketConfigProvider =
         MarketConfigProvider(remoteReader, cacheStore) { nowMillis }
 
-    private fun await(task: Task<MarketConfig?>): MarketConfig? =
-        Tasks.await(task, 5, TimeUnit.SECONDS)
+    private fun await(task: Task<MarketConfig?>): MarketConfig? {
+        val completed = CountDownLatch(1)
+        var result: MarketConfig? = null
+        var failure: Exception? = null
+
+        task.addOnCompleteListener(DIRECT_EXECUTOR) { finished ->
+            if (finished.isSuccessful) {
+                result = finished.result
+            } else {
+                failure = finished.exception
+                    ?: IllegalStateException("Test task failed without an exception.")
+            }
+            completed.countDown()
+        }
+
+        if (!completed.await(5, TimeUnit.SECONDS)) {
+            throw AssertionError("Timed out waiting for Market config task.")
+        }
+        failure?.let { throw ExecutionException(it) }
+        return result
+    }
 
     private fun expectFailure(task: Task<MarketConfig?>): Exception {
         try {
@@ -162,6 +183,10 @@ class MarketConfigProviderTest {
             reportsToHide = 3
         )
     )
+
+    private companion object {
+        val DIRECT_EXECUTOR: Executor = Executor { command -> command.run() }
+    }
 
     private class FakePreferences : MarketConfigCachePreferences {
         private val values = linkedMapOf<String, String>()

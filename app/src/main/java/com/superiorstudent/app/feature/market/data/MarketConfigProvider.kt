@@ -10,6 +10,7 @@ import java.net.NoRouteToHostException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeoutException
 
 /**
@@ -52,7 +53,7 @@ class MarketConfigProvider internal constructor(
             return cachedFallbackOrFailure(cached, failure)
         }
 
-        return remoteTask.continueWithTask { completed ->
+        return remoteTask.continueWithTask(DIRECT_EXECUTOR) { completed ->
             if (completed.isSuccessful) {
                 // A null config indicates a missing or invalid remote document.
                 // Treat that as data failure, not a connectivity failure.
@@ -81,6 +82,9 @@ class MarketConfigProvider internal constructor(
         } else {
             Tasks.forException(failure)
         }
+    }
+    private companion object {
+        val DIRECT_EXECUTOR: Executor = Executor { command -> command.run() }
     }
 }
 
