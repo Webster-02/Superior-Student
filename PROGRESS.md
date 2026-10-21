@@ -1,20 +1,28 @@
 # Market Rules Review Progress
 
 **Branch:** `review/market-rules`  
-**State:** WIP only. Candidate rules changes below are untested; CI was not run for this checkpoint. No merge to `main` and no Firebase deployment.
+**State:** **STEP ZERO COMPLETE — review-only.** The latest committed Rules baseline and CI guard passed static and Emulator checks with zero expression-ceiling diagnostics. No merge to `main` and no Firebase deployment.
 
-## P1–P6 status
+## Step Zero verification record
 
-- **P1 — Tasks + offers rules:** WIP candidate prepared; owner-update `affectedKeys()` results are cached, create validators check cheap payload properties before linked reads, and repeated lifecycle counter checks are factored. Untested.
-- **P2 — Reports rules:** WIP candidate caches post-batch task/offer and report maps in the report-counter validators. Untested.
-- **P3 — Profile + proposals rules:** WIP candidate moves auth/profile-existence checks ahead of status reads, prefilters profile counter updates by changed fields, caches repeated linked document reads, and separates proposal payload validation from linked-state checks. Untested.
-- **P4 — CI guard:** WIP workflow gate added to fail if the raw Emulator log contains the exact 1,000-expression-ceiling message; a static test checks that the gate remains present. Untested.
-- **P5 — Run CI:** **Not run by request.** No new test result is claimed.
-- **P6 — Add `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` unchanged:** **Blocked / not added.** The original attachment was not present in the accessible files/source branch at the last check. Do not recreate or edit it; attach the original for a byte-preserving add.
+- **Validated commit:** `6249b60165cbe96d2aa2102e22d22ac99469c1c1`
+- **GitHub Actions run:** [#20 — Align static checks with corrected expression guard](https://github.com/Webster-02/Superior-Student/actions/runs/39583502817) — **success**
+- **Static suite:** 37 passed, 0 failed.
+- **Firestore Emulator suite:** 65 passed, 0 failed.
+- **Expression-ceiling diagnostics in raw Emulator output:** 0.
+- **Guard result:** diagnostic count 0; guard exit code 0; final summary `Overall: PASS`.
+- **Rules baseline:** `firestore.rules` was restored byte-for-byte to the last known passing Rules blob (`8324f3bde6ee72d051a5635ba44ae73388439e02`, from commit `6893af1a273f17134e72f49e9ecac9f24e0ae999`). The untested rule refactor present in WIP commit `b7a7b39` was not retained: run #18 reproduced 39 expression-ceiling diagnostics and nine static-check failures. Do not reapply that experiment without a separately reviewed change and a fresh CI run.
+- **P1 — Tasks + offers:** current restored Rules baseline passed the complete Emulator suite with zero expression-ceiling diagnostics. The untested follow-up refactor was backed out.
+- **P2 — Reports:** current restored Rules baseline passed the complete Emulator suite with zero expression-ceiling diagnostics. The untested follow-up refactor was backed out.
+- **P3 — Profile + proposals:** current restored Rules baseline passed the complete Emulator suite with zero expression-ceiling diagnostics. The untested follow-up refactor was backed out.
+- **P4 — CI diagnostic guard:** corrected. The guard counts the exact diagnostic lines, records the count and exit status in the final summary, and makes any nonzero diagnostic count fail the job. Static validation covers the guard.
+- **P5 — Run CI:** completed successfully in run #20 above.
+- **P6 — Original addendum:** added as `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` from the supplied Library file without editing its bytes. Source SHA-256: `ff60be0137604b27f93fe8f12ee3e5f0dcbcf7a38e250b3351bdea2a1da4c899`; Git blob SHA: `7cec066773fb5f40cdcf4e921e09ab9c92119800`. The static suite verifies the SHA-256 at test time.
+- **Deployment safety:** `DEPLOY_CHECKLIST.md` remains unchanged (blob SHA `ba9dd664d3348ef3d25a1c7e1717ee9519110b93`). No merge to `main`, production export overwrite, Firebase deployment, or staging deployment occurred. Production remains blocked pending the checklist's live rules/index baseline comparison, legacy `proposerId` backfill, staging verification, and explicit approval.
 
-`DEPLOY_CHECKLIST.md` is retained unchanged. Deployment remains on hold pending expression diagnostics resolution, production rules/index export and comparison, legacy `proposerId` backfill, and staging verification.
+The mapping and cost patterns below are retained as historical diagnostic documentation for the earlier run; they are not a claim that the discarded experimental refactor is present in the current Rules file.
 
-## Mapping of the 39 diagnostics in run 39533202614
+## Historical mapping of 39 diagnostics in run 39533202614 (pre-refactor snapshot)
 
 The Emulator log's numbered line below is the line in the downloaded raw job log (not a `firestore.rules` line). Rule locations below are from the rules file used by that run. Repeated occurrences are listed individually so none is hidden.
 
@@ -67,12 +75,12 @@ Operation-to-path key:
 - `offers/{offerId}`: create L972, update L973.
 - `reports/{reportId}`: create L1084, update L1108.
 
-## Repeated-cost patterns identified
+## Historical repeated-cost hypotheses (not retained as completed fixes)
 
-1. Task and offer owner-update rules repeatedly evaluate `request.resource.data.diff(resource.data).affectedKeys()`; the WIP candidate binds the affected-key set once and reuses it.
-2. Task/offer report-counter validators repeatedly read the same post-batch task/offer and report documents using `getAfter()`; the WIP candidate binds these maps once per validator.
-3. Profile counter mutation validators repeatedly read the same target documents, especially with `getAfter()`, and dispatch through long operation OR chains; WIP changes bind repeated target reads and add a cheap counter-field allowlist before the expensive dispatcher.
-4. Proposal creation repeatedly reads task/proposal/profile-linked state while validating payload fields; the WIP candidate moves payload checks ahead of linked-state validation and caches task/profile maps.
-5. Posting eligibility originally read Market profile status before auth and document-existence checks; the WIP candidate puts those cheap guards first.
+These patterns were recorded from the earlier Rules snapshot that produced the 39 diagnostics above. A follow-up optimization experiment was later rejected and reverted after CI reproduced the expression ceiling. Treat these as investigation leads only, not changes in the current branch.
 
-These are refactoring hypotheses, **not proven expression-count reductions** until the Emulator runs with a clean raw log. The previous run had 39 diagnostics despite 65/65 assertions passing.
+1. Task and offer owner-update rules repeatedly evaluated `request.resource.data.diff(resource.data).affectedKeys()`. A proposed refactor cached the affected-key set once; that untested follow-up is not retained.
+2. Task/offer report-counter validators repeatedly read the same post-batch task/offer and report documents using `getAfter()`. Caching those maps remains a possible future optimization, not a proven current reduction.
+3. Profile counter mutation validators repeatedly read the same target documents, especially with `getAfter()`, and dispatch through long operation OR chains. A proposed target-read cache and changed-counter-field prefilter were not retained after the failed experiment.
+4. Proposal creation repeatedly reads task/proposal/profile-linked state while validating payload fields. Moving payload checks ahead of linked-state validation and caching task/profile maps was a hypothesis, not a verified fix.
+5. Posting eligibility originally read Market profile status before auth and document-existence checks. Guard ordering may be reviewed in a separate change, with the Emulator suite and raw diagnostic guard run after each candidate.
