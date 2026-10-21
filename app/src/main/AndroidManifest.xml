@@ -45,6 +45,12 @@
             android:label="Market"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
+            android:name=".feature.market.ui.MarketPostTaskStep1Activity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
+            android:exported="false"
+            android:label="Post a task"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
+        <activity
             android:name=".feature.market.ui.MarketTaskPosterDetailActivity"
             android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"
