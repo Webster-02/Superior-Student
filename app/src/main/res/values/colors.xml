@@ -68,4 +68,22 @@
     <color name="ring_track">#1714201A</color>
     <color name="market_entry_bg">#FDDACA</color>
     <color name="market_entry_icon_tile">#99FFFFFF</color>
+
+    <color name="market_bg">#F4F1EA</color>
+    <color name="market_card">#FFFFFF</color>
+    <color name="market_line">#E6E2D8</color>
+    <color name="market_ink">#14201A</color>
+    <color name="market_ink2">#5C6760</color>
+    <color name="market_ink3">#98A09A</color>
+    <color name="market_lav">#E4DDFC</color>
+    <color name="market_peach">#FDDACA</color>
+    <color name="market_sky">#D2E7FA</color>
+    <color name="market_mint">#D5EFDF</color>
+    <color name="market_segment">#14201A</color>
+    <color name="market_segment_ink">#FFFFFF</color>
+    <color name="market_neutral_chip">#F4F1EA</color>
+    <color name="market_match">#D4F34A</color>
+    <color name="market_match_ink">#14201A</color>
+    <color name="market_menu_dot">#FF6B4A</color>
+
 </resources>

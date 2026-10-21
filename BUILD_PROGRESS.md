@@ -81,3 +81,17 @@ Part 6D is complete and verified. Stop for user review before mapping any additi
 ## Exact next step
 
 Run GitHub Actions for the UI-01 change. Verify clean, unit tests, APK build and artifact upload. Then stop for user review before connecting the Market tile or implementing the next reference screen.
+
+
+## UI-02 — Requests reference screen
+
+- **Status:** implementation committed; CI pending.
+- Added a dedicated native Market Requests Activity and connected the Home Market card to open it. Existing Student Connect routes and view IDs are otherwise unchanged.
+- Reproduced the reference structure and tokens: Paper/Night colours, Poppins, header/back/search/menu, segmented Requests/Offers tabs, category chips, sort control, request cards, deadline/proposal row, author row, “Matches you” badge, and floating “Post a task” button.
+- The three listings intentionally mirror the ZIP's **visual reference fixtures**, not live Firestore data. Search, category filtering and local sorting work over those fixtures. Cache/feed/pagination, detail, Offers, menu destinations and task posting remain later steps.
+- No Firestore rules/index changes, deployment or merge. UI-01 build #18 passed and produced the debug APK.
+- Workflow path filters now include the Market Activity and its unit tests.
+
+## Exact next step
+
+Run GitHub Actions for UI-02; verify unit tests, APK build, verification and artifact upload. After that, stop for user review before implementing screen 03 Offers or wiring live Market data.

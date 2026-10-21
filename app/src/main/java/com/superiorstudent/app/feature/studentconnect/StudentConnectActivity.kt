@@ -52,6 +52,7 @@ import com.superiorstudent.app.ui.AppThemePreferences
 import com.superiorstudent.app.ui.U2UDesignTokens
 import com.superiorstudent.app.ui.U2UTextRole
 import com.superiorstudent.app.feature.profile.data.ProfileCache
+import com.superiorstudent.app.feature.market.ui.MarketRequestsActivity
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequest
 import com.superiorstudent.app.feature.studentconnect.data.FriendRequestStatus
 import com.superiorstudent.app.feature.studentconnect.data.StudentProfile
@@ -400,6 +401,9 @@ class StudentConnectActivity : AppCompatActivity() {
         findViewById<View>(R.id.studentConnectHomeRequestsCard).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.REQUESTS) }
         findViewById<View>(R.id.studentConnectHomeConnectionsCard).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.CONNECTIONS) }
         findViewById<View>(R.id.studentConnectHomeProfileCard).setOnClickListener { navigateToStudentConnectScreen(StudentConnectScreen.PROFILE) }
+        findViewById<View>(R.id.studentConnectHomeMarketCard).setOnClickListener {
+            startActivity(Intent(this, MarketRequestsActivity::class.java))
+        }
         findViewById<View>(R.id.studentConnectHomeNearbySendButton).setOnClickListener {
             openNearbyShare("send")
         }
