@@ -2,7 +2,7 @@
 
 **Branch:** `feature/market-step1`
 **Base:** `review/market-rules` at `aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3`
-**Build status:** Parts 1–3 complete. Part 4 Steps 4A, 4B1 and 4B2 (cache policy, versioned codec, and persistent local store) are complete and green in runs #596 (`39631043160`), #598 (`39632795357`) and #600 (`39634123211`). The Firestore config reader is not wired yet.
+**Build status:** Parts 1–3 complete. Part 4 Steps 4A, 4B1, 4B2 and 4C1 (cache policy, versioned codec, persistent local store, and read-only config reader) are complete and green in runs #596 (`39631043160`), #598 (`39632795357`), #600 (`39634123211`) and #602 (`39635387870`). Remote refresh/cache fallback wiring is not complete.
 **Safety:** Do not modify `firestore.rules`, the protected top-level `tests/`, or `firestore.indexes.json`; do not change existing U2U chat/friend/Nearby logic or existing view IDs. No merge or Firebase deployment.
 
 ## Baseline gate
@@ -57,11 +57,14 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
   - **Step 4B2 — persistent local cache store:** complete. Added `MarketConfigCacheStore.kt` backed by a dedicated app-private `SharedPreferences` file and the Step 4B1 codec. It exposes write/read/clear, uses synchronous commit results for write/remove, enforces the codec's payload bound, returns stale entries for the caller's policy-controlled offline fallback, and clears malformed or incompatible cached payloads. Invalid configs and failed writes do not replace the previously saved value. The store has no Firestore dependency.
   - Added `MarketConfigCacheStoreTest.kt` with seven local tests: write/read timestamp round-trip; overwrite; stale entry retained for policy-controlled fallback; clear affects only Market config; malformed entry cleanup; invalid config/rejected write preserve existing cache; and preference runtime failures do not escape.
   - **GitHub Actions run #600:** [build and APK artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39634123211) — JavaScript validation, clean, all unit tests, APK assembly, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,777,383 bytes, expires 2026-10-28.
-  - Firestore config reading and wiring remote refresh with connectivity-only stale fallback remain deferred to Step 4C.
+  - **Step 4C1 — read-only Firestore config reader:** complete. Added `MarketConfigReader.kt`. It reads only `config/market` through Firestore's read API, propagates Firestore read failures, and routes the returned document identity and data through a strict decoder. It does not write, alter authorization, automatically fall back to cached values, or modify any UI.
+  - Added `MarketConfigReaderTest.kt` with four focused tests: the fixed collection/document identity; successful strict config decoding; rejection of a different document ID; and rejection of missing/extra fields, malformed nested shapes, weights that do not total 100, or rule-incompatible limit values.
+  - **GitHub Actions run #602:** [build and APK artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39635387870) — JavaScript validation, clean, unit tests, APK assembly, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,777,491 bytes, expires 2026-10-28.
+  - **Step 4C2** remains pending: connect the read-only reader to the cache store, enforce the six-hour refresh policy, and allow stale-cache fallback only for identified connectivity failures. Keep authorization, malformed-data, and programming errors visible instead of hiding them behind cached data.
 
 - **Part 5 — pure ranking scorer and unit tests:** not started.
 - **Part 6 — Firestore error mapping:** not started.
 
 ## Exact next step
 
-Steps 4A, 4B1 and 4B2 are complete and their implementation builds, unit tests, APK verification, and artifact uploads passed. The next small step is Step 4C1: add a narrowly scoped read-only Firestore config reader for `config/market`, with focused tests for strict config conversion and document identity. Do not start Step 4C1 until the user says `continue`.
+Steps 4A, 4B1, 4B2 and 4C1 are complete, and their implementation builds, unit tests, APK verification, and artifact uploads passed. The next small step is Step 4C2: connect `MarketConfigReader`, `MarketConfigCacheStore`, and `MarketConfigCachePolicy` into a config provider with a six-hour refresh policy and connectivity-only cached fallback. Do not start Step 4C2 until the user says `continue`.
