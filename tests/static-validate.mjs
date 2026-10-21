@@ -14,6 +14,7 @@ const checks = [
   ['Firestore Rules version 2', () => assert.match(rules, /rules_version\s*=\s*'2';/)],
   ['verified email is part of Market authorization', () => assert.match(rules, /function marketVerified\(\)[\s\S]{0,700}email_verified/)],
   ['legacy U2U chat helper is preserved', () => { assert.ok(base.includes('function activeChatConversationMember')); assert.ok(rules.includes('function activeChatConversationMember')); }],
+  ['profile creation keeps the exact required key shape while allowing only safe defaults', () => assert.match(rules, /function marketValidProfileCreate\(uid, data\)[\s\S]{0,220}keys\.size\(\) == 17[\s\S]{0,180}keys\.hasAll\(\['suspendedUntil', 'proposalWindowStartedAt', 'reportWindowStartedAt', 'lastMutation'\]\)/)],
   ['task create has a dedicated validator', () => assert.ok(rules.includes('marketValidTaskCreate'))],
   ['offer content has a dedicated validator', () => assert.ok(rules.includes('marketValidOfferContent'))],
   ['assigned task completion is explicitly poster-only', () => assert.match(rules, /Completing an assigned task is poster-only[\s\S]{0,260}request\.auth\.uid == (?:resource\.data|before)\.posterId/)],

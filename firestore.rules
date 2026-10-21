@@ -265,34 +265,40 @@ service cloud.firestore {
     }
 
     function marketValidSettings(settings) {
+      let keys = settings.keys();
+      let alertProposals = settings.alertProposals;
+      let alertUpdates = settings.alertUpdates;
+      let alertNotices = settings.alertNotices;
+      let alertMatchingTasks = settings.alertMatchingTasks;
       return settings is map
-        && settings.keys().hasAll([
+        && keys.size() == 4
+        && keys.hasOnly([
           'alertProposals', 'alertUpdates', 'alertNotices', 'alertMatchingTasks'
         ])
-        && settings.keys().hasOnly([
-          'alertProposals', 'alertUpdates', 'alertNotices', 'alertMatchingTasks'
-        ])
-        && settings.alertProposals is bool
-        && settings.alertUpdates is bool
-        && settings.alertNotices is bool
-        && settings.alertMatchingTasks is bool;
+        && alertProposals is bool
+        && alertUpdates is bool
+        && alertNotices is bool
+        && alertMatchingTasks is bool;
     }
-
     function marketValidProfileCreate(uid, data) {
-      return data.keys().size() == 17
-        && data.keys().hasOnly([
-          'uid', 'skillTags', 'blockedUids', 'status', 'suspendedUntil', 'warnings',
-          'settings', 'openTasks', 'activeOffers', 'proposalWindowCount',
-          'proposalWindowStartedAt', 'reportWindowCount', 'reportWindowStartedAt',
-          'openSupportTickets', 'lastMutation', 'createdAt', 'updatedAt'
-        ])
+      let keys = data.keys();
+      let skillTags = data.skillTags;
+      let blockedUids = data.blockedUids;
+      let status = data.status;
+      let suspendedUntil = data.suspendedUntil;
+      let warnings = data.warnings;
+      let settings = data.settings;
+      let createdAt = data.createdAt;
+      let updatedAt = data.updatedAt;
+      return keys.size() == 17
+        && keys.hasAll(['suspendedUntil', 'proposalWindowStartedAt', 'reportWindowStartedAt', 'lastMutation'])
         && data.uid == uid
-        && data.skillTags is list && data.skillTags.size() <= 30
-        && data.blockedUids is list && data.blockedUids.size() <= 200
-        && data.status == 'active'
-        && data.suspendedUntil == null
-        && data.warnings == 0
-        && marketValidSettings(data.settings)
+        && skillTags is list && skillTags.size() <= 30
+        && blockedUids is list && blockedUids.size() <= 200
+        && status == 'active'
+        && suspendedUntil == null
+        && warnings == 0
+        && marketValidSettings(settings)
         && data.openTasks == 0
         && data.activeOffers == 0
         && data.proposalWindowCount == 0
@@ -301,8 +307,8 @@ service cloud.firestore {
         && data.reportWindowStartedAt == null
         && data.openSupportTickets == 0
         && data.lastMutation == null
-        && data.createdAt == request.time
-        && data.updatedAt == request.time;
+        && createdAt == request.time
+        && updatedAt == request.time;
     }
     function marketCreatedAtNearRequestTime(value) {
       return value is timestamp
@@ -704,54 +710,78 @@ service cloud.firestore {
     // Reused for both creation and any content edit. Lifecycle-only changes are
     // deliberately validated separately so cleanup remains possible while suspended.
     function marketValidTaskContent(data) {
-      return data.title is string && data.title.size() >= 5 && data.title.size() <= 80
-        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
-        && (!data.keys().hasAny(['courseTag']) || (data.courseTag is string && data.courseTag.size() <= 60))
-        && data.description is string && data.description.size() >= 20 && data.description.size() <= 500
-        && data.budgetType in ['free', 'fixed', 'negotiable']
-        && data.deadline is timestamp
-        && data.skills is list && data.skills.size() <= 5
-        && (!data.keys().hasAny(['budgetAmount']) || (data.budgetAmount is number && data.budgetAmount >= 0))
-        && (data.budgetType != 'fixed' || (data.keys().hasAny(['budgetAmount']) && data.budgetAmount is number && data.budgetAmount >= 0))
-        && (data.skills.size() == 0 || (data.skills[0] is string && data.skills[0].size() >= 1 && data.skills[0].size() <= 40))
-        && (data.skills.size() < 2 || (data.skills[1] is string && data.skills[1].size() >= 1 && data.skills[1].size() <= 40))
-        && (data.skills.size() < 3 || (data.skills[2] is string && data.skills[2].size() >= 1 && data.skills[2].size() <= 40))
-        && (data.skills.size() < 4 || (data.skills[3] is string && data.skills[3].size() >= 1 && data.skills[3].size() <= 40))
-        && (data.skills.size() < 5 || (data.skills[4] is string && data.skills[4].size() >= 1 && data.skills[4].size() <= 40));
+      let keys = data.keys();
+      let title = data.title;
+      let category = data.category;
+      let courseTag = data.get('courseTag', null);
+      let description = data.description;
+      let budgetType = data.budgetType;
+      let deadline = data.deadline;
+      let skills = data.skills;
+      let budgetAmount = data.get('budgetAmount', null);
+      return title is string && title.size() >= 5 && title.size() <= 80
+        && category is string && category.size() >= 1 && category.size() <= 60
+        && (!keys.hasAny(['courseTag']) || (courseTag is string && courseTag.size() <= 60))
+        && description is string && description.size() >= 20 && description.size() <= 500
+        && budgetType in ['free', 'fixed', 'negotiable']
+        && deadline is timestamp
+        && skills is list && skills.size() <= 5
+        && (!keys.hasAny(['budgetAmount']) || (budgetAmount is number && budgetAmount >= 0))
+        && (budgetType != 'fixed' || (keys.hasAny(['budgetAmount']) && budgetAmount is number && budgetAmount >= 0))
+        && (skills.size() == 0 || (skills[0] is string && skills[0].size() >= 1 && skills[0].size() <= 40))
+        && (skills.size() < 2 || (skills[1] is string && skills[1].size() >= 1 && skills[1].size() <= 40))
+        && (skills.size() < 3 || (skills[2] is string && skills[2].size() >= 1 && skills[2].size() <= 40))
+        && (skills.size() < 4 || (skills[3] is string && skills[3].size() >= 1 && skills[3].size() <= 40))
+        && (skills.size() < 5 || (skills[4] is string && skills[4].size() >= 1 && skills[4].size() <= 40));
     }
-
     function marketValidOfferContent(data) {
-      return data.title is string && data.title.size() >= 5 && data.title.size() <= 80
-        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
-        && (!data.keys().hasAny(['courseTag']) || (data.courseTag is string && data.courseTag.size() <= 60))
-        && data.description is string && data.description.size() >= 1 && data.description.size() <= 400
-        && data.priceType in ['free', 'swap', 'amount']
-        && ((data.priceType == 'amount' && data.keys().hasAny(['priceAmount']) && data.priceAmount is number && data.priceAmount >= 0)
-          || (data.priceType != 'amount' && (!data.keys().hasAny(['priceAmount']) || (data.priceAmount is number && data.priceAmount >= 0))))
-        && (!data.keys().hasAny(['thumbnail']) || (data.thumbnail is string && data.thumbnail.size() <= 153600));
+      let keys = data.keys();
+      let title = data.title;
+      let category = data.category;
+      let courseTag = data.get('courseTag', null);
+      let description = data.description;
+      let priceType = data.priceType;
+      let priceAmount = data.get('priceAmount', null);
+      let thumbnail = data.get('thumbnail', null);
+      return title is string && title.size() >= 5 && title.size() <= 80
+        && category is string && category.size() >= 1 && category.size() <= 60
+        && (!keys.hasAny(['courseTag']) || (courseTag is string && courseTag.size() <= 60))
+        && description is string && description.size() >= 1 && description.size() <= 400
+        && priceType in ['free', 'swap', 'amount']
+        && ((priceType == 'amount' && keys.hasAny(['priceAmount']) && priceAmount is number && priceAmount >= 0)
+          || (priceType != 'amount' && (!keys.hasAny(['priceAmount']) || (priceAmount is number && priceAmount >= 0))))
+        && (!keys.hasAny(['thumbnail']) || (thumbnail is string && thumbnail.size() <= 153600));
     }
-
     function marketValidTaskCreate(taskId, data) {
-      return data.keys().hasOnly([
+      let keys = data.keys();
+      let status = data.status;
+      let moderation = data.moderation;
+      let pinned = data.pinned;
+      let posterId = data.posterId;
+      let posterName = data.posterName;
+      let posterInitials = data.posterInitials;
+      let proposalCount = data.proposalCount;
+      let reportCount = data.reportCount;
+      let createdAt = data.createdAt;
+      return keys.hasOnly([
           'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline',
           'skills', 'status', 'moderation', 'pinned', 'posterId', 'posterName', 'posterInitials',
           'proposalCount', 'assignedTo', 'reportCount', 'createdAt', 'updatedAt', 'expiresAt'
         ])
-        && data.status == 'open'
-        && data.moderation in ['ok', 'under_review']
-        && data.pinned == false
-        && data.posterId == request.auth.uid
-        && data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 60
-        && data.posterInitials is string && data.posterInitials.size() >= 1 && data.posterInitials.size() <= 4
-        && data.proposalCount == 0
-        && data.reportCount == 0
-        && marketCreatedAtNearRequestTime(data.createdAt)
+        && status == 'open'
+        && moderation in ['ok', 'under_review']
+        && pinned == false
+        && posterId == request.auth.uid
+        && posterName is string && posterName.size() >= 2 && posterName.size() <= 60
+        && posterInitials is string && posterInitials.size() >= 1 && posterInitials.size() <= 4
+        && proposalCount == 0
+        && reportCount == 0
+        && marketCreatedAtNearRequestTime(createdAt)
         && data.updatedAt == request.time
-        && data.expiresAt == data.createdAt + duration.value(14, 'd')
+        && data.expiresAt == createdAt + duration.value(14, 'd')
         && marketValidTaskContent(data)
         && marketValidTaskCreateLinkedState(taskId, data);
     }
-
     function marketValidTaskCreateLinkedState(taskId, data) {
       let uid = request.auth.uid;
       let profilePath = marketProfilePath(uid);
@@ -917,23 +947,29 @@ service cloud.firestore {
     }
 
     function marketValidProposalCreate(taskId, userId, data) {
-      return data.keys().hasOnly([
-          'proposerId', 'message', 'price', 'deliveryDays', 'status',
-          'proposerName', 'proposerInitials', 'createdAt', 'updatedAt'
-        ])
-        && data.proposerId == userId
-        && data.proposerId == request.auth.uid
-        && data.message is string && data.message.size() >= 20 && data.message.size() <= 400
-        && data.price is number && data.price >= 0
-        && data.deliveryDays is int && data.deliveryDays >= 1 && data.deliveryDays <= 365
-        && data.status == 'sent'
-        && data.proposerName is string && data.proposerName.size() >= 2 && data.proposerName.size() <= 60
-        && data.proposerInitials is string && data.proposerInitials.size() >= 1 && data.proposerInitials.size() <= 4
-        && data.createdAt == request.time
-        && data.updatedAt == request.time
+      let keys = data.keys();
+      let proposerId = data.proposerId;
+      let message = data.message;
+      let price = data.price;
+      let deliveryDays = data.deliveryDays;
+      let status = data.status;
+      let proposerName = data.proposerName;
+      let proposerInitials = data.proposerInitials;
+      let createdAt = data.createdAt;
+      let updatedAt = data.updatedAt;
+      return keys.size() == 9
+        && proposerId == userId
+        && proposerId == request.auth.uid
+        && message is string && message.size() >= 20 && message.size() <= 400
+        && price is number && price >= 0
+        && deliveryDays is int && deliveryDays >= 1 && deliveryDays <= 365
+        && status == 'sent'
+        && proposerName is string && proposerName.size() >= 2 && proposerName.size() <= 60
+        && proposerInitials is string && proposerInitials.size() >= 1 && proposerInitials.size() <= 4
+        && createdAt == request.time
+        && updatedAt == request.time
         && marketValidProposalCreateLinkedState(taskId, data);
     }
-
     function marketValidProposalCreateLinkedState(taskId, data) {
       let uid = request.auth.uid;
       let taskPath = /databases/$(database)/documents/tasks/$(taskId);
@@ -1190,26 +1226,35 @@ service cloud.firestore {
     }
 
     function marketValidOfferCreate(offerId, data) {
-      return data.keys().hasOnly([
+      let keys = data.keys();
+      let status = data.status;
+      let moderation = data.moderation;
+      let pinned = data.pinned;
+      let sellerId = data.sellerId;
+      let sellerName = data.sellerName;
+      let sellerInitials = data.sellerInitials;
+      let reportCount = data.reportCount;
+      let createdAt = data.createdAt;
+      let renewedAt = data.renewedAt;
+      return keys.hasOnly([
           'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
           'status', 'moderation', 'pinned', 'sellerId', 'sellerName', 'sellerInitials', 'reportCount',
           'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
         ])
-        && data.status == 'active'
-        && data.moderation in ['ok', 'under_review']
-        && data.pinned == false
-        && data.sellerId == request.auth.uid
-        && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 60
-        && data.sellerInitials is string && data.sellerInitials.size() >= 1 && data.sellerInitials.size() <= 4
-        && data.reportCount == 0
-        && marketCreatedAtNearRequestTime(data.createdAt)
-        && data.renewedAt == data.createdAt
+        && status == 'active'
+        && moderation in ['ok', 'under_review']
+        && pinned == false
+        && sellerId == request.auth.uid
+        && sellerName is string && sellerName.size() >= 2 && sellerName.size() <= 60
+        && sellerInitials is string && sellerInitials.size() >= 1 && sellerInitials.size() <= 4
+        && reportCount == 0
+        && marketCreatedAtNearRequestTime(createdAt)
+        && renewedAt == createdAt
         && data.updatedAt == request.time
-        && data.expiresAt == data.renewedAt + duration.value(30, 'd')
+        && data.expiresAt == renewedAt + duration.value(30, 'd')
         && marketValidOfferContent(data)
         && marketValidOfferCreateLinkedState(offerId, data);
     }
-
     function marketValidOfferCreateLinkedState(offerId, data) {
       let uid = request.auth.uid;
       let profilePath = marketProfilePath(uid);
@@ -1380,20 +1425,26 @@ service cloud.firestore {
     }
 
     function marketValidReportCreate(reportId, data) {
+      let keys = data.keys();
       let uid = request.auth.uid;
-      return data.keys().hasOnly(['targetType', 'targetId', 'reporterId', 'reason', 'createdAt', 'status'])
-        && data.targetType in ['task', 'offer', 'user']
-        && data.targetId is string && data.targetId.size() > 0 && data.targetId.size() <= 128
-        && data.reporterId == uid
-        && reportId == data.targetType + '_' + data.targetId + '_' + uid
-        && data.reason in ['graded_work', 'scam', 'spam', 'abusive', 'erp_login', 'other']
-        && data.createdAt == request.time
-        && data.status == 'open'
-        && data.targetId != uid
-        && marketReportTargetValid(data.targetType, data.targetId, uid)
+      let targetType = data.targetType;
+      let targetId = data.targetId;
+      let reporterId = data.reporterId;
+      let reason = data.reason;
+      let createdAt = data.createdAt;
+      let status = data.status;
+      return keys.size() == 6
+        && targetType in ['task', 'offer', 'user']
+        && targetId is string && targetId.size() > 0 && targetId.size() <= 128
+        && reporterId == uid
+        && reportId == targetType + '_' + targetId + '_' + uid
+        && reason in ['graded_work', 'scam', 'spam', 'abusive', 'erp_login', 'other']
+        && createdAt == request.time
+        && status == 'open'
+        && targetId != uid
+        && marketReportTargetValid(targetType, targetId, uid)
         && marketReportMutationMatches(data);
     }
-
     function marketReportTargetValid(targetType, targetId, uid) {
       return (targetType == 'task' && marketReportTaskTargetValid(targetId, uid))
         || (targetType == 'offer' && marketReportOfferTargetValid(targetId, uid))
