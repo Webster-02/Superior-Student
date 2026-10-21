@@ -635,12 +635,9 @@ service cloud.firestore {
       function marketReportProfileCounterTargetValid(uid, targetType, targetId) {
         let reportId = targetType + '_' + targetId + '_' + uid;
         let path = /databases/$(database)/documents/reports/$(reportId);
-        return existsAfter(path) && marketReportProfileCounterTargetFieldsValid(uid, path);
-      }
-
-      function marketReportProfileCounterTargetFieldsValid(uid, path) {
-        let targetAfter = getAfter(path).data;
-        return targetAfter.reporterId == uid;
+        let reportExistsAfter = existsAfter(path);
+        let reportAfter = getAfter(path).data;
+        return reportExistsAfter && reportAfter.reporterId == uid;
       }
 
       function marketValidSupportProfileCounterMutation(uid, before, after, changed) {
@@ -881,11 +878,15 @@ service cloud.firestore {
 
       function marketTaskReportCounterValid(taskId) {
         let reportId = 'task_' + taskId + '_' + request.auth.uid;
-        let taskAfter = getAfter(/databases/$(database)/documents/tasks/$(taskId)).data;
-        let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
+        let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+        let reportPath = /databases/$(database)/documents/reports/$(reportId);
+        let taskAfter = getAfter(taskPath).data;
+        let reportExistsAfter = existsAfter(reportPath);
+        let reportAfter = getAfter(reportPath).data;
         let reportCountBefore = resource.data.reportCount;
         let moderationBefore = resource.data.moderation;
-        return taskAfter.reportCount == reportCountBefore + 1
+        return reportExistsAfter
+          && taskAfter.reportCount == reportCountBefore + 1
           && reportAfter.targetType == 'task'
           && reportAfter.targetId == taskId
           && reportAfter.reporterId == request.auth.uid
@@ -1025,15 +1026,8 @@ service cloud.firestore {
         return after.reportCount == before.reportCount + 1
           && after.updatedAt == request.time
           && request.auth.uid != before.posterId
-          && marketTaskReportExistsAfter(taskId)
           && marketTaskReportCounterValid(taskId)
           && marketReportWindowCounterValid(request.auth.uid);
-      }
-
-      function marketTaskReportExistsAfter(taskId) {
-        let reportId = 'task_' + taskId + '_' + request.auth.uid;
-        let path = /databases/$(database)/documents/reports/$(reportId);
-        return existsAfter(path);
       }
 
       function marketTaskCloseCounterValid(uid, taskId) {
@@ -1268,11 +1262,15 @@ service cloud.firestore {
 
       function marketOfferReportCounterValid(offerId) {
         let reportId = 'offer_' + offerId + '_' + request.auth.uid;
-        let offerAfter = getAfter(/databases/$(database)/documents/offers/$(offerId)).data;
-        let reportAfter = getAfter(/databases/$(database)/documents/reports/$(reportId)).data;
+        let offerPath = /databases/$(database)/documents/offers/$(offerId);
+        let reportPath = /databases/$(database)/documents/reports/$(reportId);
+        let offerAfter = getAfter(offerPath).data;
+        let reportExistsAfter = existsAfter(reportPath);
+        let reportAfter = getAfter(reportPath).data;
         let reportCountBefore = resource.data.reportCount;
         let moderationBefore = resource.data.moderation;
-        return offerAfter.reportCount == reportCountBefore + 1
+        return reportExistsAfter
+          && offerAfter.reportCount == reportCountBefore + 1
           && reportAfter.targetType == 'offer'
           && reportAfter.targetId == offerId
           && reportAfter.reporterId == request.auth.uid
@@ -1444,14 +1442,7 @@ service cloud.firestore {
         return after.reportCount == before.reportCount + 1
           && after.updatedAt == request.time
           && request.auth.uid != before.sellerId
-          && marketOfferReportExistsAfter(offerId)
           && marketOfferReportCounterValid(offerId);
-      }
-
-      function marketOfferReportExistsAfter(offerId) {
-        let reportId = 'offer_' + offerId + '_' + request.auth.uid;
-        let path = /databases/$(database)/documents/reports/$(reportId);
-        return existsAfter(path);
       }
 
       function marketOfferCounterTransitionValid(uid, offerId, operation, delta) {
@@ -1561,11 +1552,13 @@ service cloud.firestore {
       }
 
       function marketReportMutationMatches(data) {
-        let profileAfter = getAfter(marketProfilePath(request.auth.uid)).data;
-        return profileAfter.lastMutation.kind == 'report'
-          && profileAfter.lastMutation.operation == 'create'
-          && profileAfter.lastMutation.targetType == data.targetType
-          && profileAfter.lastMutation.targetId == data.targetId;
+        let profilePath = marketProfilePath(request.auth.uid);
+        let profileAfter = getAfter(profilePath).data;
+        let lastMutation = profileAfter.lastMutation;
+        return lastMutation.kind == 'report'
+          && lastMutation.operation == 'create'
+          && lastMutation.targetType == data.targetType
+          && lastMutation.targetId == data.targetId;
       }
 
 
@@ -1573,8 +1566,8 @@ service cloud.firestore {
       allow list: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
       allow create: if marketVerified() && marketValidReportCreate(reportId, request.resource.data);
       allow update: if resource != null && marketVerified() && marketIsAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-        && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed'];
+        && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
       allow delete: if false;
     }
 
