@@ -88,4 +88,5 @@
 
     <color name="market_message_bg">#2A4036</color>
     <color name="market_message_ink">#F1F4EE</color>
+    <color name="market_bad">#FFB4AB</color>
 </resources>
