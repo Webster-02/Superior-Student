@@ -92,7 +92,7 @@ No deploy command was run in this review.
 
 ## Production readiness caveats
 
-This package remains review-only and is not production-approved. The local static check cannot prove Firebase Rules compilation, query correctness, access-call counts, live production equivalence, Firebase Auth verification coverage or the state of deployed indexes. Emulator test execution and review on a staging project are required before any deployment.
+This package remains review-only and is not production-approved. GitHub Actions run 39533202614 compiled and exercised the current Rules in the Firestore Emulator (65 passed, 0 failed) and ran the static preflight (31 passed, 0 failed). The test suite exercised representative operations against Firestore's Rules evaluator and observed no access-call-limit errors. Live production equivalence, deployed-index state, existing-user email verification coverage and staging-project behavior still require separate checks before deployment.
 
 ## Missing source input
 

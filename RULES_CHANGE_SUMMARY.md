@@ -10,3 +10,8 @@ This package is review only. No deploy or merge to main is performed.
 ## First CI result and new candidate
 
 The first workflow run was an actual failure (56/65 Emulator tests passed). See `TEST_RESULTS.md` and the [run](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165). The next candidate includes only test fixture corrections and Market validation-expression simplifications intended to address the reported evaluator limit; the rerun output is authoritative.
+
+
+## Final candidate
+
+GitHub Actions [run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) completed successfully with 31 static checks passed and 65 Emulator tests passed (0 failed, 0 skipped). The candidate passed the task-create, proposal-create, accept-plus-chat, report, and admin suspend/hide batch scenarios. The final rules compare contains 1,287 additions and 0 deletions relative to the selected branch baseline. See \`TEST_RESULTS.md\` for the real log/artifact links and remaining production/staging caveats.

@@ -39,3 +39,14 @@ The first committed candidate's real GitHub Actions run was `39531687165` (65 te
 - avoids running the full participant-shape validator twice on every Market conversation metadata update while retaining member, verified-email, admin, block, and changed-key checks.
 
 The candidate fixes are intentionally limited to Market rule helpers and tests. Existing U2U chat/Nearby rule blocks remain unchanged.
+
+
+## Final validation after the locked install
+
+- Final review branch commit: \`d5490826a6ee55b5d5861382068fb9571e769227\`.
+- GitHub Actions: [run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) succeeded using the committed lockfile.
+- Static preflight: 31/31 passed.
+- Firestore Emulator: 65/65 tests passed, none failed or skipped.
+- Heavy task/proposal create, accept + chat, report and admin suspend/hide-with-notice/log batches passed without evaluator expression or access-call-limit errors.
+- \`firestore.rules\` compare against baseline: 1,287 additions, 0 deletions. Existing U2U rule lines are preserved in original order; the only task-completion behavior change is in the additive Market rule block.
+- No merge to main and no Firebase deploy.

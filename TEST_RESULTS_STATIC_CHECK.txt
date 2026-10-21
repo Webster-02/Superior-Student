@@ -1,1 +1,35 @@
-Local preflight on the staged candidate: 25 checks passed. This is historical local output, not the result for the committed branch tree. The GitHub Actions artifact is authoritative for the committed run. Emulator and access-call-limit checks remain unverified until real Emulator output is available.
+GitHub Actions run 39533202614 — actual npm run test:static output
+
+PASS Firestore Rules version 2
+PASS verified email is part of Market authorization
+PASS legacy U2U chat helper is preserved
+PASS task create has a dedicated validator
+PASS offer content has a dedicated validator
+PASS assigned task completion is explicitly poster-only
+PASS assigned-helper completion override is absent
+PASS poster completion allow and helper deny test exists
+PASS student Market writes without U2U profile are denied in tests
+PASS admin operations without a U2U profile are tested
+PASS admin suspension batch deliberately omits admin U2U profile
+PASS proposal documents require proposerId equal to caller/document id
+PASS Applied collection-group reads are self-scoped
+PASS proposal collection-group composite index exists
+PASS deterministic report IDs are validated
+PASS deterministic appeal ticket IDs are validated
+PASS rating writes validate paired stats mutations
+PASS both participants can rate a completed task in the Emulator suite
+PASS Market conversation IDs encode sorted participants
+PASS Market conversations exclude admins
+PASS Market message senderName is bound to U2U profile displayName
+PASS task create access-call regression is present
+PASS proposal create access-call regression is present
+PASS accept transaction access-call regression is present
+PASS report batch access-call regression is present
+PASS admin suspend/hide batch access-call regression is present
+PASS Market limits are read-only in the app spec
+PASS rank weights have non-negative rule checks
+PASS index map lists proposerId collection-group scope
+PASS deploy checklist mandates production export and rollback
+PASS workflow specifies Node.js 20 and Java 21
+
+31 passed, 0 failed

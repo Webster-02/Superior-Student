@@ -3,8 +3,10 @@
 - Base branch: `feature/pachattar-design-foundation-phase-1`
 - Base commit: `759eed423e7046d7fe127226945557a8fe4fa918`
 - Baseline Rules Git blob SHA: `2944d790949a1fd93414a851eaf1f3ca6fef8922`
-- Market Rules are additive to the baseline; the only requested rule behavior change within the Market block is poster-only completion, with the assigned-helper override removed.
-- The old U2U auth/friend/chat/Nearby rule blocks are retained unchanged.
-- Narrow change patch: `TASK_COMPLETION_RULES_DIFF.patch`
-- The full branch-to-base comparison is available at: https://github.com/Webster-02/Superior-Student/compare/feature/pachattar-design-foundation-phase-1...review/market-rules
-- This branch snapshot is not proof of the live production Rules. Export production Rules and indexes before any deployment.
+- Final candidate Rules Git blob SHA: `a53fcdfccf0e8763052070cb194d226b27fc61b0`
+- GitHub compare confirms: 1,287 added lines and 0 deleted lines for `firestore.rules`.
+- Every base Rules line is preserved in original order; legacy U2U authentication, friend, chat, Nearby and transfer blocks are unchanged.
+- The only Rules behavior change beyond adding Market blocks is the poster-only completion check inside the Market task update branch.
+- The final candidate retains the trailing newline from the base Rules file.
+- Full unified diff: `DIFF_AGAINST_BASE.patch`.
+- Live production rules/indexes must still be exported and compared before any deployment.

@@ -1,0 +1,2170 @@
+diff --git a/firestore.rules b/firestore.rules
+index 2944d790949a1fd93414a851eaf1f3ca6fef8922..a53fcdfccf0e8763052070cb194d226b27fc61b0 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -1,878 +1,2165 @@
+ rules_version = '2';
+ service cloud.firestore {
+   match /databases/{database}/documents {
+     function signedInWithVerifiedEmail() {
+       return request.auth != null
+         && request.auth.token.email_verified == true;
+     }
+ 
+ 
+ 
+     // Chat access requires an existing accepted directional friend request.
+     function acceptedChatConnectionExists(uidA, uidB) {
+       let forwardId = uidA + '_' + uidB;
+       let reverseId = uidB + '_' + uidA;
+       let forwardPath = /databases/$(database)/documents/friendRequests/$(forwardId);
+       let reversePath = /databases/$(database)/documents/friendRequests/$(reverseId);
+       return (
+         exists(forwardPath)
+         && get(forwardPath).data.senderUid == uidA
+         && get(forwardPath).data.receiverUid == uidB
+         && get(forwardPath).data.status == 'accepted'
+       ) || (
+         exists(reversePath)
+         && get(reversePath).data.senderUid == uidB
+         && get(reversePath).data.receiverUid == uidA
+         && get(reversePath).data.status == 'accepted'
+       );
+     }
+ 
+     function validChatConversation(conversationId, data) {
+       return data.keys().hasAll(['participantUids', 'createdAt', 'updatedAt'])
+         && data.keys().hasOnly(['participantUids', 'createdAt', 'updatedAt'])
+         && data.participantUids is list
+         && data.participantUids.size() == 2
+         && data.participantUids[0] is string
+         && data.participantUids[0].size() > 0
+         && data.participantUids[0].size() <= 128
+         && data.participantUids[1] is string
+         && data.participantUids[1].size() > 0
+         && data.participantUids[1].size() <= 128
+         && data.participantUids[0] != data.participantUids[1]
+         && conversationId == data.participantUids[0] + '_' + data.participantUids[1]
+         && data.createdAt is timestamp
+         && data.updatedAt is timestamp;
+     }
+ 
+     function activeChatConversationMember(conversationId) {
+       let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+       return exists(conversationPath)
+         && validChatConversation(conversationId, get(conversationPath).data)
+         && request.auth.uid in get(conversationPath).data.participantUids
+         && acceptedChatConnectionExists(
+           get(conversationPath).data.participantUids[0],
+           get(conversationPath).data.participantUids[1]
+         );
+     }
+ 
+     // Optional reply metadata must quote a real message in this same conversation.
+     // This prevents a client from fabricating the quoted sender or message text.
+     function validReplyToMessage(conversationId, data, participantUids) {
+       return !data.keys().hasAny([
+           'replyToMessageId', 'replyToSenderName', 'replyToText'
+         ]) || (
+           data.keys().hasAll([
+             'replyToMessageId', 'replyToSenderName', 'replyToText'
+           ])
+           && data.replyToMessageId is string
+           && data.replyToMessageId.size() >= 1
+           && data.replyToMessageId.size() <= 128
+           && data.replyToSenderName is string
+           && data.replyToSenderName.size() >= 2
+           && data.replyToSenderName.size() <= 60
+           && data.replyToText is string
+           && data.replyToText.size() >= 1
+           && data.replyToText.size() <= 2000
+           && exists(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId))
+           && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.participantUids == participantUids
+           && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.senderName == data.replyToSenderName
+           && get(/databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.replyToMessageId)).data.text == data.replyToText
+         );
+     }
+ 
+     function validChatMessage(conversationId, data, participantUids) {
+       return data.keys().hasAll([
+           'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt'
+         ])
+         && data.keys().hasOnly([
+           'participantUids', 'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt',
+           'replyToMessageId', 'replyToSenderName', 'replyToText'
+         ])
+         && data.participantUids == participantUids
+         && data.participantUids is list
+         && data.participantUids.size() == 2
+         && data.senderUid is string
+         && data.recipientUid is string
+         && data.senderUid != data.recipientUid
+         && (
+           (data.senderUid == participantUids[0] && data.recipientUid == participantUids[1])
+           || (data.senderUid == participantUids[1] && data.recipientUid == participantUids[0])
+         )
+         && conversationId == data.participantUids[0] + '_' + data.participantUids[1]
+         && data.senderName is string
+         && data.senderName.size() >= 2
+         && data.senderName.size() <= 60
+         && data.text is string
+         && data.text.size() >= 1
+         && data.text.size() <= 2000
+         && data.createdAt is timestamp
+         && validReplyToMessage(conversationId, data, participantUids);
+     }
+     // Reactions may reference only an existing message from this conversation.
+     function validChatMessageReaction(conversationId, reactionId, data) {
+       let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+       let messagePath = /databases/$(database)/documents/chatConversations/$(conversationId)/messages/$(data.messageId);
+       return data.keys().hasAll(['messageId', 'uid', 'emoji', 'updatedAt'])
+         && data.keys().hasOnly(['messageId', 'uid', 'emoji', 'updatedAt'])
+         && data.messageId is string
+         && data.messageId.size() >= 1
+         && data.messageId.size() <= 128
+         && data.uid is string
+         && data.uid.size() >= 1
+         && data.uid.size() <= 128
+         && reactionId == data.messageId + '_' + data.uid
+         && data.emoji in ['👍', '❤️', '😂', '😮', '😢', '🙏']
+         && data.updatedAt is timestamp
+         && exists(conversationPath)
+         && validChatConversation(conversationId, get(conversationPath).data)
+         && data.uid in get(conversationPath).data.participantUids
+         && exists(messagePath)
+         && get(messagePath).data.participantUids == get(conversationPath).data.participantUids
+         && (
+           get(messagePath).data.senderUid == data.uid
+           || get(messagePath).data.recipientUid == data.uid
+         );
+     }
+ 
+     function validNotificationShape(uid, data) {
+       return data.keys().hasAll([
+           'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
+           'title', 'body', 'eventAt', 'createdAt', 'read', 'readAt'
+         ])
+         && data.keys().hasOnly([
+           'recipientUid', 'actorUid', 'actorName', 'type', 'requestId',
+           'title', 'body', 'eventAt', 'createdAt', 'read', 'readAt'
+         ])
+         && data.recipientUid == uid
+         && data.actorUid is string
+         && data.actorUid.size() > 0
+         && data.actorName is string
+         && data.actorName.size() >= 2
+         && data.actorName.size() <= 60
+         && data.type in ['friend_request', 'friend_request_accepted']
+         && data.requestId is string
+         && data.requestId.size() > 0
+         && data.title is string
+         && data.title.size() >= 1
+         && data.title.size() <= 100
+         && data.body is string
+         && data.body.size() >= 1
+         && data.body.size() <= 300
+         && data.eventAt is timestamp
+         && data.createdAt is timestamp
+         && data.read is bool
+         && (data.readAt == null || data.readAt is timestamp);
+     }
+ 
+     function matchesPendingRequestNotification(uid, notificationId, data) {
+       let requestPath = /databases/$(database)/documents/friendRequests/$(data.requestId);
+       return data.type == 'friend_request'
+         && notificationId == data.requestId + '_request'
+         && exists(requestPath)
+         && get(requestPath).data.senderUid == request.auth.uid
+         && get(requestPath).data.receiverUid == uid
+         && get(requestPath).data.senderName == data.actorName
+         && get(requestPath).data.status == 'pending'
+         && get(requestPath).data.updatedAt == data.eventAt
+         && data.title == 'New friend request'
+         && data.body == get(requestPath).data.senderName + ' sent you a friend request.';
+     }
+ 
+     function matchesAcceptedRequestNotification(uid, notificationId, data) {
+       let requestPath = /databases/$(database)/documents/friendRequests/$(data.requestId);
+       return data.type == 'friend_request_accepted'
+         && notificationId == data.requestId + '_accepted'
+         && exists(requestPath)
+         && get(requestPath).data.senderUid == uid
+         && get(requestPath).data.receiverUid == request.auth.uid
+         && get(requestPath).data.receiverName == data.actorName
+         && get(requestPath).data.status == 'accepted'
+         && get(requestPath).data.updatedAt == data.eventAt
+         && data.title == 'Friend request accepted'
+         && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
+     }
+ 
++    // ---- U2U MARKET additions (review-only; not deployed) ----
++    // U2U Market rules fragment for review.
++    // IMPORTANT: this is an INSERTION FRAGMENT, not a deployable standalone rules file.
++    // Insert helper functions within match /databases/{database}/documents, before the
++    // collection match blocks; insert the match blocks before that match's closing brace.
++    // This fragment intentionally uses marketProfiles/{uid} instead of users/{uid} so
++    // the Market schema cannot alter any existing users/{uid} allow-list.
++
++    function marketSignedIn() {
++      return request.auth != null;
++    }
++
++    function marketVerified() {
++      return request.auth != null && request.auth.token.email_verified == true;
++    }
++
++    function marketIsAdmin() {
++      return request.auth != null
++        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
++    }
++
++    function marketProfilePath(uid) {
++      return /databases/$(database)/documents/marketProfiles/$(uid);
++    }
++
++    function marketHasProfile(uid) {
++      return exists(marketProfilePath(uid));
++    }
++
++    function marketProfile(uid) {
++      return get(marketProfilePath(uid)).data;
++    }
++
++    // A suspended account is permitted to post again at/after suspendedUntil, using
++    // Firestore's request.time. Banned users are never allowed to post.
++    function marketUserCanPost(uid) {
++      let p = marketProfilePath(uid);
++      let state = get(p).data;
++      return marketVerified()
++        && request.auth.uid == uid
++        && exists(/databases/$(database)/documents/profiles/$(uid))
++        && exists(p)
++        && (
++          state.status == 'active'
++          || (
++            state.status == 'suspended'
++            && state.suspendedUntil is timestamp
++            && state.suspendedUntil <= request.time
++          )
++        );
++    }
++
++    function marketUserCanRead(uid) {
++      return marketSignedIn() && marketHasProfile(uid);
++    }
++
++    function marketIsBlockedEither(uidA, uidB) {
++      return (
++          marketHasProfile(uidA)
++          && marketProfile(uidA).blockedUids is list
++          && uidB in marketProfile(uidA).blockedUids
++        ) || (
++          marketHasProfile(uidB)
++          && marketProfile(uidB).blockedUids is list
++          && uidA in marketProfile(uidB).blockedUids
++        );
++    }
++
++    function marketValidSettings(settings) {
++      return settings is map
++        && settings.keys().hasAll([
++          'alertProposals', 'alertUpdates', 'alertNotices', 'alertMatchingTasks'
++        ])
++        && settings.keys().hasOnly([
++          'alertProposals', 'alertUpdates', 'alertNotices', 'alertMatchingTasks'
++        ])
++        && settings.alertProposals is bool
++        && settings.alertUpdates is bool
++        && settings.alertNotices is bool
++        && settings.alertMatchingTasks is bool;
++    }
++
++    function marketValidProfileCreate(uid, data) {
++      return data.keys().hasAll([
++          'uid', 'skillTags', 'blockedUids', 'status', 'suspendedUntil', 'warnings',
++          'settings', 'openTasks', 'activeOffers', 'proposalWindowCount',
++          'proposalWindowStartedAt', 'reportWindowCount', 'reportWindowStartedAt',
++          'openSupportTickets', 'lastMutation', 'createdAt', 'updatedAt'
++        ])
++        && data.keys().hasOnly([
++          'uid', 'skillTags', 'blockedUids', 'status', 'suspendedUntil', 'warnings',
++          'settings', 'openTasks', 'activeOffers', 'proposalWindowCount',
++          'proposalWindowStartedAt', 'reportWindowCount', 'reportWindowStartedAt',
++          'openSupportTickets', 'lastMutation', 'createdAt', 'updatedAt'
++        ])
++        && data.uid == uid
++        && data.skillTags is list && data.skillTags.size() <= 30
++        && data.blockedUids is list && data.blockedUids.size() <= 200
++        && data.status == 'active'
++        && data.suspendedUntil == null
++        && data.warnings == 0
++        && marketValidSettings(data.settings)
++        && data.openTasks == 0
++        && data.activeOffers == 0
++        && data.proposalWindowCount == 0
++        && data.proposalWindowStartedAt == null
++        && data.reportWindowCount == 0
++        && data.reportWindowStartedAt == null
++        && data.openSupportTickets == 0
++        && data.lastMutation == null
++        && data.createdAt == request.time
++        && data.updatedAt == request.time;
++    }
++
++    function marketCreatedAtNearRequestTime(value) {
++      return value is timestamp
++        && value <= request.time
++        && value >= request.time - duration.value(2, 'm');
++    }
++
++    function marketValidMutationShape(mutation) {
++      return mutation is map
++        && mutation.keys().hasAll(['kind', 'operation', 'targetId', 'at'])
++        && mutation.keys().hasOnly(['kind', 'operation', 'targetId', 'at', 'targetType'])
++        && mutation.kind is string
++        && mutation.operation is string
++        && mutation.targetId is string
++        && mutation.targetId.size() > 0
++        && mutation.targetId.size() <= 150
++        && mutation.at == request.time
++        && (!mutation.keys().hasAny(['targetType']) || mutation.targetType is string);
++    }
++
++    function marketWindowIncrementValid(oldCount, oldStart, newCount, newStart, maxCount) {
++      return (
++          oldStart == null
++          && oldCount == 0
++          && newStart == request.time
++          && newCount == 1
++        ) || (
++          oldStart is timestamp
++          && request.time >= oldStart + duration.value(24, 'h')
++          && newStart == request.time
++          && newCount == 1
++        ) || (
++          oldStart is timestamp
++          && request.time < oldStart + duration.value(24, 'h')
++          && newStart == oldStart
++          && newCount == oldCount + 1
++          && newCount <= maxCount
++        );
++    }
++
++    function marketValidProfileCounterUpdate(uid) {
++      let before = resource.data;
++      let after = request.resource.data;
++      let changed = after.diff(before).affectedKeys();
++      return changed.hasOnly([
++          'openTasks', 'activeOffers', 'proposalWindowCount', 'proposalWindowStartedAt',
++          'reportWindowCount', 'reportWindowStartedAt', 'openSupportTickets',
++          'lastMutation', 'updatedAt'
++        ])
++        && after.updatedAt == request.time
++        && marketValidMutationShape(after.lastMutation)
++        && (
++          (after.lastMutation.kind == 'task' && marketValidTaskProfileCounterMutation(uid, before, after, changed))
++          || (after.lastMutation.kind == 'offer' && marketValidOfferProfileCounterMutation(uid, before, after, changed))
++          || (after.lastMutation.kind == 'proposal' && marketValidProposalProfileCounterMutation(uid, before, after, changed))
++          || (after.lastMutation.kind == 'report' && marketValidReportProfileCounterMutation(uid, before, after, changed))
++          || (after.lastMutation.kind == 'support' && marketValidSupportProfileCounterMutation(uid, before, after, changed))
++        );
++    }
++
++    function marketValidTaskProfileCounterMutation(uid, before, after, changed) {
++      return (
++            after.lastMutation.operation == 'create'
++            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
++            && after.openTasks == before.openTasks + 1
++            && after.activeOffers == before.activeOffers
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.reportWindowCount == before.reportWindowCount
++            && after.openSupportTickets == before.openSupportTickets
++            && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId))
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
++            && marketCreatedAtNearRequestTime(getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.createdAt)
++          )
++          || (
++            after.lastMutation.operation == 'close'
++            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
++            && after.reportWindowCount == before.reportWindowCount
++            && after.reportWindowStartedAt == before.reportWindowStartedAt
++            && after.openSupportTickets == before.openSupportTickets
++            && before.openTasks > 0
++            && after.openTasks == before.openTasks - 1
++            && after.activeOffers == before.activeOffers
++            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
++            && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId))
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status in ['assigned', 'completed', 'cancelled', 'expired']
++          )
++          || (
++            after.lastMutation.operation == 'moderate_deactivate'
++            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
++            && before.openTasks > 0
++            && after.openTasks == before.openTasks - 1
++            && after.activeOffers == before.activeOffers
++            && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId))
++            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
++            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation in ['ok', 'under_review']
++            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed']
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
++          )
++          || (
++            after.lastMutation.operation == 'moderate_restore'
++            && changed.hasOnly(['openTasks', 'lastMutation', 'updatedAt'])
++            && before.openTasks < 3
++            && after.openTasks == before.openTasks + 1
++            && after.activeOffers == before.activeOffers
++            && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId))
++            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
++            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed']
++            && get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.status == 'open'
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.moderation == 'ok'
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.posterId == uid
++          );
++    }
++
++    function marketValidOfferProfileCounterMutation(uid, before, after, changed) {
++      return (
++            after.lastMutation.operation == 'create'
++            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
++            && after.activeOffers == before.activeOffers + 1
++            && after.openTasks == before.openTasks
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
++            && after.reportWindowCount == before.reportWindowCount
++            && after.reportWindowStartedAt == before.reportWindowStartedAt
++            && after.openSupportTickets == before.openSupportTickets
++            && existsAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId))
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
++            && marketCreatedAtNearRequestTime(getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.createdAt)
++          )
++          || (
++            after.lastMutation.operation == 'reactivate'
++            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
++            && after.activeOffers == before.activeOffers + 1
++            && before.activeOffers < 5
++            && after.openTasks == before.openTasks
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
++            && after.reportWindowCount == before.reportWindowCount
++            && after.reportWindowStartedAt == before.reportWindowStartedAt
++            && after.openSupportTickets == before.openSupportTickets
++            && existsAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId))
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
++            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status in ['paused', 'expired']
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
++          )
++          || (
++            after.lastMutation.operation == 'moderate_deactivate'
++            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
++            && before.activeOffers > 0
++            && after.activeOffers == before.activeOffers - 1
++            && after.openTasks == before.openTasks
++            && existsAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId))
++            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
++            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['ok', 'under_review']
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed']
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
++          )
++          || (
++            after.lastMutation.operation == 'moderate_restore'
++            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
++            && before.activeOffers < 5
++            && after.activeOffers == before.activeOffers + 1
++            && after.openTasks == before.openTasks
++            && existsAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId))
++            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
++            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation in ['hidden', 'removed', 'under_review']
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.moderation == 'ok'
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
++          )
++          || (
++            after.lastMutation.operation == 'deactivate'
++            && changed.hasOnly(['activeOffers', 'lastMutation', 'updatedAt'])
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
++            && after.reportWindowCount == before.reportWindowCount
++            && after.reportWindowStartedAt == before.reportWindowStartedAt
++            && after.openSupportTickets == before.openSupportTickets
++            && before.activeOffers > 0
++            && after.activeOffers == before.activeOffers - 1
++            && after.openTasks == before.openTasks
++            && existsAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId))
++            && get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status == 'active'
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.sellerId == uid
++            && getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status in ['paused', 'expired', 'removed']
++            && (getAfter(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.status != 'expired'
++              || request.time > get(/databases/$(database)/documents/offers/$(after.lastMutation.targetId)).data.expiresAt)
++          );
++    }
++
++    function marketValidProposalProfileCounterMutation(uid, before, after, changed) {
++      return (
++            after.lastMutation.operation == 'create'
++            && changed.hasOnly(['proposalWindowCount', 'proposalWindowStartedAt', 'lastMutation', 'updatedAt'])
++            && after.openTasks == before.openTasks
++            && after.activeOffers == before.activeOffers
++            && after.reportWindowCount == before.reportWindowCount
++            && after.reportWindowStartedAt == before.reportWindowStartedAt
++            && after.openSupportTickets == before.openSupportTickets
++            && marketWindowIncrementValid(before.proposalWindowCount, before.proposalWindowStartedAt, after.proposalWindowCount, after.proposalWindowStartedAt, 10)
++            && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId))
++            && existsAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)/proposals/$(uid))
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)/proposals/$(uid)).data.status == 'sent'
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)/proposals/$(uid)).data.createdAt == request.time
++            && getAfter(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.proposalCount == get(/databases/$(database)/documents/tasks/$(after.lastMutation.targetId)).data.proposalCount + 1
++          );
++    }
++
++    function marketValidReportProfileCounterMutation(uid, before, after, changed) {
++      return (
++            after.lastMutation.operation == 'create'
++            && changed.hasOnly(['reportWindowCount', 'reportWindowStartedAt', 'lastMutation', 'updatedAt'])
++            && after.openTasks == before.openTasks
++            && after.activeOffers == before.activeOffers
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
++            && after.openSupportTickets == before.openSupportTickets
++            && marketWindowIncrementValid(before.reportWindowCount, before.reportWindowStartedAt, after.reportWindowCount, after.reportWindowStartedAt, 10)
++            && existsAfter(/databases/$(database)/documents/reports/$(after.lastMutation.targetType + '_' + after.lastMutation.targetId + '_' + uid))
++            && getAfter(/databases/$(database)/documents/reports/$(after.lastMutation.targetType + '_' + after.lastMutation.targetId + '_' + uid)).data.reporterId == uid
++          );
++    }
++
++    function marketValidSupportProfileCounterMutation(uid, before, after, changed) {
++      return (
++            after.lastMutation.operation == 'create'
++            && changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
++            && after.openSupportTickets == before.openSupportTickets + 1
++            && after.openTasks == before.openTasks
++            && after.activeOffers == before.activeOffers
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
++            && after.reportWindowCount == before.reportWindowCount
++            && after.reportWindowStartedAt == before.reportWindowStartedAt
++            && existsAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId))
++            && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.userId == uid
++            && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.createdAt == request.time
++          )
++          || (
++            after.lastMutation.operation == 'resolve'
++            && changed.hasOnly(['openSupportTickets', 'lastMutation', 'updatedAt'])
++            && after.proposalWindowCount == before.proposalWindowCount
++            && after.proposalWindowStartedAt == before.proposalWindowStartedAt
++            && after.reportWindowCount == before.reportWindowCount
++            && after.reportWindowStartedAt == before.reportWindowStartedAt
++            && before.openSupportTickets > 0
++            && after.openSupportTickets == before.openSupportTickets - 1
++            && after.openTasks == before.openTasks
++            && after.activeOffers == before.activeOffers
++            && existsAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId))
++            && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.userId == uid
++            && getAfter(/databases/$(database)/documents/support/$(after.lastMutation.targetId)).data.status == 'resolved'
++          );
++    }
++
++
++    function marketTaskPublic(data) {
++      return data.moderation == 'ok' && data.status == 'open';
++    }
++
++    function marketOfferPublic(data) {
++      return data.moderation == 'ok' && data.status == 'active';
++    }
++
++    // Reused for both creation and any content edit. Lifecycle-only changes are
++    // deliberately validated separately so cleanup remains possible while suspended.
++    function marketValidTaskContent(data) {
++      return data.title is string && data.title.size() >= 5 && data.title.size() <= 80
++        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
++        && (!data.keys().hasAny(['courseTag']) || (data.courseTag is string && data.courseTag.size() <= 60))
++        && data.description is string && data.description.size() >= 20 && data.description.size() <= 500
++        && data.budgetType in ['free', 'fixed', 'negotiable']
++        && data.deadline is timestamp
++        && data.skills is list && data.skills.size() <= 5
++        && (!data.keys().hasAny(['budgetAmount']) || (data.budgetAmount is number && data.budgetAmount >= 0))
++        && (data.budgetType != 'fixed' || (data.keys().hasAny(['budgetAmount']) && data.budgetAmount is number && data.budgetAmount >= 0))
++        && (data.skills.size() == 0 || (data.skills[0] is string && data.skills[0].size() >= 1 && data.skills[0].size() <= 40))
++        && (data.skills.size() < 2 || (data.skills[1] is string && data.skills[1].size() >= 1 && data.skills[1].size() <= 40))
++        && (data.skills.size() < 3 || (data.skills[2] is string && data.skills[2].size() >= 1 && data.skills[2].size() <= 40))
++        && (data.skills.size() < 4 || (data.skills[3] is string && data.skills[3].size() >= 1 && data.skills[3].size() <= 40))
++        && (data.skills.size() < 5 || (data.skills[4] is string && data.skills[4].size() >= 1 && data.skills[4].size() <= 40));
++    }
++
++    function marketValidOfferContent(data) {
++      return data.title is string && data.title.size() >= 5 && data.title.size() <= 80
++        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
++        && (!data.keys().hasAny(['courseTag']) || (data.courseTag is string && data.courseTag.size() <= 60))
++        && data.description is string && data.description.size() >= 1 && data.description.size() <= 400
++        && data.priceType in ['free', 'swap', 'amount']
++        && ((data.priceType == 'amount' && data.keys().hasAny(['priceAmount']) && data.priceAmount is number && data.priceAmount >= 0)
++          || (data.priceType != 'amount' && (!data.keys().hasAny(['priceAmount']) || (data.priceAmount is number && data.priceAmount >= 0))))
++        && (!data.keys().hasAny(['thumbnail']) || (data.thumbnail is string && data.thumbnail.size() <= 153600));
++    }
++
++    function marketValidTaskCreate(taskId, data) {
++      let profileBefore = marketProfile(request.auth.uid);
++      let profileAfter = getAfter(marketProfilePath(request.auth.uid)).data;
++      let studentProfile = get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
++      return marketUserCanPost(request.auth.uid)
++        && marketValidTaskContent(data)
++        && data.keys().hasAll([
++          'title', 'category', 'description', 'budgetType', 'deadline', 'skills', 'status',
++          'moderation', 'pinned', 'posterId', 'posterName', 'posterInitials', 'proposalCount',
++          'reportCount', 'createdAt', 'updatedAt', 'expiresAt'
++        ])
++        && data.keys().hasOnly([
++          'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline',
++          'skills', 'status', 'moderation', 'pinned', 'posterId', 'posterName', 'posterInitials',
++          'proposalCount', 'assignedTo', 'reportCount', 'createdAt', 'updatedAt', 'expiresAt'
++        ])
++        && data.status == 'open'
++        && data.moderation in ['ok', 'under_review']
++        && data.pinned == false
++        && data.posterId == request.auth.uid
++        && data.posterName is string && data.posterName.size() >= 2 && data.posterName.size() <= 60
++        && data.posterName == studentProfile.displayName
++        && data.posterInitials is string && data.posterInitials.size() >= 1 && data.posterInitials.size() <= 4
++        && data.proposalCount == 0
++        && data.reportCount == 0
++        && marketCreatedAtNearRequestTime(data.createdAt)
++        && data.updatedAt == request.time
++        && data.expiresAt == data.createdAt + duration.value(14, 'd')
++        && profileBefore.openTasks < 3
++        && profileAfter.openTasks == profileBefore.openTasks + 1
++        && profileAfter.lastMutation.kind == 'task'
++        && profileAfter.lastMutation.operation == 'create'
++        && profileAfter.lastMutation.targetId == taskId;
++    }
++
++    function marketTaskReportCounterValid(taskId) {
++      let reportId = 'task_' + taskId + '_' + request.auth.uid;
++      return getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.reportCount == resource.data.reportCount + 1
++        && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.targetType == 'task'
++        && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.targetId == taskId
++        && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid
++        && (
++          (getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.reportCount < 3
++            && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.moderation == resource.data.moderation)
++          || (getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.reportCount >= 3
++            && ((resource.data.moderation == 'ok'
++              && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.moderation == 'under_review')
++              || (resource.data.moderation != 'ok'
++              && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.moderation == resource.data.moderation)))
++        );
++    }
++
++    function marketOfferReportCounterValid(offerId) {
++      let reportId = 'offer_' + offerId + '_' + request.auth.uid;
++      return getAfter(/databases/$(database)/documents/offers/$(offerId)).data.reportCount == resource.data.reportCount + 1
++        && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.targetType == 'offer'
++        && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.targetId == offerId
++        && getAfter(/databases/$(database)/documents/reports/$(reportId)).data.reporterId == request.auth.uid
++        && (
++          (getAfter(/databases/$(database)/documents/offers/$(offerId)).data.reportCount < 3
++            && getAfter(/databases/$(database)/documents/offers/$(offerId)).data.moderation == resource.data.moderation)
++          || (getAfter(/databases/$(database)/documents/offers/$(offerId)).data.reportCount >= 3
++            && ((resource.data.moderation == 'ok'
++              && getAfter(/databases/$(database)/documents/offers/$(offerId)).data.moderation == 'under_review')
++              || (resource.data.moderation != 'ok'
++              && getAfter(/databases/$(database)/documents/offers/$(offerId)).data.moderation == resource.data.moderation)))
++        );
++    }
++
++    match /marketProfiles/{uid} {
++      allow get: if marketSignedIn() && (request.auth.uid == uid || marketIsAdmin());
++      allow list: if marketIsAdmin();
++      allow create: if marketVerified()
++        && request.auth.uid == uid
++        && exists(/databases/$(database)/documents/profiles/$(uid))
++        && !exists(marketProfilePath(uid))
++        && marketValidProfileCreate(uid, request.resource.data);
++      allow update: if marketSignedIn() && (
++        (
++          request.auth.uid == uid
++          && request.resource.data.uid == resource.data.uid
++          && request.resource.data.status == resource.data.status
++          && request.resource.data.suspendedUntil == resource.data.suspendedUntil
++          && request.resource.data.warnings == resource.data.warnings
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
++          && request.resource.data.skillTags is list && request.resource.data.skillTags.size() <= 30
++          && request.resource.data.blockedUids is list && request.resource.data.blockedUids.size() <= 200
++          && marketValidSettings(request.resource.data.settings)
++          && request.resource.data.updatedAt == request.time
++        )
++        || (request.auth.uid == uid && marketValidProfileCounterUpdate(uid))
++        || (marketIsAdmin() && marketValidProfileCounterUpdate(uid))
++        || (
++          marketIsAdmin()
++          && request.resource.data.uid == resource.data.uid
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
++            'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers', 'lastMutation'
++          ])
++          && request.resource.data.status in ['active', 'suspended', 'banned']
++          && request.resource.data.warnings is number
++          && request.resource.data.warnings >= 0
++          && request.resource.data.warnings <= 1000
++          && (request.resource.data.suspendedUntil == null || request.resource.data.suspendedUntil is timestamp)
++          && request.resource.data.updatedAt == request.time
++          && (
++            (request.resource.data.openTasks == resource.data.openTasks
++              && request.resource.data.activeOffers == resource.data.activeOffers
++              && request.resource.data.lastMutation == resource.data.lastMutation)
++            || (request.resource.data.status in ['suspended', 'banned']
++              && request.resource.data.openTasks == 0
++              && request.resource.data.activeOffers == 0
++              && marketValidMutationShape(request.resource.data.lastMutation)
++              && request.resource.data.lastMutation.kind == 'user'
++              && request.resource.data.lastMutation.operation == 'suspend'
++              && request.resource.data.lastMutation.targetId == uid)
++          )
++        )
++      );
++      allow delete: if false;
++    }
++
++    // Collection-group Applied list: the query must constrain proposerId == auth.uid.
++    // The nested /tasks/{taskId}/proposals rules below independently preserve poster access.
++    match /{path=**}/proposals/{proposalId} {
++      allow get, list: if marketVerified() && resource.data.proposerId == request.auth.uid;
++    }
++
++    match /tasks/{taskId} {
++      // Public feed reads must include moderation == 'ok' and status == 'open'.
++      // Expiry and report threshold are intentionally client-filtered as requested;
++      // rules never combine expiresAt with a createdAt ordering constraint.
++      allow get: if marketSignedIn() && (
++        marketIsAdmin()
++        || resource.data.posterId == request.auth.uid
++        || (marketTaskPublic(resource.data) && resource.data.reportCount is number)
++      );
++      allow list: if marketSignedIn() && (
++        marketIsAdmin()
++        || resource.data.posterId == request.auth.uid
++        || marketTaskPublic(resource.data)
++      );
++      allow create: if marketVerified() && marketValidTaskCreate(taskId, request.resource.data);
++      allow update: if marketVerified() && (
++        // Owner edits and lifecycle changes. Immutable / moderator-owned fields stay fixed.
++        (
++          resource.data.posterId == request.auth.uid
++          && request.resource.data.posterId == resource.data.posterId
++          && request.resource.data.moderation == resource.data.moderation
++          && request.resource.data.pinned == resource.data.pinned
++          && request.resource.data.reportCount == resource.data.reportCount
++          && request.resource.data.createdAt == resource.data.createdAt
++          && request.resource.data.proposalCount == resource.data.proposalCount
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
++            'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount',
++            'deadline', 'skills', 'status', 'assignedTo', 'updatedAt', 'expiresAt'
++          ])
++          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
++                'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline', 'skills'
++              ]) || (marketUserCanPost(request.auth.uid) && marketValidTaskContent(request.resource.data)))
++          && request.resource.data.updatedAt == request.time
++          && (
++            (resource.data.status == 'open' && request.resource.data.status == 'open'
++              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
++              && request.resource.data.expiresAt == resource.data.expiresAt)
++            || (resource.data.status == 'open' && request.resource.data.status == 'cancelled'
++              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'close'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
++            || (resource.data.status == 'open' && request.resource.data.status == 'assigned'
++              && request.resource.data.assignedTo is string
++              && request.resource.data.assignedTo != resource.data.posterId
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && get(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.resource.data.assignedTo)).data.status in ['sent', 'shortlisted']
++              && getAfter(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.resource.data.assignedTo)).data.status == 'accepted'
++              && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'close'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
++            || (resource.data.status == 'open' && request.resource.data.status == 'expired'
++              && request.time > resource.data.expiresAt
++              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && getAfter(marketProfilePath(request.auth.uid)).data.openTasks == marketProfile(request.auth.uid).openTasks - 1
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'task'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'close'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId)
++            // Completing an assigned task is poster-only; the assigned helper may not complete it.
++            || (resource.data.status == 'assigned' && request.resource.data.status == 'completed'
++              && request.auth.uid == resource.data.posterId
++              && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
++          )
++        )
++        // Proposal creation increments the cached count only alongside that student's new proposal.
++        || (resource.data.status == 'open'
++          && request.resource.data.status == 'open'
++          && request.resource.data.posterId == resource.data.posterId
++          && request.auth.uid != resource.data.posterId
++          && request.resource.data.moderation == resource.data.moderation
++          && request.resource.data.pinned == resource.data.pinned
++          && request.resource.data.reportCount == resource.data.reportCount
++          && request.resource.data.createdAt == resource.data.createdAt
++          && request.resource.data.expiresAt == resource.data.expiresAt
++          && request.resource.data.get('assignedTo', null) == resource.data.get('assignedTo', null)
++          && request.resource.data.proposalCount == resource.data.proposalCount + 1
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['proposalCount', 'updatedAt'])
++          && request.resource.data.updatedAt == request.time
++          && existsAfter(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.auth.uid))
++          && getAfter(/databases/$(database)/documents/tasks/$(taskId)/proposals/$(request.auth.uid)).data.status == 'sent')
++        // Admin moderation and pinning. Pin count is capped in the admin UI as approved.
++        || (marketIsAdmin()
++          && request.resource.data.posterId == resource.data.posterId
++          && request.resource.data.createdAt == resource.data.createdAt
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderation', 'pinned', 'updatedAt'])
++          && request.resource.data.moderation in ['ok', 'under_review', 'hidden', 'removed']
++          && request.resource.data.pinned is bool
++          && request.resource.data.updatedAt == request.time
++          && (
++            resource.data.status != 'open'
++            || request.resource.data.moderation == resource.data.moderation
++            || (resource.data.moderation == 'under_review' && request.resource.data.moderation == 'ok')
++            || (resource.data.moderation in ['hidden', 'removed'] && request.resource.data.moderation == 'removed')
++            || (resource.data.moderation in ['ok', 'under_review']
++              && request.resource.data.moderation in ['hidden', 'removed']
++              && getAfter(marketProfilePath(resource.data.posterId)).data.openTasks == marketProfile(resource.data.posterId).openTasks - 1
++              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.kind == 'task'
++              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.operation == 'moderate_deactivate'
++              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.targetId == taskId)
++            || (request.resource.data.moderation == 'hidden'
++              && getAfter(marketProfilePath(resource.data.posterId)).data.status in ['suspended', 'banned']
++              && getAfter(marketProfilePath(resource.data.posterId)).data.openTasks == 0)
++            || (resource.data.moderation in ['hidden', 'removed']
++              && request.resource.data.moderation == 'ok'
++              && marketProfile(resource.data.posterId).openTasks < 3
++              && getAfter(marketProfilePath(resource.data.posterId)).data.openTasks == marketProfile(resource.data.posterId).openTasks + 1
++              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.kind == 'task'
++              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.operation == 'moderate_restore'
++              && getAfter(marketProfilePath(resource.data.posterId)).data.lastMutation.targetId == taskId)
++          ))
++        // Reporter must create its own deterministic report and update this item by exactly +1.
++        || (marketSignedIn()
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount', 'moderation', 'updatedAt'])
++          && request.resource.data.posterId == resource.data.posterId
++          && request.resource.data.status == resource.data.status
++          && request.resource.data.pinned == resource.data.pinned
++          && request.resource.data.proposalCount == resource.data.proposalCount
++          && request.resource.data.createdAt == resource.data.createdAt
++          && request.resource.data.expiresAt == resource.data.expiresAt
++          && request.resource.data.reportCount == resource.data.reportCount + 1
++          && request.resource.data.updatedAt == request.time
++          && marketTaskReportCounterValid(taskId)
++          && getAfter(marketProfilePath(request.auth.uid)).data.reportWindowCount in [marketProfile(request.auth.uid).reportWindowCount + 1, 1])
++      );
++      allow delete: if false;
++
++      match /proposals/{userId} {
++        allow get: if marketVerified() && (
++          request.auth.uid == userId
++          || get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid
++        );
++        allow list: if marketVerified()
++          && get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid;
++        allow create: if marketUserCanPost(request.auth.uid)
++          && request.auth.uid == userId
++          && exists(/databases/$(database)/documents/tasks/$(taskId))
++          && get(/databases/$(database)/documents/tasks/$(taskId)).data.status == 'open'
++          && get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId != request.auth.uid
++          && get(/databases/$(database)/documents/tasks/$(taskId)).data.proposalCount < 15
++          && request.resource.data.keys().hasAll(['proposerId', 'message', 'price', 'deliveryDays', 'status', 'proposerName', 'proposerInitials', 'createdAt', 'updatedAt'])
++          && request.resource.data.keys().hasOnly(['proposerId', 'message', 'price', 'deliveryDays', 'status', 'proposerName', 'proposerInitials', 'createdAt', 'updatedAt'])
++          && request.resource.data.proposerId == userId
++          && request.resource.data.proposerId == request.auth.uid
++          && request.resource.data.message is string && request.resource.data.message.size() >= 20 && request.resource.data.message.size() <= 400
++          && request.resource.data.price is number && request.resource.data.price >= 0
++          && request.resource.data.deliveryDays is int && request.resource.data.deliveryDays >= 1 && request.resource.data.deliveryDays <= 365
++          && request.resource.data.status == 'sent'
++          && request.resource.data.proposerName is string && request.resource.data.proposerName.size() >= 2 && request.resource.data.proposerName.size() <= 60
++          && request.resource.data.proposerName == get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
++          && request.resource.data.proposerInitials is string && request.resource.data.proposerInitials.size() >= 1 && request.resource.data.proposerInitials.size() <= 4
++          && request.resource.data.createdAt == request.time
++          && request.resource.data.updatedAt == request.time
++          && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.proposalCount == get(/databases/$(database)/documents/tasks/$(taskId)).data.proposalCount + 1
++          && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'proposal'
++          && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
++          && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == taskId;
++        allow update: if marketVerified() && (
++          (
++            request.auth.uid == userId
++            && get(/databases/$(database)/documents/tasks/$(taskId)).data.status == 'open'
++            && resource.data.status in ['sent', 'shortlisted']
++            && request.resource.data.status == resource.data.status
++            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['message', 'price', 'deliveryDays', 'updatedAt'])
++            && request.resource.data.message is string && request.resource.data.message.size() >= 20 && request.resource.data.message.size() <= 400
++            && request.resource.data.price is number && request.resource.data.price >= 0
++            && request.resource.data.deliveryDays is int && request.resource.data.deliveryDays >= 1 && request.resource.data.deliveryDays <= 365
++            && request.resource.data.updatedAt == request.time
++          )
++          || (
++            request.auth.uid == userId
++            && resource.data.status in ['sent', 'shortlisted']
++            && request.resource.data.status == 'withdrawn'
++            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
++            && request.resource.data.updatedAt == request.time
++          )
++          || (
++            get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid
++            && resource.data.status in ['sent', 'shortlisted']
++            && request.resource.data.status in ['shortlisted', 'declined']
++            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
++            && request.resource.data.updatedAt == request.time
++          )
++          || (
++            get(/databases/$(database)/documents/tasks/$(taskId)).data.posterId == request.auth.uid
++            && resource.data.status in ['sent', 'shortlisted']
++            && request.resource.data.status == 'accepted'
++            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
++            && request.resource.data.updatedAt == request.time
++            && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.status == 'assigned'
++            && getAfter(/databases/$(database)/documents/tasks/$(taskId)).data.assignedTo == userId
++          )
++        );
++        allow delete: if false;
++      }
++    }
++
++    function marketValidOfferCreate(offerId, data) {
++      let profileBefore = marketProfile(request.auth.uid);
++      let profileAfter = getAfter(marketProfilePath(request.auth.uid)).data;
++      let studentProfile = get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
++      return marketUserCanPost(request.auth.uid)
++        && marketValidOfferContent(data)
++        && data.keys().hasAll([
++          'title', 'category', 'description', 'priceType', 'status', 'moderation', 'pinned',
++          'sellerId', 'sellerName', 'sellerInitials', 'reportCount', 'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
++        ])
++        && data.keys().hasOnly([
++          'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
++          'status', 'moderation', 'pinned', 'sellerId', 'sellerName', 'sellerInitials', 'reportCount',
++          'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
++        ])
++        && data.status == 'active'
++        && data.moderation in ['ok', 'under_review']
++        && data.pinned == false
++        && data.sellerId == request.auth.uid
++        && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 60
++        && data.sellerName == studentProfile.displayName
++        && data.sellerInitials is string && data.sellerInitials.size() >= 1 && data.sellerInitials.size() <= 4
++        && data.reportCount == 0
++        && marketCreatedAtNearRequestTime(data.createdAt)
++        && data.renewedAt == data.createdAt
++        && data.updatedAt == request.time
++        && data.expiresAt == data.renewedAt + duration.value(30, 'd')
++        && profileBefore.activeOffers < 5
++        && profileAfter.activeOffers == profileBefore.activeOffers + 1
++        && profileAfter.lastMutation.kind == 'offer'
++        && profileAfter.lastMutation.operation == 'create'
++        && profileAfter.lastMutation.targetId == offerId;
++    }
++
++    match /offers/{offerId} {
++      allow get: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
++      allow list: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
++      allow create: if marketVerified() && marketValidOfferCreate(offerId, request.resource.data);
++      allow update: if marketVerified() && (
++        (
++          resource.data.sellerId == request.auth.uid
++          && request.resource.data.sellerId == resource.data.sellerId
++          && request.resource.data.moderation == resource.data.moderation
++          && request.resource.data.pinned == resource.data.pinned
++          && request.resource.data.reportCount == resource.data.reportCount
++          && request.resource.data.createdAt == resource.data.createdAt
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
++            'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
++            'status', 'renewedAt', 'updatedAt', 'expiresAt'
++          ])
++          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny([
++                'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail'
++              ]) || (marketUserCanPost(request.auth.uid) && marketValidOfferContent(request.resource.data)))
++          && request.resource.data.updatedAt == request.time
++          && (
++            (resource.data.status == 'active' && request.resource.data.status == 'paused'
++              && request.resource.data.renewedAt == resource.data.renewedAt
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers - 1
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'deactivate'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
++            || (resource.data.status == 'paused' && request.resource.data.status == 'active'
++              && request.resource.data.renewedAt == resource.data.renewedAt
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && request.time <= resource.data.expiresAt
++              && marketProfile(request.auth.uid).activeOffers < 5
++              && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers + 1
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'reactivate'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
++            || (resource.data.status == 'active' && request.resource.data.status == 'expired'
++              && request.resource.data.renewedAt == resource.data.renewedAt
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && request.time > resource.data.expiresAt
++              && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers - 1
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'deactivate'
++              && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
++            || (resource.data.status in ['active', 'paused'] && request.resource.data.status == 'removed'
++              && request.resource.data.renewedAt == resource.data.renewedAt
++              && request.resource.data.expiresAt == resource.data.expiresAt
++              && (
++                (resource.data.status == 'active'
++                  && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers - 1
++                  && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'deactivate'
++                  && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)
++                || (resource.data.status == 'paused'
++                  && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers)
++              ))
++            || (request.resource.data.status == resource.data.status
++              && request.resource.data.renewedAt == resource.data.renewedAt
++              && request.resource.data.expiresAt == resource.data.expiresAt)
++            || (request.resource.data.status == 'active'
++              && request.resource.data.renewedAt is timestamp
++              && marketCreatedAtNearRequestTime(request.resource.data.renewedAt)
++              && request.time >= resource.data.renewedAt + duration.value(7, 'd')
++              && request.resource.data.expiresAt == request.resource.data.renewedAt + duration.value(30, 'd')
++              && (resource.data.status == 'active' || (marketProfile(request.auth.uid).activeOffers < 5
++                && getAfter(marketProfilePath(request.auth.uid)).data.activeOffers == marketProfile(request.auth.uid).activeOffers + 1
++                && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'reactivate'
++                && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == offerId)))
++          )
++        )
++        || (
++          marketIsAdmin()
++          && request.resource.data.sellerId == resource.data.sellerId
++          && request.resource.data.createdAt == resource.data.createdAt
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderation', 'pinned', 'updatedAt'])
++          && request.resource.data.moderation in ['ok', 'under_review', 'hidden', 'removed']
++          && request.resource.data.pinned is bool
++          && request.resource.data.updatedAt == request.time
++          && (
++            (resource.data.status == 'active'
++              && resource.data.moderation in ['ok', 'under_review']
++              && request.resource.data.moderation in ['hidden', 'removed']
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.activeOffers == marketProfile(resource.data.sellerId).activeOffers - 1
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.operation == 'moderate_deactivate'
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.targetId == offerId)
++            || (resource.data.status == 'active'
++              && request.resource.data.moderation == 'hidden'
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.status in ['suspended', 'banned']
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.activeOffers == 0)
++            || (resource.data.status == 'active'
++              && resource.data.moderation in ['hidden', 'removed', 'under_review']
++              && request.resource.data.moderation == 'ok'
++              && marketProfile(resource.data.sellerId).activeOffers < 5
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.activeOffers == marketProfile(resource.data.sellerId).activeOffers + 1
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.operation == 'moderate_restore'
++              && getAfter(marketProfilePath(resource.data.sellerId)).data.lastMutation.targetId == offerId)
++            || (resource.data.moderation == 'under_review' && request.resource.data.moderation == 'ok')
++            || (resource.data.moderation in ['hidden', 'removed'] && request.resource.data.moderation == 'removed')
++            || (request.resource.data.moderation == resource.data.moderation)
++          )
++        )
++        || (
++          request.resource.data.sellerId == resource.data.sellerId
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reportCount', 'moderation', 'updatedAt'])
++          && request.resource.data.status == resource.data.status
++          && request.resource.data.pinned == resource.data.pinned
++          && request.resource.data.createdAt == resource.data.createdAt
++          && request.resource.data.reportCount == resource.data.reportCount + 1
++          && request.resource.data.updatedAt == request.time
++          && marketOfferReportCounterValid(offerId)
++        )
++      );
++      allow delete: if false;
++    }
++
++    match /reports/{reportId} {
++      allow get: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
++      allow list: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
++      allow create: if marketVerified()
++        && request.resource.data.keys().hasAll(['targetType', 'targetId', 'reporterId', 'reason', 'createdAt', 'status'])
++        && request.resource.data.keys().hasOnly(['targetType', 'targetId', 'reporterId', 'reason', 'createdAt', 'status'])
++        && request.resource.data.targetType in ['task', 'offer', 'user']
++        && request.resource.data.targetId is string && request.resource.data.targetId.size() > 0 && request.resource.data.targetId.size() <= 128
++        && request.resource.data.reporterId == request.auth.uid
++        && reportId == request.resource.data.targetType + '_' + request.resource.data.targetId + '_' + request.auth.uid
++        && request.resource.data.reason in ['graded_work', 'scam', 'spam', 'abusive', 'erp_login', 'other']
++        && request.resource.data.createdAt == request.time
++        && request.resource.data.status == 'open'
++        && request.resource.data.targetId != request.auth.uid
++        && (
++          (request.resource.data.targetType == 'task'
++            && exists(/databases/$(database)/documents/tasks/$(request.resource.data.targetId))
++            && get(/databases/$(database)/documents/tasks/$(request.resource.data.targetId)).data.posterId != request.auth.uid)
++          || (request.resource.data.targetType == 'offer'
++            && exists(/databases/$(database)/documents/offers/$(request.resource.data.targetId))
++            && get(/databases/$(database)/documents/offers/$(request.resource.data.targetId)).data.sellerId != request.auth.uid)
++          || (request.resource.data.targetType == 'user' && exists(marketProfilePath(request.resource.data.targetId)))
++        )
++        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'report'
++        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
++        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetType == request.resource.data.targetType
++        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == request.resource.data.targetId;
++      allow update: if marketVerified() && marketIsAdmin()
++        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
++        && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed'];
++      allow delete: if false;
++    }
++
++    function marketValidRatingStatsMutation(uid, data) {
++      let ratingId = data.lastMutation.targetId;
++      let ratingPath = /databases/$(database)/documents/ratings/$(ratingId);
++      return marketValidMutationShape(data.lastMutation)
++        && data.lastMutation.kind == 'rating'
++        && data.lastMutation.operation == 'create'
++        && existsAfter(ratingPath)
++        && getAfter(ratingPath).data.fromUid == request.auth.uid
++        && getAfter(ratingPath).data.toUid == uid
++        && getAfter(ratingPath).data.createdAt == request.time
++        && ratingId == getAfter(ratingPath).data.taskId + '_' + request.auth.uid;
++    }
++
++    function marketValidRatingStatsCreate(uid) {
++      return request.resource.data.keys().hasAll(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
++        && request.resource.data.keys().hasOnly(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
++        && request.resource.data.ratingSum is number
++        && request.resource.data.ratingCount == 1
++        && request.resource.data.completedCount == 1
++        && request.resource.data.updatedAt == request.time
++        && marketValidRatingStatsMutation(uid, request.resource.data)
++        && request.resource.data.ratingSum == getAfter(/databases/$(database)/documents/ratings/$(request.resource.data.lastMutation.targetId)).data.stars;
++    }
++
++    function marketValidRatingStatsUpdate(uid) {
++      let changed = request.resource.data.diff(resource.data).affectedKeys();
++      let ratingId = request.resource.data.lastMutation.targetId;
++      let ratingPath = /databases/$(database)/documents/ratings/$(ratingId);
++      return changed.hasOnly(['ratingSum', 'ratingCount', 'completedCount', 'lastMutation', 'updatedAt'])
++        && resource.data.ratingSum is number && resource.data.ratingCount is int && resource.data.completedCount is int
++        && request.resource.data.ratingSum == resource.data.ratingSum + getAfter(ratingPath).data.stars
++        && request.resource.data.ratingCount == resource.data.ratingCount + 1
++        && request.resource.data.completedCount == resource.data.completedCount + 1
++        && request.resource.data.updatedAt == request.time
++        && marketValidRatingStatsMutation(uid, request.resource.data);
++    }
++
++    match /ratings/{ratingId} {
++      allow get, list: if marketSignedIn();
++      allow create: if marketVerified()
++        && request.resource.data.keys().hasAll(['taskId', 'fromUid', 'toUid', 'stars', 'tags', 'comment', 'createdAt'])
++        && request.resource.data.keys().hasOnly(['taskId', 'fromUid', 'toUid', 'stars', 'tags', 'comment', 'createdAt'])
++        && request.resource.data.taskId is string
++        && ratingId == request.resource.data.taskId + '_' + request.auth.uid
++        && request.resource.data.fromUid == request.auth.uid
++        && request.resource.data.toUid is string && request.resource.data.toUid != request.auth.uid
++        && request.resource.data.stars is int && request.resource.data.stars >= 1 && request.resource.data.stars <= 5
++        && request.resource.data.tags is list && request.resource.data.tags.size() <= 8
++        && request.resource.data.comment is string && request.resource.data.comment.size() <= 200
++        && request.resource.data.createdAt == request.time
++        && existsAfter(/databases/$(database)/documents/userStats/$(request.resource.data.toUid))
++        && getAfter(/databases/$(database)/documents/userStats/$(request.resource.data.toUid)).data.lastMutation.kind == 'rating'
++        && getAfter(/databases/$(database)/documents/userStats/$(request.resource.data.toUid)).data.lastMutation.operation == 'create'
++        && getAfter(/databases/$(database)/documents/userStats/$(request.resource.data.toUid)).data.lastMutation.targetId == ratingId
++        && exists(/databases/$(database)/documents/tasks/$(request.resource.data.taskId))
++        && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.status == 'completed'
++        && (
++          (get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId == request.auth.uid
++            && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assignedTo == request.resource.data.toUid)
++          || (get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assignedTo == request.auth.uid
++            && get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId == request.resource.data.toUid)
++        );
++      allow update, delete: if false;
++    }
++
++    match /userStats/{uid} {
++      allow get, list: if marketSignedIn();
++      allow create: if marketVerified() && marketValidRatingStatsCreate(uid);
++      allow update: if marketVerified() && marketValidRatingStatsUpdate(uid);
++      allow delete: if false;
++    }
++
++    match /users/{uid}/notices/{noticeId} {
++      allow get, list: if marketVerified() && (request.auth.uid == uid || marketIsAdmin());
++      allow create: if marketVerified() && marketIsAdmin()
++        && request.resource.data.keys().hasAll(['type', 'title', 'body', 'read', 'createdAt', 'canAppeal', 'appealed'])
++        && request.resource.data.keys().hasOnly(['type', 'title', 'body', 'relatedType', 'relatedId', 'read', 'createdAt', 'canAppeal', 'appealed'])
++        && request.resource.data.type in ['warning', 'removal', 'support_reply', 'appeal_result', 'announcement', 'activity']
++        && request.resource.data.title is string && request.resource.data.title.size() >= 1 && request.resource.data.title.size() <= 100
++        && request.resource.data.body is string && request.resource.data.body.size() >= 1 && request.resource.data.body.size() <= 1000
++        && request.resource.data.read == false
++        && request.resource.data.createdAt == request.time
++        && request.resource.data.canAppeal is bool
++        && request.resource.data.appealed == false;
++      allow update: if marketVerified() && (
++        (request.auth.uid == uid
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'appealed'])
++          && request.resource.data.read is bool
++          && request.resource.data.appealed is bool
++          && (request.resource.data.appealed == resource.data.appealed
++            || (resource.data.appealed == false && request.resource.data.appealed == true
++              && resource.data.canAppeal == true
++              && existsAfter(/databases/$(database)/documents/support/$(('appeal_' + noticeId + '_' + uid)))
++              && getAfter(/databases/$(database)/documents/support/$(('appeal_' + noticeId + '_' + uid))).data.userId == uid
++              && getAfter(/databases/$(database)/documents/support/$(('appeal_' + noticeId + '_' + uid))).data.type == 'appeal'
++              && getAfter(/databases/$(database)/documents/support/$(('appeal_' + noticeId + '_' + uid))).data.relatedType == 'notice'
++              && getAfter(/databases/$(database)/documents/support/$(('appeal_' + noticeId + '_' + uid))).data.relatedId == noticeId)))
++        || (marketIsAdmin()
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['type', 'title', 'body', 'canAppeal', 'appealed']))
++      );
++      allow delete: if false;
++    }
++
++    match /support/{ticketId} {
++      allow get, list: if marketVerified() && (resource.data.userId == request.auth.uid || marketIsAdmin());
++      allow create: if marketVerified()
++        && request.resource.data.keys().hasAll(['userId', 'type', 'subject', 'body', 'status', 'replies', 'createdAt', 'updatedAt'])
++        && request.resource.data.keys().hasOnly(['userId', 'type', 'subject', 'body', 'relatedType', 'relatedId', 'status', 'replies', 'createdAt', 'updatedAt'])
++        && request.resource.data.userId == request.auth.uid
++        && request.resource.data.type in ['listing', 'account', 'bug', 'person', 'other', 'appeal']
++        && request.resource.data.subject is string && request.resource.data.subject.size() >= 5 && request.resource.data.subject.size() <= 80
++        && request.resource.data.body is string && request.resource.data.body.size() >= 10 && request.resource.data.body.size() <= 500
++        && request.resource.data.status == 'open'
++        && request.resource.data.replies is list && request.resource.data.replies.size() == 0
++        && request.resource.data.createdAt == request.time
++        && request.resource.data.updatedAt == request.time
++        && (request.resource.data.type != 'appeal'
++          || (request.resource.data.relatedType == 'notice'
++            && request.resource.data.relatedId is string
++            && ticketId == 'appeal_' + request.resource.data.relatedId + '_' + request.auth.uid
++            && exists(/databases/$(database)/documents/users/$(request.auth.uid)/notices/$(request.resource.data.relatedId))
++            && get(/databases/$(database)/documents/users/$(request.auth.uid)/notices/$(request.resource.data.relatedId)).data.canAppeal == true
++            && get(/databases/$(database)/documents/users/$(request.auth.uid)/notices/$(request.resource.data.relatedId)).data.appealed == false))
++        && marketProfile(request.auth.uid).openSupportTickets < 5
++        && getAfter(marketProfilePath(request.auth.uid)).data.openSupportTickets == marketProfile(request.auth.uid).openSupportTickets + 1
++        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.kind == 'support'
++        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
++        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == ticketId;
++      allow update: if marketVerified() && (
++        (
++          resource.data.userId == request.auth.uid
++          && request.resource.data.userId == resource.data.userId
++          && request.resource.data.status == resource.data.status
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replies', 'updatedAt'])
++          && request.resource.data.replies is list
++          && request.resource.data.replies.size() == resource.data.replies.size() + 1
++          && request.resource.data.replies.size() <= 20
++          && request.resource.data.replies[request.resource.data.replies.size() - 1].from == 'user'
++          && request.resource.data.replies[request.resource.data.replies.size() - 1].text is string
++          && request.resource.data.replies[request.resource.data.replies.size() - 1].text.size() >= 1
++          && request.resource.data.replies[request.resource.data.replies.size() - 1].text.size() <= 1000
++          && marketCreatedAtNearRequestTime(request.resource.data.replies[request.resource.data.replies.size() - 1].at)
++          && (resource.data.replies.size() <= 0 || request.resource.data.replies[0] == resource.data.replies[0])
++          && (resource.data.replies.size() <= 1 || request.resource.data.replies[1] == resource.data.replies[1])
++          && (resource.data.replies.size() <= 2 || request.resource.data.replies[2] == resource.data.replies[2])
++          && (resource.data.replies.size() <= 3 || request.resource.data.replies[3] == resource.data.replies[3])
++          && (resource.data.replies.size() <= 4 || request.resource.data.replies[4] == resource.data.replies[4])
++          && (resource.data.replies.size() <= 5 || request.resource.data.replies[5] == resource.data.replies[5])
++          && (resource.data.replies.size() <= 6 || request.resource.data.replies[6] == resource.data.replies[6])
++          && (resource.data.replies.size() <= 7 || request.resource.data.replies[7] == resource.data.replies[7])
++          && (resource.data.replies.size() <= 8 || request.resource.data.replies[8] == resource.data.replies[8])
++          && (resource.data.replies.size() <= 9 || request.resource.data.replies[9] == resource.data.replies[9])
++          && (resource.data.replies.size() <= 10 || request.resource.data.replies[10] == resource.data.replies[10])
++          && (resource.data.replies.size() <= 11 || request.resource.data.replies[11] == resource.data.replies[11])
++          && (resource.data.replies.size() <= 12 || request.resource.data.replies[12] == resource.data.replies[12])
++          && (resource.data.replies.size() <= 13 || request.resource.data.replies[13] == resource.data.replies[13])
++          && (resource.data.replies.size() <= 14 || request.resource.data.replies[14] == resource.data.replies[14])
++          && (resource.data.replies.size() <= 15 || request.resource.data.replies[15] == resource.data.replies[15])
++          && (resource.data.replies.size() <= 16 || request.resource.data.replies[16] == resource.data.replies[16])
++          && (resource.data.replies.size() <= 17 || request.resource.data.replies[17] == resource.data.replies[17])
++          && (resource.data.replies.size() <= 18 || request.resource.data.replies[18] == resource.data.replies[18])
++          && (resource.data.replies.size() <= 19 || request.resource.data.replies[19] == resource.data.replies[19])
++          && request.resource.data.updatedAt == request.time
++        )
++        || (
++          marketIsAdmin()
++          && request.resource.data.userId == resource.data.userId
++          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'replies', 'updatedAt'])
++          && request.resource.data.status in ['open', 'replied', 'resolved']
++          && (resource.data.status != 'resolved' || request.resource.data.status == 'resolved')
++          && request.resource.data.replies is list && request.resource.data.replies.size() <= 20
++          && request.resource.data.updatedAt == request.time
++          && (request.resource.data.status != 'resolved' || resource.data.status == 'resolved'
++            || (getAfter(marketProfilePath(resource.data.userId)).data.openSupportTickets == marketProfile(resource.data.userId).openSupportTickets - 1
++              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.kind == 'support'
++              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.operation == 'resolve'
++              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.targetId == ticketId))
++        )
++      );
++      allow delete: if false;
++    }
++
++    match /admins/{uid} {
++      allow get: if marketSignedIn() && request.auth.uid == uid;
++      allow list, create, update, delete: if false;
++    }
++
++    match /adminLogs/{logId} {
++      allow get, list: if marketVerified() && marketIsAdmin();
++      allow create: if marketVerified() && marketIsAdmin()
++        && request.resource.data.keys().hasAll(['adminId', 'action', 'targetType', 'targetId', 'reason', 'note', 'createdAt'])
++        && request.resource.data.keys().hasOnly(['adminId', 'action', 'targetType', 'targetId', 'reason', 'note', 'createdAt'])
++        && request.resource.data.adminId == request.auth.uid
++        && request.resource.data.action is string && request.resource.data.action.size() >= 1 && request.resource.data.action.size() <= 80
++        && request.resource.data.targetType is string && request.resource.data.targetType.size() >= 1 && request.resource.data.targetType.size() <= 40
++        && request.resource.data.targetId is string && request.resource.data.targetId.size() <= 150
++        && request.resource.data.reason is string && request.resource.data.reason.size() <= 500
++        && request.resource.data.note is string && request.resource.data.note.size() <= 1000
++        && request.resource.data.createdAt == request.time;
++      allow update, delete: if false;
++    }
++
++    match /config/{configId} {
++      allow get: if marketSignedIn() && configId == 'market';
++      allow list: if false;
++      allow create, update: if marketVerified() && marketIsAdmin() && configId == 'market'
++        && request.resource.data.keys().hasAll(['announcement', 'blockedWords', 'rankWeights', 'limits'])
++        && request.resource.data.keys().hasOnly(['announcement', 'blockedWords', 'rankWeights', 'limits'])
++        && request.resource.data.announcement is map
++        && request.resource.data.announcement.keys().hasAll(['text', 'active', 'until'])
++        && request.resource.data.announcement.keys().hasOnly(['text', 'active', 'until'])
++        && request.resource.data.announcement.text is string && request.resource.data.announcement.text.size() <= 500
++        && request.resource.data.announcement.active is bool
++        && (request.resource.data.announcement.until == null || request.resource.data.announcement.until is timestamp)
++        && request.resource.data.blockedWords is list && request.resource.data.blockedWords.size() <= 300
++        && request.resource.data.rankWeights is map
++        && request.resource.data.rankWeights.keys().hasAll(['newness', 'rating', 'match'])
++        && request.resource.data.rankWeights.keys().hasOnly(['newness', 'rating', 'match'])
++        && request.resource.data.rankWeights.newness is number && request.resource.data.rankWeights.newness >= 0
++        && request.resource.data.rankWeights.rating is number && request.resource.data.rankWeights.rating >= 0
++        && request.resource.data.rankWeights.match is number && request.resource.data.rankWeights.match >= 0
++        && request.resource.data.rankWeights.newness + request.resource.data.rankWeights.rating + request.resource.data.rankWeights.match == 100
++        && request.resource.data.limits is map
++        && request.resource.data.limits.openTasks == 3
++        && request.resource.data.limits.proposalsPerDay == 10
++        && request.resource.data.limits.proposalsPerTask == 15
++        && request.resource.data.limits.activeOffers == 5
++        && request.resource.data.limits.reportsToHide == 3;
++      allow delete: if false;
++    }
++
++    function marketConversationParticipants(conversationId, data) {
++      return data.keys().hasAll(['participants', 'kind', 'listingId', 'listingOwnerUid', 'createdAt', 'updatedAt'])
++        && data.keys().hasOnly(['participants', 'kind', 'listingId', 'listingOwnerUid', 'taskId', 'offerId', 'createdAt', 'updatedAt', 'lastMessage', 'lastReadAt'])
++        && data.participants is list && data.participants.size() == 2
++        && data.participants[0] is string && data.participants[1] is string
++        && data.participants[0] != data.participants[1]
++        && data.participants[0] < data.participants[1]
++        && data.kind in ['task', 'offer']
++        && data.listingId is string && data.listingId.size() > 0 && data.listingId.size() <= 128
++        && conversationId == data.kind + '_' + data.listingId + '_' + data.participants[0] + '_' + data.participants[1]
++        && data.listingOwnerUid in data.participants
++        && data.createdAt is timestamp && data.updatedAt is timestamp
++        && (!data.keys().hasAny(['lastMessage']) || (
++          data.lastMessage is map
++          && data.lastMessage.keys().hasAll(['text', 'senderUid', 'at'])
++          && data.lastMessage.keys().hasOnly(['text', 'senderUid', 'at'])
++          && data.lastMessage.text is string && data.lastMessage.text.size() >= 1 && data.lastMessage.text.size() <= 100
++          && data.lastMessage.senderUid in data.participants
++          && data.lastMessage.at is timestamp
++        ))
++        && (!data.keys().hasAny(['lastReadAt']) || (
++          data.lastReadAt is map
++          && data.lastReadAt.keys().hasOnly(data.participants)
++          && data.lastReadAt.keys().size() <= 2
++          && (!data.lastReadAt.keys().hasAny([data.participants[0]]) || data.lastReadAt[data.participants[0]] is timestamp)
++          && (!data.lastReadAt.keys().hasAny([data.participants[1]]) || data.lastReadAt[data.participants[1]] is timestamp)
++        ));
++    }
++
++    function marketConversationMember(conversationId) {
++      let p = /databases/$(database)/documents/marketConversations/$(conversationId);
++      let conversation = get(p).data;
++      return marketVerified()
++        && exists(p)
++        && request.auth.uid in conversation.participants
++        && !marketIsAdmin()
++        && !marketIsBlockedEither(conversation.participants[0], conversation.participants[1]);
++    }
++
++    match /marketConversations/{conversationId} {
++      allow get: if marketVerified()
++        && marketConversationParticipants(conversationId, resource.data)
++        && request.auth.uid in resource.data.participants
++        && !marketIsAdmin()
++        && !marketIsBlockedEither(resource.data.participants[0], resource.data.participants[1]);
++      allow list: if marketVerified()
++        && request.auth.uid in resource.data.participants
++        && !marketIsAdmin()
++        && !marketIsBlockedEither(resource.data.participants[0], resource.data.participants[1]);
++      allow create: if marketVerified()
++        && marketConversationParticipants(conversationId, request.resource.data)
++        && request.auth.uid in request.resource.data.participants
++        && !marketIsAdmin()
++        && request.resource.data.createdAt == request.time
++        && request.resource.data.updatedAt == request.time
++        && !request.resource.data.keys().hasAny(['lastMessage', 'lastReadAt'])
++        && !marketIsBlockedEither(request.resource.data.participants[0], request.resource.data.participants[1])
++        && (
++          (request.resource.data.kind == 'task'
++            && request.resource.data.keys().hasAny(['taskId'])
++            && !request.resource.data.keys().hasAny(['offerId'])
++            && request.resource.data.taskId == request.resource.data.listingId
++            && exists(/databases/$(database)/documents/tasks/$(request.resource.data.taskId))
++            && (
++              (get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.status == 'assigned'
++                && request.resource.data.listingOwnerUid == get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId
++                && request.resource.data.participants[0] in [get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId, get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assignedTo]
++                && request.resource.data.participants[1] in [get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId, get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assignedTo])
++              || (get(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.status == 'open'
++                && getAfter(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.status == 'assigned'
++                && request.resource.data.listingOwnerUid == getAfter(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId
++                && request.resource.data.participants[0] in [getAfter(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId, getAfter(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assignedTo]
++                && request.resource.data.participants[1] in [getAfter(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.posterId, getAfter(/databases/$(database)/documents/tasks/$(request.resource.data.taskId)).data.assignedTo])
++            ))
++          || (request.resource.data.kind == 'offer'
++            && request.resource.data.keys().hasAny(['offerId'])
++            && !request.resource.data.keys().hasAny(['taskId'])
++            && request.resource.data.offerId == request.resource.data.listingId
++            && exists(/databases/$(database)/documents/offers/$(request.resource.data.offerId))
++            && marketOfferPublic(get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data)
++            && request.resource.data.listingOwnerUid == get(/databases/$(database)/documents/offers/$(request.resource.data.offerId)).data.sellerId)
++        );
++      allow update: if marketVerified()
++        && marketConversationMember(conversationId)
++        && resource.data.participants == request.resource.data.participants
++        && resource.data.kind == request.resource.data.kind
++        && resource.data.listingId == request.resource.data.listingId
++        && resource.data.listingOwnerUid == request.resource.data.listingOwnerUid
++        && resource.data.createdAt == request.resource.data.createdAt
++        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'lastMessage', 'lastReadAt'])
++        && request.resource.data.updatedAt == request.time
++        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastMessage']) || (
++          request.resource.data.lastMessage is map
++          && request.resource.data.lastMessage.keys().hasAll(['text', 'senderUid', 'at'])
++          && request.resource.data.lastMessage.keys().hasOnly(['text', 'senderUid', 'at'])
++          && request.resource.data.lastMessage.text is string
++          && request.resource.data.lastMessage.text.size() >= 1 && request.resource.data.lastMessage.text.size() <= 100
++          && request.resource.data.lastMessage.senderUid == request.auth.uid
++          && request.resource.data.lastMessage.senderUid in resource.data.participants
++          && request.resource.data.lastMessage.at == request.time
++        ))
++        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastReadAt']) || (
++          request.resource.data.lastReadAt is map
++          && request.resource.data.lastReadAt.keys().hasOnly(resource.data.participants)
++          && request.resource.data.lastReadAt.keys().size() <= 2
++          && (
++            (!resource.data.keys().hasAny(['lastReadAt'])
++              && request.resource.data.lastReadAt.keys().hasOnly([request.auth.uid])
++              && request.resource.data.lastReadAt[request.auth.uid] == request.time)
++            || (resource.data.keys().hasAny(['lastReadAt'])
++              && request.resource.data.lastReadAt.diff(resource.data.lastReadAt).affectedKeys().hasOnly([request.auth.uid])
++              && request.resource.data.lastReadAt[request.auth.uid] == request.time)
++          )
++        ));
++      allow delete: if false;
++
++      match /messages/{messageId} {
++        allow get, list: if marketConversationMember(conversationId);
++        allow create: if marketConversationMember(conversationId)
++          && request.resource.data.keys().hasAll(['senderUid', 'recipientUid', 'senderName', 'text', 'createdAt'])
++          && request.resource.data.keys().hasOnly([
++            'senderUid', 'recipientUid', 'senderName', 'text', 'createdAt',
++            'replyToMessageId', 'replyToSenderName', 'replyToText'
++          ])
++          && request.resource.data.senderUid == request.auth.uid
++          && request.resource.data.recipientUid is string
++          && request.resource.data.recipientUid != request.auth.uid
++          && request.resource.data.recipientUid in get(/databases/$(database)/documents/marketConversations/$(conversationId)).data.participants
++          && request.resource.data.senderName is string && request.resource.data.senderName.size() >= 2 && request.resource.data.senderName.size() <= 60
++          && exists(/databases/$(database)/documents/profiles/$(request.auth.uid))
++          && request.resource.data.senderName == get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
++          && request.resource.data.text is string && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 2000
++          && request.resource.data.createdAt == request.time;
++        allow update, delete: if false;
++      }
++    }
++
+     match /profiles/{uid} {
+       allow get: if signedInWithVerifiedEmail()
+         && resource.data.uid == uid
+         && resource.data.keys().hasOnly([
+           'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
+         ])
+         && resource.data.publicId is string
+         && resource.data.publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+         && resource.data.displayName is string
+         && resource.data.displayName.size() >= 2
+         && resource.data.displayName.size() <= 60
+         && get(
+           /databases/$(database)/documents/studentIds/$(resource.data.publicId)
+         ).data.uid == uid;
+       allow list: if false;
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && request.auth.uid == uid
+         && !exists(/databases/$(database)/documents/profiles/$(uid))
+         && request.resource.data.keys().hasAll([
+           'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
+         ])
+         && request.resource.data.keys().hasOnly([
+           'uid', 'publicId', 'displayName', 'createdAt', 'updatedAt'
+         ])
+         && request.resource.data.uid == uid
+         && request.resource.data.publicId is string
+         && request.resource.data.publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+         && request.resource.data.displayName is string
+         && request.resource.data.displayName.size() >= 2
+         && request.resource.data.displayName.size() <= 60
+         && request.resource.data.createdAt == request.time
+         && request.resource.data.updatedAt == request.time
+         && getAfter(
+           /databases/$(database)/documents/studentIds/$(request.resource.data.publicId)
+         ).data.uid == uid;
+ 
+       allow update, delete: if false;
+     }
+ 
+     match /friendRequests/{requestId} {
+       // A sender can read their own directional request path before the document exists.
+       allow get: if signedInWithVerifiedEmail()
+         && (
+           requestId.matches('^' + request.auth.uid + '_[^/]+$')
+           || resource.data.senderUid == request.auth.uid
+           || resource.data.receiverUid == request.auth.uid
+         );
+ 
+       allow list: if signedInWithVerifiedEmail()
+         && (
+           resource.data.senderUid == request.auth.uid
+           || resource.data.receiverUid == request.auth.uid
+         );
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && requestId == request.resource.data.senderUid + "_" + request.resource.data.receiverUid
+         && request.resource.data.senderUid == request.auth.uid
+         && request.resource.data.receiverUid is string
+         && request.resource.data.receiverUid != request.auth.uid
+         && request.resource.data.keys().hasAll([
+           'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+           'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+         ])
+         && request.resource.data.keys().hasOnly([
+           'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+           'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+         ])
+         && request.resource.data.senderName is string
+         && request.resource.data.senderName.size() >= 2
+         && request.resource.data.senderName.size() <= 60
+         && request.resource.data.receiverName is string
+         && request.resource.data.receiverName.size() >= 2
+         && request.resource.data.receiverName.size() <= 60
+         && request.resource.data.senderPublicId is string
+         && request.resource.data.senderPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+         && request.resource.data.receiverPublicId is string
+         && request.resource.data.receiverPublicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+         && request.resource.data.status == 'pending'
+         && request.resource.data.createdAt == request.time
+         && request.resource.data.updatedAt == request.time
+         && exists(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid))
+         && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.uid == request.resource.data.senderUid
+         && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.displayName == request.resource.data.senderName
+         && get(/databases/$(database)/documents/profiles/$(request.resource.data.senderUid)).data.publicId == request.resource.data.senderPublicId
+         && exists(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid))
+         && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.uid == request.resource.data.receiverUid
+         && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.displayName == request.resource.data.receiverName
+         && get(/databases/$(database)/documents/profiles/$(request.resource.data.receiverUid)).data.publicId == request.resource.data.receiverPublicId;
+ 
+       allow update: if signedInWithVerifiedEmail()
+         && request.resource.data.keys().hasAll([
+           'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+           'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+         ])
+         && request.resource.data.keys().hasOnly([
+           'senderUid', 'receiverUid', 'senderName', 'senderPublicId',
+           'receiverName', 'receiverPublicId', 'status', 'createdAt', 'updatedAt'
+         ])
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+         && request.resource.data.updatedAt == request.time
+         && (
+           (
+             resource.data.receiverUid == request.auth.uid
+             && resource.data.status == 'pending'
+             && request.resource.data.status in ['accepted', 'rejected']
+           )
+           || (
+             resource.data.senderUid == request.auth.uid
+             && resource.data.status == 'pending'
+             && request.resource.data.status == 'cancelled'
+           )
+           || (
+             (resource.data.senderUid == request.auth.uid
+               || resource.data.receiverUid == request.auth.uid)
+             && resource.data.status == 'accepted'
+             && request.resource.data.status == 'removed'
+           )
+           || (
+             resource.data.senderUid == request.auth.uid
+             && resource.data.status in ['rejected', 'cancelled', 'removed']
+             && request.resource.data.status == 'pending'
+           )
+         );
+ 
+       allow delete: if false;
+     }
+ 
+     match /studentNotifications/{uid}/items/{notificationId} {
+       allow get, list: if signedInWithVerifiedEmail()
+         && request.auth.uid == uid;
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && validNotificationShape(uid, request.resource.data)
+         && request.resource.data.actorUid == request.auth.uid
+         && request.resource.data.createdAt == request.time
+         && request.resource.data.read == false
+         && request.resource.data.readAt == null
+         && (
+           matchesPendingRequestNotification(uid, notificationId, request.resource.data)
+           || matchesAcceptedRequestNotification(uid, notificationId, request.resource.data)
+         );
+ 
+       allow update: if signedInWithVerifiedEmail()
+         && validNotificationShape(uid, request.resource.data)
+         && (
+           (
+             request.auth.uid == uid
+             && resource.data.recipientUid == uid
+             && resource.data.read == false
+             && request.resource.data.read == true
+             && request.resource.data.readAt == request.time
+             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+           )
+           || (
+             request.auth.uid == resource.data.actorUid
+             && request.auth.uid != uid
+             && resource.data.type == 'friend_request'
+             && request.resource.data.type == 'friend_request'
+             && request.resource.data.eventAt != resource.data.eventAt
+             && request.resource.data.createdAt == request.time
+             && request.resource.data.read == false
+             && request.resource.data.readAt == null
+             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'eventAt', 'createdAt', 'read', 'readAt'
+             ])
+             && matchesPendingRequestNotification(uid, notificationId, request.resource.data)
+           )
+         );
+ 
+       allow delete: if false;
+     }
+ 
+     // A student can register only their own FCM device token. Tokens are
+     // intentionally not readable by clients; trusted server code sends messages.
+     match /studentNotificationTokens/{uid} {
+       allow get, list: if false;
+ 
+       allow create, update: if signedInWithVerifiedEmail()
+         && request.auth.uid == uid
+         && exists(/databases/$(database)/documents/profiles/$(uid))
+         && request.resource.data.keys().hasAll(['uid', 'token', 'updatedAt'])
+         && request.resource.data.keys().hasOnly(['uid', 'token', 'updatedAt'])
+         && request.resource.data.uid == uid
+         && request.resource.data.token is string
+         && request.resource.data.token.size() >= 1
+         && request.resource.data.token.size() <= 4096
+         && request.resource.data.updatedAt == request.time;
+ 
+       allow delete: if signedInWithVerifiedEmail()
+         && request.auth.uid == uid;
+     }
+ 
+ 
+     // Student Connect one-to-one chat. Existing rules remain in place.
+     match /chatConversations/{conversationId} {
+       // Allow a verified student to check their own deterministic pair path when no
+       // conversation exists yet. Existing metadata is visible only to participants.
+       allow get: if signedInWithVerifiedEmail()
+         && (
+           (
+             !exists(/databases/$(database)/documents/chatConversations/$(conversationId))
+             && (
+               conversationId.matches('^' + request.auth.uid + '_[^/]+$')
+               || conversationId.matches('^[^/]+_' + request.auth.uid + '$')
+             )
+           )
+           || (
+             validChatConversation(conversationId, resource.data)
+             && request.auth.uid in resource.data.participantUids
+           )
+         );
+ 
+       allow list: if signedInWithVerifiedEmail()
+         && request.auth.uid in resource.data.participantUids;
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && validChatConversation(conversationId, request.resource.data)
+         && request.auth.uid in request.resource.data.participantUids
+         && request.resource.data.createdAt == request.time
+         && request.resource.data.updatedAt == request.time
+         && exists(/databases/$(database)/documents/profiles/$(request.resource.data.participantUids[0]))
+         && exists(/databases/$(database)/documents/profiles/$(request.resource.data.participantUids[1]))
+         && acceptedChatConnectionExists(
+           request.resource.data.participantUids[0],
+           request.resource.data.participantUids[1]
+         );
+ 
+       allow update: if signedInWithVerifiedEmail()
+         && validChatConversation(conversationId, resource.data)
+         && validChatConversation(conversationId, request.resource.data)
+         && request.auth.uid in resource.data.participantUids
+         && request.resource.data.participantUids == resource.data.participantUids
+         && request.resource.data.createdAt == resource.data.createdAt
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+         && request.resource.data.updatedAt == request.time
+         && acceptedChatConnectionExists(
+           resource.data.participantUids[0],
+           resource.data.participantUids[1]
+         );
+ 
+       allow delete: if false;
+ 
+       match /readStates/{uid} {
+         // Active participants may read either participant's individual read marker
+         // to display message receipts. Listing/querying remains disabled, and only
+         // each marker owner can create or update their own read state below.
+         allow get: if signedInWithVerifiedEmail()
+           && activeChatConversationMember(conversationId)
+           && uid in get(
+             /databases/$(database)/documents/chatConversations/$(conversationId)
+           ).data.participantUids;
+         allow list: if false;
+ 
+         allow create: if signedInWithVerifiedEmail()
+           && request.auth.uid == uid
+           && activeChatConversationMember(conversationId)
+           && request.resource.data.keys().hasAll(['uid', 'lastReadAt', 'updatedAt'])
+           && request.resource.data.keys().hasOnly(['uid', 'lastReadAt', 'updatedAt'])
+           && request.resource.data.uid == uid
+           && request.resource.data.lastReadAt is timestamp
+           && request.resource.data.lastReadAt == request.time
+           && request.resource.data.updatedAt == request.time;
+ 
+         allow update: if signedInWithVerifiedEmail()
+           && request.auth.uid == uid
+           && resource.data.uid == uid
+           && activeChatConversationMember(conversationId)
+           && request.resource.data.keys().hasAll(['uid', 'lastReadAt', 'updatedAt'])
+           && request.resource.data.keys().hasOnly(['uid', 'lastReadAt', 'updatedAt'])
+           && request.resource.data.uid == uid
+           && request.resource.data.lastReadAt is timestamp
+           && request.resource.data.lastReadAt == request.time
+           && request.resource.data.updatedAt == request.time
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastReadAt', 'updatedAt']);
+ 
+         allow delete: if false;
+       }
+ 
+       match /messages/{messageId} {
+         // Reading the messages subcollection is scoped to the parent conversation.
+         // It is blocked as soon as the accepted friend connection is removed.
+         allow list: if signedInWithVerifiedEmail()
+           && activeChatConversationMember(conversationId);
+ 
+         allow get: if signedInWithVerifiedEmail()
+           && activeChatConversationMember(conversationId)
+           && validChatMessage(
+             conversationId,
+             resource.data,
+             get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.participantUids
+           )
+           && request.auth.uid in resource.data.participantUids;
+ 
+         allow create: if signedInWithVerifiedEmail()
+           && activeChatConversationMember(conversationId)
+           && validChatMessage(
+             conversationId,
+             request.resource.data,
+             get(/databases/$(database)/documents/chatConversations/$(conversationId)).data.participantUids
+           )
+           && request.auth.uid == request.resource.data.senderUid
+           && request.resource.data.createdAt == request.time
+           && exists(/databases/$(database)/documents/profiles/$(request.auth.uid))
+           && get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayName
+             == request.resource.data.senderName;
+ 
+         // Sent messages are immutable.
+         allow update, delete: if false;
+       }
+ 
+       // Reactions are separate from immutable message documents. Participants can
+       // read reactions in an active chat, but each student can write only their own.
+       match /messageReactions/{reactionId} {
+         allow get, list: if signedInWithVerifiedEmail()
+           && activeChatConversationMember(conversationId);
+ 
+         allow create: if signedInWithVerifiedEmail()
+           && request.auth.uid == request.resource.data.uid
+           && activeChatConversationMember(conversationId)
+           && validChatMessageReaction(conversationId, reactionId, request.resource.data)
+           && request.resource.data.updatedAt == request.time;
+ 
+         allow update: if signedInWithVerifiedEmail()
+           && request.auth.uid == resource.data.uid
+           && request.resource.data.uid == resource.data.uid
+           && request.resource.data.messageId == resource.data.messageId
+           && activeChatConversationMember(conversationId)
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emoji', 'updatedAt'])
+           && validChatMessageReaction(conversationId, reactionId, request.resource.data)
+           && request.resource.data.updatedAt == request.time;
+ 
+         allow delete: if signedInWithVerifiedEmail()
+           && request.auth.uid == resource.data.uid
+           && activeChatConversationMember(conversationId)
+           && validChatMessageReaction(conversationId, reactionId, resource.data);
+       }
+ 
+       // Ephemeral one-to-one typing state. Active participants can read it;
+       // each account can write only its own document.
+       match /typing/{uid} {
+         allow get, list: if signedInWithVerifiedEmail()
+           && activeChatConversationMember(conversationId);
+ 
+         allow create: if signedInWithVerifiedEmail()
+           && request.auth.uid == uid
+           && activeChatConversationMember(conversationId)
+           && request.resource.data.keys().hasAll(['uid', 'isTyping', 'updatedAt'])
+           && request.resource.data.keys().hasOnly(['uid', 'isTyping', 'updatedAt'])
+           && request.resource.data.uid == uid
+           && request.resource.data.isTyping == true
+           && request.resource.data.updatedAt == request.time;
+ 
+         allow update: if signedInWithVerifiedEmail()
+           && request.auth.uid == uid
+           && activeChatConversationMember(conversationId)
+           && resource.data.uid == uid
+           && resource.data.isTyping == true
+           && request.resource.data.keys().hasAll(['uid', 'isTyping', 'updatedAt'])
+           && request.resource.data.keys().hasOnly(['uid', 'isTyping', 'updatedAt'])
+           && request.resource.data.uid == uid
+           && request.resource.data.isTyping == true
+           && request.resource.data.updatedAt == request.time
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']);
+ 
+         // Cleanup of one's own state is allowed even if the accepted connection disappears.
+         allow delete: if signedInWithVerifiedEmail()
+           && request.auth.uid == uid
+           && exists(/databases/$(database)/documents/chatConversations/$(conversationId))
+           && validChatConversation(
+             conversationId,
+             get(/databases/$(database)/documents/chatConversations/$(conversationId)).data
+           )
+           && request.auth.uid in get(
+             /databases/$(database)/documents/chatConversations/$(conversationId)
+           ).data.participantUids;
+       }
+     }
+ 
+     // Presence is scoped to a student's own document and accepted connections.
+     // Heartbeat timestamps are server-generated; clients cannot list presence documents.
+ 
+     // P2P transfers store metadata/signaling only; encrypted file bytes never enter Firestore.
+     function validP2pTransferOffer(conversationId, transferId, data) {
+       let conversationPath = /databases/$(database)/documents/chatConversations/$(conversationId);
+       return exists(conversationPath)
+         && validChatConversation(conversationId, get(conversationPath).data)
+         && data.keys().hasAll([
+           'transferId', 'conversationId', 'senderUid', 'receiverUid',
+           'fileName', 'sizeBytes', 'mimeType', 'sha256', 'chunkSize',
+           'senderPublicKey', 'status', 'createdAt', 'updatedAt'
+         ])
+         && data.keys().hasOnly([
+           'transferId', 'conversationId', 'senderUid', 'receiverUid',
+           'fileName', 'sizeBytes', 'mimeType', 'sha256', 'chunkSize',
+           'senderPublicKey', 'thumbnailBase64', 'status', 'createdAt', 'updatedAt'
+         ])
+         && data.transferId == transferId
+         && data.conversationId == conversationId
+         && data.senderUid is string
+         && data.receiverUid is string
+         && data.senderUid != data.receiverUid
+         && data.senderUid in get(conversationPath).data.participantUids
+         && data.receiverUid in get(conversationPath).data.participantUids
+         && data.fileName is string
+         && data.fileName.size() > 0
+         && data.fileName.size() <= 180
+         && data.sizeBytes is int
+         && data.sizeBytes > 0
+         && data.mimeType is string
+         && data.mimeType.size() > 0
+         && data.mimeType.size() <= 160
+         && data.sha256 is string
+         && data.sha256.matches('^[A-Fa-f0-9]{64}$')
+         && data.chunkSize is int
+         && data.chunkSize >= 1024
+         && data.chunkSize <= 65536
+         && data.senderPublicKey is string
+         && data.senderPublicKey.size() >= 40
+         && data.senderPublicKey.size() <= 2048
+         && data.senderPublicKey.matches('^[A-Za-z0-9+/]+={0,2}$')
+         && data.status in [
+           'offered', 'accepted', 'rejected', 'transferring',
+           'paused', 'completed', 'failed', 'cancelled'
+         ]
+         && data.createdAt is timestamp
+         && data.updatedAt is timestamp
+         && (!data.keys().hasAny(['thumbnailBase64']) ||
+           (data.thumbnailBase64 is string && data.thumbnailBase64.size() <= 20480));
+     }
+ 
+     function validP2pSignalPayload(signalType, payload) {
+       return payload is map && (
+         ((signalType == 'webrtc_offer' || signalType == 'webrtc_answer')
+           && payload.keys().hasAll(['sdp'])
+           && payload.keys().hasOnly(['sdp'])
+           && payload.sdp is string
+           && payload.sdp.size() > 0
+           && payload.sdp.size() <= 120000)
+         ||
+         (signalType == 'key_exchange'
+           && payload.keys().hasAll(['publicKey'])
+           && payload.keys().hasOnly(['publicKey'])
+           && payload.publicKey is string
+           && payload.publicKey.size() >= 40
+           && payload.publicKey.size() <= 2048
+           && payload.publicKey.matches('^[A-Za-z0-9+/]+={0,2}$'))
+         ||
+         (signalType == 'ice_candidate'
+           && payload.keys().hasAll(['candidate', 'sdpMid', 'sdpMLineIndex'])
+           && payload.keys().hasOnly(['candidate', 'sdpMid', 'sdpMLineIndex'])
+           && payload.candidate is string
+           && payload.candidate.size() > 0
+           && payload.candidate.size() <= 4096
+           && (payload.sdpMid == null ||
+             (payload.sdpMid is string && payload.sdpMid.size() <= 128))
+           && payload.sdpMLineIndex is int
+           && payload.sdpMLineIndex >= 0
+           && payload.sdpMLineIndex <= 256)
+         ||
+         (signalType == 'lan_candidates'
+           && payload.keys().hasAll(['ip', 'port', 'token'])
+           && payload.keys().hasOnly(['ip', 'port', 'token'])
+           && payload.ip is string
+           && payload.ip.size() > 0
+           && payload.ip.size() <= 64
+           && payload.port is int
+           && payload.port >= 1
+           && payload.port <= 65535
+           && payload.token is string
+           && payload.token.size() >= 32
+           && payload.token.size() <= 128)
+         ||
+         (signalType == 'resume_request'
+           && payload.keys().hasAll(['bitmapBase64', 'fileSha256'])
+           && payload.keys().hasOnly(['bitmapBase64', 'fileSha256'])
+           && payload.bitmapBase64 is string
+           && payload.bitmapBase64.size() <= 80000
+           && payload.fileSha256 is string
+           && payload.fileSha256.matches('^[A-Fa-f0-9]{64}$'))
+         ||
+         (signalType == 'transfer_progress'
+           && payload.keys().hasAll(['bytesDone', 'totalBytes', 'bytesPerSecond', 'etaSeconds'])
+           && payload.keys().hasOnly(['bytesDone', 'totalBytes', 'bytesPerSecond', 'etaSeconds'])
+           && payload.bytesDone is int
+           && payload.totalBytes is int
+           && payload.bytesPerSecond is int
+           && payload.etaSeconds is int
+           && payload.bytesDone >= 0
+           && payload.totalBytes > 0
+           && payload.bytesDone <= payload.totalBytes
+           && payload.bytesPerSecond >= 0
+           && payload.etaSeconds >= 0)
+         ||
+         (signalType == 'transfer_complete'
+           && payload.keys().hasAll(['sha256'])
+           && payload.keys().hasOnly(['sha256'])
+           && payload.sha256 is string
+           && payload.sha256.matches('^[A-Fa-f0-9]{64}$'))
+         ||
+         (signalType == 'transfer_cancel'
+           && payload.keys().hasAll(['reason'])
+           && payload.keys().hasOnly(['reason'])
+           && payload.reason is string
+           && payload.reason.size() <= 200)
+         ||
+         (signalType == 'error'
+           && payload.keys().hasAll(['code', 'message'])
+           && payload.keys().hasOnly(['code', 'message'])
+           && payload.code is string
+           && payload.code.size() > 0
+           && payload.code.size() <= 80
+           && payload.message is string
+           && payload.message.size() <= 300)
+       );
+     }
+ 
+     match /chatConversations/{conversationId}/transferOffers/{transferId} {
+       allow get: if signedInWithVerifiedEmail()
+         && activeChatConversationMember(conversationId)
+         && validP2pTransferOffer(conversationId, transferId, resource.data)
+         && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid];
+ 
+       // Every client-created offer is validated by allow create above. Keep the
+       // list rule query-provable by constraining the receiver field queried by Android.
+       // The client still validates every returned document before showing it.
+       allow list: if signedInWithVerifiedEmail()
+         && activeChatConversationMember(conversationId)
+         && request.auth.uid == resource.data.receiverUid;
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && activeChatConversationMember(conversationId)
+         && validP2pTransferOffer(conversationId, transferId, request.resource.data)
+         && request.auth.uid == request.resource.data.senderUid
+         && request.resource.data.status == 'offered'
+         && request.resource.data.createdAt == request.time
+         && request.resource.data.updatedAt == request.time;
+ 
+       allow update: if signedInWithVerifiedEmail()
+         && activeChatConversationMember(conversationId)
+         && validP2pTransferOffer(conversationId, transferId, resource.data)
+         && validP2pTransferOffer(conversationId, transferId, request.resource.data)
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+         && request.resource.data.createdAt == resource.data.createdAt
+         && request.resource.data.updatedAt == request.time
+         && (
+           (resource.data.status == 'offered'
+             && request.auth.uid == resource.data.receiverUid
+             && request.resource.data.status in ['accepted', 'rejected'])
+           ||
+           (request.resource.data.status == 'cancelled'
+             && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid]
+             && resource.data.status in ['offered', 'accepted', 'transferring', 'paused', 'failed'])
+           ||
+           (request.resource.data.status == 'transferring'
+             && request.auth.uid == resource.data.senderUid
+             && resource.data.status in ['accepted', 'paused'])
+           ||
+           (request.resource.data.status == 'paused'
+             && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid]
+             && resource.data.status in ['accepted', 'transferring'])
+           ||
+           (request.resource.data.status == 'completed'
+             && request.auth.uid == resource.data.receiverUid
+             && resource.data.status == 'transferring')
+           ||
+           (request.resource.data.status == 'failed'
+             && request.auth.uid in [resource.data.senderUid, resource.data.receiverUid]
+             && resource.data.status in ['offered', 'accepted', 'transferring', 'paused'])
+         );
+ 
+       allow delete: if false;
+     }
+ 
+     match /chatConversations/{conversationId}/transferOffers/{transferId}/signals/{signalId} {
+       function parentOfferPath() {
+         return /databases/$(database)/documents/chatConversations/$(conversationId)/transferOffers/$(transferId);
+       }
+ 
+       allow get, list: if signedInWithVerifiedEmail()
+         && activeChatConversationMember(conversationId)
+         && exists(parentOfferPath())
+         && validP2pTransferOffer(conversationId, transferId, get(parentOfferPath()).data)
+         && resource.data.targetUid == request.auth.uid
+         && request.auth.uid in [
+           get(parentOfferPath()).data.senderUid,
+           get(parentOfferPath()).data.receiverUid
+         ];
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && activeChatConversationMember(conversationId)
+         && exists(parentOfferPath())
+         && validP2pTransferOffer(conversationId, transferId, get(parentOfferPath()).data)
+         && request.resource.data.keys().hasAll([
+           'transferId', 'senderUid', 'targetUid', 'type', 'payload', 'createdAt'
+         ])
+         && request.resource.data.keys().hasOnly([
+           'transferId', 'senderUid', 'targetUid', 'type', 'payload', 'createdAt'
+         ])
+         && request.resource.data.transferId == transferId
+         && request.resource.data.senderUid == request.auth.uid
+         && request.resource.data.senderUid in [
+           get(parentOfferPath()).data.senderUid,
+           get(parentOfferPath()).data.receiverUid
+         ]
+         && request.resource.data.targetUid != request.auth.uid
+         && request.resource.data.targetUid in [
+           get(parentOfferPath()).data.senderUid,
+           get(parentOfferPath()).data.receiverUid
+         ]
+         && request.resource.data.type in [
+           'lan_candidates', 'key_exchange', 'webrtc_offer', 'webrtc_answer', 'ice_candidate',
+           'resume_request', 'transfer_progress', 'transfer_complete',
+           'transfer_cancel', 'error'
+         ]
+         && validP2pSignalPayload(request.resource.data.type, request.resource.data.payload)
+         && (request.resource.data.type != 'transfer_complete' ||
+           request.resource.data.payload.sha256 == get(parentOfferPath()).data.sha256)
+         && request.resource.data.createdAt == request.time;
+ 
+       allow delete: if signedInWithVerifiedEmail()
+         && activeChatConversationMember(conversationId)
+         && exists(parentOfferPath())
+         && validP2pTransferOffer(conversationId, transferId, get(parentOfferPath()).data)
+         && resource.data.targetUid == request.auth.uid;
+ 
+       allow update: if false;
+     }
+ 
+     match /studentPresence/{uid} {
+       allow get: if signedInWithVerifiedEmail()
+         && (
+           request.auth.uid == uid
+           || acceptedChatConnectionExists(request.auth.uid, uid)
+         );
+       allow list: if false;
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && request.auth.uid == uid
+         && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+         && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+         && request.resource.data.uid == uid
+         && request.resource.data.isOnline is bool
+         && request.resource.data.lastSeenAt == request.time
+         && request.resource.data.updatedAt == request.time;
+ 
+       allow update: if signedInWithVerifiedEmail()
+         && request.auth.uid == uid
+         && resource.data.uid == uid
+         && request.resource.data.keys().hasAll(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+         && request.resource.data.keys().hasOnly(['uid', 'isOnline', 'lastSeenAt', 'updatedAt'])
+         && request.resource.data.uid == uid
+         && request.resource.data.isOnline is bool
+         && request.resource.data.lastSeenAt == request.time
+         && request.resource.data.updatedAt == request.time
+         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+           'isOnline', 'lastSeenAt', 'updatedAt'
+         ]);
+ 
+       allow delete: if false;
+     }
+ 
+     match /studentIds/{publicId} {
+       allow get: if signedInWithVerifiedEmail();
+       allow list: if false;
+ 
+       allow create: if signedInWithVerifiedEmail()
+         && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+         && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+         && request.resource.data.uid == request.auth.uid
+         && request.resource.data.createdAt == request.time
+         && publicId.matches('^UNI-[A-HJ-NP-Z2-9]{7}$')
+         && !exists(/databases/$(database)/documents/studentIds/$(publicId))
+         && getAfter(
+           /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+         ).data.uid == request.auth.uid
+         && getAfter(
+           /databases/$(database)/documents/profiles/$(request.resource.data.uid)
+         ).data.publicId == publicId;
+ 
+       allow update, delete: if false;
+     }
+   }
+ }
