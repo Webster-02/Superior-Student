@@ -45,6 +45,15 @@
   - Added `MarketConfigProviderDisplayTest.kt` for retained display/cache after permission failure, offline retry guidance, successful refresh, missing/invalid config, and first-load offline behavior.
   - No Market screen/repository integration beyond this single provider display path, no rule/index changes, no Firebase deployment or merge.
   
+## Part 6C — create-task mapped completion path
+
+- **Status:** implementation and five focused adapter tests added; CI verification pending.
+- Added the opt-in `MarketRepository.createTaskWithMappedError(...)` API. The original `createTask(...): Task<String>` remains unchanged for existing callers.
+- The new path returns `MarketOperationResult<String>`: success contains the task ID; failure contains a safe `MarketMappedError`. Offline errors are retryable; permission and input errors are not. Synchronous state/precondition failures use non-retryable guidance without exposing exception text.
+- This adapter does not retry, mutate the cache, skip Firestore rules, or change the atomic create-task transaction. No existing UI call site is redirected in this step.
+- Updated the focused Market workflow path filters so changes to the repository adapter and its tests trigger CI.
+- No changes to `firestore.rules`, `firestore.indexes.json`, the protected top-level `tests/`, existing U2U chat/friend/Nearby behavior, or existing view IDs. No Firebase deployment or merge.
+
 ## Exact next step
 
-Part 6B is complete and verified. Stop for user review before any further integration; do not connect the mapper to additional repository methods or screens until the user explicitly approves the next small step.
+Run GitHub Actions on this checkpoint. Fix only any compile/test failures from the create-task mapped-result path. After the build and APK upload pass, stop for user review before adding mapped handling to another operation.

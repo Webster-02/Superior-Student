@@ -223,6 +223,18 @@ class MarketRepository(
         }
     }
 
+    /**
+     * Opt-in mapped-result path for new create-task UI consumers.
+     *
+     * The original [createTask] API remains unchanged for existing callers.
+     * Failures are values here so a screen can keep its current content and
+     * decide whether to show Retry from [MarketMappedError.retryable].
+     */
+    internal fun createTaskWithMappedError(
+        draft: MarketTaskDraft
+    ): Task<MarketOperationResult<String>> =
+        MarketOperationTaskAdapter.run { createTask(draft) }
+
     fun editTask(taskId: String, edit: MarketTaskEdit): Task<Boolean> {
         val uid = requireVerifiedUid()
         require(taskId.isNotBlank()) { "A task is required." }

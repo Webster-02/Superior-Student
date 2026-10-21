@@ -13,6 +13,9 @@ on:
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketErrorMapperTest.kt'
       - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketConfigProvider.kt'
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketConfigProviderDisplayTest.kt'
+      - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketRepository.kt'
+      - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketOperationTaskAdapter.kt'
+      - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketOperationTaskAdapterTest.kt'
       - '.github/workflows/market-ranking-check.yml'
       - 'BUILD_PROGRESS.md'
 
