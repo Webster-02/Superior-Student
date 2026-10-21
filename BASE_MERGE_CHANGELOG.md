@@ -1,52 +1,31 @@
 # Base-to-candidate rules diff and merge changelog
 
-Selected baseline: `feature/pachattar-design-foundation-phase-1`.
+Selected baseline: `feature/pachattar-design-foundation-phase-1`, whose `firestore.rules` Git blob is `2944d790949a1fd93414a851eaf1f3ca6fef8922`.
 
-## Existing U2U chat/Nearby rules: unchanged
+## Existing U2U chat and Nearby rules are preserved
 
-The requested admin exclusions were removed from the existing U2U rules. These base sections are byte-identical in `firestore.base.rules` and the merged candidate:
+The final candidate's prefix before the Market insertion and suffix from `match /profiles/{uid}` onward are byte-identical to the selected baseline. The `activeChatConversationMember(conversationId)` helper is also byte-identical. The branch compare reports **1,287 additions and 0 deletions in `firestore.rules`**. This is proven against the selected Git branch snapshot, not against live production rules.
 
-- `activeChatConversationMember(conversationId)`
-- The existing `match /chatConversations/{conversationId}` parent block through the start of `readStates/{uid}`
+## Additive Market additions
 
-The static preflight extracts and compares both sections exactly. The unified diff in `DIFF_AGAINST_BASE.patch` has one insertion hunk only, containing the additive Market blocks; it does not patch an existing chat/Nearby rule. Regular accepted-friend chat and Nearby-transfer regression tests remain. The admin regression test uses an admin UID that is not a participant, matching the stated operating model (admin account is separate from student accounts); no special admin exclusion has been added to legacy chat rules.
+- Market profile, listing, counter, proposal, report, rating/statistics, notice, support, admin config/log and separate `marketConversations` rule blocks.
+- Regular student Market posting requires a verified email plus an existing `profiles/{uid}` U2U profile; admin operations resolve through `admins/{uid}` and don't require student profile documents.
+- Proposal `proposerId` is immutable and equals the proposal document ID and authenticated UID at create. Applied collection-group reads require `resource.data.proposerId == request.auth.uid`; task-specific poster access remains available.
+- The assigned-helper completion branch was removed; the `assigned -> completed` Market task transition requires `request.auth.uid == resource.data.posterId`. Both participants can still rate a completed task with the corresponding same-batch stats mutation.
+- Content edits use create-equivalent validation and require `marketUserCanPost(owner)`; lifecycle cleanup remains separately authorized with paired counter updates.
+- Market chat uses deterministic IDs with sorted participant UIDs, text-only messages, validated previews/read state and no admin access. Legacy U2U chat/Nearby rules remain unchanged.
+- Admin Limits are read-only. Only announcement, blocked words and non-negative rank weights are editable; weights sum to 100.
 
-## Additive Market blocks
+## Test-fix history
 
-- Market helper functions, `marketProfiles/{uid}`, listings, counters and cleanup, reports, ratings/statistics, notices, support, admin membership/logging, config and `marketConversations`.
-- Task and offer content validators are reused at create and whenever an owner changes a content field. `marketUserCanPost(owner)` is required for content edits; lifecycle-only cancel/pause/expire/remove transitions remain separately available with the linked counter updates.
-- Proposals now store immutable `proposerId`, equal to the proposal document ID and authenticated UID at creation. A recursive collection-group `get/list` rule allows only `resource.data.proposerId == request.auth.uid`; the nested task-level rule still lets the task poster list that task's proposals.
-- The single composite index added is `proposals` at `COLLECTION_GROUP` scope on `proposerId ASC, updatedAt DESC`.
-- Market conversation IDs are deterministic: `kind_listingId_uidLow_uidHigh`, with sorted participant UIDs. Task conversation creation supports both already-assigned tasks and an accept batch by checking `get()` for the prior state and `getAfter()` for the resulting assigned state. `lastMessage` preview and per-participant `lastReadAt` are the only mutable metadata beyond `updatedAt`; the IDs, participants, listing association and creation time are immutable. Admins remain excluded from Market conversations/messages.
-- Config `limits` remain rules-enforced constants (`3/10/15/5/3`) and must be shown read-only in the admin panel. Only announcement, blockedWords and rankWeights are editable; every rank weight must be non-negative and their sum must equal 100.
+The first real CI run [39531687165](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165) failed 9 of 65 Emulator assertions. Follow-up changes corrected owner-denial fixtures, restored a valid legacy Nearby public-key test fixture, split Market counter validation by mutation kind, cached repeated reads, made optional `assignedTo` checks safe, and reduced redundant Market conversation validation.
 
-## Provenance and limitations
+The latest run [39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) succeeded: `npm ci` exit 0, static 31/31, Emulator 65/65, zero failed/skipped tests. [Artifact zip](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614/artifacts/12315439964), SHA-256 `f459f2730e9bb09e3ae311859c33ce90b17a5477bc01135ef9fcf0429a635060`.
 
-`firestore.base.rules` and `rollback/firestore.rollback.branch-snapshot.rules` are byte-identical to the selected branch snapshot. Static validation compares the original Git blob SHA. This is not proof that the selected branch matches live Firebase production rules; export the live Console rules/indexes and reconcile them before any deployment.
+**Raw log caveat:** the latest log still contains 39 diagnostics referencing the 1,000-expression evaluator ceiling during some rule evaluations. They did not cause test assertions to fail, but the log is not warning-free. This differs from document access-call limits; the positive high-cost transaction and batch scenarios passed. The affected expressions should be reviewed before any production approval.
 
-The static test suite validates the additive-only diff shape and Market invariants but is not the Firebase Rules compiler. The Emulator suite has not run in this environment because `registry.npmjs.org` could not be resolved. See `TEST_RESULTS.md` for real command output. This review follow-up adds a single commit to `review/market-rules` only. It does not merge to `main` or deploy to Firebase.
+## Missing source document and deployment gate
 
+The requested `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` was not accessible in this session and is absent from the starting branch. It has not been recreated or marked verbatim. Supply the original before addendum reconciliation is complete.
 
-## Follow-up: first real Emulator run and evaluation-budget fixes
-
-The first committed candidate's real GitHub Actions run was `39531687165` (65 tests: 56 passed, 9 failed; static preflight passed). Its artifacts are linked in `TEST_RESULTS.md`. The rerun candidate:
-- fixes test fixtures that were not actually changing owner-protected fields;
-- fixes the Nearby transfer public-key fixture to meet the preserved baseline validation;
-- dispatches profile-counter validation by mutation kind, keeping the common immutable/allowed-key/timestamp checks while evaluating the matching operation helper;
-- caches profile/counter/profile-name reads in task/offer/posting validators;
-- makes equality on optional `assignedTo` null-safe for unassigned tasks;
-- removes duplicate create-time content checks already covered by the canonical validator; and
-- avoids running the full participant-shape validator twice on every Market conversation metadata update while retaining member, verified-email, admin, block, and changed-key checks.
-
-The candidate fixes are intentionally limited to Market rule helpers and tests. Existing U2U chat/Nearby rule blocks remain unchanged.
-
-
-## Final validation after the locked install
-
-- Final review branch commit: \`d5490826a6ee55b5d5861382068fb9571e769227\`.
-- GitHub Actions: [run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) succeeded using the committed lockfile.
-- Static preflight: 31/31 passed.
-- Firestore Emulator: 65/65 tests passed, none failed or skipped.
-- Heavy task/proposal create, accept + chat, report and admin suspend/hide-with-notice/log batches passed without evaluator expression or access-call-limit errors.
-- \`firestore.rules\` compare against baseline: 1,287 additions, 0 deletions. Existing U2U rule lines are preserved in original order; the only task-completion behavior change is in the additive Market rule block.
-- No merge to main and no Firebase deploy.
+Before any deployment, export live production rules and indexes, compare them to this selected baseline, verify email-verification coverage, backfill historical `proposerId` fields using a trusted one-off Admin SDK migration, and validate the package in a separate staging Firebase project. Save timestamped live production exports separately for rollback. This branch is review only: no merge to `main` and no Firebase deployment has been performed.

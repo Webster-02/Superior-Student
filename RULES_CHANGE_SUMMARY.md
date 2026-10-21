@@ -1,17 +1,17 @@
 # Rules change summary
 
-The review branch preserves the baseline U2U authentication, friend, legacy chat, Nearby and transfer rule blocks. Market security is additive. The only specific completion-policy adjustment is to remove the Market assigned-helper completion branch and add an explicit `request.auth.uid == resource.data.posterId` check for completion.
+The U2U Market Firestore candidate is on `review/market-rules`. It has not been merged to `main` or deployed to Firebase.
 
-The exact change from the previous candidate is in `TASK_COMPLETION_RULES_DIFF.patch`. After this review commit is pushed, the complete rules diff against the selected base can be inspected in GitHub's [compare view](https://github.com/Webster-02/Superior-Student/compare/feature/pachattar-design-foundation-phase-1...review/market-rules).
+Compared with `feature/pachattar-design-foundation-phase-1`, `firestore.rules` has **1,287 added lines and 0 deleted lines**. The prefix before the Market insertion and the suffix from `match /profiles/{uid}` onward are byte-identical; `activeChatConversationMember()` is also unchanged. The assigned-helper task-completion alternative is absent and the Market `assigned -> completed` rule explicitly checks the poster UID.
 
-This package is review only. No deploy or merge to main is performed.
+## Final CI
 
+[GitHub Actions run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) succeeded on commit `d5490826a6ee55b5d5861382068fb9571e769227`:
+- `npm ci`: exit 0.
+- Static preflight: **31/31 passed**.
+- Firestore Emulator: **65/65 passed**, zero failed or skipped.
+- [Uploaded test artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614/artifacts/12315439964), SHA-256 `f459f2730e9bb09e3ae311859c33ce90b17a5477bc01135ef9fcf0429a635060`.
 
-## First CI result and new candidate
+The latest raw Emulator log still contains **39 evaluator diagnostics** referencing the 1,000-expression ceiling, although the test suite finished successfully. These are distinct from document access-call-limit errors; review the affected rule expressions before production approval.
 
-The first workflow run was an actual failure (56/65 Emulator tests passed). See `TEST_RESULTS.md` and the [run](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165). The next candidate includes only test fixture corrections and Market validation-expression simplifications intended to address the reported evaluator limit; the rerun output is authoritative.
-
-
-## Final candidate
-
-GitHub Actions [run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) completed successfully with 31 static checks passed and 65 Emulator tests passed (0 failed, 0 skipped). The candidate passed the task-create, proposal-create, accept-plus-chat, report, and admin suspend/hide batch scenarios. The final rules compare contains 1,287 additions and 0 deletions relative to the selected branch baseline. See \`TEST_RESULTS.md\` for the real log/artifact links and remaining production/staging caveats.
+The original `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` remains unavailable, so it has not been fabricated. The supplied explicit requirements have been added to the final spec, but addendum reconciliation remains open. See `TEST_RESULTS.md` and `DEPLOY_CHECKLIST.md` for caveats and the production gate.

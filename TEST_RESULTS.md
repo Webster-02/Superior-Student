@@ -1,186 +1,81 @@
 # Test and validation results
 
-Generated from the commands actually run in this package workspace. No repository, GitHub workflow run, or Firebase deployment was performed.
+## Latest actual CI run
 
-## Results at a glance
+**Workflow:** [Firestore Rules Review Tests — run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614)  
+**Tested commit:** `d5490826a6ee55b5d5861382068fb9571e769227` on `review/market-rules`  
+**Workflow conclusion:** success.
 
-| Check | Result | Evidence |
-|---|---|---|
-| Static package/rules preflight | **PASS — 23/23** | `artifacts/test-static-output.txt` and `TEST_RESULTS_STATIC_CHECK.txt` |
-| JavaScript parse: Emulator test file | **PASS** | `artifacts/js-syntax-output.txt` |
-| JavaScript parse: static validator | **PASS** | `artifacts/js-syntax-output.txt` |
-| npm dependency install | **BLOCKED — exit 1** | `artifacts/npm-install-output.txt`; DNS `EAI_AGAIN` for `registry.npmjs.org` |
-| Firestore Emulator suite | **NOT RUN — blocked, exit 127** | `artifacts/test-emulator-output.txt`; `firebase: not found` because dependencies could not install |
-| Firebase Rules compilation | **NOT RUN** | Requires Firebase CLI / emulator toolchain |
-| GitHub Actions workflow | **NOT RUN** | Workflow is included as a package file only; no repository changes were allowed/made |
-| Deploy | **NOT performed** | No Firebase deploy command was run |
-
-The Emulator status is not a rules/test failure result: the test process did not start because the Firebase CLI and rule-unit-test dependencies were unavailable. Static checks are not substitutes for compilation or actual rule evaluation. The access-call assertions below therefore remain unverified until the Emulator suite passes.
-
-## Exact command output: static preflight
-
-Command: `npm run test:static`
-
-```text
-U2U Market static preflight (not Firebase Rules Emulator tests)
-PASS  firestore.indexes.json parses and declares exactly 46 composite indexes
-PASS  every composite index is mapped to a query and the map documents mandatory list constraints
-PASS  Offers feed composites use renewedAt, not createdAt
-PASS  task/offers composite indexes do not add expiresAt inequality indexes
-PASS  feed, owner, admin, report, support and chat query shapes have composite index coverage
-PASS  rollback branch snapshot is byte-identical to the selected Git branch blob
-PASS  Market profile is separate from existing users/{uid} profile fields
-PASS  first Market profile creation requires verified U2U user and fixed safe defaults
-PASS  posting requires verified email, U2U profile, and server-time suspension expiry
-PASS  rolling window reset/increment uses request.time and exact count changes
-PASS  task assignment and proposal acceptance are linked in one atomic state transition
-PASS  owner expiry/removal lifecycle transitions require linked counter decrements
-PASS  reportCount exact +1 requires the same-batch deterministic report
-PASS  admin pin/moderation permissions are absent from non-admin owner update branch
-PASS  Market conversations require participants, obey blocks, and exclude admins
-PASS  pre-existing chat and Nearby rule blocks remain byte-identical to baseline
-PASS  Applied proposals collection-group query is self-scoped and indexed
-PASS  task/offer content edits reuse creation validation only when owner can post
-PASS  Market conversation deterministic IDs and metadata mutation validation exist
-PASS  requested emulator case categories are represented in the test suite
-PASS  major spec collections each have matching Market rules
-PASS  Market fragment delimiters are balanced
-PASS  complete merged rules delimiters are balanced and function names are unique
-
-23 passed, 0 failed
-```
-
-## Dependency install — real failure output
-
-Command: `npm install --no-audit --no-fund --fetch-retries=0 --fetch-timeout=10000`
-
-```text
-npm error code EAI_AGAIN
-npm error syscall getaddrinfo
-npm error errno EAI_AGAIN
-npm error request to https://registry.npmjs.org/@firebase%2frules-unit-testing failed, reason: getaddrinfo EAI_AGAIN registry.npmjs.org
-```
-
-Exit code: `1`. The full first-attempt console output is in `artifacts/npm-install-output.txt`. A second explicit retry failed identically; see `artifacts/npm-install-retry.txt`.
-
-## Emulator suite — real local command output
-
-Command: `npm run test:emulator`
-
-```text
-> test:emulator
-> firebase emulators:exec --project u2u-market-rules-review --only firestore "node --test tests/firestore.rules.test.mjs"
-
-sh: 1: firebase: not found
-```
-
-Exit code: `127`. The full output is in `artifacts/test-emulator-output.txt`. There are 60 Emulator test cases defined in `tests/firestore.rules.test.mjs`; none has a local pass/fail assertion result because the test runner did not launch.
-
-## JavaScript parse checks
-
-Commands:
-
-```text
-node --check tests/firestore.rules.test.mjs   EXIT_CODE=0
-node --check tests/static-validate.mjs         EXIT_CODE=0
-```
-
-See `artifacts/js-syntax-output.txt`.
-
-## High-cost access-call tests included but not yet verified
-
-The Emulator suite contains explicit successful assertions for:
-
-1. Task create plus profile counter mutation.
-2. Proposal create plus task/profile count mutations.
-3. Accept transaction updating the task and proposal, updating the poster counter, and creating the task conversation in the same transaction.
-4. Report batch, deterministic report document and counters.
-5. Admin suspend/hide batch covering a profile, two tasks, one offer, a suspension notice and an immutable admin log.
-
-If these operations pass in the Firestore Emulator, that is evidence the tested requests stayed within the security-rules document-access limits; the Emulator test assertion does not print an exact per-request count. Because the suite could not run in this environment, **do not treat the access-call limits as confirmed yet**. Do not increase access-call limits; reduce rule reads if any test fails after a working Emulator run.
-
-## GitHub Actions status
-
-`.github/workflows/firestore-rules-test.yml` is included inside this package. It selects Node 20 and Java 21, captures npm install and test logs, runs `npm run test:static` and `npm run test:emulator`, and uploads `artifacts/**` even on failure. It was not executed by GitHub because the file has not been added to a repository or branch; this package-only workflow choice avoids repository changes. When copied to an approved non-main review branch, use the resulting uploaded artifacts as the CI record and require both suites to pass before approval.
-
-
-## First real GitHub Actions run (commit 9023d4a2377e89486a5b2f1b85ee3d3d9ae5e22a)
-
-Workflow: [Firestore Rules Review Tests, run 39531687165](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165)
-
-- npm install: exit 0
-- `npm run test:static`: exit 0 (29 checks)
-- `npm run test:emulator`: exit 1
-- Emulator summary: 65 tests, 56 passed, 9 failed, 0 skipped.
-- Artifacts: [firestore-rules-test-results.zip](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165/artifacts/12315966279), SHA-256 `59d4fef2f0eec5b342caea66c0f83c2fc5f1893c8f5e2b782efc1da12451c318`.
-
-Failures found and fixes prepared:
-1. Two owner-denial test fixtures attempted to write values that already existed; fixtures now request actual changes.
-2. The Nearby fixture supplied `senderPublicKey: 'key'`, below the baseline rule's minimum length; it now supplies a 64-character public key.
-3. Rules evaluation exhausted the maximum-expression budget on task/profile counter and Market conversation paths, and unassigned tasks triggered an unsafe read of the optional `assignedTo` field. Candidate fixes split the counter mutation dispatcher by mutation kind, cache repeated profile/counter reads, remove redundant create-time revalidation already covered by content validators, use null-safe `assignedTo` comparisons, and avoid repeating whole immutable-parent validation on each Market conversation update.
-
-That first follow-up run is recorded below. The final run against the newline-normalized Rules and committed lockfile is the current authoritative result.
-
-
-## Second real GitHub Actions run — PASS
-
-Workflow: [Firestore Rules Review Tests, run 39532613999](https://github.com/Webster-02/Superior-Student/actions/runs/39532613999)  
-Commit: `4d85fe3874b9a989df534923b9968a8744a7680f`
-
-| Check | Real result |
+| Step | Result |
 |---|---|
-| Dependency install | exit 0 |
-| `npm run test:static` | exit 0 — 31 passed, 0 failed |
-| `npm run test:emulator` | exit 0 — 65 passed, 0 failed, 0 skipped |
-| Workflow job | success |
-
-The test run took `12048.769181 ms` for the Node test runner. The Firestore Emulator accepted the current rules and the tests exercised the task-create, proposal-create, accept transaction with same-transaction chat, report batch, and admin suspend/hide + notice/log operations. Since the Emulator enforced the Rules during these operations and all corresponding assertions passed, the suite did not report a permission denial or access-call-limit violation for those tested flows.
-
-Artifacts: [firestore-rules-test-results.zip](https://github.com/Webster-02/Superior-Student/actions/runs/39532613999/artifacts/12316171000)  
-Artifact SHA-256: `8abd993c8462fb90ca9311aee14b66fbb1fd26a051950a7d7367a676e143467e`.
-
-This run installed with `npm install` because the review commit did not yet include a lockfile. The lockfile generated by that successful run is now being committed, and the next workflow run should exercise `npm ci`.
-
-
-## Third real GitHub Actions run — locked install — PASS
-
-Workflow: [run 39532954514](https://github.com/Webster-02/Superior-Student/actions/runs/39532954514)  
-Commit: \`d72104f6a29e39eefbee7b4bfd24b269572a7125\`
-
-- Package lockfile was committed before this run.
-- Dependency install exit: 0 (workflow selects \`npm ci\` when \`package-lock.json\` exists).
-- Static checks: 31 passed, 0 failed.
-- Emulator tests: 65 passed, 0 failed, 0 skipped; duration \`12458.909176 ms\`.
-- Workflow conclusion: success.
-- Artifact: [firestore-rules-test-results.zip](https://github.com/Webster-02/Superior-Student/actions/runs/39532954514/artifacts/12315998555).
-- Artifact SHA-256: \`c21f696537b999819544ed701bee866dc51e1e3bab9aefc7c3d41117db7702d9\`.
-
-## Final real GitHub Actions run — PASS
-
-Workflow: [run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614)  
-Commit: \`d5490826a6ee55b5d5861382068fb9571e769227\`
-
-This run used the committed \`package-lock.json\` install path, and the only Rules content change since the third run was to retain the baseline trailing newline, so the compare against base has no deletions.
-
-Actual output summary:
-
-- \`31 passed, 0 failed\`
-- \`# tests 65\`
-- \`# pass 65\`
-- \`# fail 0\`
-- \`# cancelled 0\`
-- \`# skipped 0\`
-- \`# duration_ms 8835.043511\`
-- \`npm install exit code: 0\`
-- \`test:static exit code: 0\`
-- \`test:emulator exit code: 0\`
-- \`Overall: PASS\`
-
-The workflow script writes a generic \`npm install exit code\` label even for its locked-install branch; because \`package-lock.json\` was checked in and the workflow selects \`npm ci\` in that condition, this is the locked-install run.
-
-Assertions confirmed successful task-create, proposal-create, accept transaction with same-transaction chat, report batch, and admin suspend/hide + notice/log operations. Admin-without-profile hide/restore/pin/unpin, notice, adminLogs, support reply and config edits passed; student writes without a U2U profile were denied; the poster could complete a task and the assigned helper was denied. The Market conversation admin exclusion and baseline friend chat/Nearby regression tests also passed.
+| `npm ci --no-audit --no-fund` | Exit 0; 781 packages installed |
+| `npm run test:static` | Exit 0; **31 passed, 0 failed** |
+| `npm run test:emulator` | Exit 0; **65 passed, 0 failed, 0 skipped** across 14 suites |
+| GitHub Actions job | Success |
+| Firebase deployment / merge to `main` | Not performed |
 
 Artifact: [firestore-rules-test-results.zip](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614/artifacts/12315439964)  
-Artifact SHA-256: \`f459f2730e9bb09e3ae311859c33ce90b17a5477bc01135ef9fcf0429a635060\`.
+Artifact SHA-256: `f459f2730e9bb09e3ae311859c33ce90b17a5477bc01135ef9fcf0429a635060`.
 
-The tested flows reported no Firestore Rules expression-evaluation failures or access-call-limit errors. This is Emulator evidence for these test cases, not a substitute for exporting and comparing the live production rules/indexes or a staging project check.
+## Selected actual output from the latest run
+
+```text
+added 781 packages in 8s
+INSTALL_EXIT_CODE=0
+```
+
+Static suite: 31 PASS checks, 0 failures.
+
+```text
+# tests 65
+# suites 14
+# pass 65
+# fail 0
+# skipped 0
+```
+
+Workflow summary:
+
+```text
+test:static exit code: 0
+test:emulator exit code: 0
+Overall: PASS
+Artifact firestore-rules-test-results.zip successfully finalized. Artifact ID 12315439964
+```
+
+The linked artifact retains the raw npm install, static, emulator, and summary logs.
+
+## Security and transaction paths covered
+
+All relevant Emulator assertions passed, including:
+1. Task creation paired atomically with the poster's `openTasks` counter.
+2. Proposal creation paired with the task's proposal count and the proposer's rolling-window counter.
+3. Accept transaction updating task/proposal/profile and creating the deterministic task conversation in the same transaction.
+4. Report batch paired with a deterministic report document and counter updates.
+5. Admin suspend/hide batch with listing/profile changes, suspension notice and immutable admin log; the admin user intentionally lacks both `profiles/{uid}` and `marketProfiles/{uid}`.
+6. Admin moderation/config/support operations without a student profile, and denial of regular student Market writes without `profiles/{uid}`.
+7. Applied collection-group reads constrained by immutable `proposerId`; no cross-user read; poster's task-level proposal access retained.
+8. Poster can complete an assigned task; the assigned helper cannot. Both participants can rate a completed task with the paired stats update.
+9. Regular accepted-friend chat and Nearby-transfer regression tests, plus admin exclusion from the separate Market chat feature.
+
+These passing assertions show the tested operations were accepted/denied as expected by the Firestore Rules Emulator. The tests do not print an exact numeric count of every internal `get/exists` call; results should not be generalized beyond the tested shapes.
+
+## Important diagnostic: evaluator expression ceiling
+
+The actual latest Emulator log contains **39 lines** containing the message that Rules evaluation reached the 1,000-expression ceiling. These diagnostics did not make any test assertion fail, so the job concluded green, but they are not ignorable and this is not a warning-free log. They are distinct from Firestore's document access-call limits (10 for an individual operation, up to 20 across a batch/transaction). Review and simplify the affected branches before production approval; successful tests alone do not prove every possible request shape is free of evaluator-complexity risk.
+
+## Earlier CI history
+
+- [Run 39531687165](https://github.com/Webster-02/Superior-Student/actions/runs/39531687165): first committed attempt, 56/65 Emulator assertions passed and 9 failed. It exposed two denial-test fixtures that did not actually modify protected fields, an invalid public-key fixture for the legacy Nearby test, and expression-evaluation complexity.
+- [Run 39532613999](https://github.com/Webster-02/Superior-Student/actions/runs/39532613999): static 31/31 and Emulator 65/65 passed.
+- [Run 39532954514](https://github.com/Webster-02/Superior-Student/actions/runs/39532954514): ran using the committed lockfile with `npm ci`; both suites passed.
+- [Run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614): final rules commit with baseline trailing newline preserved; `npm ci`, static and Emulator suites passed.
+
+## Still required before production
+
+- Compare live Firebase Console Rules and indexes against the branch baseline and save live exports as rollback artifacts. The committed snapshot proves only what the selected source branch contained.
+- Verify existing users' email-verification status in Firebase Authentication.
+- Backfill historical proposal documents with immutable `proposerId` using a trusted one-off Admin SDK migration (not client rules and not a deployed Cloud Function).
+- Attach the original `MARKET_SPEC_ADDENDUM_RULES_PHASE.md`. It is missing from the accessible attachments and source branch, so it has not been fabricated.
+- Exercise the rules and indexes on a separate staging Firebase project and explicitly review the expression-ceiling diagnostics.
+- No Firebase deployment or merge to `main` has happened.
