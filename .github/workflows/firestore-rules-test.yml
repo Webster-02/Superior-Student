@@ -73,6 +73,10 @@ jobs:
           static_status=${PIPESTATUS[0]}
           npm run test:emulator 2>&1 | tee artifacts/test-emulator-output.txt
           emulator_status=${PIPESTATUS[0]}
+          if grep -Fq "Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached" artifacts/test-emulator-output.txt; then
+            echo "FAIL: Firestore Rules evaluator reached the 1,000-expression ceiling. See artifacts/test-emulator-output.txt." | tee -a artifacts/test-summary.txt
+            emulator_status=1
+          fi
           install_status="not-run"
           if [[ -f artifacts/npm-install-output.txt ]]; then
             install_status=$(sed -n 's/^INSTALL_EXIT_CODE=//p' artifacts/npm-install-output.txt | tail -n 1)
