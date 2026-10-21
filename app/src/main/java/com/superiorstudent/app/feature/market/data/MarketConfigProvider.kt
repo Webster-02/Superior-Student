@@ -47,6 +47,24 @@ class MarketConfigProvider internal constructor(
         nowMillis = System::currentTimeMillis
     )
 
+    /**
+     * UI-facing config load path. The caller supplies the config currently rendered
+     * on screen; failures keep that value in place and provide a safe mapped error.
+     * The UI should show Retry only when [MarketMappedError.retryable] is true.
+     */
+    internal fun loadForDisplay(
+        currentlyDisplayedConfig: MarketConfig? = null,
+        onComplete: (MarketConfig?, MarketMappedError?) -> Unit
+    ) {
+        load { loadedConfig, failure ->
+            when {
+                failure != null -> onComplete(currentlyDisplayedConfig, MarketErrorMapper.map(failure))
+                loadedConfig != null -> onComplete(loadedConfig, null)
+                else -> onComplete(currentlyDisplayedConfig, MarketErrorMapper.invalidRemoteConfig())
+            }
+        }
+    }
+
     /** Production entry point. The callback-based core keeps policy tests JVM-only. */
     fun load(): Task<MarketConfig?> {
         val source = TaskCompletionSource<MarketConfig?>()
