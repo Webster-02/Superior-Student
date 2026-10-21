@@ -1,6 +1,7 @@
 package com.superiorstudent.app.feature.market.ui
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -188,7 +189,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             gravity=Gravity.CENTER; background=rounded(color(R.color.market_segment),15f)
         },LinearLayout.LayoutParams(0,-1,1f))
         outer.addView(makeText("Offers",13f,true,color(R.color.market_ink2)).apply {
-            gravity=Gravity.CENTER; setOnClickListener { toast("Offers is the next reference screen.") }
+            gravity=Gravity.CENTER; setOnClickListener { startActivity(Intent(this@MarketRequestsActivity, MarketOffersActivity::class.java)) }
         },LinearLayout.LayoutParams(0,-1,1f))
         return outer
     }

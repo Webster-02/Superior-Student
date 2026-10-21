@@ -92,3 +92,16 @@ Part 6D is complete and verified. Stop for user review before mapping any additi
 ## Exact next step
 
 Stop for user review. After explicit approval, implement student reference screen 03 Offers as a separate step. Keep live Firestore data/cache/rules integration separate and present any required rule changes for review before writing them.
+
+
+## UI-03 — Offers reference screen
+
+- **Status:** implementation committed; CI pending.
+- Added a dedicated native Offers screen using the same Market header and Paper/Night tokens; the existing Requests/Offers segment now opens this screen.
+- Matches the reference's All / Notes / Tutoring / Design / Typing chips, seller avatar/name, star rating + count, verified-student label, pastel category chip, title/description, price or Swap, dark Message button and lime Post an offer CTA.
+- Uses the reference ZIP's three listing samples as visual fixtures only. Live Firestore offers, authoritative profile verification/ratings, actual chat and offer-posting destinations remain later steps.
+- Added unit tests for category filtering, search, rating sort and price sort. No Firestore rules/index changes or Firebase deployment.
+
+## Exact next step
+
+Run the Market CI workflow for UI-03. Fix only any errors in the Offers screen, then verify unit tests and APK upload before stopping for user review.

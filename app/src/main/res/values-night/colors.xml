@@ -86,4 +86,6 @@
     <color name="market_match_ink">#14201A</color>
     <color name="market_menu_dot">#FF6B4A</color>
 
+    <color name="market_message_bg">#2A4036</color>
+    <color name="market_message_ink">#F1F4EE</color>
 </resources>
