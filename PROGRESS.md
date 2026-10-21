@@ -1,7 +1,7 @@
 # Market Rules Review Progress
 
 **Branch:** `review/market-rules`  
-**State:** **STEP ZERO COMPLETE — review-only.** The latest committed Rules baseline and CI guard passed static and Emulator checks with zero expression-ceiling diagnostics. No merge to `main` and no Firebase deployment.
+**State:** Step Zero baseline verified; **P1 candidate implemented and untested** — review-only. No merge to `main` and no Firebase deployment. CI is intentionally not run for the current P1 change.
 
 ## Step Zero verification record
 
@@ -12,13 +12,17 @@
 - **Expression-ceiling diagnostics in raw Emulator output:** 0.
 - **Guard result:** diagnostic count 0; guard exit code 0; final summary `Overall: PASS`.
 - **Rules baseline:** `firestore.rules` was restored byte-for-byte to the last known passing Rules blob (`8324f3bde6ee72d051a5635ba44ae73388439e02`, from commit `6893af1a273f17134e72f49e9ecac9f24e0ae999`). The untested rule refactor present in WIP commit `b7a7b39` was not retained: run #18 reproduced 39 expression-ceiling diagnostics and nine static-check failures. Do not reapply that experiment without a separately reviewed change and a fresh CI run.
-- **P1 — Tasks + offers:** current restored Rules baseline passed the complete Emulator suite with zero expression-ceiling diagnostics. The untested follow-up refactor was backed out.
+- **P1 — Tasks + offers (current candidate):** reduced repeated field access in create validators, cached status/owner/assignment/timestamp fields in owner-update validators, retained the single `affectedKeys()` diff per update dispatcher, cached pre-update report counters/moderation, and combined offer reactivation limit/counter checks around one cached profile before/after snapshot. Cheap create payload checks now run before timestamp checks. Existing allowlists, ownership checks, status transitions, and counter predicates remain in place. **Not tested in CI by instruction.**
 - **P2 — Reports:** current restored Rules baseline passed the complete Emulator suite with zero expression-ceiling diagnostics. The untested follow-up refactor was backed out.
 - **P3 — Profile + proposals:** current restored Rules baseline passed the complete Emulator suite with zero expression-ceiling diagnostics. The untested follow-up refactor was backed out.
 - **P4 — CI diagnostic guard:** corrected. The guard counts the exact diagnostic lines, records the count and exit status in the final summary, and makes any nonzero diagnostic count fail the job. Static validation covers the guard.
-- **P5 — Run CI:** completed successfully in run #20 above.
+- **P5 — Run CI:** Step Zero baseline run #20 completed successfully. **No CI run for this P1 candidate**, as requested.
 - **P6 — Original addendum:** added as `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` from the supplied Library file without editing its bytes. Source SHA-256: `ff60be0137604b27f93fe8f12ee3e5f0dcbcf7a38e250b3351bdea2a1da4c899`; Git blob SHA: `7cec066773fb5f40cdcf4e921e09ab9c92119800`. The static suite verifies the SHA-256 at test time.
 - **Deployment safety:** `DEPLOY_CHECKLIST.md` remains unchanged (blob SHA `ba9dd664d3348ef3d25a1c7e1717ee9519110b93`). No merge to `main`, production export overwrite, Firebase deployment, or staging deployment occurred. Production remains blocked pending the checklist's live rules/index baseline comparison, legacy `proposerId` backfill, staging verification, and explicit approval.
+
+## Current P1 scope and verification status
+
+Only `firestore.rules` task/offer create and update helpers were changed for P1. No test files, CI workflow, report collection rules, profile/proposal rules, deployment checklist, indexes, or Firebase project were changed. The present P1 candidate has not been run through CI or Emulator; the previous Step Zero CI result applies to the prior Rules snapshot only.
 
 The mapping and cost patterns below are retained as historical diagnostic documentation for the earlier run; they are not a claim that the discarded experimental refactor is present in the current Rules file.
 
