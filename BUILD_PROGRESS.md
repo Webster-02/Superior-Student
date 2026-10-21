@@ -2,7 +2,7 @@
 
 **Branch:** `feature/market-step1`
 **Base:** `review/market-rules` at `aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3`
-**Build status:** Parts 1–3 complete. Part 4 Step 4A (pure six-hour cache freshness/fallback policy) complete and green in run #596 (`39631043160`) on `eb4211f059f8d4488190e6408139068ddf6ddd78`. Config persistence/Firestore reading is not wired yet.
+**Build status:** Parts 1–3 complete. Part 4 Steps 4A and 4B1 (pure cache policy and versioned config cache codec) are complete and green in runs #596 (`39631043160`) and #598 (`39632795357`). Persistent local storage and the Firestore config reader are not wired yet.
 **Safety:** Do not modify `firestore.rules`, the protected top-level `tests/`, or `firestore.indexes.json`; do not change existing U2U chat/friend/Nearby logic or existing view IDs. No merge or Firebase deployment.
 
 ## Baseline gate
@@ -51,11 +51,14 @@ Addendum governs conflicts with `MARKET_FINAL_SPEC.md`; Firestore rules determin
 - **Part 4 — config and persistent 6-hour cache:** in progress, divided into small reviewable steps.
   - **Step 4A — pure cache policy:** complete. Added `MarketConfigCachePolicy.kt` with a strict six-hour freshness boundary; missing/invalid/future saved timestamps are stale. Stale cache is eligible as fallback only when a cached value exists and the caller identifies a connectivity failure, not for authorization or invalid-data errors. Added `MarketConfigCachePolicyTest.kt` for TTL boundary, invalid/future timestamps, fallback gating, and exact TTL.
   - **GitHub Actions run #596:** [run details](https://github.com/Webster-02/Superior-Student/actions/runs/39631043160) — JavaScript validation, clean, unit tests, APK build, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,767,078 bytes, SHA-256 `6aca26d906204335ca33927ea1c7998ee03ccc7f16e862b071079afa7874c902`, expires 2026-10-28.
-  - Persistence, config serialization, and Firestore reader are intentionally deferred to Step 4B/4C.
+  - **Step 4B1 — versioned cache codec:** complete. Added `MarketConfigCacheCodec.kt` and `MarketConfigCacheCodecTest.kt`. The pure codec versions its envelope, enforces a 64 KiB UTF-8 payload limit, preserves timestamps down to nanoseconds, nullable values, and nested supported scalar/map/list types in allowed extra limit fields. It rejects invalid config shapes, malformed/unknown-version payloads, oversized entries, and unsupported nested types rather than silently dropping values. This sub-step does not read/write Android storage or contact Firestore.
+  - Six focused codec tests cover config round-trip and saved-at timestamps, nullable announcement timestamps, nested extra fields, invalid config/timestamps, malformed payloads and versioning, payload bounds, and unsupported types.
+  - **GitHub Actions run #598:** [build and APK artifact](https://github.com/Webster-02/Superior-Student/actions/runs/39632795357) — JavaScript validation, clean, unit tests, APK assembly, APK verification, and artifact upload all succeeded. Artifact `superior-student-debug-apk`, 40,774,420 bytes, expires 2026-10-28.
+  - The next sub-step is Step 4B2: persistent local cache store. Firestore config reading remains deferred until the storage path is verified.
 
 - **Part 5 — pure ranking scorer and unit tests:** not started.
 - **Part 6 — Firestore error mapping:** not started.
 
 ## Exact next step
 
-Step 4A is complete and its implementation build/tests/APK verification passed. The next small step is Step 4B: add a bounded persistent local cache store for the already-typed MarketConfig, using an existing app-supported storage option and round-trip tests. Do not start Step 4B until the user says `continue`.
+Steps 4A and 4B1 are complete and their implementation builds, unit tests, APK verification, and artifact uploads passed. The next small step is Step 4B2: add the bounded persistent local cache store using an existing app-supported storage option, with storage-specific read/write/clear tests where the project test setup permits. Do not start Step 4B2 until the user says `continue`.
