@@ -22,7 +22,7 @@ const checks = [
   ['student Market writes without U2U profile are denied in tests', () => assert.ok(tests.includes('denies student Market writes when profiles/{uid} does not exist'))],
   ['admin operations without a U2U profile are tested', () => assert.ok(tests.includes('admin without profiles/{uid} and marketProfiles/{uid} can hide/restore'))],
   ['admin suspension batch deliberately omits admin U2U profile', () => assert.ok(tests.includes('admin without a U2U profile suspends/hides with notice and log in one access-limit batch'))],
-  ['proposal documents require proposerId equal to caller/document id', () => assert.ok(rules.includes('request.resource.data.proposerId == userId') && rules.includes('request.resource.data.proposerId == request.auth.uid'))],
+  ['proposal documents require proposerId equal to caller/document id', () => assert.ok(rules.includes('data.proposerId == userId') && rules.includes('data.proposerId == request.auth.uid') && rules.includes('marketValidProposalCreateLinkedState(taskId, data)'))],
   ['Applied collection-group reads are self-scoped', () => assert.match(rules, /match \/\{path=\*\*\}\/proposals\/\{proposalId\}[\s\S]{0,260}resource\.data\.proposerId == request\.auth\.uid/)],
   ['proposal collection-group composite index exists', () => assert.ok(indexes.indexes.some(i => i.collectionGroup === 'proposals' && i.queryScope === 'COLLECTION_GROUP' && i.fields?.some(f => f.fieldPath === 'proposerId' && f.order === 'ASCENDING') && i.fields?.some(f => f.fieldPath === 'updatedAt' && f.order === 'DESCENDING')))],
   ['deterministic report IDs are validated', () => assert.ok(rules.includes('request.resource.data.reporterId == request.auth.uid') && rules.includes('reportId'))],
