@@ -1,4 +1,5 @@
 name: Firestore Rules Review Tests
+# Comment-only trigger marker to run the current Market Rules candidate in CI.
 
 on:
   workflow_dispatch:
