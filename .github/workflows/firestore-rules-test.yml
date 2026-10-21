@@ -73,9 +73,8 @@ jobs:
           static_status=${PIPESTATUS[0]}
           npm run test:emulator 2>&1 | tee artifacts/test-emulator-output.txt
           emulator_status=${PIPESTATUS[0]}
-          expression_ceiling_status=0
           if grep -Fq "Unable to evaluate the expression as the maximum of 1000 expressions to evaluate has been reached" artifacts/test-emulator-output.txt; then
-            expression_ceiling_status=1
+            echo "FAIL: Firestore Rules evaluator reached the 1,000-expression ceiling. See artifacts/test-emulator-output.txt." | tee -a artifacts/test-summary.txt
             emulator_status=1
           fi
           install_status="not-run"
@@ -86,14 +85,13 @@ jobs:
             echo "npm install exit code: ${install_status}"
             echo "test:static exit code: ${static_status}"
             echo "test:emulator exit code: ${emulator_status}"
-            echo "expression-ceiling diagnostic gate: ${expression_ceiling_status} (0=clean, 1=diagnostic found)"
-            if [[ "${install_status}" == "0" && "${static_status}" -eq 0 && "${emulator_status}" -eq 0 && "${expression_ceiling_status}" -eq 0 ]]; then
+            if [[ "${install_status}" == "0" && "${static_status}" -eq 0 && "${emulator_status}" -eq 0 ]]; then
               echo 'Overall: PASS'
             else
               echo 'Overall: FAIL or BLOCKED; inspect individual logs.'
             fi
           } | tee artifacts/test-summary.txt
-          if [[ "${install_status}" != "0" || "${static_status}" -ne 0 || "${emulator_status}" -ne 0 || "${expression_ceiling_status}" -ne 0 ]]; then exit 1; fi
+          if [[ "${install_status}" != "0" || "${static_status}" -ne 0 || "${emulator_status}" -ne 0 ]]; then exit 1; fi
       - name: Upload test logs and result artifacts
         if: always()
         uses: actions/upload-artifact@v4
