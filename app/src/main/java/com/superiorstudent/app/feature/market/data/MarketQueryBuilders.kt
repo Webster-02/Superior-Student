@@ -67,6 +67,27 @@ object MarketQueryBuilders {
         myOffersPlan(uid = uid, status = status, pageSize = pageSize)
     )
 
+    /**
+     * Applied proposals across task subcollections. The proposerId filter is mandatory
+     * for Firestore Rules access to the collection-group query. Call with the authenticated UID.
+     * The required composite index orders these results by updatedAt descending.
+     */
+    fun appliedProposals(
+        firestore: FirebaseFirestore,
+        uid: String
+    ): Query = execute(firestore, appliedProposalsPlan(uid))
+
+    internal fun appliedProposalsPlan(uid: String): MarketQueryPlan {
+        requireValidUid(uid)
+        return MarketQueryPlan(
+            collection = "proposals",
+            filters = listOf(equals("proposerId", uid)),
+            ordering = listOf(descending("updatedAt")),
+            limit = DEFAULT_PAGE_SIZE,
+            collectionGroup = true
+        )
+    }
+
     internal fun publicTasksPlan(
         category: String? = null,
         pinnedFirst: Boolean = true,
@@ -150,7 +171,11 @@ object MarketQueryBuilders {
     }
 
     private fun execute(firestore: FirebaseFirestore, plan: MarketQueryPlan): Query {
-        var query: Query = firestore.collection(plan.collection)
+        var query: Query = if (plan.collectionGroup) {
+            firestore.collectionGroup(plan.collection)
+        } else {
+            firestore.collection(plan.collection)
+        }
         plan.filters.forEach { filter ->
             query = when (filter.operator) {
                 MarketQueryOperator.EQUALS -> query.whereEqualTo(filter.field, filter.value)

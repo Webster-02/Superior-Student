@@ -127,4 +127,29 @@ class MarketQueryBuildersTest {
         assertFalse(taskPlan.collectionGroup)
         assertFalse(offerPlan.collectionGroup)
     }
+
+    @Test
+    fun appliedProposalsUsesCollectionGroupAndMandatoryOwnUidFilter() {
+        val uid = "student-789"
+        val plan = MarketQueryBuilders.appliedProposalsPlan(uid)
+
+        assertEquals("proposals", plan.collection)
+        assertTrue(plan.collectionGroup)
+        assertEquals(
+            listOf(MarketQueryFilter("proposerId", MarketQueryOperator.EQUALS, uid)),
+            plan.filters
+        )
+        assertEquals(
+            listOf(MarketQueryOrder("updatedAt", descending = true)),
+            plan.ordering
+        )
+        assertEquals(20, plan.limit)
+    }
+
+    @Test
+    fun appliedProposalsRejectsBlankUid() {
+        assertThrows(IllegalArgumentException::class.java) {
+            MarketQueryBuilders.appliedProposalsPlan(" ")
+        }
+    }
 }
