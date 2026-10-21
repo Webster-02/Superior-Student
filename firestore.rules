@@ -272,9 +272,6 @@ service cloud.firestore {
       let alertMatchingTasks = settings.alertMatchingTasks;
       return settings is map
         && keys.size() == 4
-        && keys.hasOnly([
-          'alertProposals', 'alertUpdates', 'alertNotices', 'alertMatchingTasks'
-        ])
         && alertProposals is bool
         && alertUpdates is bool
         && alertNotices is bool
@@ -293,11 +290,11 @@ service cloud.firestore {
       return keys.size() == 17
         && keys.hasAll(['suspendedUntil', 'proposalWindowStartedAt', 'reportWindowStartedAt', 'lastMutation'])
         && data.uid == uid
-        && skillTags is list && skillTags.size() <= 30
-        && blockedUids is list && blockedUids.size() <= 200
         && status == 'active'
         && suspendedUntil == null
         && warnings == 0
+        && skillTags is list && skillTags.size() <= 30
+        && blockedUids is list && blockedUids.size() <= 200
         && marketValidSettings(settings)
         && data.openTasks == 0
         && data.activeOffers == 0
@@ -754,6 +751,9 @@ service cloud.firestore {
     }
     function marketValidTaskCreate(taskId, data) {
       let keys = data.keys();
+      let hasCourseTag = keys.hasAny(['courseTag']);
+      let hasBudgetAmount = keys.hasAny(['budgetAmount']);
+      let hasAssignedTo = keys.hasAny(['assignedTo']);
       let status = data.status;
       let moderation = data.moderation;
       let pinned = data.pinned;
@@ -763,11 +763,8 @@ service cloud.firestore {
       let proposalCount = data.proposalCount;
       let reportCount = data.reportCount;
       let createdAt = data.createdAt;
-      return keys.hasOnly([
-          'title', 'category', 'courseTag', 'description', 'budgetType', 'budgetAmount', 'deadline',
-          'skills', 'status', 'moderation', 'pinned', 'posterId', 'posterName', 'posterInitials',
-          'proposalCount', 'assignedTo', 'reportCount', 'createdAt', 'updatedAt', 'expiresAt'
-        ])
+      let expectedKeyCount = 17 + (hasCourseTag ? 1 : 0) + (hasBudgetAmount ? 1 : 0) + (hasAssignedTo ? 1 : 0);
+      return keys.size() == expectedKeyCount
         && status == 'open'
         && moderation in ['ok', 'under_review']
         && pinned == false
@@ -785,17 +782,13 @@ service cloud.firestore {
     function marketValidTaskCreateLinkedState(taskId, data) {
       let uid = request.auth.uid;
       let profilePath = marketProfilePath(uid);
-      return exists(/databases/$(database)/documents/profiles/$(uid))
-        && exists(profilePath)
-        && marketValidTaskCreateLinkedStateWithProfiles(taskId, data, uid, profilePath);
+      return marketValidTaskCreateLinkedStateWithProfiles(taskId, data, uid, profilePath);
     }
-
     function marketValidTaskCreateLinkedStateWithProfiles(taskId, data, uid, profilePath) {
       let profileBefore = get(profilePath).data;
       let profileAfter = getAfter(profilePath).data;
       let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
-      return marketPostingStateAllows(profileBefore)
-        && data.posterName == studentProfile.displayName
+      return data.posterName == studentProfile.displayName
         && profileBefore.openTasks < 3
         && profileAfter.openTasks == profileBefore.openTasks + 1
         && profileAfter.lastMutation.kind == 'task'
@@ -946,7 +939,16 @@ service cloud.firestore {
       );
     }
 
-    function marketValidProposalCreate(taskId, userId, data) {
+    function marketProposalCreatePreflight(taskId, userId, data) {
+      let taskPath = /databases/$(database)/documents/tasks/$(taskId);
+      let taskBefore = get(taskPath).data;
+      return taskBefore.status == 'open'
+        && taskBefore.posterId != request.auth.uid
+        && taskBefore.proposalCount < 15
+        && marketValidProposalCreate(taskId, userId, data, taskBefore);
+    }
+
+    function marketValidProposalCreate(taskId, userId, data, taskBefore) {
       let keys = data.keys();
       let proposerId = data.proposerId;
       let message = data.message;
@@ -968,25 +970,20 @@ service cloud.firestore {
         && proposerInitials is string && proposerInitials.size() >= 1 && proposerInitials.size() <= 4
         && createdAt == request.time
         && updatedAt == request.time
-        && marketValidProposalCreateLinkedState(taskId, data);
+        && marketValidProposalCreateLinkedState(taskId, data, taskBefore);
     }
-    function marketValidProposalCreateLinkedState(taskId, data) {
+    function marketValidProposalCreateLinkedState(taskId, data, taskBefore) {
       let uid = request.auth.uid;
       let taskPath = /databases/$(database)/documents/tasks/$(taskId);
-      let taskBefore = get(taskPath).data;
       let taskAfter = getAfter(taskPath).data;
       let profileAfter = getAfter(marketProfilePath(uid)).data;
       let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
-      return taskBefore.status == 'open'
-        && taskBefore.posterId != uid
-        && taskBefore.proposalCount < 15
-        && data.proposerName == studentProfile.displayName
+      return data.proposerName == studentProfile.displayName
         && taskAfter.proposalCount == taskBefore.proposalCount + 1
         && profileAfter.lastMutation.kind == 'proposal'
         && profileAfter.lastMutation.operation == 'create'
         && profileAfter.lastMutation.targetId == taskId;
     }
-
     function marketTaskUpdateAllowed(taskId) {
       let before = resource.data;
       let after = request.resource.data;
@@ -1205,7 +1202,9 @@ service cloud.firestore {
         || resource.data.posterId == request.auth.uid
         || marketTaskPublic(resource.data)
       );
-      allow create: if marketVerified() && marketValidTaskCreate(taskId, request.resource.data);
+      allow create: if marketVerified()
+        && marketUserCanPost(request.auth.uid)
+        && marketValidTaskCreate(taskId, request.resource.data);
       allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);
       allow delete: if false;
 
@@ -1219,7 +1218,7 @@ service cloud.firestore {
         allow create: if marketUserCanPost(request.auth.uid)
           && request.auth.uid == userId
           && exists(/databases/$(database)/documents/tasks/$(taskId))
-          && marketValidProposalCreate(taskId, userId, request.resource.data);
+          && marketProposalCreatePreflight(taskId, userId, request.resource.data);
         allow update: if resource != null && marketVerified() && marketProposalUpdateAllowed(taskId, userId);
         allow delete: if false;
       }
@@ -1227,6 +1226,9 @@ service cloud.firestore {
 
     function marketValidOfferCreate(offerId, data) {
       let keys = data.keys();
+      let hasCourseTag = keys.hasAny(['courseTag']);
+      let hasPriceAmount = keys.hasAny(['priceAmount']);
+      let hasThumbnail = keys.hasAny(['thumbnail']);
       let status = data.status;
       let moderation = data.moderation;
       let pinned = data.pinned;
@@ -1236,11 +1238,8 @@ service cloud.firestore {
       let reportCount = data.reportCount;
       let createdAt = data.createdAt;
       let renewedAt = data.renewedAt;
-      return keys.hasOnly([
-          'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
-          'status', 'moderation', 'pinned', 'sellerId', 'sellerName', 'sellerInitials', 'reportCount',
-          'createdAt', 'renewedAt', 'updatedAt', 'expiresAt'
-        ])
+      let expectedKeyCount = 15 + (hasCourseTag ? 1 : 0) + (hasPriceAmount ? 1 : 0) + (hasThumbnail ? 1 : 0);
+      return keys.size() == expectedKeyCount
         && status == 'active'
         && moderation in ['ok', 'under_review']
         && pinned == false
@@ -1258,17 +1257,13 @@ service cloud.firestore {
     function marketValidOfferCreateLinkedState(offerId, data) {
       let uid = request.auth.uid;
       let profilePath = marketProfilePath(uid);
-      return exists(/databases/$(database)/documents/profiles/$(uid))
-        && exists(profilePath)
-        && marketValidOfferCreateLinkedStateWithProfiles(offerId, data, uid, profilePath);
+      return marketValidOfferCreateLinkedStateWithProfiles(offerId, data, uid, profilePath);
     }
-
     function marketValidOfferCreateLinkedStateWithProfiles(offerId, data, uid, profilePath) {
       let profileBefore = get(profilePath).data;
       let profileAfter = getAfter(profilePath).data;
       let studentProfile = get(/databases/$(database)/documents/profiles/$(uid)).data;
-      return marketPostingStateAllows(profileBefore)
-        && data.sellerName == studentProfile.displayName
+      return data.sellerName == studentProfile.displayName
         && profileBefore.activeOffers < 5
         && profileAfter.activeOffers == profileBefore.activeOffers + 1
         && profileAfter.lastMutation.kind == 'offer'
@@ -1419,7 +1414,9 @@ service cloud.firestore {
     match /offers/{offerId} {
       allow get: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
       allow list: if marketSignedIn() && (marketIsAdmin() || resource.data.sellerId == request.auth.uid || marketOfferPublic(resource.data));
-      allow create: if marketVerified() && marketValidOfferCreate(offerId, request.resource.data);
+      allow create: if marketVerified()
+        && marketUserCanPost(request.auth.uid)
+        && marketValidOfferCreate(offerId, request.resource.data);
       allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);
       allow delete: if false;
     }
