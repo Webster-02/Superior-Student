@@ -633,7 +633,8 @@ object MarketConverters {
         return longValue.toInt()
     }
 
-    private inline fun <reified T> enum(value: Any?): T? =
+    private inline fun <reified T> enum(value: Any?): T?
+        where T : Enum<T>, T : MarketWireValue =
         (value as? String)?.let { marketWireEnum<T>(it) }
 
     private fun strings(value: Any?): List<String>? {
