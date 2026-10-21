@@ -20,7 +20,7 @@ const checks = [
   }],
   ['task create validates payload before linked profile reads', () => assert.match(rules, /allow create: if marketVerified\(\)[\s\S]{0,160}marketValidTaskCreate\(taskId, request\.resource\.data\)[\s\S]{0,160}marketUserCanPost\(request\.auth\.uid\)[\s\S]{0,160}marketValidTaskCreateLinkedState\(taskId, request\.resource\.data\)/)],
   ['offer create validates payload before linked profile reads', () => assert.match(rules, /allow create: if marketVerified\(\)[\s\S]{0,160}marketValidOfferCreate\(offerId, request\.resource\.data\)[\s\S]{0,160}marketUserCanPost\(request\.auth\.uid\)[\s\S]{0,160}marketValidOfferCreateLinkedState\(offerId, request\.resource\.data\)/)],
-  ['assigned task completion is explicitly poster-only', () => assert.match(rules, /Completing an assigned task is poster-only[\s\S]{0,260}request\.auth\.uid == (?:resource\.data|before)\.posterId/)],
+  ['assigned task completion is explicitly poster-only', () => assert.match(rules, /after\.status == 'completed'[\s\S]{0,300}request\.auth\.uid == before\.posterId/)],
   ['assigned-helper completion override is absent', () => assert.doesNotMatch(rules, /The assigned helper may mark completion/)],
   ['poster completion allow and helper deny test exists', () => assert.ok(tests.includes('allows the poster but denies the assigned helper from completing a task'))],
   ['student Market writes without U2U profile are denied in tests', () => assert.ok(tests.includes('denies student Market writes when profiles/{uid} does not exist'))],
