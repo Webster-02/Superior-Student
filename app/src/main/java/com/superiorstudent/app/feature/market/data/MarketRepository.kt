@@ -594,6 +594,16 @@ class MarketRepository(
         }
     }
 
+    /**
+     * Opt-in mapped-result path for new create-offer UI consumers.
+     *
+     * Existing [createOffer] callers retain their current Task<String> contract.
+     */
+    internal fun createOfferWithMappedError(
+        draft: MarketOfferDraft
+    ): Task<MarketOperationResult<String>> =
+        MarketOperationTaskAdapter.run { createOffer(draft) }
+
     fun editOffer(offerId: String, edit: MarketOfferEdit): Task<Boolean> {
         val uid = requireVerifiedUid()
         val offerRef = firestore.collection(OFFERS).document(offerId)
