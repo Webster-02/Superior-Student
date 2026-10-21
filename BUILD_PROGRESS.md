@@ -47,7 +47,7 @@
   
 ## Part 6C — create-task mapped completion path
 
-- **Status:** implementation and five focused adapter tests added; CI verification pending.
+- **Status:** complete and verified on commit `5353e5134fe16e72ac7a987a84dab4544a9651cc`. GitHub Actions run #14 (`39647165787`) passed unit tests, JavaScript validation, APK build, APK verification, and artifact upload. Five focused adapter tests passed.
 - Added the opt-in `MarketRepository.createTaskWithMappedError(...)` API. The original `createTask(...): Task<String>` remains unchanged for existing callers.
 - The new path returns `MarketOperationResult<String>`: success contains the task ID; failure contains a safe `MarketMappedError`. Offline errors are retryable; permission and input errors are not. Synchronous state/precondition failures use non-retryable guidance without exposing exception text.
 - This adapter does not retry, mutate the cache, skip Firestore rules, or change the atomic create-task transaction. No existing UI call site is redirected in this step.
@@ -56,4 +56,4 @@
 
 ## Exact next step
 
-Run GitHub Actions on this checkpoint. Fix only any compile/test failures from the create-task mapped-result path. After the build and APK upload pass, stop for user review before adding mapped handling to another operation.
+Part 6C is complete and verified. Stop for user review before mapping another Market operation; do not broaden integration until the user explicitly approves.
