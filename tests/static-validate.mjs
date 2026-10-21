@@ -54,6 +54,11 @@ const checks = [
     assert.match(rules, /function marketTaskUpdateAllowed\(taskId\)[\s\S]{0,500}changed\.hasOnly\(/);
     assert.match(rules, /function marketOfferUpdateAllowed\(offerId\)[\s\S]{0,500}changed\.hasOnly\(/);
   }],
+  ['Market mutation validators route to one operation-specific branch', () => {
+    assert.match(rules, /function marketValidProfileCounterUpdate\([\s\S]{0,900}\? marketValidTaskProfileCounterMutation/);
+    assert.match(rules, /function marketTaskOwnerUpdateValid\([\s\S]{0,1600}\? \(before.status == 'open'/);
+    assert.match(rules, /function marketOfferOwnerUpdateValid\([\s\S]{0,1800}\? \(before.status == 'active'/);
+  }],
   ['task and offer report counters require a report document before linked reads', () => {
     assert.ok(rules.includes('marketTaskReportExistsAfter(taskId)'));
     assert.ok(rules.includes('marketOfferReportExistsAfter(offerId)'));
