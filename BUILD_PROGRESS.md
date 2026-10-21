@@ -137,7 +137,7 @@ UI-05 is complete and verified. Stop for user review before implementing screen 
 
 ## UI-06 — Task detail (poster/owner view)
 
-- **Status:** implementation committed; CI pending.
+- **Status:** complete and verified on code commit `db690b571750d324826fa911af2475e986739a8a`. GitHub Actions run #29 (`39679181748`) passed unit tests, JavaScript validation, clean, APK build, APK verification and artifact upload.
 - Inspected both `06_detail_poster_light.png` and `06_detail_poster_dark.png` plus their HTML references.
 - Added an owner-view detail screen with "Your task", Open status chip, edit affordance, Design/BSOPM tags, poster profile/rating, three pastel Budget/Deadline/Proposals cards, full task detail, Canva/Photoshop/Layout tags, overlapped three-person proposal preview card (4 proposals, 1 shortlisted), and fixed Cancel task / View proposals buttons.
 - The My tasks item in the menu temporarily opens this exact owner-view fixture so the screen can be inspected now; when screen 15 My Tasks is implemented, that route should be updated to the list and task rows should open this owner detail.
@@ -146,4 +146,4 @@ UI-05 is complete and verified. Stop for user review before implementing screen 
 
 ## Exact next step
 
-Run GitHub Actions for UI-06. Fix only errors in the poster-view screen/tests, verify the APK artifact and stop for review before screen 07 (Post task step 1).
+UI-06 is complete and verified. Stop for user review before implementing reference screen 07 (Post task step 1). Do not start the next screen until the user explicitly approves.
