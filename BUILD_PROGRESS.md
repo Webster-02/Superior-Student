@@ -38,4 +38,13 @@
   - The mapper does not auto-retry, alter cached data, bypass Firestore rules, or wire into screens/repository behavior. No changes were made to `firestore.rules`, `firestore.indexes.json`, the protected top-level `tests/`, existing U2U chat/friend/Nearby logic, or existing view IDs.
 ## Exact next step
 
-Part 6 standalone error mapping is verified and complete. Do not wire the mapper into existing repository methods or screens until the user explicitly approves the next small step.
+- **Part 6B — one config-display error path:** implementation and focused tests added on `feature/market-step6-errors`; CI verification pending.
+  - Added `MarketConfigProvider.loadForDisplay(...)`: on remote failure it retains the config already rendered by the caller and returns a `MarketMappedError`. The caller should offer Retry only when `retryable == true`; permission/auth and invalid-config errors do not offer Retry.
+  - Successful valid remote config replaces the displayed value and clears the mapped error. A missing/invalid successful config does not use stale fallback; it preserves the displayed value with a non-retryable `INVALID_CONFIG` message.
+  - The underlying six-hour cache policy remains unchanged: stale cache fallback is still limited to recognized connectivity failures. Permission and invalid-data failures do not use stale cache, and failed loads do not clear or overwrite persisted cache.
+  - Added `MarketConfigProviderDisplayTest.kt` for retained display/cache after permission failure, offline retry guidance, successful refresh, missing/invalid config, and first-load offline behavior.
+  - No Market screen/repository integration beyond this single provider display path, no rule/index changes, no Firebase deployment or merge.
+  
+## Exact next step
+
+Run the GitHub Actions verification on the latest `feature/market-step6-errors` commit. Fix only errors from the config display mapping/tests. After it passes, stop for user review before any further integration.
