@@ -1654,9 +1654,9 @@ class MarketRepository(
             val noticeRef = firestore.collection(USERS).document(userId).collection(NOTICES).document(noticeId)
             val notice = tx.get(noticeRef)
             require(notice.exists()) { "The notice linked to this appeal no longer exists." }
-            val linkedType = notice.getString("relatedType")
-            val linkedId = notice.getString("relatedId")
-            if (linkedId.isNullOrBlank() || linkedType !in listOf("task", "offer")) {
+            val linkedType = notice.getString("relatedType") ?: return@runTransaction false
+            val linkedId = notice.getString("relatedId") ?: return@runTransaction false
+            if (linkedId.isBlank() || linkedType !in listOf("task", "offer")) {
                 return@runTransaction false
             }
 
