@@ -165,7 +165,7 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 
 ## UI-08 — Post a task, step 2 (Budget and time)
 
-- **Status:** implementation committed; CI pending. Initial run #36 (`39682666980`) found one Android `EditText` setter typo (`singleLine`); replaced it with `setSingleLine(true)`. Re-run is the authoritative validation.
+- **Status:** complete and verified on commit `46cb076763fb136a2af2d9121b4ecdf9761f31cc`. Run #37 (`39682920691`) passed unit tests, JavaScript validation, clean, debug APK build, APK verification and artifact upload. Initial run #36 found an `EditText` setter typo; fixed before the successful run. Artifact `superior-student-debug-apk`, 40,886,595 bytes, SHA-256 `5837aeceb1c9e4ef6bf91895e4d70d746321a078bf9cd6cec60355082f38ebb1`, expires 2026-10-28.
 - Inspected `08_post2_light.png`, `08_post2_dark.png` and the light/dark HTML references.
 - Added the second-step layout with two completed progress segments, Free help / Fixed / Negotiable choices, an amount field with PKR prefix, a date picker that defaults to the reference date (24 Oct 2026 while it is not in the past), selectable skill chips, the money-safety notice and fixed Back / Next actions.
 - Step 1's validated Next now opens this screen and passes title, category, optional course and description as intent extras; the Back action returns to the still-open Step 1 form. No Step 3 navigation or task save is performed yet.
@@ -175,4 +175,4 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 
 ## Exact next step
 
-Run UI-08 CI; fix only issues within this screen and its navigation/tests, verify APK artifact, then stop for review before screen 09 (Post task step 3).
+UI-08 is complete and verified. Stop for user review before implementing screen 09 (Post task step 3). Do not add a live task save or continue the next screen without explicit approval.
