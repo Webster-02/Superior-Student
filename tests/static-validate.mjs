@@ -55,6 +55,12 @@ const checks = [
     assert.ok(tests.includes('with linked logs and notices'));
     assert.ok(tests.includes('suspend-alice'));
   }],
+  ['report status changes require linked audit logs and reporter notices', () => {
+    assert.ok(rules.includes('function marketReportStatusAuditValid'));
+    assert.ok(rules.includes("getAfter(auditPath).data.action == 'set_report_status'"));
+    assert.ok(rules.includes("getAfter(noticePath).data.relatedType == 'report'"));
+    assert.ok(tests.includes('report-status changes require a new linked audit log and reporter notice'));
+  }],
   ['Market config edits require a newly created matching audit log in the same write', () => {
     assert.match(rules, /function marketConfigAuditValid\(\)[\s\S]{0,1100}existsAfter\(auditLogPath\)[\s\S]{0,300}!exists\(auditLogPath\)[\s\S]{0,500}action == 'update_market_config'/);
     assert.ok(tests.includes('requires a matching new audit log for admin edits'));

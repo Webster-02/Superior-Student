@@ -131,6 +131,30 @@ function adminListingMutationBatch({
   return batch;
 }
 
+function reportStatusMutationBatch({
+  adminUid, reporterUid, reportId, status, auditLogId, noticeId,
+  action = 'set_report_status', logTargetType = 'report', logTargetId = reportId,
+  noticeRelatedType = 'report', noticeRelatedId = reportId, includeNotice = true,
+}) {
+  const db = user(adminUid);
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'reports', reportId), {
+    status, lastAuditLogId: auditLogId, lastAdminNoticeId: noticeId,
+  });
+  batch.set(doc(db, 'adminLogs', auditLogId), {
+    adminId: adminUid, action, targetType: logTargetType, targetId: logTargetId,
+    reason: 'Report status review', note: '', createdAt: serverTimestamp(),
+  });
+  if (includeNotice) {
+    batch.set(doc(db, 'users', reporterUid, 'notices', noticeId), {
+      type: 'activity', title: 'Report updated', body: 'Your report status has changed.',
+      relatedType: noticeRelatedType, relatedId: noticeRelatedId,
+      read: false, createdAt: serverTimestamp(), canAppeal: false, appealed: false,
+    });
+  }
+  return batch;
+}
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId,
@@ -880,12 +904,35 @@ describe('additional allowed flows and daily-limit denial coverage', () => {
     }).commit());
   });
 
-  it('allows admins to update report status while reporters cannot overwrite their own reports', async () => {
+  it('report-status changes require a new linked audit log and reporter notice', async () => {
     await seed('admins', 'admin', {});
     await seedProfile('bob');
-    await seed('reports', 'task_some-task_bob', { targetType: 'task', targetId: 'some-task', reporterId: 'bob', reason: 'spam', createdAt: Timestamp.now(), status: 'open' });
+    await seed('reports', 'task_some-task_bob', {
+      targetType: 'task', targetId: 'some-task', reporterId: 'bob', reason: 'spam',
+      createdAt: Timestamp.now(), status: 'open',
+    });
     await assertFails(updateDoc(doc(user('bob'), 'reports', 'task_some-task_bob'), { status: 'dismissed' }));
-    await assertSucceeds(updateDoc(doc(user('admin'), 'reports', 'task_some-task_bob'), { status: 'dismissed' }));
+    await assertFails(updateDoc(doc(user('admin'), 'reports', 'task_some-task_bob'), { status: 'dismissed' }));
+    await assertFails(reportStatusMutationBatch({
+      adminUid: 'admin', reporterUid: 'bob', reportId: 'task_some-task_bob',
+      status: 'under_review', auditLogId: 'report-status-no-notice-log',
+      noticeId: 'report-status-no-notice', includeNotice: false,
+    }).commit());
+    await assertFails(reportStatusMutationBatch({
+      adminUid: 'admin', reporterUid: 'bob', reportId: 'task_some-task_bob',
+      status: 'under_review', auditLogId: 'report-status-wrong-target-log',
+      noticeId: 'report-status-wrong-target-notice', logTargetType: 'task',
+    }).commit());
+    await assertFails(reportStatusMutationBatch({
+      adminUid: 'admin', reporterUid: 'bob', reportId: 'task_some-task_bob',
+      status: 'under_review', auditLogId: 'report-status-wrong-notice-log',
+      noticeId: 'report-status-wrong-notice', noticeRelatedId: 'different-report',
+    }).commit());
+    await assertSucceeds(reportStatusMutationBatch({
+      adminUid: 'admin', reporterUid: 'bob', reportId: 'task_some-task_bob',
+      status: 'dismissed', auditLogId: 'report-status-valid-log',
+      noticeId: 'report-status-valid-notice',
+    }).commit());
   });
 });
 

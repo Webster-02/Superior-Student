@@ -1581,12 +1581,39 @@ service cloud.firestore {
       }
 
 
+      function marketReportStatusAuditValid(reportId, after) {
+        let auditLogId = after.lastAuditLogId;
+        let noticeId = after.lastAdminNoticeId;
+        let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
+        let noticePath = /databases/$(database)/documents/users/$(after.reporterId)/notices/$(noticeId);
+        return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
+          && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
+          && existsAfter(auditPath) && !exists(auditPath)
+          && existsAfter(noticePath) && !exists(noticePath)
+          && getAfter(auditPath).data.adminId == request.auth.uid
+          && getAfter(auditPath).data.action == 'set_report_status'
+          && getAfter(auditPath).data.targetType == 'report'
+          && getAfter(auditPath).data.targetId == reportId
+          && getAfter(auditPath).data.createdAt == request.time
+          && getAfter(noticePath).data.type == 'activity'
+          && getAfter(noticePath).data.relatedType == 'report'
+          && getAfter(noticePath).data.relatedId == reportId
+          && getAfter(noticePath).data.createdAt == request.time;
+      }
+
+      function marketReportStatusUpdateValid(reportId, before, after) {
+        let changed = after.diff(before).affectedKeys();
+        return changed.hasAll(['status', 'lastAuditLogId', 'lastAdminNoticeId'])
+          && changed.hasOnly(['status', 'lastAuditLogId', 'lastAdminNoticeId'])
+          && after.status in ['open', 'under_review', 'action_taken', 'dismissed']
+          && marketReportStatusAuditValid(reportId, after);
+      }
+
       allow get: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
       allow list: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
       allow create: if marketVerified() && marketValidReportCreate(reportId, request.resource.data);
       allow update: if resource != null && marketVerified() && marketIsAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-        && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed'];
+        && marketReportStatusUpdateValid(reportId, resource.data, request.resource.data);
       allow delete: if false;
     }
 
