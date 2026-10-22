@@ -272,11 +272,7 @@ class MarketSettingsActivity : AppCompatActivity() {
         }
         card.addView(buildLinkRow(MarketSettingsUiPolicy.BLOCKED_USERS, MarketSettingsGlyph.BLOCKED,
             R.color.market_rules_ban_bg, MarketSettingsUiPolicy.BLOCKED_COUNT) {
-            AlertDialog.Builder(this)
-                .setTitle(MarketSettingsUiPolicy.BLOCKED_PREVIEW_TITLE)
-                .setMessage(MarketSettingsUiPolicy.BLOCKED_PREVIEW_MESSAGE)
-                .setPositiveButton("OK", null)
-                .show()
+            startActivity(Intent(this, MarketBlockedUsersActivity::class.java))
         })
         addDivider(card)
         card.addView(buildLinkRow(MarketSettingsUiPolicy.HELP_AND_SAFETY, MarketSettingsGlyph.HELP,

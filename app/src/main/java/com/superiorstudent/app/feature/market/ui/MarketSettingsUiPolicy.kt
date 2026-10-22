@@ -20,7 +20,7 @@ internal object MarketSettingsUiPolicy {
     const val MY_REPORTS = "My reports"
     const val BLOCKED_PREVIEW_TITLE = "Blocked users"
     const val BLOCKED_PREVIEW_MESSAGE =
-        "The Blocked users screen is the next reference step. Your live blocked-user list is not connected to this preview."
+        "Your blocked-user list on Screen 32 uses reference examples. Live blocked-user data is not connected yet."
     const val LOCAL_PREVIEW_TITLE = "Preview only"
     const val LOCAL_PREVIEW_MESSAGE =
         "Skill selections and alert toggles change on this screen only. Saving them to your Market profile is not connected yet."
