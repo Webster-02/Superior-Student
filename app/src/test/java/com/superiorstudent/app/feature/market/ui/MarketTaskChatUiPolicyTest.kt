@@ -55,6 +55,19 @@ class MarketTaskChatUiPolicyTest {
     }
 
     @Test
+    fun offerPreviewTranscriptIsSeparateFromAcceptedPosterConversation() {
+        val messages = MarketTaskChatUiPolicy.offerPreviewMessages
+        assertEquals(3, messages.size)
+        assertEquals("Hi! Thanks for checking out my offer.", messages[0].body)
+        assertEquals("Could I see a sample page first?", messages[1].body)
+        assertEquals("Of course. I can share a sample before you decide.", messages[2].body)
+        assertFalse(messages[0].fromMe)
+        assertTrue(messages[1].fromMe)
+        assertFalse(messages[2].fromMe)
+        assertEquals("offer", MarketTaskChatUiPolicy.CHAT_CONTEXT_OFFER)
+    }
+
+    @Test
     fun amountFormattingNeverShowsNegativeMoney() {
         assertEquals("Rs. 0", MarketTaskChatUiPolicy.priceLabel(-1200))
         assertEquals("Rs. 2,500", MarketTaskChatUiPolicy.priceLabel(2500))

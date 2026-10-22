@@ -286,6 +286,44 @@ class MarketOffersActivity : AppCompatActivity() {
         renderOffers()
     }
 
+    private fun openOfferDetail(offer: MarketOfferPreview) {
+        startActivity(Intent(this, MarketOfferDetailActivity::class.java).apply {
+            putExtra(MarketOfferDetailActivity.EXTRA_ID, offer.id)
+            putExtra(MarketOfferDetailActivity.EXTRA_CATEGORY, offer.category)
+            putExtra(MarketOfferDetailActivity.EXTRA_COURSE,
+                MarketOfferDetailUiPolicy.courseLabel(offer.id, offer.category))
+            putExtra(MarketOfferDetailActivity.EXTRA_TITLE, offer.title)
+            putExtra(MarketOfferDetailActivity.EXTRA_DESCRIPTION, offer.description)
+            putExtra(MarketOfferDetailActivity.EXTRA_PRICE_LABEL, offer.priceLabel)
+            putExtra(MarketOfferDetailActivity.EXTRA_PRICE_VALUE, offer.priceValue ?: -1)
+            putExtra(MarketOfferDetailActivity.EXTRA_SELLER, offer.sellerName)
+            putExtra(MarketOfferDetailActivity.EXTRA_INITIALS, offer.initials)
+            putExtra(MarketOfferDetailActivity.EXTRA_RATING, offer.rating)
+            putExtra(MarketOfferDetailActivity.EXTRA_REVIEW_COUNT, offer.ratingCount)
+            putExtra(MarketOfferDetailActivity.EXTRA_VERIFIED, offer.verifiedStudent)
+            putExtra(MarketOfferDetailActivity.EXTRA_AVATAR_COLOR, offer.avatarColor)
+        })
+    }
+
+    private fun showOfferChatPreview(offer: MarketOfferPreview) {
+        AlertDialog.Builder(this)
+            .setTitle("Chat preview only")
+            .setMessage("Open a sample chat with " + offer.sellerName +
+                "? No message will be sent and no live chat will be created.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Open chat preview") { _, _ ->
+                startActivity(Intent(this, MarketTaskChatActivity::class.java).apply {
+                    putExtra(MarketTaskChatActivity.EXTRA_HELPER_NAME, offer.sellerName)
+                    putExtra(MarketTaskChatActivity.EXTRA_TASK_TITLE, offer.title)
+                    putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR,
+                        MarketOfferDetailUiPolicy.priceValueForChat(offer.priceValue ?: -1))
+                    putExtra(MarketTaskChatActivity.EXTRA_CHAT_CONTEXT,
+                        MarketTaskChatUiPolicy.CHAT_CONTEXT_OFFER)
+                })
+            }
+            .show()
+    }
+
     private fun showMenu(anchor: View) {
         MarketMenuSheet.show(this) { item ->
             if (item.label == "My tasks") {
@@ -325,6 +363,10 @@ class MarketOffersActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(14), dp(14), dp(14))
             background = rounded(color(R.color.market_card), 22f, color(R.color.market_line))
+            isClickable = true
+            isFocusable = true
+            contentDescription = "View offer: " + offer.title
+            setOnClickListener { openOfferDetail(offer) }
         }
         val sellerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -376,7 +418,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(6) })
             addView(makeText("Message", 13f, true, color(R.color.market_message_ink)))
             isClickable = true; isFocusable = true
-            setOnClickListener { toast("Messaging from an offer will be connected in a later step.") }
+            setOnClickListener { showOfferChatPreview(offer) }
         }
         footer.addView(message, LinearLayout.LayoutParams(-2, dp(34)))
         card.addView(footer, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })

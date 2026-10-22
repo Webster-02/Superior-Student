@@ -35,6 +35,7 @@ class MarketTaskChatActivity : AppCompatActivity() {
     private lateinit var messageList: LinearLayout
     private lateinit var messageInput: EditText
     private var messages = MarketTaskChatUiPolicy.referenceMessages
+    private var offerChatContext = false
 
     private val helperName: String
         get() = intent.getStringExtra(EXTRA_HELPER_NAME).orEmpty()
@@ -50,6 +51,9 @@ class MarketTaskChatActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
+        offerChatContext = intent.getStringExtra(EXTRA_CHAT_CONTEXT) ==
+            MarketTaskChatUiPolicy.CHAT_CONTEXT_OFFER
+        if (offerChatContext) messages = MarketTaskChatUiPolicy.offerPreviewMessages
         root = FrameLayout(this).apply {
             setBackgroundColor(color(R.color.market_bg))
             clipToPadding = false
@@ -227,7 +231,10 @@ class MarketTaskChatActivity : AppCompatActivity() {
     private fun renderMessages() {
         if (!::messageList.isInitialized) return
         messageList.removeAllViews()
-        val event = makeText(MarketTaskChatUiPolicy.EVENT_LABEL, 12.5f, true,
+        val event = makeText(
+            if (offerChatContext) "Offer chat preview · Sample messages"
+            else MarketTaskChatUiPolicy.EVENT_LABEL,
+            12.5f, true,
             color(R.color.market_ink2)).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(7), dp(12), dp(7))
@@ -415,5 +422,6 @@ class MarketTaskChatActivity : AppCompatActivity() {
         const val EXTRA_HELPER_NAME = "market.chat.helper_name"
         const val EXTRA_TASK_TITLE = "market.chat.task_title"
         const val EXTRA_PRICE_PKR = "market.chat.price_pkr"
+        const val EXTRA_CHAT_CONTEXT = "market.chat.context"
     }
 }

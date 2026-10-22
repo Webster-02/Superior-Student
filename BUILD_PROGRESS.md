@@ -274,6 +274,18 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - **No live task completion, review submission, Firestore writes, or chat changes** are connected. Student Connect and Nearby transfer logic remain untouched.
 - Scope is limited to the new rating Activity/policy/tests, the Screen 14 Mark complete handoff, manifest registration, workflow path filters, and this progress entry. No Firestore rules/indexes, protected top-level tests, deployments, merges, login, or unrelated features were changed.
 
+## UI-17 — Offer detail
+
+- **Status:** implemented; pending this step's GitHub Actions verification.
+- Inspected the exact `17_offer_light.png`, `17_offer_dark.png`, and matching light/dark `17_offer.html` references from `pachattar_market_final(1).zip`.
+- Added a native Offer detail page with a back/report header, category and course chips, full offer title, seller identity and rating/verification row, price and delivery cards, offer description, blue safety note and fixed **Save / Message** footer. It follows the Market Paper/Night palette, Poppins type and rounded reference-card styling.
+- The first Offers fixture (Ayesha Khan's Ocular Anatomy notes) matches Screen 17's exact title, Rs. 300 price, rating 4.9 with 14 reviews, detailed colour-coded note description, delivery mode and safety note. The tutoring/typing fixtures receive their own course/about copy.
+- Offer cards open Screen 17. Existing Offers-list Message and Screen 17 Message controls provide a confirmation-gated chat preview. The offer-specific transcript is separate from the unrelated accepted-poster conversation.
+- Save toggles local in-memory preview state only. Report and Message are preview-only; the app confirms that no report or message is submitted/sent.
+- Added policy tests for reference content, safety copy, rating labels and alternate fixture details, plus a chat test ensuring offer-preview messages stay separate.
+- **No live messages, persistent saved-offer state, reports, Firestore writes, Student Connect changes, or Nearby transfer changes** are connected. No Firestore rules/indexes, protected top-level tests, deployment or merge touched.
+- Scope is limited to the new Offer detail Activity/policy/icons/tests, Offers-card navigation and chat handoff, contextual sample chat copy, manifest registration, workflow path filters, and this progress record.
+
 ## Exact next step
 
-Stop after UI-16 verification for user review. Do not begin screen 17 or another feature until the user explicitly types `continue`.
+Stop after UI-17 verification for user review. Do not begin screen 18 or another feature until the user explicitly types `continue`.

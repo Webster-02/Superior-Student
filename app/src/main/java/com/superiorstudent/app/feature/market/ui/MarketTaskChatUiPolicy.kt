@@ -17,6 +17,17 @@ internal object MarketTaskChatUiPolicy {
     const val EVENT_LABEL = "Proposal accepted · Today"
     const val MAX_MESSAGE_LENGTH = 400
 
+    const val CHAT_CONTEXT_OFFER = "offer"
+
+    val offerPreviewMessages = listOf(
+        MarketTaskChatMessage("offer-incoming-1",
+            "Hi! Thanks for checking out my offer.", "4:10 PM", false),
+        MarketTaskChatMessage("offer-outgoing-1",
+            "Could I see a sample page first?", "4:12 PM", true),
+        MarketTaskChatMessage("offer-incoming-2",
+            "Of course. I can share a sample before you decide.", "4:13 PM", false)
+    )
+
     val referenceMessages = listOf(
         MarketTaskChatMessage("incoming-1",
             "Thanks for selecting me! Please share the text and logo.", "4:10 PM", false),
