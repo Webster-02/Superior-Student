@@ -251,13 +251,15 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 
 ## UI-15 — My tasks (posted and applied)
 
-- **Status:** implemented; pending this step's GitHub Actions verification.
+- **Status:** implemented and CI verified on fix commit `0737b6291fe4e4f2ec32fd29ed760b0095348743`. GitHub Actions run [#55 / run ID 39779307403](https://github.com/Webster-02/Superior-Student/actions/runs/39779307403) passed JavaScript validation, clean, JVM unit tests, debug APK build, APK verification and artifact upload.
 - Inspected the exact `15_mytasks_light.png`, `15_mytasks_dark.png`, and matching light/dark `15_mytasks.html` references from `pachattar_market_final(1).zip`.
 - Added the native My tasks screen with back/header and “Posted and applied” subtitle, segmented **Posted 2 / Applied 3** tabs, and the four visible Applied cards from the supplied reference: Accepted, Shortlisted, Sent and Declined. Category/status chips, card corners, spacing, Paper/Night palette and Poppins follow the reference.
 - The initial state is **Applied** to match the screenshot. Tabs switch between four supplied Applied fixture cards and two local Posted fixture cards; the applied count remains “3” because that is the exact reference label even though four sample cards are visible.
 - Updated the My tasks entry in both Requests and Offers menu sheets to open this list instead of jumping directly to the owner-detail fixture. The first Posted item opens the existing owner task-detail preview. The Accepted Applied item opens Screen 14 after a clear preview confirmation; other card actions explain that they are local reference data.
 - **No live Market/Firestore data, real acceptance, task updates, outgoing messages, or chat writes are connected.** Screen 15 navigation only opens reference previews; existing Student Connect chat and Nearby transfer code remain untouched.
 - Added focused policy tests for tab labels/counts, visible item order and copy, accepted-chat preview routing, and existing owner-detail routing.
+- The initial run #54 failed compilation because the new Activity omitted its `color(resourceId)` helper; the missing helper was added and a redundant row spacer removed in fix commit `0737b6291fe4e4f2ec32fd29ed760b0095348743`.
+- **Verified APK:** `app-debug.apk`, 66,950,247 bytes; SHA-256 `9e2cdf87ff96b23b7a77c85dd05b4771496cd7dd3e710da1067c162d0610c44d`. Workflow artifact archive: 40,962,304 bytes; SHA-256 `3bc0a66143707bc64d838b065d87da2314bd4b9f6dd73a3ade3c8c48360edae0`; expires October 29, 2026.
 - Scope is limited to the new My tasks Activity/policy/tests, Requests and Offers menu navigation, the My tasks menu description, manifest, workflow path filters and this progress record. No Firestore rules/indexes, protected top-level tests, deployment, merge, login, or unrelated chat/Nearby logic changed.
 
 ## Exact next step
