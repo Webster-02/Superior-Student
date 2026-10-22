@@ -310,6 +310,16 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - **No live offers, saved-state updates, deletions, pauses, renewals, or Firestore writes** are connected. No Firebase rules/indexes, protected top-level tests, login, Student Connect or Nearby transfer behavior was changed.
 - **Latest verified APK (run #64):** `app-debug.apk`, 66,999,551 bytes; SHA-256 `62c11e6d173d3e40895fe016978a233f2dc125a7393cab81963304d4d1858915`. Workflow archive: 41,011,575 bytes; SHA-256 `3c2e78e06c2166099a80f553c1dc056cd5040796c97a55682aae448ca79f8297`; expires October 29, 2026.
 
+## UI-20 — Report this task
+
+- **Status:** implemented and verified. UI code/fix commit: `d02d94e30ed06bc7a89c88c8b5000d8c98619afc`; GitHub Actions [run #68 / ID 39814451651](https://github.com/Webster-02/Superior-Student/actions/runs/39814451651) logs confirm the JavaScript validation, clean, all 351 JVM unit tests, debug APK build, APK verification, and artifact upload succeeded.
+- Inspected the exact `20_report_light.png`, `20_report_dark.png`, and matching `light_20_report.html` / `dark_20_report.html` references from `pachattar_market_final(1).zip`.
+- Added a native bottom-sheet overlay for **Report this task**, with the reference order of five reasons, the graded-assignment/exam-work reason selected by default, an in-memory **Also block [task owner]** toggle, rounded top corners, dimmed task-detail background, Paper/Night colors and a lime **Submit report** button.
+- Connected only the existing Task detail flag button to open Screen 20. Selecting a reason updates its radio state; toggling block changes only the preview state. Submit displays an explicit preview confirmation.
+- **No report is submitted and no user is actually blocked.** No Firestore writes, live report/block actions, Firebase rules/indexes, login, Student Connect, Nearby transfer, or unrelated screens were changed.
+- Added `MarketReportUiPolicy` plus unit tests for reference choices, safe fallbacks and truthful preview-only confirmation. Run #66 exposed one fallback-copy assertion; this was corrected in commit `d02d94e`, and run #68 logs then showed the full test suite/build and artifact upload succeeding.
+- **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,016,095 bytes; archive SHA-256 `da0bb982f33c55342bcc16fa3384e3f817dafae67f80af9dfbccc535a08b0c42`. [Download from run #68](https://github.com/Webster-02/Superior-Student/actions/runs/39814451651). Expires October 29, 2026.
+
 ## Exact next step
 
-Stop after UI-19 verification for user review. Do not begin screen 20 or another feature until the user explicitly types `continue`.
+Stop after UI-20 verification for user review. Do not begin Screen 21 or another feature until the user explicitly types `continue`.
