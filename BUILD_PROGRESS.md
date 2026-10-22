@@ -287,6 +287,17 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - Scope is limited to the new Offer detail Activity/policy/icons/tests, Offers-card navigation and chat handoff, contextual sample chat copy, manifest registration, workflow path filters, and this progress record.
 - **Verified APK:** `app-debug.apk`, 66,966,715 bytes; SHA-256 `5b24781a7c46935b8582851f8af0299a78638035a7a292785493a26e433c1173`. Workflow artifact archive: 40,979,512 bytes; SHA-256 `f0ca3dc0072fefd07942c918ee15b4c7cfe878608370eb5085efc657dfc5fb48`; expires October 29, 2026.
 
+## UI-18 — Post an offer
+
+- **Status:** implemented in code commit pending CI verification.
+- Inspected the reference assets `18_postoffer_light.png`, `18_postoffer_dark.png`, and their matching light/dark HTML from `pachattar_market_final(1).zip`.
+- Added a native **Post an offer** form with the reference header, title field, six category chips (Notes, Tutoring, Design, Coding, Typing, Books), three-state price selector (Free, Swap, Rs.), conditional amount field, description with a live 400-character counter, dashed optional cover-photo picker and fixed lime **Post offer** button.
+- Reference defaults match the artwork: `Handwritten Ocular Anatomy notes`, Notes, Rs. 300, and `Clean handwriting, colour-coded diagrams. Sample page on request.`. The counter reflects the actual description length (65/400).
+- Cover images are selected with the system photo picker, downscaled and JPEG-compressed in memory to at most 150 KiB. The chosen photo and form remain local to this Activity; nothing is uploaded or persisted.
+- The Offers screen’s existing **Post an offer** button now opens Screen 18. The submit action validates the form and shows a preview-only dialog explaining that no offer was published.
+- Added policy tests for defaults, title/category/amount/description validation, price-mode behavior, character count and photo-size labels. Added the new Activity to the manifest and its changed files to the CI path filters.
+- **No live offer publishing or Firestore writes** are connected. No Firebase rules/indexes, protected top-level tests, login, Student Connect or Nearby transfer behavior was changed.
+
 ## Exact next step
 
-Stop after UI-17 verification for user review. Do not begin screen 18 or another feature until the user explicitly types `continue`.
+Stop after UI-18 verification for user review. Do not begin screen 19 or another feature until the user explicitly types `continue`.

@@ -97,7 +97,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
             addView(makeText("Post an offer", 14f, true, color(R.color.market_match_ink)))
         }
-        fab.setOnClickListener { toast("Post an offer form will be implemented in its own reference-screen step.") }
+        fab.setOnClickListener { startActivity(Intent(this, MarketPostOfferActivity::class.java)) }
         root.addView(fab, FrameLayout.LayoutParams(-2, dp(52), Gravity.BOTTOM or Gravity.END).apply {
             marginEnd = dp(16); bottomMargin = dp(22)
         })
