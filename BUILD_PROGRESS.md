@@ -225,3 +225,18 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 ## Exact next step
 
 UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or another screen until the user explicitly types `continue`.
+
+
+## UI-13 — Accept proposal confirmation sheet
+
+- **Status:** implemented; pending this step's GitHub Actions verification.
+- Inspected the exact `13_accept_light.png`, `13_accept_dark.png`, and matching `13_accept.html` references from `pachattar_market_final(1).zip`.
+- Added the acceptance confirmation as a dimmed, bottom-aligned sheet launched by each proposal card's **Accept** button. It includes the rounded handle/header, price and delivery summary, three consequence reminders, shield-style money-safety note, lime **Accept and open chat**, and bordered **Not now** actions. It reuses existing Market Paper/Night semantic colours and Poppins.
+- The reference fixture identifies Zain's delivery as 2 days. Other fixture proposals show **Confirm in chat** instead of inventing unsupported delivery estimates.
+- **Live acceptance and chat opening remain intentionally disconnected.** Tapping **Accept and open chat** explicitly confirms that no proposal was accepted and no chat was opened; **Not now** simply dismisses the sheet. This step does not write Firestore or alter task/proposal state.
+- Added focused policy coverage for reference delivery labels, consequence copy and money-safety reminder.
+- Scope is limited to the existing Proposals Activity, its policy/test and this progress entry. No manifest, Firestore rules/indexes, protected top-level tests, deployment, merge, or unrelated login/chat/Nearby logic changed.
+
+## Exact next step
+
+Stop after UI-13 verification for user review. Do not begin screen 14 or another feature until the user explicitly types `continue`.

@@ -1,10 +1,16 @@
 package com.superiorstudent.app.feature.market.ui
 
+import android.app.Dialog
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -265,8 +271,7 @@ class MarketProposalsActivity : AppCompatActivity() {
             toast("Shortlist updated in this preview only. Changes are not saved.")
         }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginStart = dp(8) })
         actions.addView(buildActionButton("Accept", ActionStyle.ACCEPT) {
-            showActionInfo(proposal, "Accept proposal",
-                "Acceptance is not connected in this preview. No student will be notified and your task will remain unchanged.")
+            showAcceptConfirmation(proposal)
         }, LinearLayout.LayoutParams(0, dp(38), 1.3f).apply { marginStart = dp(8) })
         card.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         return card
@@ -293,6 +298,197 @@ class MarketProposalsActivity : AppCompatActivity() {
             isFocusable = true
             setOnClickListener { action() }
         }
+
+    /**
+     * Reference screen 13: confirmation sheet opened from the proposal's Accept button.
+     * The confirmation is intentionally preview-only until real Market acceptance is approved.
+     */
+    private fun showAcceptConfirmation(proposal: MarketProposalPreview) {
+        val sheetDialog = Dialog(this)
+        val sheet = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(20))
+            background = rounded(color(R.color.market_bg), 28f)
+        }
+
+        sheet.addView(View(this).apply {
+            background = rounded(color(R.color.market_line), 99f)
+        }, LinearLayout.LayoutParams(dp(40), dp(4)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(14)
+        })
+
+        sheet.addView(makeText("Accept \${proposal.name}'s proposal?", 18f, true,
+            color(R.color.market_ink)), LinearLayout.LayoutParams(-1, -2))
+
+        val priceAndDelivery = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(color(R.color.market_card), 22f, color(R.color.market_line))
+        }
+        priceAndDelivery.addView(acceptanceMetric("Price",
+            MarketProposalsUiPolicy.priceLabel(proposal.pricePkr)),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        priceAndDelivery.addView(acceptanceMetric("Delivery",
+            MarketProposalsUiPolicy.deliveryLabel(proposal.id)),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        sheet.addView(priceAndDelivery, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(12)
+        })
+
+        addAcceptanceChecklistRow(sheet,
+            "A chat with \${proposal.name} opens, with this task pinned")
+        MarketProposalsUiPolicy.ACCEPTANCE_CHECKLIST.drop(1).forEach { copy ->
+            addAcceptanceChecklistRow(sheet, copy)
+        }
+
+        val safetyNote = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = rounded(color(R.color.market_peach), 18f)
+        }
+        safetyNote.addView(AcceptanceIconView(this, AcceptanceIconKind.SHIELD,
+            color(R.color.market_ink)), LinearLayout.LayoutParams(dp(20), dp(20)))
+        safetyNote.addView(makeText(MarketProposalsUiPolicy.ACCEPTANCE_SAFETY_NOTE,
+            12f, false, color(R.color.market_ink)).apply {
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
+        sheet.addView(safetyNote, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(8)
+            bottomMargin = dp(14)
+        })
+
+        val acceptAndChat = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(12), 0, dp(12), 0)
+            background = rounded(color(R.color.market_match), 16f)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Accept and open chat"
+            addView(AcceptanceIconView(this@MarketProposalsActivity,
+                AcceptanceIconKind.CHAT, color(R.color.market_match_ink)),
+                LinearLayout.LayoutParams(dp(20), dp(20)))
+            addView(makeText("Accept and open chat", 15f, true,
+                color(R.color.market_match_ink)), LinearLayout.LayoutParams(-2, -2).apply {
+                marginStart = dp(8)
+            })
+            setOnClickListener {
+                sheetDialog.dismiss()
+                AlertDialog.Builder(this@MarketProposalsActivity)
+                    .setTitle("Preview only")
+                    .setMessage("No proposal was accepted and no chat was opened. Live Market acceptance is not connected in this screen.")
+                    .setPositiveButton("Got it", null)
+                    .show()
+            }
+        }
+        sheet.addView(acceptAndChat, LinearLayout.LayoutParams(-1, dp(52)))
+
+        val notNow = makeText("Not now", 15f, true, color(R.color.market_ink)).apply {
+            gravity = Gravity.CENTER
+            background = rounded(color(R.color.market_card), 16f, color(R.color.market_line))
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { sheetDialog.dismiss() }
+        }
+        sheet.addView(notNow, LinearLayout.LayoutParams(-1, dp(52)).apply {
+            topMargin = dp(8)
+        })
+
+        sheetDialog.setContentView(sheet)
+        sheetDialog.setCancelable(true)
+        sheetDialog.setCanceledOnTouchOutside(true)
+        sheetDialog.show()
+        sheetDialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setDimAmount(0.45f)
+            setGravity(Gravity.BOTTOM)
+            setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+        }
+    }
+
+    private fun acceptanceMetric(label: String, value: String): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(makeText(label, 12.5f, false, color(R.color.market_ink2)))
+            addView(makeText(value, 15f, true, color(R.color.market_ink)),
+                LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
+        }
+
+    private fun addAcceptanceChecklistRow(parent: LinearLayout, copy: String) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
+        row.addView(AcceptanceIconView(this, AcceptanceIconKind.CHECK, color(R.color.ok)),
+            LinearLayout.LayoutParams(dp(18), dp(18)).apply { topMargin = dp(2) })
+        row.addView(makeText(copy, 13f, false, color(R.color.market_ink)).apply {
+            setLineSpacing(dp(1).toFloat(), 1f)
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+        parent.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(8)
+        })
+    }
+
+    private enum class AcceptanceIconKind { CHECK, CHAT, SHIELD }
+
+    private class AcceptanceIconView(
+        context: Context,
+        private val kind: AcceptanceIconKind,
+        tint: Int
+    ) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tint
+            style = Paint.Style.STROKE
+            strokeWidth = 1.8f
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val scale = minOf(width, height) / 24f
+            if (scale <= 0f) return
+            val saved = canvas.save()
+            canvas.translate((width - 24f * scale) / 2f, (height - 24f * scale) / 2f)
+            canvas.scale(scale, scale)
+            val path = Path()
+            when (kind) {
+                AcceptanceIconKind.CHECK -> {
+                    path.moveTo(4f, 12f)
+                    path.lineTo(9.5f, 17f)
+                    path.lineTo(20f, 6.5f)
+                    canvas.drawPath(path, paint)
+                }
+                AcceptanceIconKind.CHAT -> {
+                    path.moveTo(20.5f, 11f)
+                    path.cubicTo(20.5f, 15.5f, 16.8f, 19f, 12f, 19f)
+                    path.cubicTo(10.8f, 19f, 9.6f, 18.8f, 8.5f, 18.3f)
+                    path.lineTo(3.8f, 20f)
+                    path.lineTo(5.1f, 15.9f)
+                    path.cubicTo(3.8f, 14.5f, 3f, 12.8f, 3f, 11f)
+                    path.cubicTo(3f, 6.5f, 6.8f, 3f, 12f, 3f)
+                    path.cubicTo(16.8f, 3f, 20.5f, 6.5f, 20.5f, 11f)
+                    canvas.drawPath(path, paint)
+                }
+                AcceptanceIconKind.SHIELD -> {
+                    path.moveTo(12f, 3f)
+                    path.cubicTo(14.2f, 4.8f, 17.1f, 5.8f, 20f, 6f)
+                    path.cubicTo(19.8f, 13.5f, 17f, 18.8f, 12f, 21f)
+                    path.cubicTo(7f, 18.8f, 4.2f, 13.5f, 4f, 6f)
+                    path.cubicTo(6.9f, 5.8f, 9.8f, 4.8f, 12f, 3f)
+                    path.close()
+                    canvas.drawPath(path, paint)
+                    canvas.drawCircle(12f, 11f, 1.4f, paint)
+                    canvas.drawLine(12f, 12.5f, 12f, 15f, paint)
+                }
+            }
+            canvas.restoreToCount(saved)
+        }
+    }
 
     private fun showActionInfo(proposal: MarketProposalPreview, title: String, message: String) {
         AlertDialog.Builder(this)

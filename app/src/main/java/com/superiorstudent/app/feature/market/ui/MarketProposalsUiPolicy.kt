@@ -84,6 +84,17 @@ internal object MarketProposalsUiPolicy {
             if (item.id == proposalId) item.copy(shortlisted = !item.shortlisted) else item
         }
 
+    val ACCEPTANCE_CHECKLIST = listOf(
+        "Other proposals are declined and new ones stop",
+        "You can mark the task complete when done"
+    )
+
+    const val ACCEPTANCE_SAFETY_NOTE =
+        "The app does not handle money. Agree on a safe split in chat, for example half after seeing a draft, half on delivery."
+
+    fun deliveryLabel(proposalId: String): String =
+        if (proposalId == "zain") "2 days" else "Confirm in chat"
+
     fun priceLabel(pricePkr: Int): String =
         "Rs. " + java.text.NumberFormat.getIntegerInstance(java.util.Locale.US)
             .format(pricePkr.coerceAtLeast(0))

@@ -69,6 +69,21 @@ class MarketProposalsUiPolicyTest {
     }
 
     @Test
+    fun acceptConfirmationMatchesReferenceCopyAndDeliveryPreview() {
+        assertEquals("2 days", MarketProposalsUiPolicy.deliveryLabel("zain"))
+        assertEquals("Confirm in chat", MarketProposalsUiPolicy.deliveryLabel("noor"))
+        assertEquals(
+            listOf(
+                "Other proposals are declined and new ones stop",
+                "You can mark the task complete when done"
+            ),
+            MarketProposalsUiPolicy.ACCEPTANCE_CHECKLIST
+        )
+        assertTrue(MarketProposalsUiPolicy.ACCEPTANCE_SAFETY_NOTE.contains("does not handle money"))
+        assertTrue(MarketProposalsUiPolicy.ACCEPTANCE_SAFETY_NOTE.contains("half on delivery"))
+    }
+
+    @Test
     fun proposalPricesAreFormattedAsWholePkrAmounts() {
         assertEquals("Rs. 1,200", MarketProposalsUiPolicy.priceLabel(1200))
         assertEquals("Rs. 1,500", MarketProposalsUiPolicy.priceLabel(1500))
