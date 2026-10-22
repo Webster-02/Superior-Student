@@ -257,6 +257,33 @@ The Rules and app changes remain on separate review branches. They have not been
 
 ### Remaining admin gaps
 
-Support reply/resolve and direct account warning/lift-suspension/profile-status mutations still need Rules-enforced audit-log and notice linkage. Lifecycle-counter semantics need clarification. Live production Rules/indexes have not been exported and compared; the historical proposal `proposerId` migration and separate staging verification remain outstanding.
+Ordinary non-appeal support reply/resolve linkage is completed in Phase 2 Step 12 below. Appeal-ticket decision linkage and direct account warning/lift-suspension/profile-status mutations still need Rules-enforced audit-log and notice linkage. Lifecycle-counter semantics need clarification. Live production Rules/indexes have not been exported and compared; the historical proposal `proposerId` migration and separate staging verification remain outstanding.
+
+No Firebase Rules or indexes were published or deployed. No live data was changed.
+
+
+## Phase 2 — Step 12: Support reply and resolution audit linkage (verified 2026-10-22)
+
+**Rules commit:** [`d0428fb7b6d6e2414a2d199d954564527193df78`](https://github.com/Webster-02/Superior-Student/commit/d0428fb7b6d6e2414a2d199d954564527193df78) on `review/market-rules`.  
+**Rules CI:** [Firestore Rules Review Tests — run #32](https://github.com/Webster-02/Superior-Student/actions/runs/39865131476) — **success**. Artifact `12462414890`.  
+**App commit:** [`d1d95c4d3c4e9ff3fc5d8596cb0e74eb87d0392c`](https://github.com/Webster-02/Superior-Student/commit/d1d95c4d3c4e9ff3fc5d8596cb0e74eb87d0392c) on `feature/market-ui-reference`.  
+**Android CI:** [Market Data Step Check — run #103](https://github.com/Webster-02/Superior-Student/actions/runs/39864585562) — **success**. APK artifact `12464190239`.
+
+### Enforced behavior and verification
+
+- For non-appeal support tickets, admin replies/resolutions now update the ticket with `lastAuditLogId` and `lastAdminNoticeId`; Rules require the referenced log and notice to be newly created in the same atomic write.
+- The audit log must match the current admin, action (`reply_support_ticket` or `resolve_support_ticket`), support ticket ID and request timestamp. The new owner notice must have type `support_reply`, relate to that ticket, and share the request timestamp.
+- The repository now creates and reuses one notice reference in the transaction for both reply and resolve operations. Resolution continues to update the owner's open-support-ticket counter in the same transaction.
+- The support-ticket converter accepts and validates optional bounded, nonblank audit/notice IDs.
+- Tests deny direct admin status/reply writes, missing notices and mismatched audit targets; valid atomic reply and resolution writes pass. Owner-authored replies retain the existing strict constraints.
+- The existing appeal-specific admin update branch was deliberately left separate in this step; appeal-decision linkage needs its own review.
+- Rules run #32: **43/43 static checks passed; 68/68 Emulator tests passed; 0 skipped; 0 expression-ceiling diagnostics**.
+- Android run #103: route validation, unit tests, debug APK build, APK verification and artifact upload passed.
+
+The Rules and app changes remain on separate review branches. They have not been merged to `main`.
+
+### Remaining admin gaps
+
+Appeal-ticket decision linkage and direct account warning/lift-suspension/profile-status mutations still need Rules-enforced audit-log and notice linkage. Lifecycle-counter semantics require clarification. Live production Rules/indexes have not been exported and compared; the historical proposal `proposerId` migration and separate staging verification remain outstanding.
 
 No Firebase Rules or indexes were published or deployed. No live data was changed.

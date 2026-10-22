@@ -1,20 +1,22 @@
-GitHub Actions run 39533202614 — actual npm run test:static output
+GitHub Actions run 39865131476 (Firestore Rules run #32) — actual `npm run test:static` output
 
 PASS Firestore Rules version 2
 PASS verified email is part of Market authorization
 PASS legacy U2U chat helper is preserved
-PASS task create has a dedicated validator
-PASS offer content has a dedicated validator
+PASS profile creation keeps the exact required key shape while allowing only safe defaults
+PASS task create validates payload before linked profile reads
+PASS offer create validates payload before linked profile reads
 PASS assigned task completion is explicitly poster-only
 PASS assigned-helper completion override is absent
+PASS unverified email is denied Market profile updates in Emulator tests
 PASS poster completion allow and helper deny test exists
 PASS student Market writes without U2U profile are denied in tests
 PASS admin operations without a U2U profile are tested
 PASS admin suspension batch deliberately omits admin U2U profile
-PASS proposal documents require proposerId equal to caller/document id
+PASS proposal documents require proposerId equal to caller/document id and preflight task state
 PASS Applied collection-group reads are self-scoped
 PASS proposal collection-group composite index exists
-PASS deterministic report IDs are validated
+PASS deterministic report IDs and caller ownership are validated
 PASS deterministic appeal ticket IDs are validated
 PASS rating writes validate paired stats mutations
 PASS both participants can rate a completed task in the Emulator suite
@@ -24,12 +26,22 @@ PASS Market message senderName is bound to U2U profile displayName
 PASS task create access-call regression is present
 PASS proposal create access-call regression is present
 PASS accept transaction access-call regression is present
+PASS task acceptance requires a newly created same-transaction Market conversation
 PASS report batch access-call regression is present
+PASS task/offer admin moderation and pin changes require linked audit logs and notices
+PASS report status changes require linked audit logs and reporter notices
+PASS admin support replies and resolutions require linked audit logs and notices
+PASS Market config edits require a newly created matching audit log in the same write
 PASS admin suspend/hide batch access-call regression is present
 PASS Market limits are read-only in the app spec
 PASS rank weights have non-negative rule checks
 PASS index map lists proposerId collection-group scope
 PASS deploy checklist mandates production export and rollback
+PASS Market update rules use one changed-field dispatcher per document match
+PASS Market mutation validators route to one operation-specific branch
+PASS task and offer report counters require a report document before linked reads
 PASS workflow specifies Node.js 20 and Java 21
+PASS workflow counts, reports and fails on expression-ceiling diagnostics
+PASS original Market rules addendum is byte-identical to the supplied reference
 
-31 passed, 0 failed
+43 passed, 0 failed

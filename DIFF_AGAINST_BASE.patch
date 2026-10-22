@@ -1,5 +1,5 @@
 diff --git a/firestore.rules b/firestore.rules
-index 2944d790949a1fd93414a851eaf1f3ca6fef8922..05f2938af5782682cd81336a4e57b69501acbbd0 100644
+index 2944d790949a1fd93414a851eaf1f3ca6fef8922..4dd84e3cfcd9d2e91d1327b0ffd24e0ad2efbeb1 100644
 --- a/firestore.rules
 +++ b/firestore.rules
 @@ -6,8 +6,6 @@
@@ -11,7 +11,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..05f2938af5782682cd81336a4e57b695
      // Chat access requires an existing accepted directional friend request.
      function acceptedChatConnectionExists(uidA, uidB) {
        let forwardId = uidA + '_' + uidB;
-@@ -192,6 +190,1832 @@
+@@ -192,6 +190,1866 @@
          && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
      }
  
@@ -1548,6 +1548,85 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..05f2938af5782682cd81336a4e57b695
 +    }
 +
 +    match /support/{ticketId} {
++      function marketSupportAuditNoticeValid(before, after) {
++        let auditLogId = after.get('lastAuditLogId', null);
++        let noticeId = after.get('lastAdminNoticeId', null);
++        let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
++        let noticePath = /databases/$(database)/documents/users/$(after.userId)/notices/$(noticeId);
++        return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
++          && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
++          && existsAfter(auditPath) && !exists(auditPath)
++          && existsAfter(noticePath) && !exists(noticePath)
++          && getAfter(auditPath).data.adminId == request.auth.uid
++          && getAfter(auditPath).data.action in ['reply_support_ticket', 'resolve_support_ticket']
++          && getAfter(auditPath).data.targetType == 'support'
++          && getAfter(auditPath).data.targetId == ticketId
++          && getAfter(auditPath).data.createdAt == request.time
++          && getAfter(noticePath).data.type == 'support_reply'
++          && getAfter(noticePath).data.relatedType == 'support'
++          && getAfter(noticePath).data.relatedId == ticketId
++          && getAfter(noticePath).data.createdAt == request.time;
++      }
++
++      function marketSupportUserUpdateValid(before, after) {
++        let changed = after.diff(before).affectedKeys();
++        return before.userId == request.auth.uid
++          && after.userId == before.userId
++          && after.status == before.status
++          && changed.hasOnly(['replies', 'updatedAt'])
++          && after.replies is list
++          && after.replies.size() == before.replies.size() + 1
++          && after.replies.size() <= 20
++          && after.replies[after.replies.size() - 1].from == 'user'
++          && after.replies[after.replies.size() - 1].text is string
++          && after.replies[after.replies.size() - 1].text.size() >= 1
++          && after.replies[after.replies.size() - 1].text.size() <= 1000
++          && marketCreatedAtNearRequestTime(after.replies[after.replies.size() - 1].at)
++          && (before.replies.size() <= 0 || after.replies[0] == before.replies[0])
++          && (before.replies.size() <= 1 || after.replies[1] == before.replies[1])
++          && (before.replies.size() <= 2 || after.replies[2] == before.replies[2])
++          && (before.replies.size() <= 3 || after.replies[3] == before.replies[3])
++          && (before.replies.size() <= 4 || after.replies[4] == before.replies[4])
++          && (before.replies.size() <= 5 || after.replies[5] == before.replies[5])
++          && (before.replies.size() <= 6 || after.replies[6] == before.replies[6])
++          && (before.replies.size() <= 7 || after.replies[7] == before.replies[7])
++          && (before.replies.size() <= 8 || after.replies[8] == before.replies[8])
++          && (before.replies.size() <= 9 || after.replies[9] == before.replies[9])
++          && (before.replies.size() <= 10 || after.replies[10] == before.replies[10])
++          && (before.replies.size() <= 11 || after.replies[11] == before.replies[11])
++          && (before.replies.size() <= 12 || after.replies[12] == before.replies[12])
++          && (before.replies.size() <= 13 || after.replies[13] == before.replies[13])
++          && (before.replies.size() <= 14 || after.replies[14] == before.replies[14])
++          && (before.replies.size() <= 15 || after.replies[15] == before.replies[15])
++          && (before.replies.size() <= 16 || after.replies[16] == before.replies[16])
++          && (before.replies.size() <= 17 || after.replies[17] == before.replies[17])
++          && (before.replies.size() <= 18 || after.replies[18] == before.replies[18])
++          && (before.replies.size() <= 19 || after.replies[19] == before.replies[19])
++          && after.updatedAt == request.time;
++      }
++
++      function marketSupportAdminUpdateValid(ticketId, before, after) {
++        let changed = after.diff(before).affectedKeys();
++        return after.userId == before.userId
++          && after.status in ['open', 'replied', 'resolved']
++          && (before.status != 'resolved' || after.status == 'resolved')
++          && after.replies is list && after.replies.size() <= 20
++          && after.updatedAt == request.time
++          && (
++            (before.type == 'appeal'
++              && changed.hasOnly(['status', 'replies', 'updatedAt']))
++            || (before.type != 'appeal'
++              && after.keys().hasAll(['lastAuditLogId', 'lastAdminNoticeId'])
++              && changed.hasOnly(['status', 'replies', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
++              && marketSupportAuditNoticeValid(before, after))
++          )
++          && (after.status != 'resolved' || before.status == 'resolved'
++            || (getAfter(marketProfilePath(before.userId)).data.openSupportTickets == marketProfile(before.userId).openSupportTickets - 1
++              && getAfter(marketProfilePath(before.userId)).data.lastMutation.kind == 'support'
++              && getAfter(marketProfilePath(before.userId)).data.lastMutation.operation == 'resolve'
++              && getAfter(marketProfilePath(before.userId)).data.lastMutation.targetId == ticketId));
++      }
++
 +      allow get, list: if marketVerified() && (resource.data.userId == request.auth.uid || marketIsAdmin());
 +      allow create: if marketVerified()
 +        && request.resource.data.keys().hasAll(['userId', 'type', 'subject', 'body', 'status', 'replies', 'createdAt', 'updatedAt'])
@@ -1573,55 +1652,10 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..05f2938af5782682cd81336a4e57b695
 +        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
 +        && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == ticketId;
 +      allow update: if resource != null && marketVerified() && (
-+        (
-+          resource.data.userId == request.auth.uid
-+          && request.resource.data.userId == resource.data.userId
-+          && request.resource.data.status == resource.data.status
-+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replies', 'updatedAt'])
-+          && request.resource.data.replies is list
-+          && request.resource.data.replies.size() == resource.data.replies.size() + 1
-+          && request.resource.data.replies.size() <= 20
-+          && request.resource.data.replies[request.resource.data.replies.size() - 1].from == 'user'
-+          && request.resource.data.replies[request.resource.data.replies.size() - 1].text is string
-+          && request.resource.data.replies[request.resource.data.replies.size() - 1].text.size() >= 1
-+          && request.resource.data.replies[request.resource.data.replies.size() - 1].text.size() <= 1000
-+          && marketCreatedAtNearRequestTime(request.resource.data.replies[request.resource.data.replies.size() - 1].at)
-+          && (resource.data.replies.size() <= 0 || request.resource.data.replies[0] == resource.data.replies[0])
-+          && (resource.data.replies.size() <= 1 || request.resource.data.replies[1] == resource.data.replies[1])
-+          && (resource.data.replies.size() <= 2 || request.resource.data.replies[2] == resource.data.replies[2])
-+          && (resource.data.replies.size() <= 3 || request.resource.data.replies[3] == resource.data.replies[3])
-+          && (resource.data.replies.size() <= 4 || request.resource.data.replies[4] == resource.data.replies[4])
-+          && (resource.data.replies.size() <= 5 || request.resource.data.replies[5] == resource.data.replies[5])
-+          && (resource.data.replies.size() <= 6 || request.resource.data.replies[6] == resource.data.replies[6])
-+          && (resource.data.replies.size() <= 7 || request.resource.data.replies[7] == resource.data.replies[7])
-+          && (resource.data.replies.size() <= 8 || request.resource.data.replies[8] == resource.data.replies[8])
-+          && (resource.data.replies.size() <= 9 || request.resource.data.replies[9] == resource.data.replies[9])
-+          && (resource.data.replies.size() <= 10 || request.resource.data.replies[10] == resource.data.replies[10])
-+          && (resource.data.replies.size() <= 11 || request.resource.data.replies[11] == resource.data.replies[11])
-+          && (resource.data.replies.size() <= 12 || request.resource.data.replies[12] == resource.data.replies[12])
-+          && (resource.data.replies.size() <= 13 || request.resource.data.replies[13] == resource.data.replies[13])
-+          && (resource.data.replies.size() <= 14 || request.resource.data.replies[14] == resource.data.replies[14])
-+          && (resource.data.replies.size() <= 15 || request.resource.data.replies[15] == resource.data.replies[15])
-+          && (resource.data.replies.size() <= 16 || request.resource.data.replies[16] == resource.data.replies[16])
-+          && (resource.data.replies.size() <= 17 || request.resource.data.replies[17] == resource.data.replies[17])
-+          && (resource.data.replies.size() <= 18 || request.resource.data.replies[18] == resource.data.replies[18])
-+          && (resource.data.replies.size() <= 19 || request.resource.data.replies[19] == resource.data.replies[19])
-+          && request.resource.data.updatedAt == request.time
-+        )
-+        || (
-+          marketIsAdmin()
-+          && request.resource.data.userId == resource.data.userId
-+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'replies', 'updatedAt'])
-+          && request.resource.data.status in ['open', 'replied', 'resolved']
-+          && (resource.data.status != 'resolved' || request.resource.data.status == 'resolved')
-+          && request.resource.data.replies is list && request.resource.data.replies.size() <= 20
-+          && request.resource.data.updatedAt == request.time
-+          && (request.resource.data.status != 'resolved' || resource.data.status == 'resolved'
-+            || (getAfter(marketProfilePath(resource.data.userId)).data.openSupportTickets == marketProfile(resource.data.userId).openSupportTickets - 1
-+              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.kind == 'support'
-+              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.operation == 'resolve'
-+              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.targetId == ticketId))
-+        )
++        request.auth.uid == resource.data.userId
++          ? marketSupportUserUpdateValid(resource.data, request.resource.data)
++          : (marketIsAdmin()
++            && marketSupportAdminUpdateValid(ticketId, resource.data, request.resource.data))
 +      );
 +      allow delete: if false;
 +    }
@@ -1844,7 +1878,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..05f2938af5782682cd81336a4e57b695
      match /profiles/{uid} {
        allow get: if signedInWithVerifiedEmail()
          && resource.data.uid == uid
-@@ -385,7 +2209,6 @@
+@@ -385,7 +2243,6 @@
          && request.auth.uid == uid;
      }
  

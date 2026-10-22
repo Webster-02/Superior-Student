@@ -3,11 +3,11 @@
 - Base branch: `feature/pachattar-design-foundation-phase-1`
 - Base commit: `759eed423e7046d7fe127226945557a8fe4fa918`
 - Baseline rules Git blob SHA: `2944d790949a1fd93414a851eaf1f3ca6fef8922`
-- Current candidate rules Git blob SHA: `05f2938af5782682cd81336a4e57b69501acbbd0`
-- Rules/test commit validated by CI run #30: `b19472ad8d9d7ce0811285e66d9dfc0fadbc7fba`
-- GitHub compare: 1,826 additions and 3 deletions in `firestore.rules`.
+- Current candidate rules Git blob SHA: `4dd84e3cfcd9d2e91d1327b0ffd24e0ad2efbeb1`
+- Rules/test commit validated by CI run #32: `d0428fb7b6d6e2414a2d199d954564527193df78`
+- GitHub compare: 1,860 additions and 3 deletions in `firestore.rules`.
 - `firestore.base.rules` remains byte-identical to the selected source baseline. This does not prove published production rules match it.
-- Candidate Rules were tested in [run #30](https://github.com/Webster-02/Superior-Student/actions/runs/39862784731): static 42/42; Emulator 67/67; expression-ceiling diagnostic count 0.
+- Candidate Rules were tested in [run #32](https://github.com/Webster-02/Superior-Student/actions/runs/39865131476): static 43/43; Emulator 68/68; expression-ceiling diagnostic count 0.
 - `DIFF_AGAINST_BASE.patch` is refreshed against the precise baseline and candidate hashes above.
 - Existing U2U chat and Nearby/transfer rule logic remains preserved.
 - No live Rules/index export, Firebase deployment, or merge to `main` was performed.

@@ -14,7 +14,7 @@
 
 ## Selected source baseline
 
-Compared with `feature/pachattar-design-foundation-phase-1` at commit `759eed423e7046d7fe127226945557a8fe4fa918`, the source diff reports 1,826 additions and 3 deletions in `firestore.rules`. The actual live Firebase Rules/indexes must still be independently exported and compared.
+Compared with `feature/pachattar-design-foundation-phase-1` at commit `759eed423e7046d7fe127226945557a8fe4fa918`, the source diff reports 1,860 additions and 3 deletions in `firestore.rules`. The actual live Firebase Rules/indexes must still be independently exported and compared.
 
 ## Current verified security properties
 
@@ -23,22 +23,23 @@ Compared with `feature/pachattar-design-foundation-phase-1` at commit `759eed423
 - Market config edits require a matching new immutable audit log in the same atomic write.
 - Task/offer pin and moderation updates require matching new immutable admin logs and owner notices in the same write.
 - Report-status changes require a new matching audit log and a reporter notice linked to the report in the same atomic write.
+- Non-appeal support admin replies/resolutions require a new matching audit log and owner notice in the same atomic write.
 - Bulk suspension/ban links listings hidden by the operation to the aggregate user-level audit log and removal notice.
 - Existing U2U chat and Nearby-transfer rules remain separate from Market chat.
 
 ## Latest CI evidence
 
-[Rules run #30](https://github.com/Webster-02/Superior-Student/actions/runs/39862784731), tested commit `b19472ad8d9d7ce0811285e66d9dfc0fadbc7fba`:
+[Rules run #32](https://github.com/Webster-02/Superior-Student/actions/runs/39865131476), tested commit `d0428fb7b6d6e2414a2d199d954564527193df78`:
 
-- Static validation: **42 passed, 0 failed**.
-- Firestore Rules Emulator: **67 passed, 0 failed, 0 skipped**.
+- Static validation: **43 passed, 0 failed**.
+- Firestore Rules Emulator: **68 passed, 0 failed, 0 skipped**.
 - Expression-ceiling diagnostic count: **0**; workflow guard passed.
-- Artifact ID: `12462911143`; current rules blob: `05f2938af5782682cd81336a4e57b69501acbbd0`.
+- Artifact ID: `12462414890`; current rules blob: `4dd84e3cfcd9d2e91d1327b0ffd24e0ad2efbeb1`.
 
-[Android run #102](https://github.com/Webster-02/Superior-Student/actions/runs/39862887618) passed route checks, unit tests, debug APK build and APK verification for app commit `3c6da1a713ec836d7b5229324ac3bcb65dc415af` (artifact ID `12463315396`).
+[Android run #103](https://github.com/Webster-02/Superior-Student/actions/runs/39864585562) passed route checks, unit tests, debug APK build and APK verification for app commit `d1d95c4d3c4e9ff3fc5d8596cb0e74eb87d0392c` (artifact ID `12464190239`).
 
 ## Still blocking production
 
-Support reply/resolve and direct account warning/lift-suspension/profile-status actions still require Rules-enforced log/notice linkage. Lifecycle-counter semantics require clarification. Live Rules/index exports, Auth/profile prerequisites, historical proposal `proposerId` migration, separate staging tests and explicit product-owner approval remain required.
+Appeal-ticket decision linkage and direct account warning/lift-suspension/profile-status actions still require Rules-enforced log/notice linkage. Lifecycle-counter semantics require clarification. Live Rules/index exports, Auth/profile prerequisites, historical proposal `proposerId` migration, separate staging tests and explicit product-owner approval remain required.
 
 No Firebase Rules or indexes have been deployed and no merge to `main` has occurred.

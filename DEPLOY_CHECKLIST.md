@@ -31,7 +31,7 @@
 
 - Use a separate Firebase **staging project** with no production data or credentials.
 - Deploy only the reviewed rules and indexes to staging after the CI gate passes.
-- Verify student flows: Market profile creation, task/offer creation and edits, proposal create/withdraw/Applied, accept transaction and text-only Market chat, poster-only completion, both-side ratings, reporting, blocks, suspension expiry, support tickets and notices.
+- Verify student flows: Market profile creation, task/offer creation and edits, proposal create/withdraw/Applied, accept transaction and text-only Market chat, poster-only completion, both-side ratings, reporting, blocks, suspension expiry, support tickets and notices. For ordinary support tickets, verify admin reply/resolve always include the linked new audit log and owner notice; test appeal decisions separately because they use a distinct admin path.
 - Verify admin flows using an admin account that has an `admins/{uid}` document but no U2U `profiles/{uid}` or `marketProfiles/{uid}`: hide/restore and pin/unpin listings, suspend/hide in one batch with notice and audit log, create notice, write admin log, reply to support, and edit `config/market`. Verify the same account has no `marketConversations` or Market-message access.
 - Confirm limits (3 open tasks, 10 proposals per rolling 24 hours, 15 per task, 5 active offers, 3 reports before moderation) remain enforced and read-only in the admin panel. Only announcement, `blockedWords`, and non-negative `rankWeights` (sum 100) are editable.
 - Verify feeds and query behavior, indexes finished building, no rule access-call failures, and no unexpected denied requests in Emulator/staging logs.
