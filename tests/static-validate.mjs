@@ -48,6 +48,13 @@ const checks = [
     assert.ok(tests.includes('denies task acceptance when the same transaction omits the new Market conversation'));
   }],
   ['report batch access-call regression is present', () => assert.ok(tests.includes('report batch stays under Firestore access-call limits'))],
+  ['task/offer admin moderation and pin changes require linked audit logs and notices', () => {
+    assert.ok(rules.includes('function marketAdminListingMutationAuditValid'));
+    assert.ok(rules.includes("after.lastAuditLogId, after.lastAdminNoticeId, 'task'"));
+    assert.ok(rules.includes("after.lastAuditLogId, after.lastAdminNoticeId, 'offer'"));
+    assert.ok(tests.includes('with linked logs and notices'));
+    assert.ok(tests.includes('suspend-alice'));
+  }],
   ['Market config edits require a newly created matching audit log in the same write', () => {
     assert.match(rules, /function marketConfigAuditValid\(\)[\s\S]{0,1100}existsAfter\(auditLogPath\)[\s\S]{0,300}!exists\(auditLogPath\)[\s\S]{0,500}action == 'update_market_config'/);
     assert.ok(tests.includes('requires a matching new audit log for admin edits'));

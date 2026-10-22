@@ -96,6 +96,40 @@ function marketConfigAuditBatch(adminUid, logId, configPatch) {
   });
   return batch.commit();
 }
+function adminListingMutationBatch({
+  adminUid, collectionName, listingId, ownerUid, listingPatch, logId, noticeId,
+  profilePatch = null, noticeType = 'activity', canAppeal = false, logTargetType = null, logTargetId = null,
+}) {
+  const db = user(adminUid);
+  const batch = writeBatch(db);
+  const targetType = collectionName === 'tasks' ? 'task' : 'offer';
+  if (profilePatch) batch.update(doc(db, 'marketProfiles', ownerUid), profilePatch);
+  batch.update(doc(db, collectionName, listingId), {
+    ...listingPatch, lastAuditLogId: logId, lastAdminNoticeId: noticeId,
+  });
+  batch.set(doc(db, 'adminLogs', logId), {
+    adminId: adminUid,
+    action: targetType === 'task' ? 'moderate_task' : 'moderate_offer',
+    targetType: logTargetType ?? targetType,
+    targetId: logTargetId ?? listingId,
+    reason: 'Listing moderation test',
+    note: '',
+    createdAt: serverTimestamp(),
+  });
+  const noticePath = 'users/' + ownerUid + '/notices';
+  batch.set(doc(db, noticePath, noticeId), {
+    type: noticeType,
+    title: 'Listing moderation update',
+    body: 'A moderator updated this listing.',
+    relatedType: targetType,
+    relatedId: listingId,
+    read: false,
+    createdAt: serverTimestamp(),
+    canAppeal,
+    appealed: false,
+  });
+  return batch;
+}
 
 before(async () => {
   testEnv = await initializeTestEnvironment({
@@ -531,15 +565,24 @@ describe('counter drift recovery and lifecycle transitions', () => {
       lastMutation: { kind: 'user', operation: 'suspend', targetId: 'alice', at: serverTimestamp() },
       updatedAt: serverTimestamp(),
     });
-    batch.update(doc(db, 'tasks', 'task-a'), { moderation: 'hidden', updatedAt: serverTimestamp() });
-    batch.update(doc(db, 'tasks', 'task-b'), { moderation: 'hidden', updatedAt: serverTimestamp() });
-    batch.update(doc(db, 'offers', 'offer-a'), { moderation: 'hidden', updatedAt: serverTimestamp() });
+    batch.update(doc(db, 'tasks', 'task-a'), {
+      moderation: 'hidden', updatedAt: serverTimestamp(),
+      lastAuditLogId: 'suspend-alice', lastAdminNoticeId: 'suspension-notice',
+    });
+    batch.update(doc(db, 'tasks', 'task-b'), {
+      moderation: 'hidden', updatedAt: serverTimestamp(),
+      lastAuditLogId: 'suspend-alice', lastAdminNoticeId: 'suspension-notice',
+    });
+    batch.update(doc(db, 'offers', 'offer-a'), {
+      moderation: 'hidden', updatedAt: serverTimestamp(),
+      lastAuditLogId: 'suspend-alice', lastAdminNoticeId: 'suspension-notice',
+    });
     batch.set(doc(db, 'users/alice/notices', 'suspension-notice'), {
-      type: 'warning', title: 'Market account suspended', body: 'Your Market account was suspended.', read: false,
+      type: 'removal', title: 'Market account suspended', body: 'Your Market account was suspended.', read: false,
       createdAt: serverTimestamp(), canAppeal: true, appealed: false,
     });
     batch.set(doc(db, 'adminLogs', 'suspend-alice'), {
-      adminId: 'admin', action: 'suspend', targetType: 'user', targetId: 'alice', reason: 'Policy violation', note: '', createdAt: serverTimestamp(),
+      adminId: 'admin', action: 'suspend_user', targetType: 'user', targetId: 'alice', reason: 'Policy violation', note: '', createdAt: serverTimestamp(),
     });
     await assertSucceeds(batch.commit());
   });
@@ -805,7 +848,35 @@ describe('additional allowed flows and daily-limit denial coverage', () => {
   it('allows an admin to pin a task but never gives a student that permission', async () => {
     await seed('admins', 'admin', {}); await seedProfile('alice'); await seedTask('pin-task', 'alice');
     await assertFails(updateDoc(doc(user('alice'), 'tasks', 'pin-task'), { pinned: true, updatedAt: serverTimestamp() }));
-    await assertSucceeds(updateDoc(doc(user('admin'), 'tasks', 'pin-task'), { pinned: true, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(user('admin'), 'tasks', 'pin-task'), { pinned: true, updatedAt: serverTimestamp() }));
+    const incomplete = writeBatch(user('admin'));
+    incomplete.update(doc(user('admin'), 'tasks', 'pin-task'), {
+      pinned: true, updatedAt: serverTimestamp(),
+      lastAuditLogId: 'pin-task-log-only', lastAdminNoticeId: 'pin-task-notice-missing',
+    });
+    incomplete.set(doc(user('admin'), 'adminLogs', 'pin-task-log-only'), {
+      adminId: 'admin', action: 'moderate_task', targetType: 'task', targetId: 'pin-task',
+      reason: 'Listing moderation test', note: '', createdAt: serverTimestamp(),
+    });
+    await assertFails(incomplete.commit());
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'tasks', listingId: 'pin-task', ownerUid: 'alice',
+      listingPatch: { pinned: true, updatedAt: serverTimestamp() },
+      logId: 'pin-task-log', noticeId: 'pin-task-notice',
+    }).commit());
+    await seedOffer('pin-offer', 'alice');
+    await assertFails(updateDoc(doc(user('admin'), 'offers', 'pin-offer'), { pinned: true, updatedAt: serverTimestamp() }));
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'offers', listingId: 'pin-offer', ownerUid: 'alice',
+      listingPatch: { pinned: true, updatedAt: serverTimestamp() },
+      logId: 'pin-offer-log', noticeId: 'pin-offer-notice',
+    }).commit());
+    await assertFails(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'offers', listingId: 'pin-offer', ownerUid: 'alice',
+      listingPatch: { pinned: false, updatedAt: serverTimestamp() },
+      logId: 'wrong-offer-log', noticeId: 'wrong-offer-notice',
+      logTargetType: 'task',
+    }).commit());
   });
 
   it('allows admins to update report status while reporters cannot overwrite their own reports', async () => {
@@ -903,50 +974,65 @@ describe('review policy regressions: task completion, profile prerequisite, and 
 });
 
 describe('admin operations do not require U2U profile documents', () => {
-  it('admin without profiles/{uid} and marketProfiles/{uid} can hide/restore and pin/unpin task and offer listings', async () => {
+  it('admin without profiles/{uid} and marketProfiles/{uid} can hide/restore and pin/unpin task and offer listings with linked logs and notices', async () => {
     await seed('admins', 'admin', {});
     await seedProfile('alice', { openTasks: 1, activeOffers: 1 });
     await seedTask('admin-task', 'alice');
     await seedOffer('admin-offer', 'alice');
-    const db = user('admin');
 
-    let batch = writeBatch(db);
-    batch.update(doc(db, 'marketProfiles/alice'), {
-      openTasks: 0, updatedAt: serverTimestamp(),
-      lastMutation: { kind: 'task', operation: 'moderate_deactivate', targetId: 'admin-task', at: serverTimestamp() },
-    });
-    batch.update(doc(db, 'tasks/admin-task'), { moderation: 'hidden', updatedAt: serverTimestamp() });
-    await assertSucceeds(batch.commit());
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'tasks', listingId: 'admin-task', ownerUid: 'alice',
+      listingPatch: { moderation: 'hidden', updatedAt: serverTimestamp() },
+      profilePatch: { openTasks: 0, updatedAt: serverTimestamp(),
+        lastMutation: { kind: 'task', operation: 'moderate_deactivate', targetId: 'admin-task', at: serverTimestamp() } },
+      logId: 'hide-task-log', noticeId: 'hide-task-notice', noticeType: 'removal', canAppeal: true,
+    }).commit());
 
-    batch = writeBatch(db);
-    batch.update(doc(db, 'marketProfiles/alice'), {
-      openTasks: 1, updatedAt: serverTimestamp(),
-      lastMutation: { kind: 'task', operation: 'moderate_restore', targetId: 'admin-task', at: serverTimestamp() },
-    });
-    batch.update(doc(db, 'tasks/admin-task'), { moderation: 'ok', updatedAt: serverTimestamp() });
-    await assertSucceeds(batch.commit());
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'tasks', listingId: 'admin-task', ownerUid: 'alice',
+      listingPatch: { moderation: 'ok', updatedAt: serverTimestamp() },
+      profilePatch: { openTasks: 1, updatedAt: serverTimestamp(),
+        lastMutation: { kind: 'task', operation: 'moderate_restore', targetId: 'admin-task', at: serverTimestamp() } },
+      logId: 'restore-task-log', noticeId: 'restore-task-notice',
+    }).commit());
 
-    await assertSucceeds(updateDoc(doc(db, 'tasks/admin-task'), { pinned: true, updatedAt: serverTimestamp() }));
-    await assertSucceeds(updateDoc(doc(db, 'tasks/admin-task'), { pinned: false, updatedAt: serverTimestamp() }));
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'tasks', listingId: 'admin-task', ownerUid: 'alice',
+      listingPatch: { pinned: true, updatedAt: serverTimestamp() },
+      logId: 'pin-task-admin-log', noticeId: 'pin-task-admin-notice',
+    }).commit());
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'tasks', listingId: 'admin-task', ownerUid: 'alice',
+      listingPatch: { pinned: false, updatedAt: serverTimestamp() },
+      logId: 'unpin-task-admin-log', noticeId: 'unpin-task-admin-notice',
+    }).commit());
 
-    batch = writeBatch(db);
-    batch.update(doc(db, 'marketProfiles/alice'), {
-      activeOffers: 0, updatedAt: serverTimestamp(),
-      lastMutation: { kind: 'offer', operation: 'moderate_deactivate', targetId: 'admin-offer', at: serverTimestamp() },
-    });
-    batch.update(doc(db, 'offers/admin-offer'), { moderation: 'hidden', updatedAt: serverTimestamp() });
-    await assertSucceeds(batch.commit());
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'offers', listingId: 'admin-offer', ownerUid: 'alice',
+      listingPatch: { moderation: 'hidden', updatedAt: serverTimestamp() },
+      profilePatch: { activeOffers: 0, updatedAt: serverTimestamp(),
+        lastMutation: { kind: 'offer', operation: 'moderate_deactivate', targetId: 'admin-offer', at: serverTimestamp() } },
+      logId: 'hide-offer-log', noticeId: 'hide-offer-notice', noticeType: 'removal', canAppeal: true,
+    }).commit());
 
-    batch = writeBatch(db);
-    batch.update(doc(db, 'marketProfiles/alice'), {
-      activeOffers: 1, updatedAt: serverTimestamp(),
-      lastMutation: { kind: 'offer', operation: 'moderate_restore', targetId: 'admin-offer', at: serverTimestamp() },
-    });
-    batch.update(doc(db, 'offers/admin-offer'), { moderation: 'ok', updatedAt: serverTimestamp() });
-    await assertSucceeds(batch.commit());
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'offers', listingId: 'admin-offer', ownerUid: 'alice',
+      listingPatch: { moderation: 'ok', updatedAt: serverTimestamp() },
+      profilePatch: { activeOffers: 1, updatedAt: serverTimestamp(),
+        lastMutation: { kind: 'offer', operation: 'moderate_restore', targetId: 'admin-offer', at: serverTimestamp() } },
+      logId: 'restore-offer-log', noticeId: 'restore-offer-notice',
+    }).commit());
 
-    await assertSucceeds(updateDoc(doc(db, 'offers/admin-offer'), { pinned: true, updatedAt: serverTimestamp() }));
-    await assertSucceeds(updateDoc(doc(db, 'offers/admin-offer'), { pinned: false, updatedAt: serverTimestamp() }));
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'offers', listingId: 'admin-offer', ownerUid: 'alice',
+      listingPatch: { pinned: true, updatedAt: serverTimestamp() },
+      logId: 'pin-offer-admin-log', noticeId: 'pin-offer-admin-notice',
+    }).commit());
+    await assertSucceeds(adminListingMutationBatch({
+      adminUid: 'admin', collectionName: 'offers', listingId: 'admin-offer', ownerUid: 'alice',
+      listingPatch: { pinned: false, updatedAt: serverTimestamp() },
+      logId: 'unpin-offer-admin-log', noticeId: 'unpin-offer-admin-notice',
+    }).commit());
   });
 
   it('admin without profiles/{uid} can create notices and adminLogs, reply to support, and edit config/market', async () => {

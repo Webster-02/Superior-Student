@@ -223,6 +223,43 @@ service cloud.firestore {
       return get(marketProfilePath(uid)).data;
     }
 
+    function marketAdminBulkSuspensionListingAuditValid(auditData, noticeData, ownerUid) {
+      let profileAfter = getAfter(marketProfilePath(ownerUid)).data;
+      return auditData.action in ['suspend_user', 'ban_user']
+        && auditData.targetType == 'user'
+        && auditData.targetId == ownerUid
+        && profileAfter.status in ['suspended', 'banned']
+        && profileAfter.lastMutation.kind == 'user'
+        && profileAfter.lastMutation.operation == 'suspend'
+        && profileAfter.lastMutation.targetId == ownerUid
+        && noticeData.type == 'removal'
+        && noticeData.get('relatedType', null) == null
+        && noticeData.get('relatedId', null) == null;
+    }
+
+    function marketAdminListingMutationAuditValid(auditLogId, noticeId, targetType, targetId, ownerUid, expectedAction) {
+      let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
+      let noticePath = /databases/$(database)/documents/users/$(ownerUid)/notices/$(noticeId);
+      let auditData = getAfter(auditPath).data;
+      let noticeData = getAfter(noticePath).data;
+      return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
+        && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
+        && existsAfter(auditPath) && !exists(auditPath)
+        && existsAfter(noticePath) && !exists(noticePath)
+        && auditData.adminId == request.auth.uid
+        && auditData.createdAt == request.time
+        && noticeData.createdAt == request.time
+        && (
+          (auditData.action == expectedAction
+            && auditData.targetType == targetType
+            && auditData.targetId == targetId
+            && noticeData.type in ['activity', 'removal']
+            && noticeData.relatedType == targetType
+            && noticeData.relatedId == targetId)
+          || marketAdminBulkSuspensionListingAuditValid(auditData, noticeData, ownerUid)
+        );
+    }
+
     // A suspended account is permitted to post again at/after suspendedUntil, using
     // Firestore's request.time. Banned users are never allowed to post.
     function marketUserCanPost(uid) {
@@ -947,7 +984,7 @@ service cloud.firestore {
                 && marketSignedIn()
                 && marketTaskReportUpdateValid(taskId, before, after))
               : changed.hasAny(['pinned', 'moderation'])
-                ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+                ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
                   && marketIsAdmin()
                   && marketTaskAdminUpdateValid(taskId, before, after))
                 : (
@@ -957,7 +994,7 @@ service cloud.firestore {
                   ]) && marketTaskOwnerUpdateValid(taskId, changed, before, after))
                   || (changed.hasOnly(['proposalCount', 'updatedAt'])
                     && marketTaskProposalCountUpdateValid(taskId, before, after))
-                  || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+                  || (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
                     && marketIsAdmin()
                     && marketTaskAdminUpdateValid(taskId, before, after))
                   || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
@@ -986,8 +1023,10 @@ service cloud.firestore {
       }
 
       function marketTaskAdminUpdateValid(taskId, before, after) {
-        // The caller has already restricted changed to moderation, pinned, and updatedAt.
-        return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
+        // The caller restricts updates to moderation/pin fields and the linked audit pointers.
+        return marketAdminListingMutationAuditValid(
+            after.lastAuditLogId, after.lastAdminNoticeId, 'task', taskId, before.posterId, 'moderate_task')
+          && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
           && after.pinned is bool
           && after.updatedAt == request.time
           && (
@@ -1369,7 +1408,7 @@ service cloud.firestore {
             ? (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
               && marketOfferReportUpdateValid(offerId, before, after))
             : changed.hasAny(['pinned', 'moderation'])
-              ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+              ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
                 && marketIsAdmin()
                 && marketOfferAdminUpdateValid(offerId, before, after))
               : (
@@ -1377,7 +1416,7 @@ service cloud.firestore {
                   'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
                   'status', 'renewedAt', 'updatedAt', 'expiresAt'
                 ]) && marketOfferOwnerUpdateValid(offerId, changed, before, after))
-                || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
+                || (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
                   && marketIsAdmin()
                   && marketOfferAdminUpdateValid(offerId, before, after))
                 || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
@@ -1398,8 +1437,10 @@ service cloud.firestore {
       }
 
       function marketOfferAdminUpdateValid(offerId, before, after) {
-        // The caller has already restricted changed to moderation, pinned, and updatedAt.
-        return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
+        // The caller restricts updates to moderation/pin fields and the linked audit pointers.
+        return marketAdminListingMutationAuditValid(
+            after.lastAuditLogId, after.lastAdminNoticeId, 'offer', offerId, before.sellerId, 'moderate_offer')
+          && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
           && after.pinned is bool
           && after.updatedAt == request.time
           && (
