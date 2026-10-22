@@ -43,6 +43,10 @@ const checks = [
   ['task create access-call regression is present', () => assert.ok(tests.includes('task-create batch stays under Firestore access-call limits'))],
   ['proposal create access-call regression is present', () => assert.ok(tests.includes('proposal-create batch stays under Firestore access-call limits'))],
   ['accept transaction access-call regression is present', () => assert.ok(tests.includes('accept transaction plus same-transaction task chat stays under Firestore access-call limits'))],
+  ['task acceptance requires a newly created same-transaction Market conversation', () => {
+    assert.match(rules, /function marketTaskAcceptCounterValid\(taskId, helperUid, posterUid\)[\s\S]{0,1400}existsAfter\(conversationPath\)[\s\S]{0,200}!exists\(conversationPath\)/);
+    assert.ok(tests.includes('denies task acceptance when the same transaction omits the new Market conversation'));
+  }],
   ['report batch access-call regression is present', () => assert.ok(tests.includes('report batch stays under Firestore access-call limits'))],
   ['admin suspend/hide batch access-call regression is present', () => assert.ok(tests.includes('admin without a U2U profile suspends/hides with notice and log in one access-limit batch'))],
   ['Market limits are read-only in the app spec', () => assert.match(spec, /limits[\s\S]{0,250}read.only/i)],

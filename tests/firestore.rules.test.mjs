@@ -734,6 +734,30 @@ describe('additional allowed flows and daily-limit denial coverage', () => {
     }));
   });
 
+  it('denies task acceptance when the same transaction omits the new Market conversation', async () => {
+    await seedProfile('alice', { openTasks: 1 }); await seedProfile('bob');
+    await seedTask('accept-without-chat', 'alice', { proposalCount: 1 });
+    await seed('tasks/accept-without-chat/proposals', 'bob', {
+      proposerId: 'bob', message: 'I can help organise these notes and explain difficult topics.', price: 0, deliveryDays: 2,
+      status: 'sent', proposerName: displayNameFor('bob'), proposerInitials: 'BO', createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    const db = user('alice');
+    const taskRef = doc(db, 'tasks', 'accept-without-chat');
+    const proposalRef = doc(db, 'tasks', 'accept-without-chat', 'proposals', 'bob');
+    const profileRef = doc(db, 'marketProfiles', 'alice');
+    await assertFails(runTransaction(db, async (transaction) => {
+      await transaction.get(taskRef);
+      await transaction.get(proposalRef);
+      transaction.update(taskRef, { status: 'assigned', assignedTo: 'bob', updatedAt: serverTimestamp() });
+      transaction.update(proposalRef, { status: 'accepted', updatedAt: serverTimestamp() });
+      transaction.update(profileRef, {
+        openTasks: 0, updatedAt: serverTimestamp(),
+        lastMutation: { kind: 'task', operation: 'close', targetId: 'accept-without-chat', at: serverTimestamp() },
+      });
+      // Deliberately omit marketConversations/{id}; acceptance must be denied by Rules.
+    }));
+  });
+
   it('denies report eleven inside the same rolling 24-hour window', async () => {
     await seedProfile('alice');
     const reportStart = Timestamp.fromMillis(Date.now() - 60 * 60_000);

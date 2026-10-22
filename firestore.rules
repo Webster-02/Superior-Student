@@ -1039,12 +1039,18 @@ service cloud.firestore {
         let profilePath = marketProfilePath(posterUid);
         let profileBefore = get(profilePath).data;
         let profileAfter = getAfter(profilePath).data;
+        let lowUid = posterUid < helperUid ? posterUid : helperUid;
+        let highUid = posterUid < helperUid ? helperUid : posterUid;
+        let conversationId = 'task_' + taskId + '_' + lowUid + '_' + highUid;
+        let conversationPath = /databases/$(database)/documents/marketConversations/$(conversationId);
         return proposalBefore.status in ['sent', 'shortlisted']
           && proposalAfter.status == 'accepted'
           && profileAfter.openTasks == profileBefore.openTasks - 1
           && profileAfter.lastMutation.kind == 'task'
           && profileAfter.lastMutation.operation == 'close'
-          && profileAfter.lastMutation.targetId == taskId;
+          && profileAfter.lastMutation.targetId == taskId
+          && existsAfter(conversationPath)
+          && !exists(conversationPath);
       }
 
       function marketTaskModerateDeactivateCounterValid(uid, taskId) {
