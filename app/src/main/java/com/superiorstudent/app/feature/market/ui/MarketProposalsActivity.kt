@@ -56,7 +56,7 @@ class MarketProposalsActivity : AppCompatActivity() {
             bottomMargin = dp(6)
         })
         content.addView(buildFilterBar(), LinearLayout.LayoutParams(-1, dp(42)).apply {
-            marginTop = dp(6)
+            topMargin = dp(6)
         })
 
         val scroll = ScrollView(this).apply {
