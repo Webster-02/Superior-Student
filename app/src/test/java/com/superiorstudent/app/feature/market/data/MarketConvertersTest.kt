@@ -154,6 +154,9 @@ class MarketConvertersTest {
         assertNotNull(config)
         assertEquals("preserve", config!!.limits.extraFields["serverOwnedEntry"])
         assertEquals(config, MarketConverters.config(MarketConverters.toFirestoreMap(config)))
+        assertEquals(config, MarketConverters.config(data + ("lastAuditLogId" to "config-log-1")))
+        assertNull(MarketConverters.config(data + ("lastAuditLogId" to "")))
+        assertNull(MarketConverters.config(data + ("lastAuditLogId" to 42)))
 
         val badWeights = data.toMutableMap().apply {
             put("rankWeights", mapOf("newness" to 50.0, "rating" to 30.0, "match" to 19.0))

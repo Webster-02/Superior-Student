@@ -1254,8 +1254,11 @@ class MarketRepository(
         }
         val ref = firestore.collection(CONFIG).document(MARKET_CONFIG_ID)
         val logRef = firestore.collection(ADMIN_LOGS).document()
+        val configData = MarketConverters.toFirestoreMap(config).toMutableMap().apply {
+            put("lastAuditLogId", logRef.id)
+        }
         return firestore.runTransaction { tx ->
-            tx.set(ref, MarketConverters.toFirestoreMap(config))
+            tx.set(ref, configData)
             tx.set(logRef, adminLogMap(
                 adminUid, "update_market_config", "config", MARKET_CONFIG_ID,
                 "Market settings updated", "Announcement, blocked words, or ranking weights changed."

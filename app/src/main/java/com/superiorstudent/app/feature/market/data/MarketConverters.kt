@@ -45,6 +45,7 @@ object MarketConverters {
     )
     private val adminLogKeys = setOf("adminId", "action", "targetType", "targetId", "reason", "note", "createdAt")
     private val configKeys = setOf("announcement", "blockedWords", "rankWeights", "limits")
+    private val configOptionalKeys = setOf("lastAuditLogId")
 
     fun profile(snapshot: DocumentSnapshot): MarketProfile? =
         snapshot.data?.let { profile(snapshot.id, it) }
@@ -384,7 +385,11 @@ object MarketConverters {
     }
 
     fun config(data: Map<String, Any?>): MarketConfig? {
-        if (!exactKeys(data, configKeys)) return null
+        if (!exactKeys(data, configKeys, configOptionalKeys)) return null
+        if (data.containsKey("lastAuditLogId")) {
+            val auditLogId = data["lastAuditLogId"] as? String ?: return null
+            if (auditLogId.isBlank() || auditLogId.length > 150) return null
+        }
         val announcement = announcement(data["announcement"]) ?: return null
         val blockedWords = strings(data["blockedWords"])?.takeIf { it.size <= 300 } ?: return null
         val rankWeights = rankWeights(data["rankWeights"]) ?: return null
