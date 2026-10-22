@@ -849,12 +849,13 @@ describe('additional allowed flows and daily-limit denial coverage', () => {
     await seed('admins', 'admin', {}); await seedProfile('alice'); await seedTask('pin-task', 'alice');
     await assertFails(updateDoc(doc(user('alice'), 'tasks', 'pin-task'), { pinned: true, updatedAt: serverTimestamp() }));
     await assertFails(updateDoc(doc(user('admin'), 'tasks', 'pin-task'), { pinned: true, updatedAt: serverTimestamp() }));
-    const incomplete = writeBatch(user('admin'));
-    incomplete.update(doc(user('admin'), 'tasks', 'pin-task'), {
+    const incompleteDb = user('admin');
+    const incomplete = writeBatch(incompleteDb);
+    incomplete.update(doc(incompleteDb, 'tasks', 'pin-task'), {
       pinned: true, updatedAt: serverTimestamp(),
       lastAuditLogId: 'pin-task-log-only', lastAdminNoticeId: 'pin-task-notice-missing',
     });
-    incomplete.set(doc(user('admin'), 'adminLogs', 'pin-task-log-only'), {
+    incomplete.set(doc(incompleteDb, 'adminLogs', 'pin-task-log-only'), {
       adminId: 'admin', action: 'moderate_task', targetType: 'task', targetId: 'pin-task',
       reason: 'Listing moderation test', note: '', createdAt: serverTimestamp(),
     });
