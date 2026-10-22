@@ -1,5 +1,5 @@
 diff --git a/firestore.rules b/firestore.rules
-index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82b934b34e 100644
+index 2944d790949a1fd93414a851eaf1f3ca6fef8922..3bd08c780ebdb2eef69033260d6a86f4ceee4c2c 100644
 --- a/firestore.rules
 +++ b/firestore.rules
 @@ -6,8 +6,6 @@ service cloud.firestore {
@@ -11,7 +11,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
      // Chat access requires an existing accepted directional friend request.
      function acceptedChatConnectionExists(uidA, uidB) {
        let forwardId = uidA + '_' + uidB;
-@@ -192,6 +190,1764 @@ service cloud.firestore {
+@@ -192,6 +190,1805 @@ service cloud.firestore {
          && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
      }
  
@@ -46,6 +46,43 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
 +
 +    function marketProfile(uid) {
 +      return get(marketProfilePath(uid)).data;
++    }
++
++    function marketAdminBulkSuspensionListingAuditValid(auditData, noticeData, ownerUid) {
++      let profileAfter = getAfter(marketProfilePath(ownerUid)).data;
++      return auditData.action in ['suspend_user', 'ban_user']
++        && auditData.targetType == 'user'
++        && auditData.targetId == ownerUid
++        && profileAfter.status in ['suspended', 'banned']
++        && profileAfter.lastMutation.kind == 'user'
++        && profileAfter.lastMutation.operation == 'suspend'
++        && profileAfter.lastMutation.targetId == ownerUid
++        && noticeData.type == 'removal'
++        && noticeData.get('relatedType', null) == null
++        && noticeData.get('relatedId', null) == null;
++    }
++
++    function marketAdminListingMutationAuditValid(auditLogId, noticeId, targetType, targetId, ownerUid, expectedAction) {
++      let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
++      let noticePath = /databases/$(database)/documents/users/$(ownerUid)/notices/$(noticeId);
++      let auditData = getAfter(auditPath).data;
++      let noticeData = getAfter(noticePath).data;
++      return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
++        && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
++        && existsAfter(auditPath) && !exists(auditPath)
++        && existsAfter(noticePath) && !exists(noticePath)
++        && auditData.adminId == request.auth.uid
++        && auditData.createdAt == request.time
++        && noticeData.createdAt == request.time
++        && (
++          (auditData.action == expectedAction
++            && auditData.targetType == targetType
++            && auditData.targetId == targetId
++            && noticeData.type in ['activity', 'removal']
++            && noticeData.relatedType == targetType
++            && noticeData.relatedId == targetId)
++          || marketAdminBulkSuspensionListingAuditValid(auditData, noticeData, ownerUid)
++        );
 +    }
 +
 +    // A suspended account is permitted to post again at/after suspendedUntil, using
@@ -772,7 +809,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
 +                && marketSignedIn()
 +                && marketTaskReportUpdateValid(taskId, before, after))
 +              : changed.hasAny(['pinned', 'moderation'])
-+                ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
++                ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
 +                  && marketIsAdmin()
 +                  && marketTaskAdminUpdateValid(taskId, before, after))
 +                : (
@@ -782,7 +819,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
 +                  ]) && marketTaskOwnerUpdateValid(taskId, changed, before, after))
 +                  || (changed.hasOnly(['proposalCount', 'updatedAt'])
 +                    && marketTaskProposalCountUpdateValid(taskId, before, after))
-+                  || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
++                  || (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
 +                    && marketIsAdmin()
 +                    && marketTaskAdminUpdateValid(taskId, before, after))
 +                  || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
@@ -811,8 +848,10 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
 +      }
 +
 +      function marketTaskAdminUpdateValid(taskId, before, after) {
-+        // The caller has already restricted changed to moderation, pinned, and updatedAt.
-+        return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
++        // The caller restricts updates to moderation/pin fields and the linked audit pointers.
++        return marketAdminListingMutationAuditValid(
++            after.lastAuditLogId, after.lastAdminNoticeId, 'task', taskId, before.posterId, 'moderate_task')
++          && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
 +          && after.pinned is bool
 +          && after.updatedAt == request.time
 +          && (
@@ -1194,7 +1233,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
 +            ? (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
 +              && marketOfferReportUpdateValid(offerId, before, after))
 +            : changed.hasAny(['pinned', 'moderation'])
-+              ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
++              ? (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
 +                && marketIsAdmin()
 +                && marketOfferAdminUpdateValid(offerId, before, after))
 +              : (
@@ -1202,7 +1241,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
 +                  'title', 'category', 'courseTag', 'description', 'priceType', 'priceAmount', 'thumbnail',
 +                  'status', 'renewedAt', 'updatedAt', 'expiresAt'
 +                ]) && marketOfferOwnerUpdateValid(offerId, changed, before, after))
-+                || (changed.hasOnly(['moderation', 'pinned', 'updatedAt'])
++                || (changed.hasOnly(['moderation', 'pinned', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
 +                  && marketIsAdmin()
 +                  && marketOfferAdminUpdateValid(offerId, before, after))
 +                || (changed.hasOnly(['reportCount', 'moderation', 'updatedAt'])
@@ -1223,8 +1262,10 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
 +      }
 +
 +      function marketOfferAdminUpdateValid(offerId, before, after) {
-+        // The caller has already restricted changed to moderation, pinned, and updatedAt.
-+        return after.moderation in ['ok', 'under_review', 'hidden', 'removed']
++        // The caller restricts updates to moderation/pin fields and the linked audit pointers.
++        return marketAdminListingMutationAuditValid(
++            after.lastAuditLogId, after.lastAdminNoticeId, 'offer', offerId, before.sellerId, 'moderate_offer')
++          && after.moderation in ['ok', 'under_review', 'hidden', 'removed']
 +          && after.pinned is bool
 +          && after.updatedAt == request.time
 +          && (
@@ -1776,7 +1817,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82
      match /profiles/{uid} {
        allow get: if signedInWithVerifiedEmail()
          && resource.data.uid == uid
-@@ -385,7 +2141,6 @@ service cloud.firestore {
+@@ -385,7 +2182,6 @@ service cloud.firestore {
          && request.auth.uid == uid;
      }
  

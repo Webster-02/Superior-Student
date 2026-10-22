@@ -7,33 +7,33 @@ The U2U Market Firestore candidate is on `review/market-rules`. It has not been 
 Compared with `feature/pachattar-design-foundation-phase-1` at base commit `759eed423e7046d7fe127226945557a8fe4fa918`:
 
 - Base rules blob: `2944d790949a1fd93414a851eaf1f3ca6fef8922`.
-- Current candidate rules blob: `15ae62777f1d9486c3bd15f364b03a82b934b34e`.
-- GitHub compare reports **1,758 additions and 3 deletions** in `firestore.rules`.
-- `firestore.base.rules` remains a byte-for-byte source-branch snapshot. It does not prove the live Firebase Rules match that baseline.
+- Current candidate rules blob: `3bd08c780ebdb2eef69033260d6a86f4ceee4c2c`.
+- GitHub compare reports **1,799 additions and 3 deletions** in `firestore.rules`.
+- `firestore.base.rules` remains a byte-identical source-branch snapshot. This does not prove the live Firebase Rules match that baseline.
 
 ## Targeted security properties verified by CI
 
 - Self-service Market profile preference changes require verified email.
-- Task acceptance requires a new deterministic Market conversation in the same atomic write as assignment, proposal acceptance and poster counter decrement.
-- Market config create/update requires a newly created `adminLogs` entry in the same atomic write. Config contains `lastAuditLogId` pointing to the new immutable log; Rules verify the action, target, admin ID and request timestamp.
-- Positive and negative tests cover linked config edits, missing/stale/mismatched links, invalid rank weights/limits, and task acceptance with/without the chat.
-- Existing U2U friend/chat and Nearby-transfer rules remain separate from Market chat.
+- Task acceptance requires the accepted proposal, poster counter decrement and a new deterministic Market conversation in the same atomic write.
+- Market config create/update requires a newly created matching `adminLogs` entry in the same atomic write.
+- Task/offer admin pin/moderation updates require new log and owner-notice documents referenced from the listing document in the same atomic write. Rules validate current admin, action/target, new-document state, timestamp and notice/listing relationship.
+- Bulk suspend/ban hides currently eligible tasks/offers using the aggregate user-level log and removal notice; the same after-state suspended/banned profile is required.
+- Regression tests reject direct listing pins without log/notice and a mismatched audit target type; valid hide/restore, pin/unpin, bulk suspension, config changes and task acceptance remain green.
 
 ## Latest Rules and Android test evidence
 
-[Rules run #27](https://github.com/Webster-02/Superior-Student/actions/runs/39858637212), tested commit `1f5536f4387cb7254e4a0ccae04c896b1a68b511`:
-- Static validation: **40/40 passed**.
+[Rules run #29](https://github.com/Webster-02/Superior-Student/actions/runs/39860003494), tested commit `181e347c14032a8b8ddfd5a0c314afe17111a016`:
+- Static validation: **41/41 passed**.
 - Firestore Rules Emulator: **67/67 passed**, 0 failed, 0 skipped.
 - Expression-ceiling diagnostics: **0**; guard passed.
-- Artifact ID: `12459668968`.
-- Tested Rules blob: `15ae62777f1d9486c3bd15f364b03a82b934b34e`.
+- Artifact ID: `12461586838`; current Rules blob: `3bd08c780ebdb2eef69033260d6a86f4ceee4c2c`.
 
-[Android run #100](https://github.com/Webster-02/Superior-Student/actions/runs/39858373895), app commit `4a74df5e6d7d383f4f38fda716b8eaafed4ebdb0`:
-- Unit tests and debug APK build passed.
-- APK artifact ID: `12459833836`.
+[Android run #101](https://github.com/Webster-02/Superior-Student/actions/runs/39859898773), app commit `a8b8e55d0b3cfec5f19323b31091572282c18d00`:
+- Route checks, unit tests and debug APK build passed.
+- APK artifact ID: `12461825353`.
 
 ## Still open / no production approval
 
-Config audit linkage is now enforced, but task/offer pin/moderation, report status, support and user warning/suspension still need linked admin logs and required notices enforced by Rules and covered by positive/negative tests. Exact lifecycle-counter semantics need clarification. Production Rules/index exports, Auth/profile prerequisites, historic `proposerId` migration, separate staging verification and explicit approval remain outstanding.
+Report-status operations, support reply/resolve, and direct account warning/lift-suspension/profile-status mutations still need their log/notice obligations enforced by Rules. Lifecycle-counter semantics require clarification. Production Rules/index exports, Auth/profile prerequisites, historic proposal `proposerId` migration, separate staging verification and explicit approval remain outstanding.
 
 No Firebase deployment or merge to `main` has occurred.

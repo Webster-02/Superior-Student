@@ -1,7 +1,7 @@
 # Market Rules Review Progress
 
 **Branch:** `review/market-rules`  
-**State:** Verified Rules baseline with targeted Market security hardening under review. Current review candidate includes verified-email profile edits, task acceptance/chat atomicity, and linked audit logging for Market configuration edits. Remaining admin actions and production gates are not complete. No merge to `main` and no Firebase deployment.
+**State:** Verified Rules baseline with targeted Market security hardening under review. Current candidate includes verified-email profile edits, task acceptance/chat atomicity, and Rules-enforced linked audit logs/notices for Market config plus task/offer moderation and pins. Report status, support/admin profile actions and production gates remain open. No merge to `main` and no Firebase deployment.
 
 ## Step Zero verification record
 
@@ -156,7 +156,7 @@ Run #24 tested the rules blob `b039f9f896c27314eb1f57594e0c1fe911be92a6`. The wo
 
 ### Still-open specification gaps — do not deploy yet
 
-- **Admin audit linkage:** Market configuration changes now require a new linked immutable `adminLogs` entry in the same write. Task/offer pin and moderation, report status, support actions, and account warning/suspension still need their individual audit-log/notice requirements enforced and tested.
+- **Admin audit linkage:** Market configuration and task/offer pin/moderation now require linked new immutable `adminLogs` records in the same write and a linked user notice for listing changes. Report status, support actions, and direct account warning/suspension/profile status changes still need Rules-enforced log/notice linkage.
 - **Lifecycle-counter wording:** clarify each operation's exact counter transition; do not double-decrement task completion after acceptance or offer removal after pause.
 - **Original addendum §9:** its expression-ceiling note describes older output (including the older 39-diagnostic run). Keep the addendum itself byte-identical because the static validator verifies its supplied source hash; this progress note records the newer verified result.
 - **Production baseline:** live published rules/indexes have not been exported or compared. Email-verification readiness and Market profile completeness are not yet checked against production Auth/data.
@@ -196,5 +196,42 @@ The two commits are on separate review/app branches by design. The app branch wr
 - Report status updates are still permitted without a required same-batch audit log and reporter notice.
 - Support reply/resolve and user warning/suspension operations need complete log/notice linkage enforced by Rules, not just by the repository transaction.
 - These other operations are the next review steps. The config audit pointer does not by itself secure them.
+
+No Firebase Rules or indexes were published or deployed. No live data was changed.
+
+
+## Phase 2 — Step 10: Task and offer moderation/pinning audit linkage (verified 2026-10-22)
+
+**Rules test commit:** [`181e347c14032a8b8ddfd5a0c314afe17111a016`](https://github.com/Webster-02/Superior-Student/commit/181e347c14032a8b8ddfd5a0c314afe17111a016)  
+**Rules workflow:** [Firestore Rules Review Tests — run #29](https://github.com/Webster-02/Superior-Student/actions/runs/39860003494) — **success**  
+**Rules artifact:** `firestore-rules-test-results`, ID `12461586838`.
+
+Actual downloaded artifact:
+- Static validation: **41 passed, 0 failed**.
+- Firestore Rules Emulator: **67 passed, 0 failed, 0 skipped**, across 14 suites.
+- Expression-ceiling diagnostics: **0**; CI guard exit code 0; summary `Overall: PASS`.
+- Rules blob tested: `3bd08c780ebdb2eef69033260d6a86f4ceee4c2c`.
+
+### Enforced behavior
+
+- Task/offer admin pin and moderation updates now carry `lastAuditLogId` and `lastAdminNoticeId` pointers on the listing update.
+- The Rules require the referenced audit log and owner notice to be created in the same atomic write, not to exist beforehand, and to match the authenticated admin, action (`moderate_task`/`moderate_offer`), listing type/ID and request timestamp.
+- The paired notice must be new and relate to the same listing. The immutable `adminLogs` schema remains unchanged.
+- Tests deny direct pin updates without a linked audit log/notice and deny mismatched target types. Positive tests cover task and offer hide/restore and pin/unpin flows, including counter mutations.
+- Bulk user suspend/ban remains supported: affected listings point to the aggregate `suspend_user`/`ban_user` log and the new removal notice; Rules verify the matching post-write suspended/banned profile and `lastMutation`. Its existing aggregate access-call test remains green.
+
+**App repository commit:** [`a8b8e55d0b3cfec5f19323b31091572282c18d00`](https://github.com/Webster-02/Superior-Student/commit/a8b8e55d0b3cfec5f19323b31091572282c18d00) on `feature/market-ui-reference`.  
+**Android workflow:** [Market Data Step Check — run #101](https://github.com/Webster-02/Superior-Student/actions/runs/39859898773) — **success**. Unit tests and debug APK build passed. Artifact `superior-student-debug-apk`, ID `12461825353`.
+
+The app repository adds the log/notice IDs to moderation/pin writes and to every listing hidden by a bulk suspension/ban transaction. Task/offer decoders accept and validate these optional metadata fields; unit tests cover valid and malformed pointer metadata. The UI/business listing models are unchanged.
+
+The app and Rules changes are on separate branches. They have not been merged to `main`.
+
+### Remaining admin gaps
+
+- Report status still can change without a Rules-enforced matching log and reporter notice.
+- Support reply/resolve and user warning/lift-suspension/profile-status changes still need the corresponding audit logs and notices enforced by Rules, not merely written by the repository.
+- Production live Rules/indexes are still not exported/compared; historical proposal `proposerId` backfill and separate staging checks remain.
+- Lifecycle-counter spec wording needs clarification.
 
 No Firebase Rules or indexes were published or deployed. No live data was changed.
