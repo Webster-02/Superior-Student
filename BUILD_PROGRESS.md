@@ -186,6 +186,17 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 - **Verified APK:** `app-debug.apk`, 66,900,937 bytes; SHA-256 `34845041422631e825ad6ae206ba674df2bef13aa743f7a0f756fcbf138ee7e0`. GitHub Actions artifact archive: 40,900,692 bytes; SHA-256 `66807b2a7513f92b72c46217d9db372cc42535012d3a9b2c78697bd55ee4fad8`. Artifact expires October 28, 2026.
 - Scope remains limited to UI-09, Step 2 handoff, manifest, focused workflow paths and this progress note. No Firestore rules/indexes, protected top-level tests, Firebase deployment, branch merges or unrelated chat/Nearby functionality were changed.
 
+## UI-10 — Posting rules bottom sheet
+
+- **Status:** implemented and CI verified.
+- Inspected the exact `10_rules_sheet_light.png`, `10_rules_sheet_dark.png`, and corresponding light/dark HTML references from `pachattar_market_final(1).zip`.
+- Added the Screen 10 sheet over the existing Screen 09 review activity, matching the reference’s rounded top corners, dimmed background, handle, title, Allowed / Not allowed groups, rule copy, status icons, warning note, and full-width lime **I understand** action. It uses existing Paper/Night semantic colours and Poppins.
+- Tapping the acknowledgement sentence opens the rules sheet. The checkbox retains its independent toggle. Tapping **I understand** confirms acknowledgement and dismisses the sheet; outside/back dismissal does not falsely confirm it.
+- Task publishing remains disconnected and the sheet performs **no Firestore reads or writes**. No rules/index changes, deployment, merge, or unrelated U2U/chat/Nearby edits.
+- **Successful verification:** GitHub Actions run [#42 / run ID 39737133611](https://github.com/Webster-02/Superior-Student/actions/runs/39737133611), code commit `a9b8bf4885ad8e4e3d7d22ff00ca2d1640a754a8`. JavaScript validation, clean, JVM unit tests, debug APK build, APK verification and artifact upload all passed.
+- **Verified APK:** `app-debug.apk`, 66,900,947 bytes; SHA-256 `a1d0e2add59903da3ade079714b56e11aebc7dc2c0ca33248df77232ae24445f`. Artifact archive: 40,905,401 bytes; SHA-256 `5f4dd2dd12e229b1914bdf649c8a3e15bef182a9011b6ff3efbabbd53f72cb94`; expires October 29, 2026.
+- Implementation is isolated to `MarketPostTaskStep3Activity.kt` plus this progress note. No manifest change was needed because the rules sheet is a dialog inside the existing review Activity.
+
 ## Exact next step
 
-UI-09 is complete and verified. Stop here. Do not begin UI-10 or another screen until the user explicitly types `continue`.
+UI-10 is complete and verified. Stop for user review. Do not begin UI-11 or another screen until the user explicitly types `continue`.
