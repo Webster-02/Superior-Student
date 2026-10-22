@@ -54,7 +54,7 @@ internal object MarketMenuItems {
             icon = MarketMenuIcon.NOTICES,
             iconBackground = R.color.market_sky,
             badge = 2,
-            feedbackMessage = "Notices screen will be implemented in its own reference step."
+            feedbackMessage = "Review Market activity updates and messages from the U2U team."
         ),
         MarketMenuItem(
             label = "Help and safety",

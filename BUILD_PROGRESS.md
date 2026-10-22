@@ -333,3 +333,17 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 ## Exact next step
 
 Stop after UI-21 verification for user review. Do not begin another screen or state integration until the user explicitly types `continue`.
+
+## UI-22 — Notices inbox
+
+- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- Inspected the exact `22_notices_light.png`, `22_notices_dark.png`, and matching `22_notices.html` references in `pachattar_market_final(1).zip`.
+- Added a native Notices Activity matching the reference header, Activity/U2U team segmented control, rounded message list, icon tiles, divider lines, two unread dots on the team-message view, timestamps and the 60-day retention note. Paper/Night colours and Poppins are reused.
+- The default tab is **U2U team 2**, matching the supplied screenshots. The Activity tab switches to three local preview fixtures. Row taps show an explicit preview dialog; the removed-offer dialog states that detail/appeal is a separate step and that no appeal is submitted.
+- Connected the existing **Notices** row in the Market menu from both Requests and Offers to this Activity. Updated the menu helper copy and registered the Activity as non-exported.
+- **All notice rows/counts/unread dots are local fixtures.** Live notice queries, persisted read state, detailed notice/appeal navigation and support-ticket updates are not connected. No Firestore rules/indexes, deployment, login, Student Connect or Nearby transfer behavior changed.
+- Added focused policy tests for reference labels/order/copy, unread dots, retention text and the preview-only appeal disclosure. The workflow will run because this commit changes monitored manifest, Market entry-point and progress files.
+
+## Exact next step
+
+Stop after UI-22 verification for user review. Do not start Screen 23 (notice details) or any live notice integration until the user explicitly types `continue`.
