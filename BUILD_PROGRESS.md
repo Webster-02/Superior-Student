@@ -289,7 +289,7 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 
 ## UI-18 — Post an offer
 
-- **Status:** implemented in code commit pending CI verification.
+- **Status:** implemented and verified. Code commit `d9cad483941135f24997e139ef335111a1511536`; GitHub Actions [run #61 / ID 39790398738](https://github.com/Webster-02/Superior-Student/actions/runs/39790398738) passed JavaScript validation, clean, JVM unit tests, APK build, APK verification, and upload.
 - Inspected the reference assets `18_postoffer_light.png`, `18_postoffer_dark.png`, and their matching light/dark HTML from `pachattar_market_final(1).zip`.
 - Added a native **Post an offer** form with the reference header, title field, six category chips (Notes, Tutoring, Design, Coding, Typing, Books), three-state price selector (Free, Swap, Rs.), conditional amount field, description with a live 400-character counter, dashed optional cover-photo picker and fixed lime **Post offer** button.
 - Reference defaults match the artwork: `Handwritten Ocular Anatomy notes`, Notes, Rs. 300, and `Clean handwriting, colour-coded diagrams. Sample page on request.`. The counter reflects the actual description length (65/400).
@@ -297,6 +297,7 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - The Offers screen’s existing **Post an offer** button now opens Screen 18. The submit action validates the form and shows a preview-only dialog explaining that no offer was published.
 - Added policy tests for defaults, title/category/amount/description validation, price-mode behavior, character count and photo-size labels. Added the new Activity to the manifest and its changed files to the CI path filters.
 - **No live offer publishing or Firestore writes** are connected. No Firebase rules/indexes, protected top-level tests, login, Student Connect or Nearby transfer behavior was changed.
+- **Verified APK:** `app-debug.apk`, 66,983,136 bytes; SHA-256 `c1fb0d88b5d72913e3cecb2c6aa64e904b07cefd704ecebea0f931814ef23efe`. Workflow artifact archive: 40,995,497 bytes; SHA-256 `28235413ed960d51ebb005e0d1c641795706edc2b873fc3fa45b66791d645fcc`; expires October 29, 2026.
 
 ## Exact next step
 
