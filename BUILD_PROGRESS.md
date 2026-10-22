@@ -276,7 +276,7 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 
 ## UI-17 — Offer detail
 
-- **Status:** implemented; pending this step's GitHub Actions verification.
+- **Status:** implemented and CI verified on code commit `28e0402f801d41f0c1280e8c2e1a624ef0a0f586`. GitHub Actions run [#59 / run ID 39784752359](https://github.com/Webster-02/Superior-Student/actions/runs/39784752359) passed JavaScript validation, clean, JVM unit tests, debug APK build, APK verification and artifact upload.
 - Inspected the exact `17_offer_light.png`, `17_offer_dark.png`, and matching light/dark `17_offer.html` references from `pachattar_market_final(1).zip`.
 - Added a native Offer detail page with a back/report header, category and course chips, full offer title, seller identity and rating/verification row, price and delivery cards, offer description, blue safety note and fixed **Save / Message** footer. It follows the Market Paper/Night palette, Poppins type and rounded reference-card styling.
 - The first Offers fixture (Ayesha Khan's Ocular Anatomy notes) matches Screen 17's exact title, Rs. 300 price, rating 4.9 with 14 reviews, detailed colour-coded note description, delivery mode and safety note. The tutoring/typing fixtures receive their own course/about copy.
@@ -285,6 +285,7 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - Added policy tests for reference content, safety copy, rating labels and alternate fixture details, plus a chat test ensuring offer-preview messages stay separate.
 - **No live messages, persistent saved-offer state, reports, Firestore writes, Student Connect changes, or Nearby transfer changes** are connected. No Firestore rules/indexes, protected top-level tests, deployment or merge touched.
 - Scope is limited to the new Offer detail Activity/policy/icons/tests, Offers-card navigation and chat handoff, contextual sample chat copy, manifest registration, workflow path filters, and this progress record.
+- **Verified APK:** `app-debug.apk`, 66,966,715 bytes; SHA-256 `5b24781a7c46935b8582851f8af0299a78638035a7a292785493a26e433c1173`. Workflow artifact archive: 40,979,512 bytes; SHA-256 `f0ca3dc0072fefd07942c918ee15b4c7cfe878608370eb5085efc657dfc5fb48`; expires October 29, 2026.
 
 ## Exact next step
 
