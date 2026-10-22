@@ -116,7 +116,6 @@ class MarketMyReportsActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(13), dp(14), dp(13))
-            minimumHeight = dp(82)
             isClickable = true
             isFocusable = true
             contentDescription = report.title + ", " + report.context + ", " + report.status.label
