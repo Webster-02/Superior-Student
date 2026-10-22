@@ -320,6 +320,15 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - Added `MarketReportUiPolicy` plus unit tests for reference choices, safe fallbacks and truthful preview-only confirmation. Run #66 exposed one fallback-copy assertion; this was corrected in commit `d02d94e`, and run #68 logs then showed the full test suite/build and artifact upload succeeding.
 - **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,016,095 bytes; archive SHA-256 `da0bb982f33c55342bcc16fa3384e3f817dafae67f80af9dfbccc535a08b0c42`. [Download from run #68](https://github.com/Webster-02/Superior-Student/actions/runs/39814451651). Expires October 29, 2026.
 
+## UI-21 — Loading, empty, offline, error and expired states
+
+- **Status:** implemented; verification pending.
+- Inspected `21_states_light.png`, `21_states_dark.png`, and the corresponding light/dark HTML reference files.
+- Added a native state-reference gallery with Paper/Night styling, offline banner, loading skeleton, Design empty state with Post a task action, refresh-error card with Retry, and compact expired-task state.
+- The Post a task action opens the existing Screen 07 form. Retry honestly explains that live refresh is not wired in this reference gallery and saved content is not cleared. The gallery does not alter task or offer data.
+- Added policy tests for the exact state labels/order, registered the new non-exported Activity, and added its new files to the existing Market CI path filters.
+- Live feed/cache/offline refresh behaviour remains separate: no Firestore calls or writes were added. No existing navigation, U2U login, Student Connect or Nearby transfer behaviour was changed.
+
 ## Exact next step
 
-Stop after UI-20 verification for user review. Do not begin Screen 21 or another feature until the user explicitly types `continue`.
+Stop after UI-21 verification for user review. Do not start another screen or state integration until the user explicitly types `continue`.
