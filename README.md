@@ -43,3 +43,5 @@ Compared with `feature/pachattar-design-foundation-phase-1` at commit `759eed423
 Appeal-ticket decision linkage and direct account warning/lift-suspension/profile-status actions still require Rules-enforced log/notice linkage. Lifecycle-counter semantics require clarification. Live Rules/index exports, Auth/profile prerequisites, historical proposal `proposerId` migration, separate staging tests and explicit product-owner approval remain required.
 
 No Firebase Rules or indexes have been deployed and no merge to `main` has occurred.
+ 
+Step 13 status: appeal-decision Rules linkage passed Rules CI (44 static checks, 69 Emulator tests, zero expression-ceiling diagnostics). The matching Android transaction pointer write is committed separately; Android CI remains pending: https://github.com/Webster-02/Superior-Student/actions/runs/39868829292.

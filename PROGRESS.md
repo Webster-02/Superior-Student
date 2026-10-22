@@ -287,3 +287,23 @@ The Rules and app changes remain on separate review branches. They have not been
 Appeal-ticket decision linkage and direct account warning/lift-suspension/profile-status mutations still need Rules-enforced audit-log and notice linkage. Lifecycle-counter semantics require clarification. Live production Rules/indexes have not been exported and compared; the historical proposal `proposerId` migration and separate staging verification remain outstanding.
 
 No Firebase Rules or indexes were published or deployed. No live data was changed.
+
+## Phase 2, Step 13 — Appeal-ticket decision audit linkage
+
+### Rules implementation and verification
+- Rules/test commit: `dc64e050e9229fa0f5ab8e3a44f88d01ff1a49b4`.
+- Workflow run #34: https://github.com/Webster-02/Superior-Student/actions/runs/39868612662
+- Static suite: **44 passed, 0 failed**.
+- Firestore Emulator suite: **69 passed, 0 failed**.
+- Expression-ceiling diagnostics: **0**; expression-ceiling guard passed.
+- Appeal ticket resolution now requires a newly created `approve_appeal` or `reject_appeal` audit log and a new owner `appeal_result` notice. The support ticket's `lastAuditLogId` and `lastAdminNoticeId` pointers must reference those new documents in the same atomic ticket-resolution write. Rules validate the acting admin, action, support-ticket target, action-specific notice title, notice relation, and request timestamps.
+- Negative cases cover missing pointers, missing notice, wrong audit target, wrong action, and wrong notice target; positive cases cover approval and rejection.
+- Step 12's non-appeal support helpers and profile-counter constraints remain unchanged. Listing restoration still happens in its separate transaction with its own `approve_appeal_restore` audit log and listing notice.
+
+### Android linkage
+- Android commit: `83cee57686bc91654a143b1d62c0ce926eb15c23` on `feature/market-ui-reference`.
+- The final appeal-resolution transaction writes the generated decision-audit ID to `lastAuditLogId` and the generated `appeal_result` notice ID to `lastAdminNoticeId`, matching the actual log and notice writes.
+- Android workflow run #104: https://github.com/Webster-02/Superior-Student/actions/runs/39868829292
+- Android CI status at documentation time: **in progress**. Unit-test and APK results are pending; Step 13 is not fully complete until that run succeeds and branch heads are rechecked.
+
+No Firebase Rules or indexes were deployed; no live Firebase data was changed; neither branch was merged into `main`. No unrelated account warning/lift-suspension/profile-status change was included.
