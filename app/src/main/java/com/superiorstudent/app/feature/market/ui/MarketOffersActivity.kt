@@ -330,6 +330,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 "My tasks" -> startActivity(Intent(this, MarketMyTasksActivity::class.java))
                 "My offers" -> startActivity(Intent(this, MarketMyOffersActivity::class.java))
                 "Notices" -> startActivity(Intent(this, MarketNoticesActivity::class.java))
+                "Help and safety" -> startActivity(Intent(this, MarketHelpActivity::class.java))
                 else -> toast(item.feedbackMessage)
             }
         }

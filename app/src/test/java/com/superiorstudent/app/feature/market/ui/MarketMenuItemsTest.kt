@@ -26,4 +26,11 @@ class MarketMenuItemsTest {
         assertEquals("Review your posted tasks and applications.",
             MarketMenuItems.all.first { it.label == "My tasks" }.feedbackMessage)
     }
+
+    @Test
+    fun helpAndSafetyMenuEntryHasReferenceDescription() {
+        val help = MarketMenuItems.all.single { it.label == "Help and safety" }
+        assertEquals("Rules, FAQs, support", help.subtitle)
+        assertEquals("Find posting rules, safety advice, FAQs and support.", help.feedbackMessage)
+    }
 }

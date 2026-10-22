@@ -61,7 +61,7 @@ internal object MarketMenuItems {
             subtitle = "Rules, FAQs, support",
             icon = MarketMenuIcon.HELP,
             iconBackground = R.color.market_mint,
-            feedbackMessage = "Help and safety screen will be implemented in its own reference step."
+            feedbackMessage = "Find posting rules, safety advice, FAQs and support."
         ),
         MarketMenuItem(
             label = "Market settings",

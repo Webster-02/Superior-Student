@@ -285,6 +285,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             when (item.label) {
                 "My tasks" -> startActivity(Intent(this, MarketMyTasksActivity::class.java))
                 "Notices" -> startActivity(Intent(this, MarketNoticesActivity::class.java))
+                "Help and safety" -> startActivity(Intent(this, MarketHelpActivity::class.java))
                 else -> toast(item.feedbackMessage)
             }
         }
