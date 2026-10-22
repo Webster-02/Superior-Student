@@ -176,13 +176,16 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 
 ## UI-09 — Post a task, step 3 (Review)
 
-- **Status:** implementation and CI verification pending.
-- Inspected the exact `09_post3_light.png`, `09_post3_dark.png`, and matching light/dark `09_post3.html` reference files from `pachattar_market_final(1).zip`.
-- Added the final review step using existing Market Paper/Night semantic colours, Poppins typography, three active progress segments, task preview card, budget/deadline/proposal summary, posting-rules acknowledgement, and fixed Back / Post task actions.
-- Step 2 passes the draft into Step 3 through internal Intent extras. Back from Step 3 returns to the still-open Step 2 activity, preserving entered values.
-- Post task revalidates prior-step fields and acknowledgement locally, then shows a clearly preview-only message. **No task is published or written to Firestore.**
-- Changes are limited to the Step 2 → Step 3 flow, new Step 3 files, manifest registration, focused workflow path filters, and this progress record. No rules/indexes, protected top-level tests, Firebase deployment, merge, or unrelated U2U features changed.
+- **Status:** implemented and CI verified.
+- Inspected the exact `09_post3_light.png`, `09_post3_dark.png`, and the matching light/dark `09_post3.html` references from `pachattar_market_final(1).zip`.
+- Implemented the review screen with the existing Market Paper/Night semantic colours, Poppins typography, three-step progress indicator, task preview card, budget/deadline/proposal summary, posting-rules acknowledgement, and Back / Post task actions.
+- Connected Step 2 Next to Step 3 using internal Intent extras for title, category, course, description, budget type, amount, deadline and selected skills. Back closes Step 3 and reveals the still-open Step 2 form, preserving its values.
+- Post task validates all prior-step fields and the rules acknowledgement locally, then displays a preview-only notice. **No Firestore task creation or publishing is connected.**
+- Corrected the compile failure in `MarketPostTaskStep3Activity.kt` by converting the corner radius to physical pixels using `radius * resources.displayMetrics.density`.
+- **Successful verification:** GitHub Actions run [#40 / run ID 39688515507](https://github.com/Webster-02/Superior-Student/actions/runs/39688515507), commit `54cc6c880d430999a300f7853c3bd08cc3a18dae`. JavaScript validation, clean, JVM unit tests, debug APK build, APK verification and artifact upload all passed.
+- **Verified APK:** `app-debug.apk`, 66,900,937 bytes; SHA-256 `34845041422631e825ad6ae206ba674df2bef13aa743f7a0f756fcbf138ee7e0`. GitHub Actions artifact archive: 40,900,692 bytes; SHA-256 `66807b2a7513f92b72c46217d9db372cc42535012d3a9b2c78697bd55ee4fad8`. Artifact expires October 28, 2026.
+- Scope remains limited to UI-09, Step 2 handoff, manifest, focused workflow paths and this progress note. No Firestore rules/indexes, protected top-level tests, Firebase deployment, branch merges or unrelated chat/Nearby functionality were changed.
 
 ## Exact next step
 
-UI-09 is the stopping point. Wait for explicit user instruction `continue` before working on any other screen.
+UI-09 is complete and verified. Stop here. Do not begin UI-10 or another screen until the user explicitly types `continue`.
