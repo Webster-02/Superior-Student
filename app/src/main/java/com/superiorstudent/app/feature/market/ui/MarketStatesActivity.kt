@@ -129,13 +129,13 @@ class MarketStatesActivity : AppCompatActivity() {
             marginStart = dp(6)
         })
         card.addView(chips)
-        card.addView(skeletonLine(14, 0.85f), LinearLayout.LayoutParams(-1, dp(14)).apply {
+        card.addView(skeletonLine(14, 0.85f), LinearLayout.LayoutParams(-2, dp(14)).apply {
             topMargin = dp(12)
         })
-        card.addView(skeletonLine(10, 0.60f), LinearLayout.LayoutParams(-1, dp(10)).apply {
+        card.addView(skeletonLine(10, 0.60f), LinearLayout.LayoutParams(-2, dp(10)).apply {
             topMargin = dp(8)
         })
-        card.addView(skeletonLine(12, 0.40f), LinearLayout.LayoutParams(-1, dp(12)).apply {
+        card.addView(skeletonLine(12, 0.40f), LinearLayout.LayoutParams(-2, dp(12)).apply {
             topMargin = dp(14)
         })
         card.contentDescription = "Loading task skeleton"
@@ -244,7 +244,8 @@ class MarketStatesActivity : AppCompatActivity() {
         val lineWidthDp = ((screenWidthDp - 32f - 28f) * fraction).toInt().coerceAtLeast(1)
         return View(this).apply {
             background = rounded(color(R.color.market_line), 99f)
-            layoutParams = LinearLayout.LayoutParams(dp(lineWidthDp), dp(height))
+            minimumWidth = dp(lineWidthDp)
+            minimumHeight = dp(height)
         }
     }
 
