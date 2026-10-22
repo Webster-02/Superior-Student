@@ -97,7 +97,7 @@ class MarketSupportActivity : AppCompatActivity() {
             setPadding(dp(14), 0, dp(14), 0)
             background = rounded(color(R.color.market_card), 16f, color(R.color.market_line))
             minHeight = dp(50)
-            singleLine = true
+            setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_NEXT
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             includeFontPadding = false

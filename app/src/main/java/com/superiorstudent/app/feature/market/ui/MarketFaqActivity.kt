@@ -86,7 +86,7 @@ class MarketFaqActivity : AppCompatActivity() {
             setPadding(dp(16), 0, dp(16), dp(24))
             clipToPadding = false
         }
-        scroll.addView(page, ScrollView.LayoutParams(-1, -2))
+        scroll.addView(page, android.widget.FrameLayout.LayoutParams(-1, -2))
 
         questionCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -164,7 +164,7 @@ class MarketFaqActivity : AppCompatActivity() {
                 marginEnd = dp(8)
             })
         }
-        bar.addView(row, HorizontalScrollView.LayoutParams(-2, -1))
+        bar.addView(row, android.widget.FrameLayout.LayoutParams(-2, -1))
         return bar
     }
 

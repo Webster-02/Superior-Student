@@ -58,7 +58,7 @@ class MarketRulesActivity : AppCompatActivity() {
             setPadding(dp(16), dp(6), dp(16), dp(24))
             clipToPadding = false
         }
-        scroll.addView(page, ScrollView.LayoutParams(-1, -2))
+        scroll.addView(page, android.widget.FrameLayout.LayoutParams(-1, -2))
 
         page.addView(sectionHeading(MarketRulesUiPolicy.ALLOWED_HEADING),
             LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
