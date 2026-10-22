@@ -1,8 +1,8 @@
 diff --git a/firestore.rules b/firestore.rules
-index 2944d790949a1fd93414a851eaf1f3ca6fef8922..3bd08c780ebdb2eef69033260d6a86f4ceee4c2c 100644
+index 2944d790949a1fd93414a851eaf1f3ca6fef8922..05f2938af5782682cd81336a4e57b69501acbbd0 100644
 --- a/firestore.rules
 +++ b/firestore.rules
-@@ -6,8 +6,6 @@ service cloud.firestore {
+@@ -6,8 +6,6 @@
          && request.auth.token.email_verified == true;
      }
  
@@ -11,7 +11,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..3bd08c780ebdb2eef69033260d6a86f4
      // Chat access requires an existing accepted directional friend request.
      function acceptedChatConnectionExists(uidA, uidB) {
        let forwardId = uidA + '_' + uidB;
-@@ -192,6 +190,1805 @@ service cloud.firestore {
+@@ -192,6 +190,1832 @@
          && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
      }
  
@@ -1406,12 +1406,39 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..3bd08c780ebdb2eef69033260d6a86f4
 +      }
 +
 +
++      function marketReportStatusAuditValid(reportId, after) {
++        let auditLogId = after.lastAuditLogId;
++        let noticeId = after.lastAdminNoticeId;
++        let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
++        let noticePath = /databases/$(database)/documents/users/$(after.reporterId)/notices/$(noticeId);
++        return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
++          && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
++          && existsAfter(auditPath) && !exists(auditPath)
++          && existsAfter(noticePath) && !exists(noticePath)
++          && getAfter(auditPath).data.adminId == request.auth.uid
++          && getAfter(auditPath).data.action == 'set_report_status'
++          && getAfter(auditPath).data.targetType == 'report'
++          && getAfter(auditPath).data.targetId == reportId
++          && getAfter(auditPath).data.createdAt == request.time
++          && getAfter(noticePath).data.type == 'activity'
++          && getAfter(noticePath).data.relatedType == 'report'
++          && getAfter(noticePath).data.relatedId == reportId
++          && getAfter(noticePath).data.createdAt == request.time;
++      }
++
++      function marketReportStatusUpdateValid(reportId, before, after) {
++        let changed = after.diff(before).affectedKeys();
++        return changed.hasAll(['status', 'lastAuditLogId', 'lastAdminNoticeId'])
++          && changed.hasOnly(['status', 'lastAuditLogId', 'lastAdminNoticeId'])
++          && after.status in ['open', 'under_review', 'action_taken', 'dismissed']
++          && marketReportStatusAuditValid(reportId, after);
++      }
++
 +      allow get: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
 +      allow list: if marketVerified() && (resource.data.reporterId == request.auth.uid || marketIsAdmin());
 +      allow create: if marketVerified() && marketValidReportCreate(reportId, request.resource.data);
 +      allow update: if resource != null && marketVerified() && marketIsAdmin()
-+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-+        && request.resource.data.status in ['open', 'under_review', 'action_taken', 'dismissed'];
++        && marketReportStatusUpdateValid(reportId, resource.data, request.resource.data);
 +      allow delete: if false;
 +    }
 +
@@ -1817,7 +1844,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..3bd08c780ebdb2eef69033260d6a86f4
      match /profiles/{uid} {
        allow get: if signedInWithVerifiedEmail()
          && resource.data.uid == uid
-@@ -385,7 +2182,6 @@ service cloud.firestore {
+@@ -385,7 +2209,6 @@
          && request.auth.uid == uid;
      }
  

@@ -229,9 +229,34 @@ The app and Rules changes are on separate branches. They have not been merged to
 
 ### Remaining admin gaps
 
-- Report status still can change without a Rules-enforced matching log and reporter notice.
+- Report-status audit/notice linkage is completed in Phase 2 Step 11 below.
 - Support reply/resolve and user warning/lift-suspension/profile-status changes still need the corresponding audit logs and notices enforced by Rules, not merely written by the repository.
 - Production live Rules/indexes are still not exported/compared; historical proposal `proposerId` backfill and separate staging checks remain.
 - Lifecycle-counter spec wording needs clarification.
+
+No Firebase Rules or indexes were published or deployed. No live data was changed.
+
+
+## Phase 2 — Step 11: Report-status audit and reporter-notice linkage (verified 2026-10-22)
+
+**Rules commit:** [`b19472ad8d9d7ce0811285e66d9dfc0fadbc7fba`](https://github.com/Webster-02/Superior-Student/commit/b19472ad8d9d7ce0811285e66d9dfc0fadbc7fba) on `review/market-rules`.  
+**Rules CI:** [Firestore Rules Review Tests — run #30](https://github.com/Webster-02/Superior-Student/actions/runs/39862784731) — **success**. Artifact `12462911143`.  
+**App commit:** [`3c6da1a713ec836d7b5229324ac3bcb65dc415af`](https://github.com/Webster-02/Superior-Student/commit/3c6da1a713ec836d7b5229324ac3bcb65dc415af) on `feature/market-ui-reference`.  
+**Android CI:** [Market Data Step Check — run #102](https://github.com/Webster-02/Superior-Student/actions/runs/39862887618) — **success**. Debug APK artifact `12463315396`.
+
+### Enforced behavior and verification
+
+- Report status, `lastAuditLogId` and `lastAdminNoticeId` must all change in the same update, with no unrelated fields changed.
+- Rules require both referenced documents to be new in the same atomic write. The audit log must match the current admin, `set_report_status` action, report type/ID and request timestamp. The new reporter notice must have type `activity`, relate to that report, and carry the same request timestamp.
+- The app repository creates one notice ID, writes that ID to the report, and creates the matching reporter notice and immutable audit log in the same transaction. The report converter accepts only bounded nonblank pointer strings if those optional metadata fields exist.
+- Negative tests cover reporter direct-write denial, admin direct status update without links, missing notice, mismatched audit target type and a notice linked to a different report. A valid linked report-status transaction succeeds.
+- Rules run #30: **42/42 static checks passed; 67/67 Emulator tests passed; 0 skipped; 0 expression-ceiling diagnostics**.
+- Android run #102: route validation, unit tests, debug APK build, APK verification and artifact upload passed.
+
+The Rules and app changes remain on separate review branches. They have not been merged to `main`.
+
+### Remaining admin gaps
+
+Support reply/resolve and direct account warning/lift-suspension/profile-status mutations still need Rules-enforced audit-log and notice linkage. Lifecycle-counter semantics need clarification. Live production Rules/indexes have not been exported and compared; the historical proposal `proposerId` migration and separate staging verification remain outstanding.
 
 No Firebase Rules or indexes were published or deployed. No live data was changed.

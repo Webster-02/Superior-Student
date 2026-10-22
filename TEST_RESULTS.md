@@ -2,29 +2,27 @@
 
 ## Latest verified Rules CI
 
-**Workflow:** [Firestore Rules Review Tests — run #29](https://github.com/Webster-02/Superior-Student/actions/runs/39860003494)  
-**Rules-tested commit:** `181e347c14032a8b8ddfd5a0c314afe17111a016` on `review/market-rules`  
-**Rules blob:** `3bd08c780ebdb2eef69033260d6a86f4ceee4c2c`.
+**Workflow:** [Firestore Rules Review Tests — run #30](https://github.com/Webster-02/Superior-Student/actions/runs/39862784731)  
+**Rules-tested commit:** `b19472ad8d9d7ce0811285e66d9dfc0fadbc7fba` on `review/market-rules`  
+**Rules blob:** `05f2938af5782682cd81336a4e57b69501acbbd0`.
 
 | Check | Actual result |
 |---|---|
 | `npm ci` | Exit 0 |
-| Static validation | **41 passed, 0 failed** |
+| Static validation | **42 passed, 0 failed** |
 | Firestore Rules Emulator | **67 passed, 0 failed, 0 skipped**, across 14 suites |
 | 1,000-expression-ceiling diagnostics | **0** |
 | Expression-ceiling guard | Exit 0 |
 | Overall Rules workflow | **Success** |
 | Firebase deployment / merge to `main` | Not performed |
 
-Artifact: `firestore-rules-test-results`, ID `12461586838` (185,843 bytes). Its downloaded raw summary reports both suites exit 0, diagnostic count 0 and `Overall: PASS`.
+Artifact: `firestore-rules-test-results`, ID `12462911143` (185,936 bytes). The workflow log confirms both suites exit 0, diagnostic count 0 and `Overall: PASS`.
 
 ## Latest verified Android CI
 
-**Workflow:** [Market Data Step Check — run #101](https://github.com/Webster-02/Superior-Student/actions/runs/39859898773)  
-**App commit:** [`a8b8e55d0b3cfec5f19323b31091572282c18d00`](https://github.com/Webster-02/Superior-Student/commit/a8b8e55d0b3cfec5f19323b31091572282c18d00) on `feature/market-ui-reference`.  
-**Result:** Success. Unit tests, route checks and debug APK build passed; the APK verification/upload steps also passed. Artifact `superior-student-debug-apk`, ID `12461825353`.
-
-The Rules and app changes reside on different branches and have not been merged to `main`.
+**Workflow:** [Market Data Step Check — run #102](https://github.com/Webster-02/Superior-Student/actions/runs/39862887618)  
+**App commit:** [`3c6da1a713ec836d7b5229324ac3bcb65dc415af`](https://github.com/Webster-02/Superior-Student/commit/3c6da1a713ec836d7b5229324ac3bcb65dc415af) on `feature/market-ui-reference`.  
+**Result:** Success. Embedded JavaScript validation, Market route checks, unit tests, debug APK build, APK verification and upload all passed. Artifact `superior-student-debug-apk`, ID `12463315396` (41,113,914 bytes).
 
 ## Security properties verified in the current Rules candidate
 
@@ -32,19 +30,21 @@ The Rules and app changes reside on different branches and have not been merged 
 2. Task acceptance requires the proposal, counter decrement and new deterministic Market conversation in the same atomic write.
 3. Market configuration edits require a new linked immutable `adminLogs` record in the same atomic write.
 4. Task/offer pin and moderation updates require a matching new immutable `adminLogs` record and a new owner notice in the same atomic write. The log action/target and notice listing relation are tied to the affected listing and current admin.
-5. The aggregate suspend/ban flow remains allowed only when the hidden task/offer listings link to the new aggregate log and removal notice and the target profile is suspended/banned in the same write.
-6. Regression tests deny missing audit pointers, missing notices and mismatched audit target type. Valid task/offer hide/restore, pin/unpin, configuration and suspension transactions pass.
-7. The previous task acceptance/chat and verified-email test coverage remains green; existing U2U chat and Nearby-transfer rules are kept separate from Market paths.
+5. Report-status changes must atomically write a new `set_report_status` audit log and a new reporter notice linked to the correct report; missing and mismatched links are rejected.
+6. The aggregate suspend/ban flow remains allowed only when hidden task/offer listings link to the new aggregate log and removal notice and the target profile is suspended/banned in the same write.
+7. Regression tests cover missing audit pointers, missing notices and mismatched audit targets; valid task/offer moderation, report-status, configuration and suspension transactions pass.
+8. Existing task acceptance/chat and verified-email tests remain green; existing U2U chat and Nearby-transfer rules remain separate from Market paths.
 
 ## Recent Rules CI history
 
-- [Run #29](https://github.com/Webster-02/Superior-Student/actions/runs/39860003494): current candidate; static 41/41, Emulator 67/67, zero expression-ceiling diagnostics.
+- [Run #30](https://github.com/Webster-02/Superior-Student/actions/runs/39862784731): report-status audit/notice linkage; static 42/42, Emulator 67/67, zero expression-ceiling diagnostics.
+- [Run #29](https://github.com/Webster-02/Superior-Student/actions/runs/39860003494): prior candidate; static 41/41, Emulator 67/67, zero expression-ceiling diagnostics.
 - [Run #28](https://github.com/Webster-02/Superior-Student/actions/runs/39859803552): a negative-test fixture initially mixed references from different Firestore instances; fixture corrected and run #29 passed.
 - [Run #27](https://github.com/Webster-02/Superior-Student/actions/runs/39858637212): Market config audit linkage; static 40/40, Emulator 67/67.
 - [Run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223): task acceptance/chat guard; static 39/39, Emulator 67/67.
 - [Run #23](https://github.com/Webster-02/Superior-Student/actions/runs/39855566823): verified-email guard; static 38/38, Emulator 66/66.
 - [Run #22](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521): restored baseline; static 37/37, Emulator 65/65.
-- Older run [39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) is historical and used an older Rules snapshot with expression-ceiling diagnostics; run #29 has zero.
+- Older run [39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) is historical and used an older Rules snapshot with expression-ceiling diagnostics; run #30 has zero.
 
 ## Remaining production gates
 
@@ -53,7 +53,7 @@ Passing CI does **not** authorize production deployment. Before any production c
 - Export live production Rules and indexes, compare them to the selected source baseline, and save protected rollback copies/hashes. Git comparison does not prove live project identity.
 - Verify email-verification readiness and required `profiles/{uid}` documents against current Auth/data.
 - Dry-run, back up, apply and verify any historic proposal `proposerId` migration using an authorized one-off Admin SDK operation; reconcile mismatches rather than guessing.
-- Add Rules-enforced log/notice linkage for report status, support reply/resolve, and direct account warning/lift-suspension/profile-status actions.
+- Add Rules-enforced log/notice linkage for support reply/resolve, and direct account warning/lift-suspension/profile-status actions.
 - Clarify exact lifecycle-counter transitions.
 - Deploy to a separate staging Firebase project and validate actual student/admin/query/index flows.
 - Obtain explicit product-owner approval before production deployment.
