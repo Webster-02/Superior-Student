@@ -141,13 +141,7 @@ class MarketTaskDetailActivity : AppCompatActivity() {
         }) }
 
         row.addView(iconButton(TaskDetailIcon.FLAG, "Report task", 44) {
-            AlertDialog.Builder(this)
-                .setTitle("Report task")
-                .setItems(arrayOf("Spam or misleading", "Inappropriate content", "Unsafe request", "Other")) { _, _ ->
-                    toast("Report submission will be connected in a separate step.")
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            MarketReportSheet.show(this, model.author)
         })
         return row
     }
