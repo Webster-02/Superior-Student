@@ -238,6 +238,16 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - **Verified APK:** `app-debug.apk`, 66,933,785 bytes; SHA-256 `fbadf478c4dd9f5d29d449544bcb178697120c8964571ad1e28a6a8c35832368`. Workflow artifact archive: 40,936,950 bytes; SHA-256 `7a9a7473e9bedc9986eef4fdd951ae870ad066781ab309d0a74a8483cb72f5bc`; expires October 29, 2026.
 - Scope is limited to the existing Proposals Activity, its policy/test and this progress entry. No manifest, Firestore rules/indexes, protected top-level tests, deployment, merge, or unrelated login/chat/Nearby logic changed.
 
+## UI-14 — Task chat reference screen
+
+- **Status:** implemented; pending this step's GitHub Actions verification.
+- Inspected the exact `14_chat_light.png`, `14_chat_dark.png`, and matching light/dark `14_chat.html` references from `pachattar_market_final(1).zip`.
+- Added a separate native Market Task Chat screen matching the header/avatar/flag action, assigned task card, budget/deadline, View task and Mark complete actions, accepted-event chip, three message bubbles with timestamps and delivery checks, and bottom attachment/message/send composer. Uses the existing Market Paper/Night resource palette and Poppins.
+- Added a preview-only route from Screen 13's **Accept and open chat** action. A confirmation explicitly says this is sample chat preview only and that proposal acceptance, task changes, and message sending are not performed.
+- Starter messages and the task card are local reference fixtures. Messages typed or attachment actions are local preview behavior only; this screen does not use Firestore, does not invoke the existing Student Connect chat, and does not change Nearby transfer or chat logic. View task, Mark complete and Report chat show explanatory preview dialogs.
+- Added policy tests for fixture content, name initials, PKR labels, input trimming/length validation, and append-only preview messaging.
+- Scope is limited to the new Market chat Activity/policy/icons/tests, Screen 13 preview navigation, manifest, workflow path filters and this progress record. No Firestore rules/indexes, protected top-level tests, deployment, merge, login, existing chat logic or Nearby logic changed.
+
 ## Exact next step
 
-Stop after UI-13 verification for user review. Do not begin screen 14 or another feature until the user explicitly types `continue`.
+Stop after UI-14 verification for user review. Do not begin screen 15 or another feature until the user explicitly types `continue`.

@@ -1,6 +1,7 @@
 package com.superiorstudent.app.feature.market.ui
 
 import android.app.Dialog
+import android.content.Intent
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -378,9 +379,17 @@ class MarketProposalsActivity : AppCompatActivity() {
             setOnClickListener {
                 sheetDialog.dismiss()
                 AlertDialog.Builder(this@MarketProposalsActivity)
-                    .setTitle("Preview only")
-                    .setMessage("No proposal was accepted and no chat was opened. Live Market acceptance is not connected in this screen.")
-                    .setPositiveButton("Got it", null)
+                    .setTitle("Chat preview only")
+                    .setMessage("This opens a sample task chat for " + proposal.name +
+                        ". No proposal will be accepted, task changes will not be saved, and messages will not be sent.")
+                    .setPositiveButton("Open chat preview") { _, _ ->
+                        startActivity(Intent(this@MarketProposalsActivity, MarketTaskChatActivity::class.java).apply {
+                            putExtra(MarketTaskChatActivity.EXTRA_HELPER_NAME, proposal.name)
+                            putExtra(MarketTaskChatActivity.EXTRA_TASK_TITLE, taskLabel)
+                            putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR, proposal.pricePkr)
+                        })
+                    }
+                    .setNegativeButton("Cancel", null)
                     .show()
             }
         }
