@@ -1281,10 +1281,16 @@ class MarketRepository(
             require(report.exists()) { "This report no longer exists." }
             val reporterUid = report.getString("reporterId")
                 ?: throw IllegalStateException("The report is missing its reporter ID.")
-            tx.update(reportRef, "status", status.wireValue)
+            val noticeRef = firestore.collection(USERS).document(reporterUid)
+                .collection(NOTICES).document()
+            tx.update(reportRef, mapOf(
+                "status" to status.wireValue,
+                "lastAuditLogId" to logRef.id,
+                "lastAdminNoticeId" to noticeRef.id
+            ))
             tx.set(logRef, adminLogMap(adminUid, "set_report_status", "report", reportId, reason, note))
             createNoticeInTransaction(
-                tx, reporterUid, null, MarketNoticeType.ACTIVITY,
+                tx, reporterUid, noticeRef.id, MarketNoticeType.ACTIVITY,
                 "Report updated", "Your report status is now " + status.wireValue.replace('_', ' ') + ".",
                 relatedType = "report", relatedId = reportId, canAppeal = false
             )

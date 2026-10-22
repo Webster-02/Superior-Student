@@ -37,6 +37,7 @@ object MarketConverters {
     )
     private val messageRequired = setOf("senderUid", "recipientUid", "senderName", "text", "createdAt")
     private val reportKeys = setOf("targetType", "targetId", "reporterId", "reason", "createdAt", "status")
+    private val reportOptionalKeys = setOf("lastAuditLogId", "lastAdminNoticeId")
     private val ratingKeys = setOf("taskId", "fromUid", "toUid", "stars", "tags", "comment", "createdAt")
     private val statsKeys = setOf("ratingSum", "ratingCount", "completedCount", "lastMutation", "updatedAt")
     private val noticeRequired = setOf("type", "title", "body", "read", "createdAt", "canAppeal", "appealed")
@@ -278,7 +279,10 @@ object MarketConverters {
         snapshot.data?.let { report(snapshot.id, it) }
 
     fun report(documentId: String, data: Map<String, Any?>): MarketReport? {
-        if (!exactKeys(data, reportKeys)) return null
+        if (!exactKeys(data, reportKeys, reportOptionalKeys)) return null
+        if (!validOptionalPointer(data, "lastAuditLogId") ||
+            !validOptionalPointer(data, "lastAdminNoticeId")
+        ) return null
         val targetType = enum<MarketReportTargetType>(data["targetType"]) ?: return null
         val targetId = str(data["targetId"])?.takeIf { it.length in 1..128 } ?: return null
         val reporterId = str(data["reporterId"])?.takeIf(String::isNotBlank) ?: return null
@@ -630,6 +634,9 @@ object MarketConverters {
         required: Set<String>,
         optional: Set<String> = emptySet()
     ): Boolean = data.keys.containsAll(required) && data.keys.all { it in required || it in optional }
+
+    private fun validOptionalPointer(data: Map<String, Any?>, key: String): Boolean =
+        !data.containsKey(key) || str(data[key])?.let { it.isNotBlank() && it.length <= 150 } == true
 
     private fun str(value: Any?): String? = value as? String
     private fun bool(value: Any?): Boolean? = value as? Boolean

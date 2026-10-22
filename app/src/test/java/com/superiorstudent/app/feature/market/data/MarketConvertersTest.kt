@@ -161,6 +161,16 @@ class MarketConvertersTest {
             "status" to "open"
         )
         assertNotNull(MarketConverters.report("task_task1_reporter1", data))
+        assertNotNull(MarketConverters.report(
+            "task_task1_reporter1",
+            data + ("lastAuditLogId" to "report-log-1") + ("lastAdminNoticeId" to "report-notice-1")
+        ))
+        assertNull(MarketConverters.report(
+            "task_task1_reporter1", data + ("lastAuditLogId" to "")
+        ))
+        assertNull(MarketConverters.report(
+            "task_task1_reporter1", data + ("lastAdminNoticeId" to 42)
+        ))
         assertNull(MarketConverters.report("wrong_id", data))
         assertNull(MarketConverters.report("task_task1_reporter1", data + ("reason" to "made_up")))
     }
