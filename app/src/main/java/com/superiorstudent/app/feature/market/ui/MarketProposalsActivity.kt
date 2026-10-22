@@ -318,7 +318,7 @@ class MarketProposalsActivity : AppCompatActivity() {
             bottomMargin = dp(14)
         })
 
-        sheet.addView(makeText("Accept \${proposal.name}'s proposal?", 18f, true,
+        sheet.addView(makeText("Accept ${proposal.name}'s proposal?", 18f, true,
             color(R.color.market_ink)), LinearLayout.LayoutParams(-1, -2))
 
         val priceAndDelivery = LinearLayout(this).apply {
@@ -338,7 +338,7 @@ class MarketProposalsActivity : AppCompatActivity() {
         })
 
         addAcceptanceChecklistRow(sheet,
-            "A chat with \${proposal.name} opens, with this task pinned")
+            "A chat with ${proposal.name} opens, with this task pinned")
         MarketProposalsUiPolicy.ACCEPTANCE_CHECKLIST.drop(1).forEach { copy ->
             addAcceptanceChecklistRow(sheet, copy)
         }
