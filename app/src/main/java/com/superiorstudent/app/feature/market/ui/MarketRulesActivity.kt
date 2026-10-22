@@ -151,7 +151,7 @@ class MarketRulesActivity : AppCompatActivity() {
             MarketRulesIconView(
                 this,
                 if (allowed) MarketRulesGlyph.CHECK else MarketRulesGlyph.CROSS,
-                color(if (allowed) R.color.ok else R.color.bad)
+                color(if (allowed) R.color.market_rules_ok else R.color.market_rules_bad)
             ),
             LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                 marginEnd = dp(10)
@@ -170,7 +170,7 @@ class MarketRulesActivity : AppCompatActivity() {
     private fun buildSafetyCard(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(color(R.color.market_mint), 18f)
+            background = rounded(color(R.color.market_rules_safe_bg), 18f)
             setPadding(dp(14), dp(12), dp(14), dp(12))
         }
         card.addView(
@@ -189,10 +189,10 @@ class MarketRulesActivity : AppCompatActivity() {
         }
         MarketRulesUiPolicy.enforcementSteps.forEachIndexed { index, step ->
             val toneColor = when (step.tone) {
-                MarketRulesPenaltyTone.INFO -> R.color.market_sky
-                MarketRulesPenaltyTone.WARNING -> R.color.warn_bg
-                MarketRulesPenaltyTone.PEACH -> R.color.market_peach
-                MarketRulesPenaltyTone.DANGER -> R.color.bad_bg
+                MarketRulesPenaltyTone.INFO -> R.color.market_rules_info_bg
+                MarketRulesPenaltyTone.WARNING -> R.color.market_rules_warning_bg
+                MarketRulesPenaltyTone.PEACH -> R.color.market_rules_peach_bg
+                MarketRulesPenaltyTone.DANGER -> R.color.market_rules_ban_bg
             }
             val tile = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
