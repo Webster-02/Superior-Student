@@ -68,7 +68,7 @@ internal object MarketMenuItems {
             subtitle = "Skills, alerts, blocked users",
             icon = MarketMenuIcon.SETTINGS,
             iconBackground = R.color.market_lav,
-            feedbackMessage = "Market settings will be implemented in its own reference step."
+            feedbackMessage = "Manage matching skills and Market alerts."
         )
     )
 }

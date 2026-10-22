@@ -177,6 +177,12 @@
             android:label="My reports"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
+            android:name=".feature.market.ui.MarketSettingsActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
+            android:exported="false"
+            android:label="Market settings"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
+        <activity
             android:name=".feature.market.ui.MarketTaskDetailActivity"
             android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"
