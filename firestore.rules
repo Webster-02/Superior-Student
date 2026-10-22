@@ -1724,8 +1724,8 @@ service cloud.firestore {
 
     match /support/{ticketId} {
       function marketSupportAuditNoticeValid(before, after) {
-        let auditLogId = after.lastAuditLogId;
-        let noticeId = after.lastAdminNoticeId;
+        let auditLogId = after.get('lastAuditLogId', null);
+        let noticeId = after.get('lastAdminNoticeId', null);
         let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
         let noticePath = /databases/$(database)/documents/users/$(after.userId)/notices/$(noticeId);
         return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
@@ -1743,6 +1743,43 @@ service cloud.firestore {
           && getAfter(noticePath).data.createdAt == request.time;
       }
 
+      function marketSupportUserUpdateValid(before, after) {
+        let changed = after.diff(before).affectedKeys();
+        return before.userId == request.auth.uid
+          && after.userId == before.userId
+          && after.status == before.status
+          && changed.hasOnly(['replies', 'updatedAt'])
+          && after.replies is list
+          && after.replies.size() == before.replies.size() + 1
+          && after.replies.size() <= 20
+          && after.replies[after.replies.size() - 1].from == 'user'
+          && after.replies[after.replies.size() - 1].text is string
+          && after.replies[after.replies.size() - 1].text.size() >= 1
+          && after.replies[after.replies.size() - 1].text.size() <= 1000
+          && marketCreatedAtNearRequestTime(after.replies[after.replies.size() - 1].at)
+          && (before.replies.size() <= 0 || after.replies[0] == before.replies[0])
+          && (before.replies.size() <= 1 || after.replies[1] == before.replies[1])
+          && (before.replies.size() <= 2 || after.replies[2] == before.replies[2])
+          && (before.replies.size() <= 3 || after.replies[3] == before.replies[3])
+          && (before.replies.size() <= 4 || after.replies[4] == before.replies[4])
+          && (before.replies.size() <= 5 || after.replies[5] == before.replies[5])
+          && (before.replies.size() <= 6 || after.replies[6] == before.replies[6])
+          && (before.replies.size() <= 7 || after.replies[7] == before.replies[7])
+          && (before.replies.size() <= 8 || after.replies[8] == before.replies[8])
+          && (before.replies.size() <= 9 || after.replies[9] == before.replies[9])
+          && (before.replies.size() <= 10 || after.replies[10] == before.replies[10])
+          && (before.replies.size() <= 11 || after.replies[11] == before.replies[11])
+          && (before.replies.size() <= 12 || after.replies[12] == before.replies[12])
+          && (before.replies.size() <= 13 || after.replies[13] == before.replies[13])
+          && (before.replies.size() <= 14 || after.replies[14] == before.replies[14])
+          && (before.replies.size() <= 15 || after.replies[15] == before.replies[15])
+          && (before.replies.size() <= 16 || after.replies[16] == before.replies[16])
+          && (before.replies.size() <= 17 || after.replies[17] == before.replies[17])
+          && (before.replies.size() <= 18 || after.replies[18] == before.replies[18])
+          && (before.replies.size() <= 19 || after.replies[19] == before.replies[19])
+          && after.updatedAt == request.time;
+      }
+
       function marketSupportAdminUpdateValid(ticketId, before, after) {
         let changed = after.diff(before).affectedKeys();
         return after.userId == before.userId
@@ -1754,6 +1791,7 @@ service cloud.firestore {
             (before.type == 'appeal'
               && changed.hasOnly(['status', 'replies', 'updatedAt']))
             || (before.type != 'appeal'
+              && after.keys().hasAll(['lastAuditLogId', 'lastAdminNoticeId'])
               && changed.hasOnly(['status', 'replies', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
               && marketSupportAuditNoticeValid(before, after))
           )
@@ -1789,43 +1827,10 @@ service cloud.firestore {
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.operation == 'create'
         && getAfter(marketProfilePath(request.auth.uid)).data.lastMutation.targetId == ticketId;
       allow update: if resource != null && marketVerified() && (
-        (
-          resource.data.userId == request.auth.uid
-          && request.resource.data.userId == resource.data.userId
-          && request.resource.data.status == resource.data.status
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replies', 'updatedAt'])
-          && request.resource.data.replies is list
-          && request.resource.data.replies.size() == resource.data.replies.size() + 1
-          && request.resource.data.replies.size() <= 20
-          && request.resource.data.replies[request.resource.data.replies.size() - 1].from == 'user'
-          && request.resource.data.replies[request.resource.data.replies.size() - 1].text is string
-          && request.resource.data.replies[request.resource.data.replies.size() - 1].text.size() >= 1
-          && request.resource.data.replies[request.resource.data.replies.size() - 1].text.size() <= 1000
-          && marketCreatedAtNearRequestTime(request.resource.data.replies[request.resource.data.replies.size() - 1].at)
-          && (resource.data.replies.size() <= 0 || request.resource.data.replies[0] == resource.data.replies[0])
-          && (resource.data.replies.size() <= 1 || request.resource.data.replies[1] == resource.data.replies[1])
-          && (resource.data.replies.size() <= 2 || request.resource.data.replies[2] == resource.data.replies[2])
-          && (resource.data.replies.size() <= 3 || request.resource.data.replies[3] == resource.data.replies[3])
-          && (resource.data.replies.size() <= 4 || request.resource.data.replies[4] == resource.data.replies[4])
-          && (resource.data.replies.size() <= 5 || request.resource.data.replies[5] == resource.data.replies[5])
-          && (resource.data.replies.size() <= 6 || request.resource.data.replies[6] == resource.data.replies[6])
-          && (resource.data.replies.size() <= 7 || request.resource.data.replies[7] == resource.data.replies[7])
-          && (resource.data.replies.size() <= 8 || request.resource.data.replies[8] == resource.data.replies[8])
-          && (resource.data.replies.size() <= 9 || request.resource.data.replies[9] == resource.data.replies[9])
-          && (resource.data.replies.size() <= 10 || request.resource.data.replies[10] == resource.data.replies[10])
-          && (resource.data.replies.size() <= 11 || request.resource.data.replies[11] == resource.data.replies[11])
-          && (resource.data.replies.size() <= 12 || request.resource.data.replies[12] == resource.data.replies[12])
-          && (resource.data.replies.size() <= 13 || request.resource.data.replies[13] == resource.data.replies[13])
-          && (resource.data.replies.size() <= 14 || request.resource.data.replies[14] == resource.data.replies[14])
-          && (resource.data.replies.size() <= 15 || request.resource.data.replies[15] == resource.data.replies[15])
-          && (resource.data.replies.size() <= 16 || request.resource.data.replies[16] == resource.data.replies[16])
-          && (resource.data.replies.size() <= 17 || request.resource.data.replies[17] == resource.data.replies[17])
-          && (resource.data.replies.size() <= 18 || request.resource.data.replies[18] == resource.data.replies[18])
-          && (resource.data.replies.size() <= 19 || request.resource.data.replies[19] == resource.data.replies[19])
-          && request.resource.data.updatedAt == request.time
-        )
-        || (marketIsAdmin()
-          && marketSupportAdminUpdateValid(ticketId, resource.data, request.resource.data))
+        request.auth.uid == resource.data.userId
+          ? marketSupportUserUpdateValid(resource.data, request.resource.data)
+          : (marketIsAdmin()
+            && marketSupportAdminUpdateValid(ticketId, resource.data, request.resource.data))
       );
       allow delete: if false;
     }

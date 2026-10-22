@@ -64,6 +64,8 @@ const checks = [
   ['admin support replies and resolutions require linked audit logs and notices', () => {
     assert.ok(rules.includes('function marketSupportAuditNoticeValid'));
     assert.ok(rules.includes('function marketSupportAdminUpdateValid'));
+    assert.ok(rules.includes('function marketSupportUserUpdateValid'));
+    assert.ok(rules.includes('? marketSupportUserUpdateValid(resource.data, request.resource.data)'));
     assert.ok(rules.includes("getAfter(auditPath).data.action in ['reply_support_ticket', 'resolve_support_ticket']"));
     assert.ok(tests.includes('admin support reply and resolution require a matching new audit log and notice'));
     assert.ok(tests.includes('admin-profile-support-log'));
