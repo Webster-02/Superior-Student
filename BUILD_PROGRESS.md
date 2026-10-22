@@ -348,3 +348,18 @@ Stop after UI-21 verification for user review. Do not begin another screen or st
 ## Exact next step
 
 Stop after UI-22 verification for user review. Do not start Screen 23 (notice details) or any live notice integration until the user explicitly types `continue`.
+
+
+## UI-23 — Notice detail (offer removed)
+
+- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- Inspected the exact `23_notice_light.png`, `23_notice_dark.png`, and matching light/dark HTML references in `pachattar_market_final(1).zip`.
+- Added a native notice-detail Activity matching the back/title header, alert tile, notice timestamp, offer summary (`Assignment writing service`, Rs. 500), Rule 1 explanation, warning ladder, blue information banner, and fixed **Appeal this decision** / **Read posting rules** actions. It reuses Paper/Night Market tokens and Poppins.
+- Connected only the matching **Your offer was removed** row from Screen 22 to this detail page. Other sample notices retain their existing preview behavior.
+- The appeal button and rules button provide explicit preview dialogs. **No appeal is submitted, no offer status changes, and no live rules page opens**; Screen 24 (appeal form) remains a separate step. The notice and offer details are local reference fixtures only.
+- Added focused policy tests for reference copy, warning ladder, offer details and truthful preview disclosures. Added this screen and test to the Market CI path filters.
+- No Firestore rules/index changes, deployment, login, Student Connect or Nearby transfer logic changed.
+
+## Exact next step
+
+Stop after UI-23 verification for user review. Do not implement Screen 24 (appeal form) or live notice/appeal integration until the user explicitly types `continue`.

@@ -1,5 +1,7 @@
 package com.superiorstudent.app.feature.market.ui
 
+import android.content.Intent
+
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
@@ -130,7 +132,13 @@ class MarketNoticesActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP
             setPadding(dp(14), dp(13), dp(14), dp(13)); isClickable = true; isFocusable = true
             contentDescription = notice.title + ". " + notice.description + ". " + notice.timeLabel
-            setOnClickListener { showNoticePreview(notice) }
+            setOnClickListener {
+                if (notice.id == "offer-removed") {
+                    startActivity(Intent(this@MarketNoticesActivity, MarketNoticeDetailActivity::class.java))
+                } else {
+                    showNoticePreview(notice)
+                }
+            }
         }
         val iconTile = FrameLayout(this).apply {
             background = rounded(color(notice.iconBackground), 14f)
