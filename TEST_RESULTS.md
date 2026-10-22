@@ -2,59 +2,53 @@
 
 ## Latest verified CI run
 
-**Workflow:** [Firestore Rules Review Tests — run #22](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521)  
-**Tested commit:** 2a136f1cc8478a27b0ef101a7a3c0ec8bde86ad9 on review/market-rules  
-**Current rules blob:** 8324f3bde6ee72d051a5635ba44ae73388439e02 — identical to the rules blob tested by run #22. The later commit at the time of this documentation correction changed PROGRESS.md only.
+**Workflow:** [Firestore Rules Review Tests — run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223)  
+**Tested commit:** `46ce86ce325135814963fb5e077b6257694731cb` on `review/market-rules`  
+**Current rules blob:** `b039f9f896c27314eb1f57594e0c1fe911be92a6`.
 
 | Check | Actual result |
 |---|---|
-| npm ci | Exit 0 |
-| Static validation | **37 passed, 0 failed** |
-| Firestore Rules Emulator | **65 passed, 0 failed, 0 skipped**, across 14 suites |
-| 1,000-expression ceiling diagnostics | **0** |
+| `npm ci` | Exit 0 |
+| Static validation | **39 passed, 0 failed** |
+| Firestore Rules Emulator | **67 passed, 0 failed, 0 skipped**, across 14 suites |
+| 1,000-expression-ceiling diagnostics | **0** |
 | Expression-ceiling guard | Exit 0 |
 | Overall GitHub Actions job | **Success** |
-| Firebase deployment / merge to main | Not performed |
+| Firebase deployment / merge to `main` | Not performed |
 
-Artifact: [run #22 and its artifacts](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521)  
-Artifact name: firestore-rules-test-results  
-Artifact ID: 12346912626 (185,719 bytes; expiry reported by GitHub: 2027-01-19).
+Artifact: [run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223)  
+Artifact name: `firestore-rules-test-results`; ID `12459119458` (185,653 bytes).
 
-The downloaded artifact was inspected directly. Its summary reports static exit code 0, Emulator exit code 0, expression-ceiling diagnostic count 0, guard exit code 0, and Overall: PASS. The raw Emulator output has zero matches for the exact 1,000-expression-limit error.
+The downloaded raw artifact was inspected. Its summary reports static exit code 0, Emulator exit code 0, expression-ceiling diagnostic count 0, guard exit code 0, and `Overall: PASS`.
 
-## Security and transaction paths covered
+## Security changes verified by run #24
 
-The passing Emulator assertions include:
+1. Self-service `marketProfiles/{uid}` preference changes require a verified email. The regression test denies an unverified student's preference update and accepts the same update for a verified student.
+2. Task acceptance must atomically change the task to assigned, mark the selected proposal accepted, decrement the poster's open-task counter, and create the new deterministic Market conversation. The rules require the conversation to exist after the transaction and not exist before it.
+3. Positive acceptance transaction including the new conversation passes.
+4. Negative acceptance transaction omitting the new conversation is denied.
+5. Existing test coverage for task/offer lifecycle and create operations, proposals, reports/counters, admin operations, ratings, legacy U2U chat, and Nearby-transfer rules remains green.
 
-1. Task creation paired atomically with the poster's open-task counter.
-2. Proposal creation paired with task proposal count and the proposer's rolling-window counter.
-3. Accept transaction updating task, proposal and profile while creating the deterministic task conversation in the same transaction.
-4. Report batch paired with a deterministic report document and counter updates.
-5. Admin suspend/hide batch with listing/profile changes, suspension notice and admin log, while the admin has neither profiles/{uid} nor marketProfiles/{uid}.
-6. Admin moderation/config/support operations without a student profile, and denial of regular student Market writes without profiles/{uid}.
-7. Applied collection-group reads constrained by immutable proposerId, denial of cross-user reads, and poster task-level proposal access.
-8. Poster-only completion of an assigned task and ratings by both participants with the paired stats update.
-9. Existing accepted-friend chat and Nearby-transfer regression coverage, plus admin exclusion from the separate Market chat feature.
+The emulator results cover the tested request shapes and don't guarantee every possible future request shape. Staging verification remains necessary.
 
-These results prove the tested requests behaved as asserted in the Rules Emulator. They do not guarantee every possible request shape is free of every access-call or evaluator-complexity risk; staging verification remains required.
+## Recent CI history
 
-## Historical CI results — do not confuse with run #22
-
-- [Run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) belongs to an older rules snapshot. Its raw Emulator log contained **39** 1,000-expression-ceiling diagnostics even though the test assertions passed. It is not the current verified baseline.
-- [Run #21](https://github.com/Webster-02/Superior-Student/actions/runs/39601819592) failed the static suite (34 passed, 3 failed) while its 65 Emulator assertions passed.
-- The subsequent [run #22](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521) restored the verified baseline and passed the current static and Emulator gates with zero expression-ceiling diagnostics.
+- [Run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223): current rules candidate; static 39/39, Emulator 67/67, zero expression-ceiling diagnostics.
+- [Run #23](https://github.com/Webster-02/Superior-Student/actions/runs/39855566823): verified-email guard; static 38/38, Emulator 66/66, zero expression-ceiling diagnostics.
+- [Run #22](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521): restored baseline; static 37/37, Emulator 65/65, zero expression-ceiling diagnostics.
+- Older run [39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) used an older rules snapshot and recorded 39 expression-ceiling diagnostics. It is historical and is not the current test result.
 
 ## Remaining production gates
 
-Passing CI is not authorization to deploy. Before any production change:
+Passing CI does **not** authorize production deployment. Before any production change:
 
-- Export the rules and indexes actually deployed in Firebase and compare them to this selected source baseline. Save protected rollback copies and hashes. The Git branch comparison does not prove what is currently live.
-- Check email-verification readiness and confirm valid profiles/{uid} documents for Market students.
-- Dry-run, back up, apply and verify the historical proposal proposerId migration using a trusted one-off Admin SDK operation. Stop for manual reconciliation if a proposal document ID cannot safely identify its author.
-- Resolve the semantic addendum review gaps recorded in PROGRESS.md.
-- Deploy to a separate staging Firebase project and test student, admin, query, index and regression paths.
+- Export actually published production Rules and indexes, compare with this selected source baseline, and save protected rollback copies and hashes. Git comparison does not prove the live project matches.
+- Verify email-verification readiness and required `profiles/{uid}` records against current Firebase Auth/data.
+- Dry-run, back up, apply, and verify any historical proposal `proposerId` migration using an authorized one-off Admin SDK operation; manually reconcile mismatches rather than guessing.
+- Resolve remaining specification gaps, including admin audit-log/notice atomicity and precise lifecycle-counter requirements.
+- Deploy to a separate staging Firebase project and validate the actual student/admin/query/index flows.
 - Obtain explicit product-owner approval before any production deployment.
 
-The original MARKET_SPEC_ADDENDUM_RULES_PHASE.md **is present on the review branch** and is integrity-checked by static validation. Its semantic reconciliation is still open; it should not be described as missing.
+The original `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` is present on the review branch and integrity-checked by static validation. Its semantic gap review remains open; its historical expression-ceiling note should not be confused with run #24.
 
-No Firebase rules/index deployment or merge to main has occurred.
+No Firebase Rules or indexes have been deployed and no merge to `main` has occurred.

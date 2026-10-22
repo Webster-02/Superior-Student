@@ -1,5 +1,5 @@
 diff --git a/firestore.rules b/firestore.rules
-index 2944d790949a1fd93414a851eaf1f3ca6fef8922..8324f3bde6ee72d051a5635ba44ae73388439e02 100644
+index 2944d790949a1fd93414a851eaf1f3ca6fef8922..b039f9f896c27314eb1f57594e0c1fe911be92a6 100644
 --- a/firestore.rules
 +++ b/firestore.rules
 @@ -6,8 +6,6 @@ service cloud.firestore {
@@ -11,7 +11,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..8324f3bde6ee72d051a5635ba44ae733
      // Chat access requires an existing accepted directional friend request.
      function acceptedChatConnectionExists(uidA, uidB) {
        let forwardId = uidA + '_' + uidB;
-@@ -192,6 +190,1743 @@ service cloud.firestore {
+@@ -192,6 +190,1749 @@ service cloud.firestore {
          && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
      }
  
@@ -622,7 +622,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..8324f3bde6ee72d051a5635ba44ae733
 +        && exists(/databases/$(database)/documents/profiles/$(uid))
 +        && !exists(marketProfilePath(uid))
 +        && marketValidProfileCreate(uid, request.resource.data);
-+      allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);
++      allow update: if resource != null && marketVerified() && marketProfileUpdateAllowed(uid);
 +      allow delete: if false;
 +    }
 +
@@ -864,12 +864,18 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..8324f3bde6ee72d051a5635ba44ae733
 +        let profilePath = marketProfilePath(posterUid);
 +        let profileBefore = get(profilePath).data;
 +        let profileAfter = getAfter(profilePath).data;
++        let lowUid = posterUid < helperUid ? posterUid : helperUid;
++        let highUid = posterUid < helperUid ? helperUid : posterUid;
++        let conversationId = 'task_' + taskId + '_' + lowUid + '_' + highUid;
++        let conversationPath = /databases/$(database)/documents/marketConversations/$(conversationId);
 +        return proposalBefore.status in ['sent', 'shortlisted']
 +          && proposalAfter.status == 'accepted'
 +          && profileAfter.openTasks == profileBefore.openTasks - 1
 +          && profileAfter.lastMutation.kind == 'task'
 +          && profileAfter.lastMutation.operation == 'close'
-+          && profileAfter.lastMutation.targetId == taskId;
++          && profileAfter.lastMutation.targetId == taskId
++          && existsAfter(conversationPath)
++          && !exists(conversationPath);
 +      }
 +
 +      function marketTaskModerateDeactivateCounterValid(uid, taskId) {
@@ -1755,7 +1761,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..8324f3bde6ee72d051a5635ba44ae733
      match /profiles/{uid} {
        allow get: if signedInWithVerifiedEmail()
          && resource.data.uid == uid
-@@ -385,7 +2120,6 @@ service cloud.firestore {
+@@ -385,7 +2126,6 @@ service cloud.firestore {
          && request.auth.uid == uid;
      }
  

@@ -1,13 +1,13 @@
 # Rules diff validation
 
-- Base branch: feature/pachattar-design-foundation-phase-1
-- Base commit: 759eed423e7046d7fe127226945557a8fe4fa918
-- Baseline rules Git blob SHA: 2944d790949a1fd93414a851eaf1f3ca6fef8922
-- Current candidate rules Git blob SHA: 8324f3bde6ee72d051a5635ba44ae73388439e02
-- Compared candidate branch head: aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3
-- GitHub compare reports 1,737 added lines and 3 deleted lines in firestore.rules. The three deleted lines are blank lines; no existing rule expression was deleted.
-- firestore.base.rules is byte-for-byte identical to the selected baseline rules blob. This does not prove the currently published Firebase rules match that baseline.
-- The candidate rules blob is identical to the rules blob tested successfully in CI run #22 (39603954521).
-- DIFF_AGAINST_BASE.patch has been refreshed from GitHub compare output for the exact baseline and current candidate blobs listed above.
-- Legacy U2U authentication, friend request, chat, and Nearby/transfer rule statements remain unchanged in behavior.
-- Live production rules and indexes must still be exported and compared, with protected rollback copies and hashes, before any deployment.
+- Base branch: `feature/pachattar-design-foundation-phase-1`
+- Base commit: `759eed423e7046d7fe127226945557a8fe4fa918`
+- Baseline rules Git blob SHA: `2944d790949a1fd93414a851eaf1f3ca6fef8922`
+- Current candidate rules Git blob SHA: `b039f9f896c27314eb1f57594e0c1fe911be92a6`
+- Validated candidate commit: `46ce86ce325135814963fb5e077b6257694731cb`
+- GitHub compare: 1,743 added lines and 3 deleted blank lines in `firestore.rules`; no existing rule expression was deleted.
+- `firestore.base.rules` is byte-for-byte identical to the selected baseline's rules. This does not prove that the published production rules match the baseline.
+- Current candidate rules are the exact blob tested in CI run #24: [run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223).
+- `DIFF_AGAINST_BASE.patch` has been refreshed against the precise baseline and current candidate blobs above.
+- Existing U2U authentication, friend request, chat, and Nearby/transfer rule logic remains unchanged.
+- No live Rules/index export, Firebase deployment, or merge to `main` was performed.

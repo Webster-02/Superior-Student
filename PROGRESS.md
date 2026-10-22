@@ -1,7 +1,7 @@
 # Market Rules Review Progress
 
 **Branch:** `review/market-rules`  
-**State:** Verified Step Zero rules baseline restored and green in CI run #22. Market Step 1 build has not started. P1–P4 candidate edits to protected files were reverted. No merge to `main` and no Firebase deployment.
+**State:** Verified Rules baseline restored; targeted Market security hardening is underway on this review branch. Market Step 1 build has not started. Historical P1–P4 refactor experiments remain reverted. No merge to `main` and no Firebase deployment.
 
 ## Step Zero verification record
 
@@ -131,3 +131,36 @@ These patterns were recorded from the earlier Rules snapshot that produced the 3
 - Actual artifact output: static **37 passed, 0 failed**; Emulator **65 passed, 0 failed**; expression-ceiling guard count **0**, guard exit code **0**, final summary `Overall: PASS`.
 - Direct greps against the run #22 raw Emulator artifact: `grep -Fic -- "maximum of 1000 expressions to evaluate has been reached"` = **0**; `grep -ci "expression"` = **0**. Literal `PERMISSION_DENIED` lines = **77**, matching the expected denials logged during the passing authorization-denial tests; unexpected denials identified = **0**.
 - No build work has started. Do not begin Market Step 1 until explicitly instructed after this green baseline verification. No merge or deployment occurred.
+
+
+## Follow-up security hardening — verified CI run #24 (2026-10-22)
+
+**Current tested commit:** [`46ce86ce325135814963fb5e077b6257694731cb`](https://github.com/Webster-02/Superior-Student/commit/46ce86ce325135814963fb5e077b6257694731cb)  
+**Workflow:** [Firestore Rules Review Tests — run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223) — **success**  
+**Artifact:** `firestore-rules-test-results`, ID `12459119458`.
+
+Raw downloaded artifact was inspected directly:
+- Static validation: **39 passed, 0 failed**.
+- Firestore Rules Emulator: **67 passed, 0 failed, 0 skipped**, across 14 suites.
+- 1,000-expression-ceiling diagnostic count: **0**; CI guard exit code 0; summary `Overall: PASS`.
+- The positive acceptance test (task, accepted proposal, poster counter and new Market chat in one transaction) passes.
+- New negative acceptance test proves the transaction is denied if it changes the task to assigned and accepts the proposal but omits the new Market conversation.
+- New profile security fix: self-service `marketProfiles/{uid}` updates now require `marketVerified()`; a new test denies an unverified user's profile preference edit and allows a verified user's edit.
+
+### Current targeted rule changes
+
+1. Commit `0ce0b2e4aaf2767f4742ced6c8a75dd947bfc217` changed self-service Market profile updates from signed-in-only to verified-email authorization and added a verified/unverified regression test.
+2. Commit `46ce86ce325135814963fb5e077b6257694731cb` binds task acceptance to a brand-new deterministic conversation document in the same atomic write. The task acceptance validator requires `existsAfter(conversationPath)` and `!exists(conversationPath)`; the Market conversation's own create rule validates its schema and participants.
+
+Run #24 tested the rules blob `b039f9f896c27314eb1f57594e0c1fe911be92a6`. The workflow and both test files are the current committed versions. The artifact's raw Emulator output contains zero expression-ceiling diagnostics.
+
+### Still-open specification gaps — do not deploy yet
+
+- **Admin audit linkage:** current rules permit standalone admin pin and report-status updates without requiring the related immutable `adminLogs` entry / notice in the same batch. Decide whether to enforce atomic audit linkage for every covered admin action, then add positive and negative tests.
+- **Lifecycle-counter wording:** clarify each operation's exact counter transition; do not double-decrement task completion after acceptance or offer removal after pause.
+- **Original addendum §9:** its expression-ceiling note describes older output (including the older 39-diagnostic run). Keep the addendum itself byte-identical because the static validator verifies its supplied source hash; this progress note records the newer verified result.
+- **Production baseline:** live published rules/indexes have not been exported or compared. Email-verification readiness and Market profile completeness are not yet checked against production Auth/data.
+- **Legacy proposals:** historic `proposerId` backfill has not been run. It requires dry-run, backup, mismatch review, bounded idempotent writes and post-write verification.
+- **Staging:** no staging Firebase deployment or end-to-end staging flow checks have been performed.
+
+No Firebase Rules or indexes have been published/deployed. No merge to `main` occurred. Existing university sign-in, Student Connect chat, friend requests, notifications and Nearby-transfer rules were not edited by these two targeted Market changes.
