@@ -89,4 +89,13 @@
     <color name="market_message_bg">#14201A</color>
     <color name="market_message_ink">#FFFFFF</color>
     <color name="market_bad">#B3261E</color>
+
+    <!-- Screen 28: exact rules/safety reference tones with dark-mode equivalents. -->
+    <color name="market_rules_ok">#1E7A3C</color>
+    <color name="market_rules_bad">#B3261E</color>
+    <color name="market_rules_safe_bg">#D5EFDF</color>
+    <color name="market_rules_info_bg">#D2E7FA</color>
+    <color name="market_rules_warning_bg">#FFF0CC</color>
+    <color name="market_rules_peach_bg">#FDDACA</color>
+    <color name="market_rules_ban_bg">#FBE3E0</color>
 </resources>
