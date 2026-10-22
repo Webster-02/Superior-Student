@@ -1,6 +1,7 @@
 package com.superiorstudent.app.feature.market.ui
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -274,9 +275,7 @@ class MarketHelpActivity : AppCompatActivity() {
             MarketHelpUiPolicy.TOPIC_SAFETY_TIPS -> showPreview(
                 topic.label, MarketHelpUiPolicy.SAFETY_TIPS
             )
-            MarketHelpUiPolicy.TOPIC_FAQS -> showPreview(
-                topic.label, MarketHelpUiPolicy.FAQ_PREVIEW
-            )
+            MarketHelpUiPolicy.TOPIC_FAQS -> openFaq()
             MarketHelpUiPolicy.TOPIC_MY_REPORTS -> showPreview(
                 topic.label, MarketHelpUiPolicy.REPORTS_PREVIEW
             )
@@ -284,7 +283,15 @@ class MarketHelpActivity : AppCompatActivity() {
     }
 
     private fun showQuestion(question: MarketHelpQuestion) {
-        showPreview(question.title, question.answer)
+        openFaq(question.title)
+    }
+
+    private fun openFaq(questionTitle: String? = null) {
+        startActivity(Intent(this, MarketFaqActivity::class.java).apply {
+            if (!questionTitle.isNullOrBlank()) {
+                putExtra(MarketFaqActivity.EXTRA_QUESTION_TITLE, questionTitle)
+            }
+        })
     }
 
     private fun buildFooter(): View {
