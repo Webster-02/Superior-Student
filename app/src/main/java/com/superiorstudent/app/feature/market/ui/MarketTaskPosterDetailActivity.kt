@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -231,7 +232,7 @@ class MarketTaskPosterDetailActivity : AppCompatActivity() {
             background = rounded(color(R.color.market_card), 28f, color(R.color.market_line))
             isClickable = true
             isFocusable = true
-            setOnClickListener { toast("View proposals list is the next dedicated reference screen.") }
+            setOnClickListener { openProposals() }
         }
         val avatars = FrameLayout(this)
         val avatarSpecs = listOf(
@@ -258,6 +259,12 @@ class MarketTaskPosterDetailActivity : AppCompatActivity() {
         card.addView(PosterDetailIconView(this, PosterDetailIcon.CHEVRON, color(R.color.market_ink3)),
             LinearLayout.LayoutParams(dp(20), dp(20)))
         return card
+    }
+
+    private fun openProposals() {
+        startActivity(Intent(this, MarketProposalsActivity::class.java).apply {
+            putExtra(MarketProposalsActivity.EXTRA_TASK_LABEL, MarketProposalsUiPolicy.TASK_LABEL)
+        })
     }
 
     private fun buildFooter(): View {
@@ -301,7 +308,7 @@ class MarketTaskPosterDetailActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(8) })
             addView(makeText("View proposals", 15f, true, color(R.color.market_match_ink)))
         }
-        viewProposals.setOnClickListener { toast("Proposal list is the next dedicated reference screen.") }
+        viewProposals.setOnClickListener { openProposals() }
         row.addView(viewProposals, LinearLayout.LayoutParams(0, dp(60), 1.35f).apply {
             marginStart = dp(10)
         })

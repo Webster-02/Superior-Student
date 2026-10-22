@@ -208,6 +208,17 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 - **Verified APK:** `app-debug.apk`, 66,917,351 bytes; SHA-256 `2f696751a692398038667f31d998ad311f309a79c7f6ffcc944655a06ae7f612`. Artifact archive: 40,917,885 bytes; SHA-256 `2fda049b2ecb0c99df56aa31b74081e465b87ef6daaf733c605f920debd71f99`; expires October 29, 2026.
 - Scope is limited to the new proposal Activity, pure UI policy, custom icons, focused policy tests, detail-screen CTA handoff, manifest registration, workflow path filters and this progress entry. No Firestore rules/index changes, protected top-level tests, deployment, merge, or unrelated U2U/chat/Nearby changes.
 
+## UI-12 — Proposals list (poster side)
+
+- **Status:** implemented; awaiting CI verification.
+- Inspected `12_proposals_light.png`, `12_proposals_dark.png`, and the matching light/dark HTML references from `pachattar_market_final(1).zip`.
+- Added the poster-side Proposals screen with the reference header and “4 of 15 · Poster for health camp” subtitle; horizontal All 4 / Shortlisted 1 / Cheapest / Top rated filters; proposal cards for Zain Malik, Noor Fatima and Ayesha Khan; pastel initials avatars; rating/age metadata; PKR prices; shortlist badge; short message preview; and Decline / Shortlist / Accept actions. Uses existing Paper/Night semantic colours and Poppins.
+- Connected both entry points on the owner task screen (proposal summary card and fixed View proposals CTA) to open the dedicated proposals screen.
+- Filter chips operate on local reference fixtures: cheapest sorts PKR ascending, top-rated sorts rating descending, and shortlisted filters the locally shortlisted previews. The shortlist button toggles only in-memory preview state. Decline and Accept show clear preview-only dialogs.
+- **No proposal accept/decline/shortlist operation is persisted or sent.** The screen uses only local visual fixtures; no Firestore reads or writes, rules/index edits, Firebase deployment, or merges.
+- Added seven focused JVM policy tests for reference data, filter order, cheapest/top-rated sorting, shortlist filtering/toggling and PKR formatting. CI will verify the new tests and APK.
+- Changes are limited to the new Proposals Activity, pure policy, custom icons, unit tests, manifest registration, the existing owner-detail navigation handoff, workflow path filters and this progress record.
+
 ## Exact next step
 
-UI-11 is complete and verified. Stop for user review. Do not begin UI-12 or another screen until the user explicitly types `continue`.
+UI-12 implementation is ready for CI verification and review. Do not begin UI-13 or another screen until UI-12 has passed verification and the user explicitly types `continue`.
