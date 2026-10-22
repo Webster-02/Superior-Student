@@ -24,7 +24,7 @@ internal object MarketReportUiPolicy {
         val blockMessage = if (alsoBlock) {
             "$safeAuthor was not blocked."
         } else {
-            "No block action was taken."
+            "No block action was taken for $safeAuthor."
         }
         return "Selected reason: $safeReason.\n\n" +
             "This is a reference preview only. No report was submitted. $blockMessage"
