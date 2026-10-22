@@ -1323,7 +1323,12 @@ class MarketRepository(
                 afterMod == MarketModerationStatus.OK.wireValue
             val profileRef = marketProfileRef(ownerUid)
             val ownerProfile = if (deactivate || restore) tx.get(profileRef) else null
-            val listingPatch = linkedMapOf<String, Any>("updatedAt" to FieldValue.serverTimestamp())
+            val noticeRef = firestore.collection(USERS).document(ownerUid).collection(NOTICES).document()
+            val listingPatch = linkedMapOf<String, Any>(
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastAuditLogId" to logRef.id,
+                "lastAdminNoticeId" to noticeRef.id
+            )
             if (moderation != null) listingPatch["moderation"] = moderation.wireValue
             if (pinned != null) listingPatch["pinned"] = pinned
             tx.update(taskRef, listingPatch)
@@ -1354,7 +1359,7 @@ class MarketRepository(
                 "Your task was unpinned in Market."
             }
             createNoticeInTransaction(
-                tx, ownerUid, null,
+                tx, ownerUid, noticeRef.id,
                 if (removal) MarketNoticeType.REMOVAL else MarketNoticeType.ACTIVITY,
                 if (removal) "Task moderation update" else "Task updated",
                 noticeBody, relatedType = "task", relatedId = taskId, canAppeal = removal
@@ -1394,7 +1399,12 @@ class MarketRepository(
                 afterMod == MarketModerationStatus.OK.wireValue
             val profileRef = marketProfileRef(ownerUid)
             val ownerProfile = if (deactivate || restore) tx.get(profileRef) else null
-            val listingPatch = linkedMapOf<String, Any>("updatedAt" to FieldValue.serverTimestamp())
+            val noticeRef = firestore.collection(USERS).document(ownerUid).collection(NOTICES).document()
+            val listingPatch = linkedMapOf<String, Any>(
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastAuditLogId" to logRef.id,
+                "lastAdminNoticeId" to noticeRef.id
+            )
             if (moderation != null) listingPatch["moderation"] = moderation.wireValue
             if (pinned != null) listingPatch["pinned"] = pinned
             tx.update(offerRef, listingPatch)
@@ -1425,7 +1435,7 @@ class MarketRepository(
                 "Your offer was unpinned in Market."
             }
             createNoticeInTransaction(
-                tx, ownerUid, null,
+                tx, ownerUid, noticeRef.id,
                 if (removal) MarketNoticeType.REMOVAL else MarketNoticeType.ACTIVITY,
                 if (removal) "Offer moderation update" else "Offer updated",
                 noticeBody, relatedType = "offer", relatedId = offerId, canAppeal = removal
@@ -1494,6 +1504,7 @@ class MarketRepository(
             .whereEqualTo("sellerId", targetUid)
             .whereEqualTo("status", MarketOfferStatus.ACTIVE.wireValue)
         val logRef = firestore.collection(ADMIN_LOGS).document()
+        val noticeRef = firestore.collection(USERS).document(targetUid).collection(NOTICES).document()
 
         // Firestore's client transaction API supports document reads, not query reads.
         // Discover candidates first, then re-read each candidate reference inside the
@@ -1543,13 +1554,17 @@ class MarketRepository(
                     for (snapshot in taskDocs) {
                         tx.update(snapshot.reference, mapOf(
                             "moderation" to MarketModerationStatus.HIDDEN.wireValue,
-                            "updatedAt" to FieldValue.serverTimestamp()
+                            "updatedAt" to FieldValue.serverTimestamp(),
+                            "lastAuditLogId" to logRef.id,
+                            "lastAdminNoticeId" to noticeRef.id
                         ))
                     }
                     for (snapshot in offerDocs) {
                         tx.update(snapshot.reference, mapOf(
                             "moderation" to MarketModerationStatus.HIDDEN.wireValue,
-                            "updatedAt" to FieldValue.serverTimestamp()
+                            "updatedAt" to FieldValue.serverTimestamp(),
+                            "lastAuditLogId" to logRef.id,
+                            "lastAdminNoticeId" to noticeRef.id
                         ))
                     }
                     tx.update(profileRef, mapOf(
@@ -1564,7 +1579,7 @@ class MarketRepository(
                         adminUid, if (banned) "ban_user" else "suspend_user", "user", targetUid, reason, note
                     ))
                     createNoticeInTransaction(
-                        tx, targetUid, null, MarketNoticeType.REMOVAL,
+                        tx, targetUid, noticeRef.id, MarketNoticeType.REMOVAL,
                         if (banned) "Market account banned" else "Market account suspended",
                         reason.trim() + if (durationDays == null) "" else " Suspension duration: " + durationDays + " days.",
                         relatedType = null, relatedId = null, canAppeal = true

@@ -55,6 +55,8 @@ class MarketConvertersTest {
         val data = taskData().apply {
             put("courseTag", "Biology")
             put("budgetAmount", 0.0)
+            put("lastAuditLogId", "audit-task-1")
+            put("lastAdminNoticeId", "notice-task-1")
         }
         val task = MarketConverters.task("task1", data)
         assertNotNull(task)
@@ -71,8 +73,36 @@ class MarketConvertersTest {
 
         val malformedBudget = taskData().apply { put("budgetAmount", "free") }
         assertNull(MarketConverters.task("task1", malformedBudget))
+        assertNull(MarketConverters.task("task1", taskData().apply { put("lastAuditLogId", "") }))
+        assertNull(MarketConverters.task("task1", taskData().apply { put("lastAdminNoticeId", 17) }))
 
         assertNull(MarketConverters.task("task1", taskData().apply { put("unexpected", true) }))
+    }
+
+    @Test
+    fun offerCodecAcceptsOptionalAdminAuditPointersButRejectsMalformedPointers() {
+        val data = linkedMapOf<String, Any?>(
+            "title" to "Biology study notes",
+            "category" to "Study materials",
+            "description" to "Carefully organised biology notes for the semester.",
+            "priceType" to "free",
+            "sellerId" to "alice",
+            "sellerName" to "Alice",
+            "sellerInitials" to "AL",
+            "status" to "active",
+            "moderation" to "ok",
+            "pinned" to false,
+            "reportCount" to 0,
+            "createdAt" to now,
+            "renewedAt" to now,
+            "updatedAt" to now,
+            "expiresAt" to Timestamp(now.seconds + 30L * 24 * 60 * 60, now.nanoseconds),
+            "lastAuditLogId" to "audit-offer-1",
+            "lastAdminNoticeId" to "notice-offer-1"
+        )
+        assertNotNull(MarketConverters.offer("offer1", data))
+        assertNull(MarketConverters.offer("offer1", data + ("lastAuditLogId" to "")))
+        assertNull(MarketConverters.offer("offer1", data + ("lastAdminNoticeId" to 17)))
     }
 
     @Test

@@ -98,7 +98,9 @@ object MarketConverters {
         snapshot.data?.let { task(snapshot.id, it) }
 
     fun task(documentId: String, data: Map<String, Any?>): MarketTask? {
-        val allowedOptional = setOf("courseTag", "budgetAmount", "assignedTo")
+        val allowedOptional = setOf(
+            "courseTag", "budgetAmount", "assignedTo", "lastAuditLogId", "lastAdminNoticeId"
+        )
         if (!exactKeys(data, taskKeys, allowedOptional)) return null
         val title = str(data["title"])?.takeIf { it.length in 5..80 } ?: return null
         val category = str(data["category"])?.takeIf { it.length in 1..60 } ?: return null
@@ -120,7 +122,9 @@ object MarketConverters {
         val expiresAt = timestamp(data["expiresAt"]) ?: return null
         if (!optionalStringValid(data, "courseTag", 60) ||
             !optionalNumberValid(data, "budgetAmount") ||
-            !optionalStringValid(data, "assignedTo", Int.MAX_VALUE)
+            !optionalStringValid(data, "assignedTo", Int.MAX_VALUE) ||
+            !optionalAuditPointerValid(data, "lastAuditLogId") ||
+            !optionalAuditPointerValid(data, "lastAdminNoticeId")
         ) return null
         val courseTag = optionalString(data, "courseTag", 60)
         val budgetAmount = optionalNumber(data, "budgetAmount")
@@ -163,7 +167,9 @@ object MarketConverters {
         snapshot.data?.let { offer(snapshot.id, it) }
 
     fun offer(documentId: String, data: Map<String, Any?>): MarketOffer? {
-        val optional = setOf("courseTag", "priceAmount", "thumbnail")
+        val optional = setOf(
+            "courseTag", "priceAmount", "thumbnail", "lastAuditLogId", "lastAdminNoticeId"
+        )
         if (!exactKeys(data, offerKeys, optional)) return null
         val title = str(data["title"])?.takeIf { it.length in 5..80 } ?: return null
         val category = str(data["category"])?.takeIf { it.length in 1..60 } ?: return null
@@ -182,7 +188,9 @@ object MarketConverters {
         val expiresAt = timestamp(data["expiresAt"]) ?: return null
         if (!optionalStringValid(data, "courseTag", 60) ||
             !optionalNumberValid(data, "priceAmount") ||
-            !optionalStringValid(data, "thumbnail", 153600)
+            !optionalStringValid(data, "thumbnail", 153600) ||
+            !optionalAuditPointerValid(data, "lastAuditLogId") ||
+            !optionalAuditPointerValid(data, "lastAdminNoticeId")
         ) return null
         val courseTag = optionalString(data, "courseTag", 60)
         val priceAmount = optionalNumber(data, "priceAmount")
@@ -651,6 +659,9 @@ object MarketConverters {
 
     private fun optionalStringValid(data: Map<String, Any?>, key: String, maxLength: Int): Boolean =
         !data.containsKey(key) || ((data[key] as? String)?.length?.let { it <= maxLength } == true)
+
+    private fun optionalAuditPointerValid(data: Map<String, Any?>, key: String): Boolean =
+        !data.containsKey(key) || ((data[key] as? String)?.let { it.isNotBlank() && it.length <= 150 } == true)
 
     private fun optionalString(data: Map<String, Any?>, key: String, maxLength: Int): String? {
         if (!data.containsKey(key)) return null
