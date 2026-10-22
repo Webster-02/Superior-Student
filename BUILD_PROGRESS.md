@@ -322,13 +322,14 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 
 ## UI-21 — Loading, empty, offline, error and expired states
 
-- **Status:** implemented; verification pending.
-- Inspected `21_states_light.png`, `21_states_dark.png`, and the corresponding light/dark HTML reference files.
-- Added a native state-reference gallery with Paper/Night styling, offline banner, loading skeleton, Design empty state with Post a task action, refresh-error card with Retry, and compact expired-task state.
-- The Post a task action opens the existing Screen 07 form. Retry honestly explains that live refresh is not wired in this reference gallery and saved content is not cleared. The gallery does not alter task or offer data.
-- Added policy tests for the exact state labels/order, registered the new non-exported Activity, and added its new files to the existing Market CI path filters.
-- Live feed/cache/offline refresh behaviour remains separate: no Firestore calls or writes were added. No existing navigation, U2U login, Student Connect or Nearby transfer behaviour was changed.
+- **Status:** implemented and CI verified. Final UI commit: `d82de1a44d9d602bc4f920b8a1bdb3785ea1144f`. GitHub Actions [run #71 / ID 39824255433](https://github.com/Webster-02/Superior-Student/actions/runs/39824255433) passed JavaScript validation, clean, all JVM unit tests, debug APK build, APK verification and artifact upload.
+- Inspected the exact `21_states_light.png`, `21_states_dark.png`, and corresponding light/dark `21_states.html` reference files.
+- Added a native state-reference gallery matching the Screen 21 structure: Paper/Night colours, offline warning banner, loading skeleton card, Design empty state with **Post a task**, refresh-error card with **Retry**, and compact **Task expired** note. Skeleton lines retain the reference's varied widths.
+- **Post a task** opens the existing Screen 07 form. **Retry** displays truthful preview guidance because live feed refresh is not wired in this gallery; saved content is not cleared. The standalone gallery is registered as a non-exported Activity but is not added to the customer-facing Market menu, preserving the Screen 04 menu reference.
+- Added `MarketStatesUiPolicy`, `MarketStatesIcons`, and JVM tests for the reference text and order. Added the new files to the existing Market CI path filters.
+- **No live Firestore read/write, real cache/network retry, status transitions, Firebase rules/index changes, Student Connect, U2U login, or Nearby transfer changes** were made. Live list/cache/offline behaviour remains a separate integration step.
+- **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,025,334 bytes; archive SHA-256 `cde9b5c18b16d1b8b466e339479480f99b7a5ec64cf84605392be19adf30dc6f`. [Download from run #71](https://github.com/Webster-02/Superior-Student/actions/runs/39824255433/artifacts/12446790180). Expires October 29, 2026.
 
 ## Exact next step
 
-Stop after UI-21 verification for user review. Do not start another screen or state integration until the user explicitly types `continue`.
+Stop after UI-21 verification for user review. Do not begin another screen or state integration until the user explicitly types `continue`.
