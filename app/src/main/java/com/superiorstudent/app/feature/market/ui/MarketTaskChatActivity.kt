@@ -1,5 +1,6 @@
 package com.superiorstudent.app.feature.market.ui
 
+import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -189,10 +190,15 @@ class MarketTaskChatActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
         actions.addView(taskActionButton("Mark complete", true) {
             AlertDialog.Builder(this@MarketTaskChatActivity)
-                .setTitle("Mark task complete?")
-                .setMessage("This reference preview does not change task status or notify the other student.")
+                .setTitle("Preview completion and rating")
+                .setMessage("Open the task completion and rating preview? This will not change task status or submit a review.")
                 .setNegativeButton("Cancel", null)
-                .setPositiveButton("Got it", null)
+                .setPositiveButton("Open rating preview") { _, _ ->
+                    startActivity(Intent(this@MarketTaskChatActivity, MarketTaskRatingActivity::class.java).apply {
+                        putExtra(MarketTaskRatingActivity.EXTRA_HELPER_NAME, helperName)
+                        putExtra(MarketTaskRatingActivity.EXTRA_TASK_TITLE, taskTitle)
+                    })
+                }
                 .show()
         }, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
             marginStart = dp(8)

@@ -262,6 +262,17 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - **Verified APK:** `app-debug.apk`, 66,950,247 bytes; SHA-256 `9e2cdf87ff96b23b7a77c85dd05b4771496cd7dd3e710da1067c162d0610c44d`. Workflow artifact archive: 40,962,304 bytes; SHA-256 `3bc0a66143707bc64d838b065d87da2314bd4b9f6dd73a3ade3c8c48360edae0`; expires October 29, 2026.
 - Scope is limited to the new My tasks Activity/policy/tests, Requests and Offers menu navigation, the My tasks menu description, manifest, workflow path filters and this progress record. No Firestore rules/indexes, protected top-level tests, deployment, merge, login, or unrelated chat/Nearby logic changed.
 
+## UI-16 — Complete task and rating
+
+- **Status:** implemented; pending this step's GitHub Actions verification.
+- Inspected exact `16_rate_light.png`, `16_rate_dark.png`, and matching light/dark `16_rate.html` references from `pachattar_market_final(1).zip`.
+- Added a native completion/rating page with the back and **Complete task** header, lime check hero, **Task completed** heading, helper-specific prompt, five selectable amber star controls (four selected by default), five togglable experience tags (the first three selected initially), optional multiline comment field, live character count, and pinned lime **Submit rating** action. Uses existing Market Paper/Night semantic resources and Poppins.
+- The sample comment is exactly 51 characters, so the visible counter starts at **51/200** instead of reproducing the reference HTML's off-by-one 52/200 label.
+- Connected the existing Screen 14 **Mark complete** action to a preview confirmation that can open Screen 16 and pass the helper name/task title. Both the confirmation and Submit rating action explicitly state that task status and ratings are not written.
+- Added pure policy tests for reference defaults, star bounds, tag selection/toggling and optional comment limits.
+- **No live task completion, review submission, Firestore writes, or chat changes** are connected. Student Connect and Nearby transfer logic remain untouched.
+- Scope is limited to the new rating Activity/policy/tests, the Screen 14 Mark complete handoff, manifest registration, workflow path filters, and this progress entry. No Firestore rules/indexes, protected top-level tests, deployments, merges, login, or unrelated features were changed.
+
 ## Exact next step
 
-Stop after UI-15 verification for user review. Do not begin screen 16 or another feature until the user explicitly types `continue`.
+Stop after UI-16 verification for user review. Do not begin screen 17 or another feature until the user explicitly types `continue`.

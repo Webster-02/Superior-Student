@@ -69,6 +69,12 @@
             android:label="My tasks"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
+            android:name=".feature.market.ui.MarketTaskRatingActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
+            android:exported="false"
+            android:label="Complete task"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
+        <activity
             android:name=".feature.market.ui.MarketTaskChatActivity"
             android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"
