@@ -137,6 +137,7 @@ on:
       - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketRepository.kt'
       - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketOperationTaskAdapter.kt'
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketOperationTaskAdapterTest.kt'
+      - 'scripts/verify_market_reference_routes.py'
       - '.github/workflows/market-ranking-check.yml'
       - 'BUILD_PROGRESS.md'
 
@@ -162,6 +163,8 @@ jobs:
           gradle-version: '8.11.1'
       - name: Validate embedded JavaScript
         run: find app/src/main/assets/js -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
+      - name: Verify Market reference routes
+        run: python3 scripts/verify_market_reference_routes.py
       - name: Clean project
         run: gradle clean --no-daemon
       - name: Run unit tests
