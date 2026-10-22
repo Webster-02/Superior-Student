@@ -155,6 +155,31 @@ function reportStatusMutationBatch({
   return batch;
 }
 
+function adminSupportMutationBatch({
+  adminUid, ticketId, ownerUid, ticketPatch, action, logId, noticeId,
+  profilePatch = null, logTargetType = 'support', logTargetId = ticketId,
+  noticeRelatedType = 'support', noticeRelatedId = ticketId, includeNotice = true,
+}) {
+  const db = user(adminUid);
+  const batch = writeBatch(db);
+  if (profilePatch) batch.update(doc(db, 'marketProfiles', ownerUid), profilePatch);
+  batch.update(doc(db, 'support', ticketId), {
+    ...ticketPatch, lastAuditLogId: logId, lastAdminNoticeId: noticeId,
+  });
+  batch.set(doc(db, 'adminLogs', logId), {
+    adminId: adminUid, action, targetType: logTargetType, targetId: logTargetId,
+    reason: 'Support action test', note: '', createdAt: serverTimestamp(),
+  });
+  if (includeNotice) {
+    batch.set(doc(db, 'users', ownerUid, 'notices', noticeId), {
+      type: 'support_reply', title: 'Support update', body: 'A support agent updated your ticket.',
+      relatedType: noticeRelatedType, relatedId: noticeRelatedId,
+      read: false, createdAt: serverTimestamp(), canAppeal: false, appealed: false,
+    });
+  }
+  return batch;
+}
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId,
@@ -1083,7 +1108,7 @@ describe('admin operations do not require U2U profile documents', () => {
     }).commit());
   });
 
-  it('admin without profiles/{uid} can create notices and adminLogs, reply to support, and edit config/market', async () => {
+  it('admin without profiles/{uid} can create notices and adminLogs, reply to support with linked audit records, and edit config/market', async () => {
     await seed('admins', 'admin', {});
     await seed('support', 'ticket-admin-profile-free', {
       userId: 'alice', type: 'bug', subject: 'Market contact form issue', body: 'The Market contact form does not open correctly.',
@@ -1103,12 +1128,72 @@ describe('admin operations do not require U2U profile documents', () => {
       adminId: 'admin', action: 'moderate', targetType: 'task', targetId: 'admin-task',
       reason: 'Test action', note: '', createdAt: serverTimestamp(),
     }));
-    await assertSucceeds(updateDoc(doc(db, 'support/ticket-admin-profile-free'), {
+    await assertFails(updateDoc(doc(db, 'support/ticket-admin-profile-free'), {
       status: 'replied', replies: [{ from: 'admin', text: 'We have reviewed your report.', at: Timestamp.now() }], updatedAt: serverTimestamp(),
     }));
+    await assertSucceeds(adminSupportMutationBatch({
+      adminUid: 'admin', ticketId: 'ticket-admin-profile-free', ownerUid: 'alice',
+      ticketPatch: {
+        status: 'replied',
+        replies: [{ from: 'admin', text: 'We have reviewed your report.', at: Timestamp.now() }],
+        updatedAt: serverTimestamp(),
+      },
+      action: 'reply_support_ticket', logId: 'admin-profile-support-log',
+      noticeId: 'admin-profile-support-notice',
+    }).commit());
     await assertSucceeds(marketConfigAuditBatch('admin', 'config-admin-profile-free', {
       announcement: { text: 'Market maintenance note', active: true, until: null },
       blockedWords: ['blocked-word'], rankWeights: { newness: 40, rating: 40, match: 20 },
     }));
+  });
+
+  it('admin support reply and resolution require a matching new audit log and notice', async () => {
+    await seed('admins', 'admin', {});
+    await seedProfile('alice', { openSupportTickets: 1 });
+    await seed('support', 'support-reply-linked', {
+      userId: 'alice', type: 'bug', subject: 'Market reply test', body: 'The support form needs a response from an admin.',
+      status: 'open', replies: [], createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    await assertFails(adminSupportMutationBatch({
+      adminUid: 'admin', ticketId: 'support-reply-linked', ownerUid: 'alice',
+      ticketPatch: { status: 'replied', replies: [{ from: 'admin', text: 'We reviewed this request.', at: Timestamp.now() }], updatedAt: serverTimestamp() },
+      action: 'reply_support_ticket', logId: 'support-reply-no-notice-log',
+      noticeId: 'support-reply-no-notice', includeNotice: false,
+    }).commit());
+    await assertFails(adminSupportMutationBatch({
+      adminUid: 'admin', ticketId: 'support-reply-linked', ownerUid: 'alice',
+      ticketPatch: { status: 'replied', replies: [{ from: 'admin', text: 'We reviewed this request.', at: Timestamp.now() }], updatedAt: serverTimestamp() },
+      action: 'reply_support_ticket', logId: 'support-reply-wrong-target-log',
+      noticeId: 'support-reply-wrong-target-notice', logTargetId: 'different-ticket',
+    }).commit());
+    await assertSucceeds(adminSupportMutationBatch({
+      adminUid: 'admin', ticketId: 'support-reply-linked', ownerUid: 'alice',
+      ticketPatch: { status: 'replied', replies: [{ from: 'admin', text: 'We reviewed this request.', at: Timestamp.now() }], updatedAt: serverTimestamp() },
+      action: 'reply_support_ticket', logId: 'support-reply-valid-log',
+      noticeId: 'support-reply-valid-notice',
+    }).commit());
+
+    await seed('support', 'support-resolve-linked', {
+      userId: 'alice', type: 'bug', subject: 'Market resolve test', body: 'Please close this support request after resolving it.',
+      status: 'open', replies: [], createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    await assertFails(adminSupportMutationBatch({
+      adminUid: 'admin', ticketId: 'support-resolve-linked', ownerUid: 'alice',
+      ticketPatch: { status: 'resolved', updatedAt: serverTimestamp() },
+      action: 'resolve_support_ticket', logId: 'support-resolve-missing-log',
+      noticeId: 'support-resolve-missing-notice', profilePatch: {
+        openSupportTickets: 0, updatedAt: serverTimestamp(),
+        lastMutation: { kind: 'support', operation: 'resolve', targetId: 'support-resolve-linked', at: serverTimestamp() },
+      }, includeNotice: false,
+    }).commit());
+    await assertSucceeds(adminSupportMutationBatch({
+      adminUid: 'admin', ticketId: 'support-resolve-linked', ownerUid: 'alice',
+      ticketPatch: { status: 'resolved', updatedAt: serverTimestamp() },
+      action: 'resolve_support_ticket', logId: 'support-resolve-valid-log',
+      noticeId: 'support-resolve-valid-notice', profilePatch: {
+        openSupportTickets: 0, updatedAt: serverTimestamp(),
+        lastMutation: { kind: 'support', operation: 'resolve', targetId: 'support-resolve-linked', at: serverTimestamp() },
+      },
+    }).commit());
   });
 });

@@ -1723,6 +1723,47 @@ service cloud.firestore {
     }
 
     match /support/{ticketId} {
+      function marketSupportAuditNoticeValid(before, after) {
+        let auditLogId = after.lastAuditLogId;
+        let noticeId = after.lastAdminNoticeId;
+        let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
+        let noticePath = /databases/$(database)/documents/users/$(after.userId)/notices/$(noticeId);
+        return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
+          && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
+          && existsAfter(auditPath) && !exists(auditPath)
+          && existsAfter(noticePath) && !exists(noticePath)
+          && getAfter(auditPath).data.adminId == request.auth.uid
+          && getAfter(auditPath).data.action in ['reply_support_ticket', 'resolve_support_ticket']
+          && getAfter(auditPath).data.targetType == 'support'
+          && getAfter(auditPath).data.targetId == ticketId
+          && getAfter(auditPath).data.createdAt == request.time
+          && getAfter(noticePath).data.type == 'support_reply'
+          && getAfter(noticePath).data.relatedType == 'support'
+          && getAfter(noticePath).data.relatedId == ticketId
+          && getAfter(noticePath).data.createdAt == request.time;
+      }
+
+      function marketSupportAdminUpdateValid(ticketId, before, after) {
+        let changed = after.diff(before).affectedKeys();
+        return after.userId == before.userId
+          && after.status in ['open', 'replied', 'resolved']
+          && (before.status != 'resolved' || after.status == 'resolved')
+          && after.replies is list && after.replies.size() <= 20
+          && after.updatedAt == request.time
+          && (
+            (before.type == 'appeal'
+              && changed.hasOnly(['status', 'replies', 'updatedAt']))
+            || (before.type != 'appeal'
+              && changed.hasOnly(['status', 'replies', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
+              && marketSupportAuditNoticeValid(before, after))
+          )
+          && (after.status != 'resolved' || before.status == 'resolved'
+            || (getAfter(marketProfilePath(before.userId)).data.openSupportTickets == marketProfile(before.userId).openSupportTickets - 1
+              && getAfter(marketProfilePath(before.userId)).data.lastMutation.kind == 'support'
+              && getAfter(marketProfilePath(before.userId)).data.lastMutation.operation == 'resolve'
+              && getAfter(marketProfilePath(before.userId)).data.lastMutation.targetId == ticketId));
+      }
+
       allow get, list: if marketVerified() && (resource.data.userId == request.auth.uid || marketIsAdmin());
       allow create: if marketVerified()
         && request.resource.data.keys().hasAll(['userId', 'type', 'subject', 'body', 'status', 'replies', 'createdAt', 'updatedAt'])
@@ -1783,20 +1824,8 @@ service cloud.firestore {
           && (resource.data.replies.size() <= 19 || request.resource.data.replies[19] == resource.data.replies[19])
           && request.resource.data.updatedAt == request.time
         )
-        || (
-          marketIsAdmin()
-          && request.resource.data.userId == resource.data.userId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'replies', 'updatedAt'])
-          && request.resource.data.status in ['open', 'replied', 'resolved']
-          && (resource.data.status != 'resolved' || request.resource.data.status == 'resolved')
-          && request.resource.data.replies is list && request.resource.data.replies.size() <= 20
-          && request.resource.data.updatedAt == request.time
-          && (request.resource.data.status != 'resolved' || resource.data.status == 'resolved'
-            || (getAfter(marketProfilePath(resource.data.userId)).data.openSupportTickets == marketProfile(resource.data.userId).openSupportTickets - 1
-              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.kind == 'support'
-              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.operation == 'resolve'
-              && getAfter(marketProfilePath(resource.data.userId)).data.lastMutation.targetId == ticketId))
-        )
+        || (marketIsAdmin()
+          && marketSupportAdminUpdateValid(ticketId, resource.data, request.resource.data))
       );
       allow delete: if false;
     }

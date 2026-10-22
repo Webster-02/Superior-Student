@@ -61,6 +61,13 @@ const checks = [
     assert.ok(rules.includes("getAfter(noticePath).data.relatedType == 'report'"));
     assert.ok(tests.includes('report-status changes require a new linked audit log and reporter notice'));
   }],
+  ['admin support replies and resolutions require linked audit logs and notices', () => {
+    assert.ok(rules.includes('function marketSupportAuditNoticeValid'));
+    assert.ok(rules.includes('function marketSupportAdminUpdateValid'));
+    assert.ok(rules.includes("getAfter(auditPath).data.action in ['reply_support_ticket', 'resolve_support_ticket']"));
+    assert.ok(tests.includes('admin support reply and resolution require a matching new audit log and notice'));
+    assert.ok(tests.includes('admin-profile-support-log'));
+  }],
   ['Market config edits require a newly created matching audit log in the same write', () => {
     assert.match(rules, /function marketConfigAuditValid\(\)[\s\S]{0,1100}existsAfter\(auditLogPath\)[\s\S]{0,300}!exists\(auditLogPath\)[\s\S]{0,500}action == 'update_market_config'/);
     assert.ok(tests.includes('requires a matching new audit log for admin edits'));
