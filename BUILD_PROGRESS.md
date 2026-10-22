@@ -368,13 +368,14 @@ Stop after UI-23 verification for user review. Do not implement Screen 24 (appea
 
 ## UI-24 — Appeal form
 
-- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- **Status:** implemented and CI verified on code commit `309112c95a76676913436ccd757e39136d52316b`. GitHub Actions [run #77 / ID 39830529145](https://github.com/Webster-02/Superior-Student/actions/runs/39830529145) passed JavaScript validation, clean, all JVM unit tests, debug APK build, APK verification and artifact upload.
 - Inspected the exact `24_appeal_light.png`, `24_appeal_dark.png` and matching light/dark `24_appeal.html` references from `pachattar_market_final(1).zip`.
 - Added a native appeal form with back/title/subtitle, offer summary and Removed badge, “Why should we review this?” editable multiline reason, live character count, blue response-time/one-appeal reminder, and fixed lime **Send appeal** action. Paper/Night Market resources and Poppins are reused.
 - Prefilled the editable reason with the exact reference text and capped input at 400 characters. The supplied mock screenshot shows 118/400, but its displayed text is 120 characters; the app therefore calculates and shows the accurate count **120/400**. Blank/whitespace reasons are rejected with a guidance dialog.
 - Connected Screen 23’s **Appeal this decision** action to Screen 24. Pressing **Send appeal** displays a clear preview-only confirmation.
 - **No appeal is sent or saved, and the offer status does not change.** Live appeal creation/support replies and notice updates remain disconnected. No Firestore rules/index changes, deployment, login, Student Connect or Nearby transfer changes.
 - Added focused tests for reference copy, actual initial count, the 400-character limit, blank validation and truthful preview messaging; added the new Activity and policy/icon/tests to the Market workflow path filters.
+- **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,044,962 bytes; archive SHA-256 `2d7d46e9c948d9f3a09cc24bc26f95e35060113d81ec5d357d58ef8e1df0a3b3`. [Download from run #77](https://github.com/Webster-02/Superior-Student/actions/runs/39830529145/artifacts/12448437178). Expires October 29, 2026.
 
 ## Exact next step
 
