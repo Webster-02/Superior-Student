@@ -326,10 +326,10 @@ class MarketOffersActivity : AppCompatActivity() {
 
     private fun showMenu(anchor: View) {
         MarketMenuSheet.show(this) { item ->
-            if (item.label == "My tasks") {
-                startActivity(Intent(this, MarketMyTasksActivity::class.java))
-            } else {
-                toast(item.feedbackMessage)
+            when (item.label) {
+                "My tasks" -> startActivity(Intent(this, MarketMyTasksActivity::class.java))
+                "My offers" -> startActivity(Intent(this, MarketMyOffersActivity::class.java))
+                else -> toast(item.feedbackMessage)
             }
         }
     }

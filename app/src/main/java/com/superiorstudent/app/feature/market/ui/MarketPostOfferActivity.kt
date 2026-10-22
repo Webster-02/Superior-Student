@@ -56,6 +56,9 @@ class MarketPostOfferActivity : AppCompatActivity() {
     private var selectedPriceMode = MarketPostOfferPriceMode.RUPEES
     private var compressedCover: ByteArray? = null
 
+    private val editMode: Boolean
+        get() = intent.getBooleanExtra(EXTRA_EDIT_MODE, false)
+
     private val coverPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) handleCoverSelected(uri)
     }
@@ -63,6 +66,12 @@ class MarketPostOfferActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
+        selectedCategory = intent.getStringExtra(EXTRA_CATEGORY)
+            ?.takeIf { it in MarketPostOfferUiPolicy.categories }
+            ?: MarketPostOfferUiPolicy.REFERENCE_CATEGORY
+        selectedPriceMode = intent.getStringExtra(EXTRA_PRICE_MODE)
+            ?.let { runCatching { MarketPostOfferPriceMode.valueOf(it) }.getOrNull() }
+            ?: MarketPostOfferPriceMode.RUPEES
 
         root = FrameLayout(this).apply {
             setBackgroundColor(color(R.color.market_bg))
@@ -95,7 +104,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
 
         form.addView(makeLabel("Title"), fieldParams(bottom = 6))
         titleInput = makeInput(
-            MarketPostOfferUiPolicy.REFERENCE_TITLE, singleLine = true,
+            intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { MarketPostOfferUiPolicy.REFERENCE_TITLE }, singleLine = true,
             maxLength = MarketPostOfferUiPolicy.MAX_TITLE_LENGTH, inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         ).apply {
             textSize = 16f
@@ -152,7 +161,9 @@ class MarketPostOfferActivity : AppCompatActivity() {
             marginEnd = dp(8)
         })
         amountInput = makeInput(
-            MarketPostOfferUiPolicy.REFERENCE_AMOUNT, singleLine = true, maxLength = 8,
+            intent.getStringExtra(EXTRA_AMOUNT).orEmpty().ifBlank {
+                if (editMode && selectedPriceMode != MarketPostOfferPriceMode.RUPEES) "" else MarketPostOfferUiPolicy.REFERENCE_AMOUNT
+            }, singleLine = true, maxLength = 8,
             inputType = android.text.InputType.TYPE_CLASS_NUMBER, transparentBackground = true
         ).apply {
             textSize = 16f
@@ -176,7 +187,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
         form.addView(descriptionHeader, fieldParams(bottom = 6))
 
         descriptionInput = makeInput(
-            MarketPostOfferUiPolicy.REFERENCE_DESCRIPTION, singleLine = false,
+            intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty().ifBlank { MarketPostOfferUiPolicy.REFERENCE_DESCRIPTION }, singleLine = false,
             maxLength = MarketPostOfferUiPolicy.MAX_DESCRIPTION_LENGTH,
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
@@ -223,11 +234,13 @@ class MarketPostOfferActivity : AppCompatActivity() {
         row.addView(iconButton(MarketPostOfferIcon.BACK, "Back") { finish() },
             LinearLayout.LayoutParams(dp(44), dp(44)))
         val headings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        headings.addView(makeText("Post an offer", 20f, true, color(R.color.market_ink)).apply {
+        headings.addView(makeText(if (editMode) "Edit offer" else "Post an offer",
+            20f, true, color(R.color.market_ink)).apply {
             letterSpacing = -0.02f
         })
-        headings.addView(makeText("What can you help with?", 13f, false,
-            color(R.color.market_ink2)))
+        headings.addView(makeText(
+            if (editMode) "Update your offer details" else "What can you help with?",
+            13f, false, color(R.color.market_ink2)))
         row.addView(headings, LinearLayout.LayoutParams(0, -2, 1f).apply {
             marginStart = dp(12)
         })
@@ -401,11 +414,12 @@ class MarketPostOfferActivity : AppCompatActivity() {
             background = rounded(color(R.color.market_match), 16f)
             isClickable = true
             isFocusable = true
-            contentDescription = "Post offer preview"
+            contentDescription = if (editMode) "Preview offer changes" else "Post offer preview"
             addView(MarketPostOfferIconView(this@MarketPostOfferActivity,
                 MarketPostOfferIcon.CHECK, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
-            addView(makeText("Post offer", 15f, true, color(R.color.market_match_ink)))
+            addView(makeText(if (editMode) "Preview changes" else "Post offer",
+                15f, true, color(R.color.market_match_ink)))
             setOnClickListener { validateAndShowPreview() }
         }
         footer.addView(button, LinearLayout.LayoutParams(-1, dp(52)))
@@ -431,11 +445,12 @@ class MarketPostOfferActivity : AppCompatActivity() {
 
         val price = MarketPostOfferUiPolicy.priceSummary(selectedPriceMode, input.amount)
         AlertDialog.Builder(this)
-            .setTitle("Offer preview")
+            .setTitle(if (editMode) "Changes preview" else "Offer preview")
             .setMessage(
                 "${input.title.trim()}\n\nCategory: ${input.category}\nPrice: $price\n" +
                     "Cover photo: ${if (compressedCover == null) "Not added" else "Added for this preview"}\n\n" +
-                    "Live offer publishing is not connected in this step. Nothing has been posted or saved."
+                    if (editMode) "Changes are preview-only. Nothing has been saved." else
+                        "Live offer publishing is not connected in this step. Nothing has been posted or saved."
             )
             .setPositiveButton("Got it", null)
             .show()
@@ -531,4 +546,13 @@ class MarketPostOfferActivity : AppCompatActivity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float) = (value * resources.displayMetrics.density).toInt()
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    companion object {
+        const val EXTRA_EDIT_MODE = "market.postoffer.edit_mode"
+        const val EXTRA_TITLE = "market.postoffer.title"
+        const val EXTRA_CATEGORY = "market.postoffer.category"
+        const val EXTRA_PRICE_MODE = "market.postoffer.price_mode"
+        const val EXTRA_AMOUNT = "market.postoffer.amount"
+        const val EXTRA_DESCRIPTION = "market.postoffer.description"
+    }
 }

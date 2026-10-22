@@ -46,7 +46,7 @@ internal object MarketMenuItems {
             subtitle = "Active, paused, expired",
             icon = MarketMenuIcon.OFFERS,
             iconBackground = R.color.market_lav,
-            feedbackMessage = "My offers screen will be implemented in its own reference step."
+            feedbackMessage = "Manage your active, paused and expired offers."
         ),
         MarketMenuItem(
             label = "Notices",

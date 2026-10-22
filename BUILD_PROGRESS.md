@@ -299,6 +299,16 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - **No live offer publishing or Firestore writes** are connected. No Firebase rules/indexes, protected top-level tests, login, Student Connect or Nearby transfer behavior was changed.
 - **Verified APK:** `app-debug.apk`, 66,983,136 bytes; SHA-256 `c1fb0d88b5d72913e3cecb2c6aa64e904b07cefd704ecebea0f931814ef23efe`. Workflow artifact archive: 40,995,497 bytes; SHA-256 `28235413ed960d51ebb005e0d1c641795706edc2b873fc3fa45b66791d645fcc`; expires October 29, 2026.
 
+## UI-19 — My offers
+
+- **Status:** implemented in code commit pending CI verification.
+- Inspected the exact `19_myoffers_light.png`, `19_myoffers_dark.png`, and corresponding light/dark `19_myoffers.html` references in `pachattar_market_final(1).zip`.
+- Added a native **My offers** screen with a back/header block, Active/Paused/Expired segmented tabs and live local counts (2/1/1 by default), rounded offer cards, category and price labels, posting/expiry details, four compact action buttons per offer, the reference blue renewal-policy note, and a fixed lime **Post an offer** button.
+- Active fixtures match the reference’s two visible offers: Ocular Anatomy notes at Rs. 300 (expires in 18 days) and typing/report formatting for Swap (renewal available in 3 days). Additional local fixtures populate the Paused and Expired tabs.
+- Pause/Resume and Renew update only the in-memory preview state; Delete requires confirmation and removes only the local fixture. Renew is disabled when the local fixture is not eligible. Edit opens Screen 18 prefilled as an edit preview. Post an offer opens Screen 18 without publishing.
+- Added My offers navigation to the existing Offers menu and registered the Activity. Added policy tests for reference counts, status transitions, renewal rules, and category palette. The edit-mode handoff uses local intent extras; changing form values still does not persist.
+- **No live offers, saved-state updates, deletions, pauses, renewals, or Firestore writes** are connected. No Firebase rules/indexes, protected top-level tests, login, Student Connect or Nearby transfer behavior was changed.
+
 ## Exact next step
 
-Stop after UI-18 verification for user review. Do not begin screen 19 or another feature until the user explicitly types `continue`.
+Stop after UI-19 verification for user review. Do not begin screen 20 or another feature until the user explicitly types `continue`.
