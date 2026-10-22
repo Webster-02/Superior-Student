@@ -393,6 +393,16 @@ Stop after UI-24 verification for user review. Do not implement Screen 25 or liv
 - **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,047,993 bytes; archive SHA-256 `4584a3c357f4015dca803fb417d436cc78ddfc49f6b99e7c06a11209039ee509`. [Download from run #79](https://github.com/Webster-02/Superior-Student/actions/runs/39832292089/artifacts/12449581848). Expires October 29, 2026.
 - No live Firebase read/write, Firestore rules/index changes, deployment, login, Student Connect or Nearby transfer changes.
 
+## UI-26 — Help and safety
+
+- **Status:** implemented and CI verified on fix commit `f96a0541d2c8a5f31aae05bd363c436bb8068944`. GitHub Actions [run #82 / ID 39836522782](https://github.com/Webster-02/Superior-Student/actions/runs/39836522782) passed JavaScript validation, clean, all JVM unit tests, debug APK build, APK verification and artifact upload. Initial run #81 caught an `EditText` Kotlin setter typo; it was corrected in the next commit and run #82 passed.
+- Inspected the supplied `26_help_light.png`, `26_help_dark.png` and corresponding light/dark HTML references from `pachattar_market_final(1).zip`.
+- Added a native Help and safety reference screen using the existing Paper/Night market tokens, Poppins and in-app vector icons. It includes the header/subtitle, searchable two-by-two topic tiles (**Posting rules**, **Safety tips**, **FAQs**, **My reports**), the four reference popular questions, and the fixed **Still stuck?** support card with the lime **Contact support** CTA.
+- Connected **Help and safety** from both existing Market listing menus and registered the Activity as non-exported. Search filters topic/question titles; topic/question rows open explanatory previews.
+- Rules, FAQ, My reports and Contact support are **preview-only** in this step. The screen does not fetch/create reports, send support messages, read live account status, process payments, or claim a request succeeded. Future reference steps can connect the dedicated destinations.
+- Added focused policy tests and the menu description assertion; added Screen 26 source/test paths to Market CI filtering. No Firestore rules/index changes, live Firebase writes, login, Student Connect or Nearby transfer changes.
+- **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,062,601 bytes; archive SHA-256 `ffee4e007da0ceb2bd6541133d145b47369662a6b10d3ee4fddfbd3ebe8af43b`. [Download from run #82](https://github.com/Webster-02/Superior-Student/actions/runs/39836522782/artifacts/12451341741). Expires October 29, 2026.
+
 ## Exact next step
 
-Stop after UI-25 verification for user review. Do not implement Screen 26 or connect live moderation/suspension enforcement until the user explicitly types `continue`.
+Stop after UI-26 verification for user review. Implement Screen 27 only after the user explicitly replies `continue`.
