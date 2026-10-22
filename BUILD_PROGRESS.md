@@ -336,13 +336,14 @@ Stop after UI-21 verification for user review. Do not begin another screen or st
 
 ## UI-22 — Notices inbox
 
-- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- **Status:** implemented and CI verified on code commit `8890d764304f4d3d62ca4d0b5f11ffe127bc878a`. GitHub Actions [run #73 / ID 39827210430](https://github.com/Webster-02/Superior-Student/actions/runs/39827210430) passed JavaScript validation, clean, all JVM unit tests, debug APK build, APK verification and artifact upload.
 - Inspected the exact `22_notices_light.png`, `22_notices_dark.png`, and matching `22_notices.html` references in `pachattar_market_final(1).zip`.
 - Added a native Notices Activity matching the reference header, Activity/U2U team segmented control, rounded message list, icon tiles, divider lines, two unread dots on the team-message view, timestamps and the 60-day retention note. Paper/Night colours and Poppins are reused.
 - The default tab is **U2U team 2**, matching the supplied screenshots. The Activity tab switches to three local preview fixtures. Row taps show an explicit preview dialog; the removed-offer dialog states that detail/appeal is a separate step and that no appeal is submitted.
 - Connected the existing **Notices** row in the Market menu from both Requests and Offers to this Activity. Updated the menu helper copy and registered the Activity as non-exported.
 - **All notice rows/counts/unread dots are local fixtures.** Live notice queries, persisted read state, detailed notice/appeal navigation and support-ticket updates are not connected. No Firestore rules/indexes, deployment, login, Student Connect or Nearby transfer behavior changed.
-- Added focused policy tests for reference labels/order/copy, unread dots, retention text and the preview-only appeal disclosure. The workflow will run because this commit changes monitored manifest, Market entry-point and progress files.
+- Added focused policy tests for reference labels/order/copy, unread dots, retention text and the preview-only appeal disclosure. Added the new Notices Activity, policy, icons and test to the Market CI path filters.
+- **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,032,464 bytes; archive SHA-256 `46818bc16d605282f73d4c74a62532dc63c399255010988ea1d97176e0b99bf1`. [Download from run #73](https://github.com/Webster-02/Superior-Student/actions/runs/39827210430/artifacts/12447841012). Expires October 29, 2026.
 
 ## Exact next step
 
