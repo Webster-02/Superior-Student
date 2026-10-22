@@ -25,6 +25,7 @@ const checks = [
   ['offer create validates payload before linked profile reads', () => assert.match(rules, /allow create: if marketVerified\(\)[\s\S]{0,160}marketValidOfferCreate\(offerId, request\.resource\.data\)[\s\S]{0,160}marketUserCanPost\(request\.auth\.uid\)[\s\S]{0,160}marketValidOfferCreateLinkedState\(offerId, request\.resource\.data\)/)],
   ['assigned task completion is explicitly poster-only', () => assert.match(rules, /after\.status == 'completed'[\s\S]{0,300}request\.auth\.uid == before\.posterId/)],
   ['assigned-helper completion override is absent', () => assert.doesNotMatch(rules, /The assigned helper may mark completion/)],
+  ['unverified email is denied Market profile updates in Emulator tests', () => assert.ok(tests.includes('requires a verified email for Market profile updates'))],
   ['poster completion allow and helper deny test exists', () => assert.ok(tests.includes('allows the poster but denies the assigned helper from completing a task'))],
   ['student Market writes without U2U profile are denied in tests', () => assert.ok(tests.includes('denies student Market writes when profiles/{uid} does not exist'))],
   ['admin operations without a U2U profile are tested', () => assert.ok(tests.includes('admin without profiles/{uid} and marketProfiles/{uid} can hide/restore'))],
@@ -50,7 +51,7 @@ const checks = [
   ['deploy checklist mandates production export and rollback', () => assert.ok(checklist.toLowerCase().includes('production') && checklist.toLowerCase().includes('rollback'))],
 
   ['Market update rules use one changed-field dispatcher per document match', () => {
-    assert.ok(rules.includes('allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);'));
+    assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketProfileUpdateAllowed(uid);'));
     assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketTaskUpdateAllowed(taskId);'));
     assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketOfferUpdateAllowed(offerId);'));
     assert.ok(rules.includes('allow update: if resource != null && marketVerified() && marketProposalUpdateAllowed(taskId, userId);'));

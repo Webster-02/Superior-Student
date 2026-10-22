@@ -116,6 +116,17 @@ describe('marketProfiles', () => {
     await assertSucceeds(updateDoc(doc(user('alice'), 'marketProfiles', 'alice'), { skillTags: ['Biology'], updatedAt: serverTimestamp() }));
     await assertFails(deleteDoc(doc(user('alice'), 'marketProfiles', 'alice')));
   });
+  it('requires a verified email for Market profile updates', async () => {
+    await seedProfile('alice');
+    await assertFails(updateDoc(
+      doc(user('alice', false), 'marketProfiles', 'alice'),
+      { skillTags: ['Biology'], updatedAt: serverTimestamp() },
+    ));
+    await assertSucceeds(updateDoc(
+      doc(user('alice', true), 'marketProfiles', 'alice'),
+      { skillTags: ['Biology'], updatedAt: serverTimestamp() },
+    ));
+  });
   it('allows an admin list/read but does not let a non-admin read another profile', async () => {
     await seedProfile('alice');
     await seed('admins', 'admin', {});

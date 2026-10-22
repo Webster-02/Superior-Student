@@ -797,7 +797,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/profiles/$(uid))
         && !exists(marketProfilePath(uid))
         && marketValidProfileCreate(uid, request.resource.data);
-      allow update: if resource != null && marketSignedIn() && marketProfileUpdateAllowed(uid);
+      allow update: if resource != null && marketVerified() && marketProfileUpdateAllowed(uid);
       allow delete: if false;
     }
 
