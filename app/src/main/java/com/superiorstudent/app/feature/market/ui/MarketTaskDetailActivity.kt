@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -267,7 +268,19 @@ class MarketTaskDetailActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
             addView(makeText("Send proposal", 15f, true, color(R.color.market_match_ink)))
         }
-        button.setOnClickListener { toast("Proposal form is the next reference-screen step.") }
+        button.setOnClickListener {
+            startActivity(Intent(this@MarketTaskDetailActivity, MarketSendProposalActivity::class.java).apply {
+                putExtra(MarketSendProposalActivity.EXTRA_TASK_ID, intent.getStringExtra(EXTRA_ID).orEmpty())
+                putExtra(MarketSendProposalActivity.EXTRA_TASK_TITLE, model.title)
+                putExtra(MarketSendProposalActivity.EXTRA_CATEGORY, model.category)
+                putExtra(
+                    MarketSendProposalActivity.EXTRA_BUDGET,
+                    (model.budgetValue + " " + model.budgetFootnote).trim()
+                )
+                putExtra(MarketSendProposalActivity.EXTRA_DEADLINE, model.deadlineDate)
+                putExtra(MarketSendProposalActivity.EXTRA_AUTHOR, model.author)
+            })
+        }
         footer.addView(button, LinearLayout.LayoutParams(-1, dp(52)))
         return footer
     }
