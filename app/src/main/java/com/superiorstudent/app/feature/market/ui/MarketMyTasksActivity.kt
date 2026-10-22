@@ -191,16 +191,10 @@ class MarketMyTasksActivity : AppCompatActivity() {
             color(R.color.market_ink)), LinearLayout.LayoutParams(-2, -2))
         val status = makePill(item.status, statusBackground(item.statusTone),
             statusForeground(item.statusTone))
-        pills.addView(status, LinearLayout.LayoutParams(-2, -2).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            weight = 0f
-        })
-        val spacer = View(this)
-        pills.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
-        // Keep status anchored to the card's right edge, like the reference.
-        pills.removeView(status)
-        pills.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
-        pills.addView(status, LinearLayout.LayoutParams(-2, -2))
+        // Flexible spacer keeps the status chip at the far right, like the reference.
+        pills.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        pills.addView(makePill(item.status, statusBackground(item.statusTone),
+            statusForeground(item.statusTone)), LinearLayout.LayoutParams(-2, -2))
         card.addView(pills)
 
         card.addView(makeText(item.title, 14f, true, color(R.color.market_ink)).apply {
@@ -312,6 +306,8 @@ class MarketMyTasksActivity : AppCompatActivity() {
         setColor(fill)
         stroke?.let { setStroke(dp(1), it) }
     }
+
+    private fun color(id: Int): Int = getColor(id)
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float) = (value * resources.displayMetrics.density).toInt()
