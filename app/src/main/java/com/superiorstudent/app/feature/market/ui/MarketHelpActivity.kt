@@ -269,9 +269,7 @@ class MarketHelpActivity : AppCompatActivity() {
 
     private fun openTopic(topic: MarketHelpTopic) {
         when (topic.label) {
-            MarketHelpUiPolicy.TOPIC_POSTING_RULES -> showPreview(
-                topic.label, MarketHelpUiPolicy.RULES_PREVIEW
-            )
+            MarketHelpUiPolicy.TOPIC_POSTING_RULES -> openRules()
             MarketHelpUiPolicy.TOPIC_SAFETY_TIPS -> showPreview(
                 topic.label, MarketHelpUiPolicy.SAFETY_TIPS
             )
@@ -292,6 +290,10 @@ class MarketHelpActivity : AppCompatActivity() {
                 putExtra(MarketFaqActivity.EXTRA_QUESTION_TITLE, questionTitle)
             }
         })
+    }
+
+    private fun openRules() {
+        startActivity(Intent(this, MarketRulesActivity::class.java))
     }
 
     private fun buildFooter(): View {
