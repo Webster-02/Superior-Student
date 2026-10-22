@@ -1743,6 +1743,42 @@ service cloud.firestore {
           && getAfter(noticePath).data.createdAt == request.time;
       }
 
+      function marketAppealDecisionAuditNoticeValid(ticketId, before, after) {
+        let auditLogId = after.get('lastAuditLogId', null);
+        let noticeId = after.get('lastAdminNoticeId', null);
+        let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
+        let noticePath = /databases/$(database)/documents/users/$(before.userId)/notices/$(noticeId);
+        return before.type == 'appeal'
+          && after.type == 'appeal'
+          && after.userId == before.userId
+          && after.relatedType == before.relatedType
+          && after.relatedId == before.relatedId
+          && after.status == 'resolved'
+          && marketAppealDecisionFieldsOnly(before, after)
+          && auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
+          && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
+          && existsAfter(auditPath) && !exists(auditPath)
+          && existsAfter(noticePath) && !exists(noticePath)
+          && getAfter(auditPath).data.adminId == request.auth.uid
+          && getAfter(auditPath).data.action in ['approve_appeal', 'reject_appeal']
+          && getAfter(auditPath).data.targetType == 'support'
+          && getAfter(auditPath).data.targetId == ticketId
+          && getAfter(auditPath).data.createdAt == request.time
+          && getAfter(noticePath).data.type == 'appeal_result'
+          && getAfter(noticePath).data.title == (getAfter(auditPath).data.action == 'approve_appeal' ? 'Appeal approved' : 'Appeal rejected')
+          && getAfter(noticePath).data.relatedType == 'support'
+          && getAfter(noticePath).data.relatedId == ticketId
+          && getAfter(noticePath).data.canAppeal == false
+          && getAfter(noticePath).data.appealed == false
+          && getAfter(noticePath).data.createdAt == request.time;
+      }
+
+      function marketAppealDecisionFieldsOnly(before, after) {
+        let changed = after.diff(before).affectedKeys();
+        return changed.hasAll(['status', 'lastAuditLogId', 'lastAdminNoticeId'])
+          && changed.hasOnly(['status', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId']);
+      }
+
       function marketSupportUserUpdateValid(before, after) {
         let changed = after.diff(before).affectedKeys();
         return before.userId == request.auth.uid
@@ -1789,7 +1825,8 @@ service cloud.firestore {
           && after.updatedAt == request.time
           && (
             (before.type == 'appeal'
-              && changed.hasOnly(['status', 'replies', 'updatedAt']))
+              && changed.hasOnly(['status', 'replies', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
+              && marketAppealDecisionAuditNoticeValid(ticketId, before, after))
             || (before.type != 'appeal'
               && after.keys().hasAll(['lastAuditLogId', 'lastAdminNoticeId'])
               && changed.hasOnly(['status', 'replies', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])

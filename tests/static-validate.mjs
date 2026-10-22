@@ -61,6 +61,12 @@ const checks = [
     assert.ok(rules.includes("getAfter(noticePath).data.relatedType == 'report'"));
     assert.ok(tests.includes('report-status changes require a new linked audit log and reporter notice'));
   }],
+  ['appeal decisions require linked approve/reject audit logs and owner notices', () => {
+    assert.ok(rules.includes('function marketAppealDecisionAuditNoticeValid'));
+    assert.ok(rules.includes("getAfter(auditPath).data.action in ['approve_appeal', 'reject_appeal']"));
+    assert.ok(rules.includes("getAfter(noticePath).data.type == 'appeal_result'"));
+    assert.ok(tests.includes('appeal decisions require matching new decision audit log and owner notice'));
+  }],
   ['admin support replies and resolutions require linked audit logs and notices', () => {
     assert.ok(rules.includes('function marketSupportAuditNoticeValid'));
     assert.ok(rules.includes('function marketSupportAdminUpdateValid'));

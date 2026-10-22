@@ -180,6 +180,40 @@ function adminSupportMutationBatch({
   return batch;
 }
 
+function appealDecisionMutationBatch({
+  adminUid, ticketId, ownerUid, approved, logId, noticeId,
+  logAction = approved ? 'approve_appeal' : 'reject_appeal',
+  logTargetType = 'support', logTargetId = ticketId,
+  noticeType = 'appeal_result', noticeTitle = approved ? 'Appeal approved' : 'Appeal rejected',
+  noticeRelatedType = 'support', noticeRelatedId = ticketId, includeNotice = true,
+  includePointers = true, profileAfter = 1,
+}) {
+  const db = user(adminUid);
+  const batch = writeBatch(db);
+  const ticketUpdate = { status: 'resolved', updatedAt: serverTimestamp() };
+  if (includePointers) {
+    ticketUpdate.lastAuditLogId = logId;
+    ticketUpdate.lastAdminNoticeId = noticeId;
+  }
+  batch.update(doc(db, 'support', ticketId), ticketUpdate);
+  batch.update(doc(db, 'marketProfiles', ownerUid), {
+    openSupportTickets: profileAfter, updatedAt: serverTimestamp(),
+    lastMutation: { kind: 'support', operation: 'resolve', targetId: ticketId, at: serverTimestamp() },
+  });
+  batch.set(doc(db, 'adminLogs', logId), {
+    adminId: adminUid, action: logAction, targetType: logTargetType, targetId: logTargetId,
+    reason: 'Appeal decision test', note: '', createdAt: serverTimestamp(),
+  });
+  if (includeNotice) {
+    batch.set(doc(db, 'users', ownerUid, 'notices', noticeId), {
+      type: noticeType, title: noticeTitle, body: 'Your appeal decision has been recorded.',
+      relatedType: noticeRelatedType, relatedId: noticeRelatedId,
+      read: false, createdAt: serverTimestamp(), canAppeal: false, appealed: false,
+    });
+  }
+  return batch;
+}
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId,
@@ -1145,6 +1179,53 @@ describe('admin operations do not require U2U profile documents', () => {
       announcement: { text: 'Market maintenance note', active: true, until: null },
       blockedWords: ['blocked-word'], rankWeights: { newness: 40, rating: 40, match: 20 },
     }));
+  });
+
+  it('appeal decisions require matching new decision audit log and owner notice', async () => {
+    await seed('admins', 'admin', {});
+    await seedProfile('alice', { openSupportTickets: 2 });
+    const seedAppeal = async (id, linkedNotice) => seed('support', id, {
+      userId: 'alice', type: 'appeal', relatedType: 'notice', relatedId: linkedNotice,
+      subject: 'Please review the removal', body: 'I believe this listing was removed in error.',
+      status: 'open', replies: [], createdAt: Timestamp.now(), updatedAt: Timestamp.now(),
+    });
+    const ticketId = 'appeal-notice-alice';
+    await seedAppeal(ticketId, 'notice-alice');
+    await assertFails(appealDecisionMutationBatch({
+      adminUid: 'admin', ticketId, ownerUid: 'alice', approved: true,
+      logId: 'appeal-missing-pointers-log', noticeId: 'appeal-missing-pointers-notice',
+      includePointers: false, profileAfter: 1,
+    }).commit());
+    await assertFails(appealDecisionMutationBatch({
+      adminUid: 'admin', ticketId, ownerUid: 'alice', approved: true,
+      logId: 'appeal-missing-notice-log', noticeId: 'appeal-missing-notice',
+      includeNotice: false, profileAfter: 1,
+    }).commit());
+    await assertFails(appealDecisionMutationBatch({
+      adminUid: 'admin', ticketId, ownerUid: 'alice', approved: true,
+      logId: 'appeal-wrong-target-log', noticeId: 'appeal-wrong-target-notice',
+      logTargetId: 'different-appeal', profileAfter: 1,
+    }).commit());
+    await assertFails(appealDecisionMutationBatch({
+      adminUid: 'admin', ticketId, ownerUid: 'alice', approved: true,
+      logId: 'appeal-wrong-action-log', noticeId: 'appeal-wrong-action-notice',
+      logAction: 'reject_appeal', profileAfter: 1,
+    }).commit());
+    await assertFails(appealDecisionMutationBatch({
+      adminUid: 'admin', ticketId, ownerUid: 'alice', approved: false,
+      logId: 'appeal-wrong-notice-log', noticeId: 'appeal-wrong-notice',
+      noticeRelatedId: 'different-appeal', profileAfter: 1,
+    }).commit());
+    await assertSucceeds(appealDecisionMutationBatch({
+      adminUid: 'admin', ticketId, ownerUid: 'alice', approved: true,
+      logId: 'appeal-valid-approve-log', noticeId: 'appeal-valid-approve-notice', profileAfter: 1,
+    }).commit());
+    const rejectedId = 'appeal-reject-alice';
+    await seedAppeal(rejectedId, 'notice-alice-reject');
+    await assertSucceeds(appealDecisionMutationBatch({
+      adminUid: 'admin', ticketId: rejectedId, ownerUid: 'alice', approved: false,
+      logId: 'appeal-valid-reject-log', noticeId: 'appeal-valid-reject-notice', profileAfter: 0,
+    }).commit());
   });
 
   it('admin support reply and resolution require a matching new audit log and notice', async () => {
