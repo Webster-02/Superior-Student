@@ -197,6 +197,17 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 - **Verified APK:** `app-debug.apk`, 66,900,947 bytes; SHA-256 `a1d0e2add59903da3ade079714b56e11aebc7dc2c0ca33248df77232ae24445f`. Artifact archive: 40,905,401 bytes; SHA-256 `5f4dd2dd12e229b1914bdf649c8a3e15bef182a9011b6ff3efbabbd53f72cb94`; expires October 29, 2026.
 - Implementation is isolated to `MarketPostTaskStep3Activity.kt` plus this progress note. No manifest change was needed because the rules sheet is a dialog inside the existing review Activity.
 
+## UI-11 — Send proposal form
+
+- **Status:** implemented and CI verified.
+- Inspected the exact `11_proposal_light.png`, `11_proposal_dark.png`, and the corresponding light/dark HTML references from `pachattar_market_final(1).zip`.
+- Added the native proposal form matching the reference structure: back/header and task subtitle; task summary card; editable message with a live 400-character counter; side-by-side price and delivery fields; quick-pick delivery chips (1, 2, 3, 5 and 7 days); blue guidance panel; and fixed lime Send proposal action. Existing Market Paper/Night semantic resources and Poppins are reused.
+- Connected the existing prospective-helper **Send proposal** action on the task detail screen to open the proposal form and pass the task title, category, budget, deadline and poster name. The form defaults to the reference message, Rs. 1,200 and 2 days for the Design fixture; the displayed counter reflects the actual sample message length (106/400) rather than copying the mockup's inaccurate 108 count.
+- Quick-pick chips update the editable delivery field. Local validation checks a non-empty message up to 400 characters, a positive whole PKR amount, and delivery from 1 to 30 days. **The final action validates locally and displays preview-only feedback; it does not send or write a proposal to Firestore.**
+- **Successful verification:** GitHub Actions run [#44 / run ID 39738584685](https://github.com/Webster-02/Superior-Student/actions/runs/39738584685), code commit `dee6458416be7490e7992450e08a33c86b0d0b36`. JavaScript validation, clean, all JVM unit tests (including seven proposal policy tests), debug APK build, APK verification and artifact upload all passed.
+- **Verified APK:** `app-debug.apk`, 66,917,351 bytes; SHA-256 `2f696751a692398038667f31d998ad311f309a79c7f6ffcc944655a06ae7f612`. Artifact archive: 40,917,885 bytes; SHA-256 `2fda049b2ecb0c99df56aa31b74081e465b87ef6daaf733c605f920debd71f99`; expires October 29, 2026.
+- Scope is limited to the new proposal Activity, pure UI policy, custom icons, focused policy tests, detail-screen CTA handoff, manifest registration, workflow path filters and this progress entry. No Firestore rules/index changes, protected top-level tests, deployment, merge, or unrelated U2U/chat/Nearby changes.
+
 ## Exact next step
 
-UI-10 is complete and verified. Stop for user review. Do not begin UI-11 or another screen until the user explicitly types `continue`.
+UI-11 is complete and verified. Stop for user review. Do not begin UI-12 or another screen until the user explicitly types `continue`.
