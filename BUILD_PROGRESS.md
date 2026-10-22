@@ -352,12 +352,13 @@ Stop after UI-22 verification for user review. Do not start Screen 23 (notice de
 
 ## UI-23 — Notice detail (offer removed)
 
-- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- **Status:** implemented and CI verified on code commit `a671c9fedeb9c2bf7245497e1d2b442666ab3a79`. GitHub Actions [run #75 / ID 39828451469](https://github.com/Webster-02/Superior-Student/actions/runs/39828451469) passed JavaScript validation, clean, all JVM unit tests, debug APK build, APK verification and artifact upload.
 - Inspected the exact `23_notice_light.png`, `23_notice_dark.png`, and matching light/dark HTML references in `pachattar_market_final(1).zip`.
 - Added a native notice-detail Activity matching the back/title header, alert tile, notice timestamp, offer summary (`Assignment writing service`, Rs. 500), Rule 1 explanation, warning ladder, blue information banner, and fixed **Appeal this decision** / **Read posting rules** actions. It reuses Paper/Night Market tokens and Poppins.
 - Connected only the matching **Your offer was removed** row from Screen 22 to this detail page. Other sample notices retain their existing preview behavior.
 - The appeal button and rules button provide explicit preview dialogs. **No appeal is submitted, no offer status changes, and no live rules page opens**; Screen 24 (appeal form) remains a separate step. The notice and offer details are local reference fixtures only.
 - Added focused policy tests for reference copy, warning ladder, offer details and truthful preview disclosures. Added this screen and test to the Market CI path filters.
+- **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,041,863 bytes; archive SHA-256 `2df9530281329c93a4eaaabfc37cde415307e772185710a7ac16331fff5f2745`. [Download from run #75](https://github.com/Webster-02/Superior-Student/actions/runs/39828451469/artifacts/12447344194). Expires October 29, 2026.
 - No Firestore rules/index changes, deployment, login, Student Connect or Nearby transfer logic changed.
 
 ## Exact next step
