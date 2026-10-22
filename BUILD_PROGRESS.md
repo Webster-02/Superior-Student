@@ -384,12 +384,13 @@ Stop after UI-24 verification for user review. Do not implement Screen 25 or liv
 
 ## UI-25 — Posting paused / suspension state
 
-- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- **Status:** implemented and CI verified on code commit `93c2a8b3ca13dcdb36641148dadb11e136dad973`. GitHub Actions [run #79 / ID 39832292089](https://github.com/Webster-02/Superior-Student/actions/runs/39832292089) passed JavaScript validation, clean, all JVM unit tests, debug APK build, APK verification and artifact upload.
 - Inspected the exact `25_suspended_light.png`, `25_suspended_dark.png` and corresponding light/dark HTML references from `pachattar_market_final(1).zip`.
 - Added a native paused-posting reference screen matching the Market header, centered warning card, suspension end date, Rule 1 reason, “You can still” three allowed actions, “You cannot” posting/proposal restriction, and fixed **Rules** / **Appeal** footer actions. Reuses existing Paper/Night tokens and Poppins.
 - **Appeal** opens the existing Screen 24 appeal form. **Rules** shows transparent preview copy because the full rules page is not implemented yet.
 - This is a **static reference fixture**: its 27 Oct 2026 / 5 days label is the supplied screenshot value. The Activity does not read account status or enforce posting restrictions; live suspension state, posting gates and account actions are separate integration work.
 - Registered the new Activity as non-exported and added focused policy tests for the exact reason/date/actions and the static-preview disclosure. Added its files to the Market CI workflow path filters.
+- **Verified debug APK artifact:** `superior-student-debug-apk`, archive size 41,047,993 bytes; archive SHA-256 `4584a3c357f4015dca803fb417d436cc78ddfc49f6b99e7c06a11209039ee509`. [Download from run #79](https://github.com/Webster-02/Superior-Student/actions/runs/39832292089/artifacts/12449581848). Expires October 29, 2026.
 - No live Firebase read/write, Firestore rules/index changes, deployment, login, Student Connect or Nearby transfer changes.
 
 ## Exact next step
