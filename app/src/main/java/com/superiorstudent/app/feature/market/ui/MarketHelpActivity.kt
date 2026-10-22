@@ -155,7 +155,7 @@ class MarketHelpActivity : AppCompatActivity() {
             setHintTextColor(color(R.color.market_ink3))
             setPadding(0, 0, 0, 0)
             background = null
-            singleLine = true
+            setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             inputType = android.text.InputType.TYPE_CLASS_TEXT
             includeFontPadding = false
