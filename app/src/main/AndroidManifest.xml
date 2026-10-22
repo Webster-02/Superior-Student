@@ -165,6 +165,12 @@
             android:label="Rules and safety"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
+            android:name=".feature.market.ui.MarketSupportActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
+            android:exported="false"
+            android:label="Contact support"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
+        <activity
             android:name=".feature.market.ui.MarketTaskDetailActivity"
             android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"

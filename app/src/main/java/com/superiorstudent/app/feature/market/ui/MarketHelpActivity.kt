@@ -296,6 +296,10 @@ class MarketHelpActivity : AppCompatActivity() {
         startActivity(Intent(this, MarketRulesActivity::class.java))
     }
 
+    private fun openSupport() {
+        startActivity(Intent(this, MarketSupportActivity::class.java))
+    }
+
     private fun buildFooter(): View {
         val footer = FrameLayout(this).apply {
             background = GradientDrawable(
@@ -332,8 +336,7 @@ class MarketHelpActivity : AppCompatActivity() {
             contentDescription = MarketHelpUiPolicy.CONTACT_BUTTON
             addView(makeText(MarketHelpUiPolicy.CONTACT_BUTTON, 13.5f, true,
                 color(R.color.market_match_ink)))
-            setOnClickListener { showPreview(MarketHelpUiPolicy.CONTACT_BUTTON,
-                MarketHelpUiPolicy.SUPPORT_PREVIEW) }
+            setOnClickListener { openSupport() }
         }
         card.addView(contact, LinearLayout.LayoutParams(-2, dp(42)))
         footer.addView(card, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
