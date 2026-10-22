@@ -264,12 +264,13 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 
 ## UI-16 — Complete task and rating
 
-- **Status:** implemented; pending this step's GitHub Actions verification.
+- **Status:** implemented and CI verified on code commit `356c7afcaf7c4c185a1454f6e7bf15ee3eafe8ae`. GitHub Actions run [#57 / run ID 39782120016](https://github.com/Webster-02/Superior-Student/actions/runs/39782120016) passed JavaScript validation, clean, JVM unit tests, debug APK build, APK verification, and artifact upload.
 - Inspected exact `16_rate_light.png`, `16_rate_dark.png`, and matching light/dark `16_rate.html` references from `pachattar_market_final(1).zip`.
 - Added a native completion/rating page with the back and **Complete task** header, lime check hero, **Task completed** heading, helper-specific prompt, five selectable amber star controls (four selected by default), five togglable experience tags (the first three selected initially), optional multiline comment field, live character count, and pinned lime **Submit rating** action. Uses existing Market Paper/Night semantic resources and Poppins.
 - The sample comment is exactly 51 characters, so the visible counter starts at **51/200** instead of reproducing the reference HTML's off-by-one 52/200 label.
 - Connected the existing Screen 14 **Mark complete** action to a preview confirmation that can open Screen 16 and pass the helper name/task title. Both the confirmation and Submit rating action explicitly state that task status and ratings are not written.
 - Added pure policy tests for reference defaults, star bounds, tag selection/toggling and optional comment limits.
+- **Verified APK:** `app-debug.apk`, 66,966,668 bytes; SHA-256 `0b24fc05cc7c8554ec3a6d7137a69d6737019fbf34fe9f1783ed0d8e1fe39d7c`. Workflow artifact archive: 40,968,144 bytes; SHA-256 `78d37445154c217e713f60150dd407ef9eac6034ed20ea523d074ab993d8f69c`; expires October 29, 2026.
 - **No live task completion, review submission, Firestore writes, or chat changes** are connected. Student Connect and Nearby transfer logic remain untouched.
 - Scope is limited to the new rating Activity/policy/tests, the Screen 14 Mark complete handoff, manifest registration, workflow path filters, and this progress entry. No Firestore rules/indexes, protected top-level tests, deployments, merges, login, or unrelated features were changed.
 
