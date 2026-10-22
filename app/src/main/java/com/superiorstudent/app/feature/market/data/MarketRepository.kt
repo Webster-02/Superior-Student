@@ -1792,10 +1792,14 @@ class MarketRepository(
                 require(profile.exists()) { "The appeal owner's Market profile is missing." }
                 val count = profile.long("openSupportTickets").toInt()
                 require(count > 0) { "The owner's support ticket counter needs attention." }
+                val resolveNoticeRef = firestore.collection(USERS).document(userId)
+                    .collection(NOTICES).document()
 
                 tx.update(ticketRef, mapOf(
                     "status" to MarketSupportStatus.RESOLVED.wireValue,
-                    "updatedAt" to FieldValue.serverTimestamp()
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                    "lastAuditLogId" to resolveLogRef.id,
+                    "lastAdminNoticeId" to resolveNoticeRef.id
                 ))
                 tx.update(profileRef, mapOf(
                     "openSupportTickets" to count - 1,
@@ -1807,7 +1811,7 @@ class MarketRepository(
                     "support", ticketId, reason, note
                 ))
                 createNoticeInTransaction(
-                    tx, userId, null, MarketNoticeType.APPEAL_RESULT,
+                    tx, userId, resolveNoticeRef.id, MarketNoticeType.APPEAL_RESULT,
                     if (approved) "Appeal approved" else "Appeal rejected",
                     when {
                         approved && listingRestored -> "Your appeal was approved and the listing was restored. Reason: " + reason.trim()
