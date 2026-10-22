@@ -1,12 +1,13 @@
 # Rules diff validation
 
-- Base branch: `feature/pachattar-design-foundation-phase-1`
-- Base commit: `759eed423e7046d7fe127226945557a8fe4fa918`
-- Baseline Rules Git blob SHA: `2944d790949a1fd93414a851eaf1f3ca6fef8922`
-- Final candidate Rules Git blob SHA: `a53fcdfccf0e8763052070cb194d226b27fc61b0`
-- GitHub compare confirms: 1,287 added lines and 0 deleted lines for `firestore.rules`.
-- Every base Rules line is preserved in original order; legacy U2U authentication, friend, chat, Nearby and transfer blocks are unchanged.
-- The only Rules behavior change beyond adding Market blocks is the poster-only completion check inside the Market task update branch.
-- The final candidate retains the trailing newline from the base Rules file.
-- Full unified diff: `DIFF_AGAINST_BASE.patch`.
-- Live production rules/indexes must still be exported and compared before any deployment.
+- Base branch: feature/pachattar-design-foundation-phase-1
+- Base commit: 759eed423e7046d7fe127226945557a8fe4fa918
+- Baseline rules Git blob SHA: 2944d790949a1fd93414a851eaf1f3ca6fef8922
+- Current candidate rules Git blob SHA: 8324f3bde6ee72d051a5635ba44ae73388439e02
+- Compared candidate branch head: aab0795a1d67b0e8d99f52bf3e815abcd0aa85b3
+- GitHub compare reports 1,737 added lines and 3 deleted lines in firestore.rules. The three deleted lines are blank lines; no existing rule expression was deleted.
+- firestore.base.rules is byte-for-byte identical to the selected baseline rules blob. This does not prove the currently published Firebase rules match that baseline.
+- The candidate rules blob is identical to the rules blob tested successfully in CI run #22 (39603954521).
+- DIFF_AGAINST_BASE.patch has been refreshed from GitHub compare output for the exact baseline and current candidate blobs listed above.
+- Legacy U2U authentication, friend request, chat, and Nearby/transfer rule statements remain unchanged in behavior.
+- Live production rules and indexes must still be exported and compared, with protected rollback copies and hashes, before any deployment.

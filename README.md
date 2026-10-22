@@ -1,51 +1,45 @@
 # U2U Market Firestore rules — review branch
 
-**Review branch:** `review/market-rules`. The candidate is committed for review but has not been merged to `main` and has not been deployed to Firebase. `firestore.rules` is canonical; `firestore.market.rules.fragment` is a reference fragment and is not deployable alone.
+**Review branch:** review/market-rules. The candidate has not been merged to main and has not been deployed to Firebase. No Firebase publish or deploy is authorized by this review package.
 
 ## Package contents
 
-- `firestore.rules`, `firestore.indexes.json`: merged candidate rules and composite indexes.
-- `firestore.base.rules`, `rollback/firestore.rollback.branch-snapshot.rules`: byte-for-byte snapshot of the selected source-branch rules. This is **not** proof that live production rules match the branch.
-- `DIFF_AGAINST_BASE.patch`, `BASE_DIFF_VALIDATION.txt`, `RULES_CHANGE_SUMMARY.md`: diff, base-integrity checks and change summary.
-- `tests/firestore.rules.test.mjs`, `tests/static-validate.mjs`, `package.json`, `package-lock.json`, `firebase.json`: Emulator tests, static validation and pinned dependencies.
-- `.github/workflows/firestore-rules-test.yml`: review-branch CI workflow that runs both test suites and uploads real output.
-- `MARKET_FINAL_SPEC.md`, `INDEX_QUERY_MAP.md`, `DEPLOY_CHECKLIST.md`: spec, query/index mapping, and deployment safety checklist.
-- `TEST_RESULTS.md`: successful CI result, failed-first-run history and remaining diagnostics.
+- firestore.rules and firestore.indexes.json: candidate rules and composite indexes.
+- firestore.base.rules and rollback/firestore.rollback.branch-snapshot.rules: snapshots of the selected source-branch rules, not proof that live production matches them.
+- DIFF_AGAINST_BASE.patch and BASE_DIFF_VALIDATION.txt: current source-branch rules diff and its baseline hashes.
+- tests/firestore.rules.test.mjs, tests/static-validate.mjs, package.json, package-lock.json, and firebase.json: Emulator tests, static validation and pinned dependencies.
+- .github/workflows/firestore-rules-test.yml: review-branch workflow that runs both suites, checks the expression ceiling, and uploads raw outputs.
+- MARKET_FINAL_SPEC.md, MARKET_SPEC_ADDENDUM_RULES_PHASE.md, INDEX_QUERY_MAP.md, DEPLOY_CHECKLIST.md and PROGRESS.md: specification, query/index map, release checklist and review findings.
+- TEST_RESULTS.md: current verified CI result, historical run notes and remaining production gates.
 
 ## Existing U2U chat and Nearby
 
-Compared with `feature/pachattar-design-foundation-phase-1`, the non-Market prefix and the suffix from `match /profiles/{uid}` are byte-identical. The legacy `activeChatConversationMember()` helper and existing `chatConversations`, messages, read-state, reaction, typing and Nearby-transfer rules are preserved. The full compare reports **1,287 additions and 0 deletions in `firestore.rules`**. Legacy friend-chat and Nearby positive-path tests pass.
+Compared with feature/pachattar-design-foundation-phase-1, the source diff reports 1,737 added lines and 3 deleted blank lines in firestore.rules. No existing rule expression was deleted; the original U2U authentication, friend-chat and Nearby-transfer rule logic is preserved. This comparison is against a selected Git baseline, not a live Firebase export.
 
-Admin exclusion is applied to the new `marketConversations` collection; Market admin operations are authorized through `admins/{uid}` and do not require an admin `profiles/{uid}` or `marketProfiles/{uid}`. Regular student Market writes do require a U2U profile at `profiles/{uid}`.
+Admin exclusion applies to the new marketConversations collection. Market admin operations use admins/{uid} and do not require admin profiles/{uid} or marketProfiles/{uid}. Regular student Market writes require an existing profiles/{uid} U2U profile.
 
 ## Applied proposals and task completion
 
-A proposal must be created with `proposerId == proposal document ID == request.auth.uid`; updates cannot change `proposerId`. The recursive collection-group `get/list` rule authorizes only documents where `resource.data.proposerId == request.auth.uid`, so the Applied query must include `where('proposerId', '==', auth.uid)`. The task poster retains task-level proposal access. Historical proposal documents need a trusted Admin SDK backfill before rollout.
+A proposal must carry proposerId == proposal document ID == request.auth.uid, and updates cannot change proposerId. The collection-group Applied query must be filtered by proposerId equal to the signed-in user's UID. The task poster retains task-level proposal access. Historical proposal data needs an audited proposerId backfill before rollout.
 
-The `assigned -> completed` Market task transition is poster-only; the assigned-helper completion alternative is absent. Ratings for completed tasks remain available to both participants with the matching `userStats` change in the same batch.
+The assigned-to-completed Market task transition is poster-only. Both participants may rate the completed task with a matching userStats update. Market chat is a separate, text-only v1 feature; existing U2U chat and Nearby behavior remain independent.
 
-## Posting validation and configuration
+## Current CI evidence
 
-Task and offer content edits reuse create-equivalent validation and require `marketUserCanPost(owner)`. Suspended/banned owners cannot edit content but may perform allowed, counter-linked lifecycle cleanup. Limits enforced in Rules are 3 open tasks, 10 proposals per rolling 24-hour window, 15 proposals per task, 5 active offers and 3 reports to auto-hide. The admin UI must render Limits read-only. Only `announcement`, `blockedWords` and non-negative `rankWeights` are editable; weights must sum to 100.
+Latest verified run: [Firestore Rules Review Tests — run #22](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521), testing commit 2a136f1cc8478a27b0ef101a7a3c0ec8bde86ad9. The current rules blob is identical to the tested blob.
 
-Market chat is a separate collection and **text-only for v1**. It excludes files, reactions, typing indicators and Nearby transfer. Conversation IDs encode the kind, listing and sorted participant UIDs; only the validated message preview, participant read state and `updatedAt` can change.
+- npm ci: exit 0.
+- Static preflight: **37 passed, 0 failed**.
+- Firestore Rules Emulator: **65 passed, 0 failed, 0 skipped**, across 14 suites.
+- Expression-ceiling diagnostic count: **0**; workflow guard passed.
+- Artifact: firestore-rules-test-results, ID 12346912626.
 
-## Real GitHub Actions result
+An older run (39533202614) produced 39 expression-ceiling diagnostics and is retained only as historical evidence. It must not be described as the latest test result.
 
-Latest run: [Firestore Rules Review Tests — run 39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614), commit `d5490826a6ee55b5d5861382068fb9571e769227`.
+## Addendum and production gate
 
-- `npm ci`: exit 0 (781 packages installed).
-- Static preflight: **31 passed, 0 failed**.
-- Firestore Rules Emulator: **65 tests, 65 passed, 0 failed, 0 skipped**, across 14 suites.
-- GitHub Actions job: success.
-- Artifact: [firestore-rules-test-results.zip](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614/artifacts/12315439964), SHA-256 `f459f2730e9bb09e3ae311859c33ce90b17a5477bc01135ef9fcf0429a635060`.
+MARKET_SPEC_ADDENDUM_RULES_PHASE.md is present on this branch and checked by the static test. Its semantic contradiction/gap review is still open; see PROGRESS.md.
 
-**Important log caveat:** the successful Emulator log also contains 39 diagnostic lines mentioning that evaluation reached Firestore Rules' 1,000-expression ceiling while evaluating some requests. They did not cause a test assertion to fail in this run, but this means the log is not warning-free. Review and simplify these paths before production approval. This is distinct from the per-operation/batch document-access-call limits; passing the required positive-path tests provides evidence for those specific tested flows, not every possible request shape.
+Before any production deployment, export and hash currently published production rules and indexes, compare them with the reviewed source baseline, confirm Auth/profile prerequisites, safely backfill and verify historical proposal proposerId values, and test all required flows in a separate staging project. Keep rollback copies of actual live rules/indexes. Obtain explicit product-owner approval before touching production.
 
-## Missing source addendum
-
-The requested `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` was not present in the accessible attachments or the source branch. It has not been fabricated or represented as a verbatim copy. The supplied explicit decisions—immutable `proposerId`, read-only limits, non-negative rank weights and text-only Market chat—are reflected in `MARKET_FINAL_SPEC.md`, but the original addendum still needs to be supplied before the documentation reconciliation can be considered complete.
-
-## Production gate
-
-Do not deploy until the live production Rules and indexes have been exported and compared, existing email-verification coverage has been checked in Firebase Authentication, historical `proposerId` documents have been backfilled with a trusted one-off Admin SDK operation, and the package has been verified on a separate staging Firebase project. Store live production exports separately from the selected branch snapshot for rollback. No deployment or merge to `main` has been performed.
+No Firebase deployment or merge to main has occurred.
