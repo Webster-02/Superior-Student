@@ -301,13 +301,14 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 
 ## UI-19 — My offers
 
-- **Status:** implemented in code commit pending CI verification.
+- **Status:** implemented and CI verified on code commit `bda2bd6cacec28fae621d873713a1fa4d043a9a0`. GitHub Actions [run #63 / run ID 39794888757](https://github.com/Webster-02/Superior-Student/actions/runs/39794888757) passed JavaScript validation, clean, JVM unit tests, debug APK build, APK verification, and artifact upload.
 - Inspected the exact `19_myoffers_light.png`, `19_myoffers_dark.png`, and corresponding light/dark `19_myoffers.html` references in `pachattar_market_final(1).zip`.
 - Added a native **My offers** screen with a back/header block, Active/Paused/Expired segmented tabs and live local counts (2/1/1 by default), rounded offer cards, category and price labels, posting/expiry details, four compact action buttons per offer, the reference blue renewal-policy note, and a fixed lime **Post an offer** button.
 - Active fixtures match the reference’s two visible offers: Ocular Anatomy notes at Rs. 300 (expires in 18 days) and typing/report formatting for Swap (renewal available in 3 days). Additional local fixtures populate the Paused and Expired tabs.
 - Pause/Resume and Renew update only the in-memory preview state; Delete requires confirmation and removes only the local fixture. Renew is disabled when the local fixture is not eligible. Edit opens Screen 18 prefilled as an edit preview. Post an offer opens Screen 18 without publishing.
 - Added My offers navigation to the existing Offers menu and registered the Activity. Added policy tests for reference counts, status transitions, renewal rules, and category palette. The edit-mode handoff uses local intent extras; changing form values still does not persist.
 - **No live offers, saved-state updates, deletions, pauses, renewals, or Firestore writes** are connected. No Firebase rules/indexes, protected top-level tests, login, Student Connect or Nearby transfer behavior was changed.
+- **Verified APK:** `app-debug.apk`, 66,999,553 bytes; SHA-256 `da77cf6648a75faf1c3716fdb66c3f5966625032447e87fa04a06b817183c4c6`. Workflow artifact archive: 41,011,579 bytes; SHA-256 `746695a34d4460a6ee52ac6bd377a488730aecd45de8598762fc711b1f99d33f`; expires October 29, 2026.
 
 ## Exact next step
 
