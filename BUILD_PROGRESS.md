@@ -210,15 +210,18 @@ UI-07 is complete and verified. Stop for user review before implementing screen 
 
 ## UI-12 — Proposals list (poster side)
 
-- **Status:** implemented; awaiting CI verification.
+- **Status:** implemented and CI verified.
 - Inspected `12_proposals_light.png`, `12_proposals_dark.png`, and the matching light/dark HTML references from `pachattar_market_final(1).zip`.
 - Added the poster-side Proposals screen with the reference header and “4 of 15 · Poster for health camp” subtitle; horizontal All 4 / Shortlisted 1 / Cheapest / Top rated filters; proposal cards for Zain Malik, Noor Fatima and Ayesha Khan; pastel initials avatars; rating/age metadata; PKR prices; shortlist badge; short message preview; and Decline / Shortlist / Accept actions. Uses existing Paper/Night semantic colours and Poppins.
 - Connected both entry points on the owner task screen (proposal summary card and fixed View proposals CTA) to open the dedicated proposals screen.
 - Filter chips operate on local reference fixtures: cheapest sorts PKR ascending, top-rated sorts rating descending, and shortlisted filters the locally shortlisted previews. The shortlist button toggles only in-memory preview state. Decline and Accept show clear preview-only dialogs.
 - **No proposal accept/decline/shortlist operation is persisted or sent.** The screen uses only local visual fixtures; no Firestore reads or writes, rules/index edits, Firebase deployment, or merges.
-- Added seven focused JVM policy tests for reference data, filter order, cheapest/top-rated sorting, shortlist filtering/toggling and PKR formatting. CI will verify the new tests and APK.
+- Added seven focused JVM policy tests for reference data, filter order, cheapest/top-rated sorting, shortlist filtering/toggling and PKR formatting.
+- The initial run #46 surfaced a Kotlin compile error on the filter bar's layout margin property; corrected `marginTop` to `topMargin` in commit `132295261e7a875d412a6ccba6e97db8719e008a`.
+- **Successful verification:** GitHub Actions run [#47 / run ID 39740936003](https://github.com/Webster-02/Superior-Student/actions/runs/39740936003), fix commit `132295261e7a875d412a6ccba6e97db8719e008a`. JavaScript validation, clean, all JVM unit tests, debug APK build, APK verification and artifact upload passed.
+- **Verified APK:** `app-debug.apk`, 66,917,406 bytes; SHA-256 `0c01dac185a492302bc21f88add16954b981b2f19aedfee96768405ddeb99bfd`. Artifact archive: 40,934,096 bytes; SHA-256 `870143cd2ee7a73317d561aa011d8a09d585e9cf1454adeb7b8fbcee9a9363e9`; expires October 29, 2026.
 - Changes are limited to the new Proposals Activity, pure policy, custom icons, unit tests, manifest registration, the existing owner-detail navigation handoff, workflow path filters and this progress record.
 
 ## Exact next step
 
-UI-12 implementation is ready for CI verification and review. Do not begin UI-13 or another screen until UI-12 has passed verification and the user explicitly types `continue`.
+UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or another screen until the user explicitly types `continue`.
