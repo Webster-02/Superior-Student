@@ -1,11 +1,19 @@
 package com.superiorstudent.app.feature.market.ui
 
+import android.app.Dialog
+import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -189,8 +197,17 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
             }
         }
         row.addView(rulesCheckbox, LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(12); topMargin = dp(1) })
-        row.addView(makeText(MarketPostTaskStep3UiPolicy.ACKNOWLEDGEMENT_TEXT, 12.5f, false, color(R.color.market_ink))
-            .apply { setLineSpacing(dp(2).toFloat(), 1f) }, LinearLayout.LayoutParams(0, -2, 1f))
+        val acknowledgementLabel = makeText(
+            MarketPostTaskStep3UiPolicy.ACKNOWLEDGEMENT_TEXT,
+            12.5f, false, color(R.color.market_ink)
+        ).apply {
+            setLineSpacing(dp(2).toFloat(), 1f)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Read posting rules"
+            setOnClickListener { showPostingRulesSheet() }
+        }
+        row.addView(acknowledgementLabel, LinearLayout.LayoutParams(0, -2, 1f))
         return row
     }
 
@@ -205,6 +222,129 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
         rulesCheckbox.contentDescription = if (rulesAcknowledged)
             "Posting rules acknowledged. Tap to uncheck."
         else "Posting rules not acknowledged. Tap to check."
+    }
+
+    /**
+     * Reference screen 10: rules are shown in a dimmed, rounded-top sheet over the review screen.
+     * The acknowledgement is only confirmed when the user presses "I understand".
+     */
+    private fun showPostingRulesSheet() {
+        val dialog = Dialog(this)
+        val sheet = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(20))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                setColor(color(R.color.market_bg))
+                val radius = dp(28).toFloat()
+                cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+            }
+        }
+
+        val handle = View(this).apply {
+            background = rounded(color(R.color.market_line), 99f)
+        }
+        sheet.addView(handle, LinearLayout.LayoutParams(dp(40), dp(4)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(14)
+        })
+
+        sheet.addView(makeText("Posting rules", 18f, true, color(R.color.market_ink)),
+            LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
+
+        sheet.addView(makeText("Allowed", 12.5f, true, color(R.color.market_ink)),
+            LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
+        addPostingRule(sheet, "Notes, tutoring and explaining a topic", allowed = true, bottomMargin = 8)
+        addPostingRule(sheet, "Help with a project, design, typing, formatting", allowed = true, bottomMargin = 8)
+        addPostingRule(sheet, "Proofreading and coding help (explain, review)", allowed = true, bottomMargin = 2)
+
+        sheet.addView(makeText("Not allowed", 12.5f, true, color(R.color.market_ink)),
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(8)
+                bottomMargin = dp(6)
+            })
+        addPostingRule(sheet, "Doing someone else's graded assignment, quiz or exam", allowed = false, bottomMargin = 8)
+        addPostingRule(sheet, "Using someone's ERP login", allowed = false, bottomMargin = 8)
+        addPostingRule(sheet, "Asking for full payment before any work is shown", allowed = false, bottomMargin = 0)
+
+        sheet.addView(makeText(
+            "Posts that break these rules are removed and the account can be restricted.",
+            12f, false, color(R.color.market_ink2)
+        ).apply {
+            setLineSpacing(dp(3).toFloat(), 1f)
+        }, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(8)
+            bottomMargin = dp(14)
+        })
+
+        val understand = FrameLayout(this).apply {
+            background = rounded(color(R.color.market_match), 16f)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "I understand the posting rules"
+            addView(makeText("I understand", 15f, true, color(R.color.market_match_ink)).apply {
+                gravity = Gravity.CENTER
+            }, FrameLayout.LayoutParams(-1, -1))
+            setOnClickListener {
+                rulesAcknowledged = true
+                rulesError.visibility = View.GONE
+                updateAcknowledgement()
+                dialog.dismiss()
+            }
+        }
+        sheet.addView(understand, LinearLayout.LayoutParams(-1, dp(52)))
+
+        dialog.setContentView(sheet)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.setDimAmount(0.45f)
+            window.setGravity(Gravity.BOTTOM)
+            window.setLayout(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.WRAP_CONTENT
+            )
+            window.navigationBarColor = color(R.color.market_bg)
+            WindowCompat.getInsetsController(window, sheet).isAppearanceLightNavigationBars =
+                !AppThemePreferences.isNight(this)
+        }
+        dialog.show()
+        dialog.window?.setLayout(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+    }
+
+    private fun addPostingRule(
+        sheet: LinearLayout,
+        message: String,
+        allowed: Boolean,
+        bottomMargin: Int
+    ) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
+
+        val mark: View = if (allowed) {
+            ReviewStepIconView(this, ReviewStepIcon.CHECK, color(R.color.ok))
+        } else {
+            PostingRulesCrossIconView(this, color(R.color.bad))
+        }
+        row.addView(mark, LinearLayout.LayoutParams(dp(18), dp(20)).apply {
+            marginEnd = dp(10)
+            topMargin = dp(1)
+        })
+
+        val label = makeText(message, 13f, false, color(R.color.market_ink)).apply {
+            gravity = Gravity.TOP
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }
+        row.addView(label, LinearLayout.LayoutParams(0, -2, 1f))
+        sheet.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+            if (bottomMargin > 0) this.bottomMargin = dp(bottomMargin)
+        })
     }
 
     private fun buildFooter(): View {
@@ -297,4 +437,33 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     companion object { private const val STATE_RULES_ACKNOWLEDGED = "market.review.rules_acknowledged" }
+}
+
+/** Small outlined cross icon for the prohibited-item rows in the rules sheet. */
+private class PostingRulesCrossIconView(
+    context: Context,
+    tint: Int
+) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = tint
+        style = Paint.Style.STROKE
+        strokeWidth = 2.2f
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val scale = minOf(width, height) / 24f
+        if (scale <= 0f) return
+        val saved = canvas.save()
+        canvas.translate((width - 24f * scale) / 2f, (height - 24f * scale) / 2f)
+        canvas.scale(scale, scale)
+        val path = Path().apply {
+            moveTo(6f, 6f); lineTo(18f, 18f)
+            moveTo(18f, 6f); lineTo(6f, 18f)
+        }
+        canvas.drawPath(path, paint)
+        canvas.restoreToCount(saved)
+    }
 }
