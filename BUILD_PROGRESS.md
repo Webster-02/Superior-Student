@@ -380,3 +380,18 @@ Stop after UI-23 verification for user review. Do not implement Screen 24 (appea
 ## Exact next step
 
 Stop after UI-24 verification for user review. Do not implement Screen 25 or live appeal submission until the user explicitly types `continue`.
+
+
+## UI-25 — Posting paused / suspension state
+
+- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- Inspected the exact `25_suspended_light.png`, `25_suspended_dark.png` and corresponding light/dark HTML references from `pachattar_market_final(1).zip`.
+- Added a native paused-posting reference screen matching the Market header, centered warning card, suspension end date, Rule 1 reason, “You can still” three allowed actions, “You cannot” posting/proposal restriction, and fixed **Rules** / **Appeal** footer actions. Reuses existing Paper/Night tokens and Poppins.
+- **Appeal** opens the existing Screen 24 appeal form. **Rules** shows transparent preview copy because the full rules page is not implemented yet.
+- This is a **static reference fixture**: its 27 Oct 2026 / 5 days label is the supplied screenshot value. The Activity does not read account status or enforce posting restrictions; live suspension state, posting gates and account actions are separate integration work.
+- Registered the new Activity as non-exported and added focused policy tests for the exact reason/date/actions and the static-preview disclosure. Added its files to the Market CI workflow path filters.
+- No live Firebase read/write, Firestore rules/index changes, deployment, login, Student Connect or Nearby transfer changes.
+
+## Exact next step
+
+Stop after UI-25 verification for user review. Do not implement Screen 26 or connect live moderation/suspension enforcement until the user explicitly types `continue`.
