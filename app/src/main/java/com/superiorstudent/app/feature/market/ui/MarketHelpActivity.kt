@@ -27,7 +27,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 26 native reference implementation. All help actions are transparent local previews. */
+/** Screen 26 native reference implementation. FAQs open Screen 27; other topic actions remain previews. */
 class MarketHelpActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var searchInput: EditText
