@@ -274,9 +274,7 @@ class MarketHelpActivity : AppCompatActivity() {
                 topic.label, MarketHelpUiPolicy.SAFETY_TIPS
             )
             MarketHelpUiPolicy.TOPIC_FAQS -> openFaq()
-            MarketHelpUiPolicy.TOPIC_MY_REPORTS -> showPreview(
-                topic.label, MarketHelpUiPolicy.REPORTS_PREVIEW
-            )
+            MarketHelpUiPolicy.TOPIC_MY_REPORTS -> openMyReports()
         }
     }
 
@@ -298,6 +296,10 @@ class MarketHelpActivity : AppCompatActivity() {
 
     private fun openSupport() {
         startActivity(Intent(this, MarketSupportActivity::class.java))
+    }
+
+    private fun openMyReports() {
+        startActivity(Intent(this, MarketMyReportsActivity::class.java))
     }
 
     private fun buildFooter(): View {

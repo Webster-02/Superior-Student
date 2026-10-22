@@ -82,6 +82,10 @@
     <color name="market_segment">#14201A</color>
     <color name="market_segment_ink">#FFFFFF</color>
     <color name="market_neutral_chip">#F4F1EA</color>
+    <color name="market_report_ok_bg">#DCF3E3</color>
+    <color name="market_report_ok">#1E7A3C</color>
+    <color name="market_report_warn_bg">#FFF0CC</color>
+    <color name="market_report_warn">#8A5A00</color>
     <color name="market_match">#D4F34A</color>
     <color name="market_match_ink">#14201A</color>
     <color name="market_menu_dot">#FF6B4A</color>
