@@ -304,6 +304,6 @@ No Firebase Rules or indexes were published or deployed. No live data was change
 - Android commit: `83cee57686bc91654a143b1d62c0ce926eb15c23` on `feature/market-ui-reference`.
 - The final appeal-resolution transaction writes the generated decision-audit ID to `lastAuditLogId` and the generated `appeal_result` notice ID to `lastAdminNoticeId`, matching the actual log and notice writes.
 - Android workflow run #104: https://github.com/Webster-02/Superior-Student/actions/runs/39868829292
-- Android CI status at documentation time: **in progress**. Unit-test and APK results are pending; Step 13 is not fully complete until that run succeeds and branch heads are rechecked.
+- Android CI result: **passed** (run #104, https://github.com/Webster-02/Superior-Student/actions/runs/39868829292). Embedded JavaScript validation, Market route verification, `gradle clean`, `testDebugUnitTest`, debug APK build, APK verification, and artifact upload all passed. APK artifact: `superior-student-debug-apk`, ID `12464259740`.
 
 No Firebase Rules or indexes were deployed; no live Firebase data was changed; neither branch was merged into `main`. No unrelated account warning/lift-suspension/profile-status change was included.

@@ -44,4 +44,4 @@ Appeal-ticket decision linkage and direct account warning/lift-suspension/profil
 
 No Firebase Rules or indexes have been deployed and no merge to `main` has occurred.
  
-Step 13 status: appeal-decision Rules linkage passed Rules CI (44 static checks, 69 Emulator tests, zero expression-ceiling diagnostics). The matching Android transaction pointer write is committed separately; Android CI remains pending: https://github.com/Webster-02/Superior-Student/actions/runs/39868829292.
+Step 13 status: appeal-decision Rules linkage passed Rules CI (44 static checks, 69 Emulator tests, zero expression-ceiling diagnostics). The matching Android transaction pointer write passed unit tests and debug APK build/verification in run #104 (https://github.com/Webster-02/Superior-Student/actions/runs/39868829292); APK artifact `superior-student-debug-apk` ID `12464259740`.
