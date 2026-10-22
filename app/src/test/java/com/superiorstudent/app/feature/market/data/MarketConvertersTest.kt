@@ -176,6 +176,27 @@ class MarketConvertersTest {
     }
 
     @Test
+    fun supportTicketAcceptsValidOptionalAdminPointersAndRejectsMalformedOnes() {
+        val data = mapOf<String, Any?>(
+            "userId" to "alice",
+            "type" to "bug",
+            "subject" to "Support issue",
+            "body" to "Please review this support ticket carefully.",
+            "status" to "open",
+            "replies" to emptyList<Map<String, Any?>>(),
+            "createdAt" to now,
+            "updatedAt" to now
+        )
+        assertNotNull(MarketConverters.supportTicket("support1", data))
+        assertNotNull(MarketConverters.supportTicket(
+            "support1",
+            data + ("lastAuditLogId" to "support-log-1") + ("lastAdminNoticeId" to "support-notice-1")
+        ))
+        assertNull(MarketConverters.supportTicket("support1", data + ("lastAuditLogId" to "")))
+        assertNull(MarketConverters.supportTicket("support1", data + ("lastAdminNoticeId" to 42)))
+    }
+
+    @Test
     fun configRetainsRuleAllowedExtraLimitEntriesAndRequiresWeightsTotalOneHundred() {
         val data = mapOf<String, Any?>(
             "announcement" to mapOf("text" to "Welcome", "active" to true, "until" to null),

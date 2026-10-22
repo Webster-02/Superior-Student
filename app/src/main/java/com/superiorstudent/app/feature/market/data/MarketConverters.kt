@@ -44,6 +44,9 @@ object MarketConverters {
     private val supportRequired = setOf(
         "userId", "type", "subject", "body", "status", "replies", "createdAt", "updatedAt"
     )
+    private val supportOptional = setOf(
+        "relatedType", "relatedId", "lastAuditLogId", "lastAdminNoticeId"
+    )
     private val adminLogKeys = setOf("adminId", "action", "targetType", "targetId", "reason", "note", "createdAt")
     private val configKeys = setOf("announcement", "blockedWords", "rankWeights", "limits")
     private val configOptionalKeys = setOf("lastAuditLogId")
@@ -350,7 +353,10 @@ object MarketConverters {
         snapshot.data?.let { supportTicket(snapshot.id, it) }
 
     fun supportTicket(documentId: String, data: Map<String, Any?>): MarketSupportTicket? {
-        if (!exactKeys(data, supportRequired, setOf("relatedType", "relatedId"))) return null
+        if (!exactKeys(data, supportRequired, supportOptional)) return null
+        if (!validOptionalPointer(data, "lastAuditLogId") ||
+            !validOptionalPointer(data, "lastAdminNoticeId")
+        ) return null
         val userId = str(data["userId"])?.takeIf(String::isNotBlank) ?: return null
         val type = enum<MarketSupportType>(data["type"]) ?: return null
         val subject = str(data["subject"])?.takeIf { it.length in 5..80 } ?: return null

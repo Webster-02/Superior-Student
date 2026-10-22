@@ -1649,14 +1649,18 @@ class MarketRepository(
                 "text" to normalizedText,
                 "at" to MarketRepositoryPolicy.safeClientTimestamp(nowMillis())
             ))
+            val noticeRef = firestore.collection(USERS).document(userId)
+                .collection(NOTICES).document()
             tx.update(ticketRef, mapOf(
                 "status" to MarketSupportStatus.REPLIED.wireValue,
                 "replies" to updatedReplies,
-                "updatedAt" to FieldValue.serverTimestamp()
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastAuditLogId" to logRef.id,
+                "lastAdminNoticeId" to noticeRef.id
             ))
             tx.set(logRef, adminLogMap(adminUid, "reply_support_ticket", "support", ticketId, reason, note))
             createNoticeInTransaction(
-                tx, userId, null, MarketNoticeType.SUPPORT_REPLY,
+                tx, userId, noticeRef.id, MarketNoticeType.SUPPORT_REPLY,
                 "Support replied", normalizedText,
                 relatedType = "support", relatedId = ticketId, canAppeal = false
             )
@@ -1841,10 +1845,14 @@ class MarketRepository(
             require(profile.exists()) { "The ticket owner's Market profile is missing." }
             val count = profile.long("openSupportTickets").toInt()
             require(count > 0) { "The owner's support ticket counter needs attention." }
+            val noticeRef = firestore.collection(USERS).document(userId)
+                .collection(NOTICES).document()
 
             tx.update(ticketRef, mapOf(
                 "status" to MarketSupportStatus.RESOLVED.wireValue,
-                "updatedAt" to FieldValue.serverTimestamp()
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastAuditLogId" to logRef.id,
+                "lastAdminNoticeId" to noticeRef.id
             ))
             tx.update(profileRef, mapOf(
                 "openSupportTickets" to count - 1,
@@ -1853,7 +1861,7 @@ class MarketRepository(
             ))
             tx.set(logRef, adminLogMap(adminUid, "resolve_support_ticket", "support", ticketId, reason, note))
             createNoticeInTransaction(
-                tx, userId, null, MarketNoticeType.SUPPORT_REPLY,
+                tx, userId, noticeRef.id, MarketNoticeType.SUPPORT_REPLY,
                 "Support ticket resolved", reason.ifBlank { "Your support ticket has been resolved." },
                 relatedType = "support", relatedId = ticketId, canAppeal = false
             )
