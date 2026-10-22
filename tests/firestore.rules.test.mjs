@@ -89,7 +89,7 @@ async function seedOffer(offerId, sellerId, overrides = {}) {
 function marketConfigAuditBatch(adminUid, logId, configPatch) {
   const db = user(adminUid);
   const batch = writeBatch(db);
-  batch.update(doc(db, 'config/market'), { ...configPatch, lastAuditLogId: logId });
+  batch.update(doc(db, 'config/market'), { lastAuditLogId: logId, ...configPatch });
   batch.set(doc(db, 'adminLogs', logId), {
     adminId: adminUid, action: 'update_market_config', targetType: 'config', targetId: 'market',
     reason: 'Market settings updated', note: 'Settings change test', createdAt: serverTimestamp(),
