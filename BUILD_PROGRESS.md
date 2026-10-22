@@ -364,3 +364,18 @@ Stop after UI-22 verification for user review. Do not start Screen 23 (notice de
 ## Exact next step
 
 Stop after UI-23 verification for user review. Do not implement Screen 24 (appeal form) or live notice/appeal integration until the user explicitly types `continue`.
+
+
+## UI-24 — Appeal form
+
+- **Status:** implemented; GitHub Actions verification pending for this checkpoint.
+- Inspected the exact `24_appeal_light.png`, `24_appeal_dark.png` and matching light/dark `24_appeal.html` references from `pachattar_market_final(1).zip`.
+- Added a native appeal form with back/title/subtitle, offer summary and Removed badge, “Why should we review this?” editable multiline reason, live character count, blue response-time/one-appeal reminder, and fixed lime **Send appeal** action. Paper/Night Market resources and Poppins are reused.
+- Prefilled the editable reason with the exact reference text and capped input at 400 characters. The supplied mock screenshot shows 118/400, but its displayed text is 120 characters; the app therefore calculates and shows the accurate count **120/400**. Blank/whitespace reasons are rejected with a guidance dialog.
+- Connected Screen 23’s **Appeal this decision** action to Screen 24. Pressing **Send appeal** displays a clear preview-only confirmation.
+- **No appeal is sent or saved, and the offer status does not change.** Live appeal creation/support replies and notice updates remain disconnected. No Firestore rules/index changes, deployment, login, Student Connect or Nearby transfer changes.
+- Added focused tests for reference copy, actual initial count, the 400-character limit, blank validation and truthful preview messaging; added the new Activity and policy/icon/tests to the Market workflow path filters.
+
+## Exact next step
+
+Stop after UI-24 verification for user review. Do not implement Screen 25 or live appeal submission until the user explicitly types `continue`.

@@ -135,6 +135,12 @@
             android:label="Notice"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
+            android:name=".feature.market.ui.MarketAppealActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
+            android:exported="false"
+            android:label="Appeal"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
+        <activity
             android:name=".feature.market.ui.MarketTaskDetailActivity"
             android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"

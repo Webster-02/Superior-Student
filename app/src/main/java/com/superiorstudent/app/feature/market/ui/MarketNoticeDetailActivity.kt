@@ -152,11 +152,7 @@ class MarketNoticeDetailActivity : AppCompatActivity() {
         val appeal = actionButton(MarketNoticeDetailUiPolicy.APPEAL_BUTTON,
             color(R.color.market_match), color(R.color.market_match_ink), MarketNoticeDetailGlyph.FLAG)
         appeal.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle(MarketNoticeDetailUiPolicy.APPEAL_BUTTON)
-                .setMessage(MarketNoticeDetailUiPolicy.APPEAL_PREVIEW_MESSAGE)
-                .setPositiveButton("Got it", null)
-                .show()
+            startActivity(android.content.Intent(this, MarketAppealActivity::class.java))
         }
         footer.addView(appeal, LinearLayout.LayoutParams(-1, dp(52)))
         val rules = actionButton(MarketNoticeDetailUiPolicy.RULES_BUTTON,
