@@ -229,12 +229,13 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 
 ## UI-13 — Accept proposal confirmation sheet
 
-- **Status:** implemented; pending this step's GitHub Actions verification.
+- **Status:** implemented and CI verified on code commit `3a513acfdbf9500d995351e827110daab59f2b1a`. GitHub Actions run [#50 / run ID 39743704895](https://github.com/Webster-02/Superior-Student/actions/runs/39743704895) passed JavaScript validation, clean, JVM unit tests, debug APK build, APK verification and artifact upload.
 - Inspected the exact `13_accept_light.png`, `13_accept_dark.png`, and matching `13_accept.html` references from `pachattar_market_final(1).zip`.
 - Added the acceptance confirmation as a dimmed, bottom-aligned sheet launched by each proposal card's **Accept** button. It includes the rounded handle/header, price and delivery summary, three consequence reminders, shield-style money-safety note, lime **Accept and open chat**, and bordered **Not now** actions. It reuses existing Market Paper/Night semantic colours and Poppins.
 - The reference fixture identifies Zain's delivery as 2 days. Other fixture proposals show **Confirm in chat** instead of inventing unsupported delivery estimates.
 - **Live acceptance and chat opening remain intentionally disconnected.** Tapping **Accept and open chat** explicitly confirms that no proposal was accepted and no chat was opened; **Not now** simply dismisses the sheet. This step does not write Firestore or alter task/proposal state.
 - Added focused policy coverage for reference delivery labels, consequence copy and money-safety reminder.
+- **Verified APK:** `app-debug.apk`, 66,933,785 bytes; SHA-256 `fbadf478c4dd9f5d29d449544bcb178697120c8964571ad1e28a6a8c35832368`. Workflow artifact archive: 40,936,950 bytes; SHA-256 `7a9a7473e9bedc9986eef4fdd951ae870ad066781ab309d0a74a8483cb72f5bc`; expires October 29, 2026.
 - Scope is limited to the existing Proposals Activity, its policy/test and this progress entry. No manifest, Firestore rules/indexes, protected top-level tests, deployment, merge, or unrelated login/chat/Nearby logic changed.
 
 ## Exact next step
