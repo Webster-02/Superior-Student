@@ -642,7 +642,7 @@ describe('reports, ratings, support, notices, config and admin permissions', () 
     }));
     await assertFails(marketConfigAuditBatch('admin', 'config-wrong-audit-target', {
       blockedWords: ['mismatch'],
-      lastAuditLogId: 'config-wrong-audit-target',
+      lastAuditLogId: 'not-the-created-log',
     }));
   });
 
