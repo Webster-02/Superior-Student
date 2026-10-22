@@ -86,6 +86,16 @@ async function seedTask(taskId, posterId, overrides = {}) {
 async function seedOffer(offerId, sellerId, overrides = {}) {
   await testEnv.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'offers', offerId), offerSeed(offerId, sellerId, overrides)));
 }
+function marketConfigAuditBatch(adminUid, logId, configPatch) {
+  const db = user(adminUid);
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'config/market'), { ...configPatch, lastAuditLogId: logId });
+  batch.set(doc(db, 'adminLogs', logId), {
+    adminId: adminUid, action: 'update_market_config', targetType: 'config', targetId: 'market',
+    reason: 'Market settings updated', note: 'Settings change test', createdAt: serverTimestamp(),
+  });
+  return batch.commit();
+}
 
 before(async () => {
   testEnv = await initializeTestEnvironment({
@@ -601,7 +611,7 @@ describe('reports, ratings, support, notices, config and admin permissions', () 
     await assertFails(updateDoc(doc(aliceDb, 'users/alice/notices/n-admin'), { body: 'Tampered text' }));
   });
 
-  it('lets all signed-in users read config; only admins can edit editable fields, weights stay non-negative, and limits stay fixed', async () => {
+  it('lets signed-in users read config and requires a matching new audit log for admin edits', async () => {
     await seed('config', 'market', {
       announcement: { text: '', active: false, until: null }, blockedWords: [],
       rankWeights: { newness: 60, rating: 30, match: 10 },
@@ -610,13 +620,30 @@ describe('reports, ratings, support, notices, config and admin permissions', () 
     await assertSucceeds(getDoc(doc(user('alice'), 'config/market')));
     await assertFails(updateDoc(doc(user('alice'), 'config/market'), { blockedWords: ['spamword'] }));
     await seed('admins', 'admin', {});
-    await assertSucceeds(updateDoc(doc(user('admin'), 'config/market'), { blockedWords: ['spamword'] }));
-    await assertSucceeds(updateDoc(doc(user('admin'), 'config/market'), { rankWeights: { newness: 50, rating: 30, match: 20 } }));
-    await assertFails(updateDoc(doc(user('admin'), 'config/market'), { rankWeights: { newness: -10, rating: 90, match: 20 } }));
-    await assertFails(updateDoc(doc(user('admin'), 'config/market'), { rankWeights: { newness: -1, rating: 71, match: 30 } }));
-    await assertFails(updateDoc(doc(user('admin'), 'config/market'), { rankWeights: { newness: 70, rating: -1, match: 31 } }));
-    await assertFails(updateDoc(doc(user('admin'), 'config/market'), { rankWeights: { newness: 70, rating: 31, match: -1 } }));
-    await assertFails(updateDoc(doc(user('admin'), 'config/market'), { limits: { openTasks: 4, proposalsPerDay: 10, proposalsPerTask: 15, activeOffers: 5, reportsToHide: 3 } }));
+    await assertFails(updateDoc(doc(user('admin'), 'config/market'), {
+      blockedWords: ['without-audit'], lastAuditLogId: 'missing-config-audit',
+    }));
+    await assertSucceeds(marketConfigAuditBatch('admin', 'config-blocked-words', { blockedWords: ['spamword'] }));
+    await assertFails(updateDoc(doc(user('admin'), 'config/market'), { blockedWords: ['missing-pointer-update'] }));
+    await assertSucceeds(marketConfigAuditBatch('admin', 'config-rank-weights', {
+      rankWeights: { newness: 50, rating: 30, match: 20 },
+    }));
+    await assertFails(marketConfigAuditBatch('admin', 'config-negative-newness', {
+      rankWeights: { newness: -10, rating: 90, match: 20 },
+    }));
+    await assertFails(marketConfigAuditBatch('admin', 'config-negative-rating', {
+      rankWeights: { newness: 70, rating: -1, match: 31 },
+    }));
+    await assertFails(marketConfigAuditBatch('admin', 'config-negative-match', {
+      rankWeights: { newness: 70, rating: 31, match: -1 },
+    }));
+    await assertFails(marketConfigAuditBatch('admin', 'config-fixed-limits', {
+      limits: { openTasks: 4, proposalsPerDay: 10, proposalsPerTask: 15, activeOffers: 5, reportsToHide: 3 },
+    }));
+    await assertFails(marketConfigAuditBatch('admin', 'config-wrong-audit-target', {
+      blockedWords: ['mismatch'],
+      lastAuditLogId: 'config-wrong-audit-target',
+    }));
   });
 
   it('does not permit a regular user to list marketProfiles or inspect another user profile', async () => {
@@ -945,7 +972,7 @@ describe('admin operations do not require U2U profile documents', () => {
     await assertSucceeds(updateDoc(doc(db, 'support/ticket-admin-profile-free'), {
       status: 'replied', replies: [{ from: 'admin', text: 'We have reviewed your report.', at: Timestamp.now() }], updatedAt: serverTimestamp(),
     }));
-    await assertSucceeds(updateDoc(doc(db, 'config/market'), {
+    await assertSucceeds(marketConfigAuditBatch('admin', 'config-admin-profile-free', {
       announcement: { text: 'Market maintenance note', active: true, until: null },
       blockedWords: ['blocked-word'], rankWeights: { newness: 40, rating: 40, match: 20 },
     }));

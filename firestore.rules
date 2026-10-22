@@ -1754,11 +1754,26 @@ service cloud.firestore {
     }
 
     match /config/{configId} {
+      function marketConfigAuditValid() {
+        let auditLogId = request.resource.data.lastAuditLogId;
+        let auditLogPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
+        return auditLogId is string
+          && auditLogId.size() >= 1 && auditLogId.size() <= 150
+          && existsAfter(auditLogPath)
+          && !exists(auditLogPath)
+          && getAfter(auditLogPath).data.adminId == request.auth.uid
+          && getAfter(auditLogPath).data.action == 'update_market_config'
+          && getAfter(auditLogPath).data.targetType == 'config'
+          && getAfter(auditLogPath).data.targetId == 'market'
+          && getAfter(auditLogPath).data.createdAt == request.time;
+      }
+
       allow get: if marketSignedIn() && configId == 'market';
       allow list: if false;
       allow create, update: if marketVerified() && marketIsAdmin() && configId == 'market'
-        && request.resource.data.keys().hasAll(['announcement', 'blockedWords', 'rankWeights', 'limits'])
-        && request.resource.data.keys().hasOnly(['announcement', 'blockedWords', 'rankWeights', 'limits'])
+        && request.resource.data.keys().hasAll(['announcement', 'blockedWords', 'rankWeights', 'limits', 'lastAuditLogId'])
+        && request.resource.data.keys().hasOnly(['announcement', 'blockedWords', 'rankWeights', 'limits', 'lastAuditLogId'])
+        && marketConfigAuditValid()
         && request.resource.data.announcement is map
         && request.resource.data.announcement.keys().hasAll(['text', 'active', 'until'])
         && request.resource.data.announcement.keys().hasOnly(['text', 'active', 'until'])

@@ -48,6 +48,11 @@ const checks = [
     assert.ok(tests.includes('denies task acceptance when the same transaction omits the new Market conversation'));
   }],
   ['report batch access-call regression is present', () => assert.ok(tests.includes('report batch stays under Firestore access-call limits'))],
+  ['Market config edits require a newly created matching audit log in the same write', () => {
+    assert.match(rules, /function marketConfigAuditValid\(\)[\s\S]{0,1100}existsAfter\(auditLogPath\)[\s\S]{0,300}!exists\(auditLogPath\)[\s\S]{0,500}action == 'update_market_config'/);
+    assert.ok(tests.includes('requires a matching new audit log for admin edits'));
+    assert.ok(tests.includes('missing-config-audit'));
+  }],
   ['admin suspend/hide batch access-call regression is present', () => assert.ok(tests.includes('admin without a U2U profile suspends/hides with notice and log in one access-limit batch'))],
   ['Market limits are read-only in the app spec', () => assert.match(spec, /limits[\s\S]{0,250}read.only/i)],
   ['rank weights have non-negative rule checks', () => assert.match(rules, /rankWeights\.newness is number && request\.resource\.data\.rankWeights\.newness >= 0[\s\S]*rankWeights\.rating is number && request\.resource\.data\.rankWeights\.rating >= 0[\s\S]*rankWeights\.match is number && request\.resource\.data\.rankWeights\.match >= 0/)],
