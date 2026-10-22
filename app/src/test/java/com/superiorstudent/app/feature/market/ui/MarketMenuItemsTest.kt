@@ -23,5 +23,7 @@ class MarketMenuItemsTest {
     @Test
     fun eachReferenceMenuRowHasSupportingDescriptionAndActionMessage() {
         assertTrue(MarketMenuItems.all.all { it.subtitle.isNotBlank() && it.feedbackMessage.isNotBlank() })
+        assertEquals("Review your posted tasks and applications.",
+            MarketMenuItems.all.first { it.label == "My tasks" }.feedbackMessage)
     }
 }

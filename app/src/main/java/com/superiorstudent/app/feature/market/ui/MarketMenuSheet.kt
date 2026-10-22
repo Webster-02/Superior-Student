@@ -39,7 +39,7 @@ internal object MarketMenuItems {
             subtitle = "Posted and applied",
             icon = MarketMenuIcon.TASKS,
             iconBackground = R.color.market_peach,
-            feedbackMessage = "My tasks screen will be implemented in its own reference step."
+            feedbackMessage = "Review your posted tasks and applications."
         ),
         MarketMenuItem(
             label = "My offers",

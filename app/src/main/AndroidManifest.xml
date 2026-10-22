@@ -63,6 +63,12 @@
             android:label="Post a task"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
         <activity
+            android:name=".feature.market.ui.MarketMyTasksActivity"
+            android:theme="@style/Theme.SuperiorStudent.U2U"
+            android:exported="false"
+            android:label="My tasks"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden" />
+        <activity
             android:name=".feature.market.ui.MarketTaskChatActivity"
             android:theme="@style/Theme.SuperiorStudent.U2U"
             android:exported="false"

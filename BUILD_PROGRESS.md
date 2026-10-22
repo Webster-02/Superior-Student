@@ -249,6 +249,17 @@ UI-12 is complete and verified. Stop for user review. Do not begin UI-13 or anot
 - **Verified APK:** `app-debug.apk`, 66,933,824 bytes; SHA-256 `716e5fb14ea86c6ebc2adbd6bf6f53aa5bd09d3e9f8b38503635e8725d1b399d`. Workflow artifact archive: 40,950,366 bytes; SHA-256 `5d70c4745f87e393ee22f9c82490b194bebaadf9a7c8f48bafe51b1f2b5b0fb3`; expires October 29, 2026.
 - Scope is limited to the new Market chat Activity/policy/icons/tests, Screen 13 preview navigation, manifest, workflow path filters and this progress record. No Firestore rules/indexes, protected top-level tests, deployment, merge, login, existing chat logic or Nearby logic changed.
 
+## UI-15 — My tasks (posted and applied)
+
+- **Status:** implemented; pending this step's GitHub Actions verification.
+- Inspected the exact `15_mytasks_light.png`, `15_mytasks_dark.png`, and matching light/dark `15_mytasks.html` references from `pachattar_market_final(1).zip`.
+- Added the native My tasks screen with back/header and “Posted and applied” subtitle, segmented **Posted 2 / Applied 3** tabs, and the four visible Applied cards from the supplied reference: Accepted, Shortlisted, Sent and Declined. Category/status chips, card corners, spacing, Paper/Night palette and Poppins follow the reference.
+- The initial state is **Applied** to match the screenshot. Tabs switch between four supplied Applied fixture cards and two local Posted fixture cards; the applied count remains “3” because that is the exact reference label even though four sample cards are visible.
+- Updated the My tasks entry in both Requests and Offers menu sheets to open this list instead of jumping directly to the owner-detail fixture. The first Posted item opens the existing owner task-detail preview. The Accepted Applied item opens Screen 14 after a clear preview confirmation; other card actions explain that they are local reference data.
+- **No live Market/Firestore data, real acceptance, task updates, outgoing messages, or chat writes are connected.** Screen 15 navigation only opens reference previews; existing Student Connect chat and Nearby transfer code remain untouched.
+- Added focused policy tests for tab labels/counts, visible item order and copy, accepted-chat preview routing, and existing owner-detail routing.
+- Scope is limited to the new My tasks Activity/policy/tests, Requests and Offers menu navigation, the My tasks menu description, manifest, workflow path filters and this progress record. No Firestore rules/indexes, protected top-level tests, deployment, merge, login, or unrelated chat/Nearby logic changed.
+
 ## Exact next step
 
-UI-14 is complete and verified. Stop for user review. Do not begin screen 15 or another feature until the user explicitly types `continue`.
+Stop after UI-15 verification for user review. Do not begin screen 16 or another feature until the user explicitly types `continue`.
