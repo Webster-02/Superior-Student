@@ -2,34 +2,38 @@
 
 The U2U Market Firestore candidate is on `review/market-rules`. It has not been merged to `main` or deployed to Firebase.
 
-## Current source comparison
+## Source comparison
 
 Compared with `feature/pachattar-design-foundation-phase-1` at base commit `759eed423e7046d7fe127226945557a8fe4fa918`:
 
 - Base rules blob: `2944d790949a1fd93414a851eaf1f3ca6fef8922`.
-- Current candidate rules blob: `b039f9f896c27314eb1f57594e0c1fe911be92a6`.
-- GitHub compare reports **1,743 additions and 3 deletions** in `firestore.rules`; the deletions are blank-line formatting only and no existing U2U rule expression was deleted.
-- `firestore.base.rules` remains a byte-for-byte copy of the selected source-branch baseline. This does not prove the live Firebase rules match that baseline.
+- Current candidate rules blob: `15ae62777f1d9486c3bd15f364b03a82b934b34e`.
+- GitHub compare reports **1,758 additions and 3 deletions** in `firestore.rules`.
+- `firestore.base.rules` remains a byte-for-byte source-branch snapshot. It does not prove the live Firebase Rules match that baseline.
 
-## Current targeted security properties
+## Targeted security properties verified by CI
 
-- Self-service `marketProfiles/{uid}` changes require verified email.
-- Task acceptance requires the selected proposal to be accepted, the poster open-task counter to decrement and a new deterministic Market conversation to be created in the same transaction.
-- The Market conversation create rule validates the conversation shape, participants and task post-state. The task acceptance rule requires `existsAfter(conversationPath)` and `!exists(conversationPath)`.
-- Emulator coverage contains both a successful acceptance transaction including the conversation and a failing transaction that omits it.
-- Applied collection-group reads are scoped by immutable `proposerId == request.auth.uid`; the assigned-to-completed Market task transition is poster-only.
+- Self-service Market profile preference changes require verified email.
+- Task acceptance requires a new deterministic Market conversation in the same atomic write as assignment, proposal acceptance and poster counter decrement.
+- Market config create/update requires a newly created `adminLogs` entry in the same atomic write. Config contains `lastAuditLogId` pointing to the new immutable log; Rules verify the action, target, admin ID and request timestamp.
+- Positive and negative tests cover linked config edits, missing/stale/mismatched links, invalid rank weights/limits, and task acceptance with/without the chat.
 - Existing U2U friend/chat and Nearby-transfer rules remain separate from Market chat.
 
-## Latest CI evidence
+## Latest Rules and Android test evidence
 
-[Run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223), tested commit `46ce86ce325135814963fb5e077b6257694731cb`:
-- Static validation: **39/39 passed**.
-- Firestore Rules Emulator: **67/67 passed**, 0 failed and 0 skipped.
+[Rules run #27](https://github.com/Webster-02/Superior-Student/actions/runs/39858637212), tested commit `1f5536f4387cb7254e4a0ccae04c896b1a68b511`:
+- Static validation: **40/40 passed**.
+- Firestore Rules Emulator: **67/67 passed**, 0 failed, 0 skipped.
 - Expression-ceiling diagnostics: **0**; guard passed.
-- Artifact ID: `12459119458`.
+- Artifact ID: `12459668968`.
+- Tested Rules blob: `15ae62777f1d9486c3bd15f364b03a82b934b34e`.
 
-## Outstanding production gates
+[Android run #100](https://github.com/Webster-02/Superior-Student/actions/runs/39858373895), app commit `4a74df5e6d7d383f4f38fda716b8eaafed4ebdb0`:
+- Unit tests and debug APK build passed.
+- APK artifact ID: `12459833836`.
 
-Admin audit-log/notice linkage and precise lifecycle-counter semantics still need product/policy resolution and regression coverage. Live production Rules/indexes have not been exported or compared. Existing Auth/profile prerequisites and historical proposal `proposerId` values have not been audited/migrated. Separate staging deployment and explicit approval remain required.
+## Still open / no production approval
+
+Config audit linkage is now enforced, but task/offer pin/moderation, report status, support and user warning/suspension still need linked admin logs and required notices enforced by Rules and covered by positive/negative tests. Exact lifecycle-counter semantics need clarification. Production Rules/index exports, Auth/profile prerequisites, historic `proposerId` migration, separate staging verification and explicit approval remain outstanding.
 
 No Firebase deployment or merge to `main` has occurred.

@@ -5,31 +5,31 @@ Selected baseline: `feature/pachattar-design-foundation-phase-1`, commit `759eed
 ## Existing U2U chat and Nearby rules
 
 - Baseline rules blob: `2944d790949a1fd93414a851eaf1f3ca6fef8922`.
-- Current candidate rules blob: `b039f9f896c27314eb1f57594e0c1fe911be92a6`.
-- Current GitHub compare reports **1,743 added lines and 3 deleted blank lines** in `firestore.rules`. No existing rule expression was deleted.
-- `DIFF_AGAINST_BASE.patch` has been refreshed to represent the exact base and current candidate rules blobs.
-- Original U2U authentication, friend request, chat, read-state, reactions, typing and Nearby-transfer rule logic remains preserved.
-- This source-branch comparison does not establish that live production Rules/indexes match the selected baseline.
+- Current candidate rules blob: `15ae62777f1d9486c3bd15f364b03a82b934b34e`.
+- Current GitHub compare reports **1,758 additions and 3 deletions** in `firestore.rules`; existing U2U rule expressions remain preserved.
+- `DIFF_AGAINST_BASE.patch` is refreshed against the precise baseline and candidate blobs.
+- This source diff does not establish that live production Rules or indexes match the selected baseline.
 
 ## Targeted Market hardening
 
-- Market self-service profile preference changes require a verified email.
-- Task acceptance now requires a new deterministic Market conversation to be created atomically with the task assignment, accepted proposal and poster counter update.
-- The positive acceptance transaction test succeeds; a new negative test denies the transaction when the conversation is omitted.
-- Existing student/admin, proposal, report, rating and Market chat authorization tests remain in the Emulator suite.
+- Market self-service profile preference updates require verified email.
+- Task acceptance requires the new deterministic Market conversation to be created atomically with task assignment, selected proposal acceptance and poster counter update.
+- Market config updates require `lastAuditLogId` to point to a newly created immutable `adminLogs` entry written in the same atomic write. The linked action and target must be `update_market_config` / `config` / `market`, with matching admin and request timestamp.
+- The app repository writes the audit reference and immutable log in one transaction. The strict config decoder accepts the optional metadata without adding it to ordinary config serialization.
+- Other admin operations still need the equivalent Rules-enforced log/notice linkage; the config safeguard does not cover them.
 
 ## Latest test evidence
 
-[Run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223), tested commit `46ce86ce325135814963fb5e077b6257694731cb`, passed:
-- Static validation: 39 passed, 0 failed.
-- Firestore Emulator: 67 passed, 0 failed, 0 skipped.
-- 1,000-expression-ceiling diagnostics: 0; the CI guard passed.
-- Artifact ID: `12459119458`.
+[Rules run #27](https://github.com/Webster-02/Superior-Student/actions/runs/39858637212), tested commit `1f5536f4387cb7254e4a0ccae04c896b1a68b511`, passed:
+- Static validation: **40 passed, 0 failed**.
+- Firestore Emulator: **67 passed, 0 failed, 0 skipped**.
+- Expression-ceiling diagnostics: **0**; guard passed.
+- Artifact ID: `12459668968`.
 
-Older successful run #22 was the verified baseline. The much older run 39533202614 contained 39 diagnostics in an earlier rules snapshot and is retained only as historical evidence.
+[Android run #100](https://github.com/Webster-02/Superior-Student/actions/runs/39858373895) on app commit `4a74df5e6d7d383f4f38fda716b8eaafed4ebdb0` passed unit tests and built the debug APK (artifact ID `12459833836`).
 
 ## Release gates
 
-Admin audit log and notice atomicity remains an open specification gap, as does clearer lifecycle-counter wording. Before production: export/hash live Rules/indexes; verify email-verification and U2U-profile prerequisites; dry-run, back up and validate historical proposal `proposerId` backfill; test all required flows on a separate staging project; and obtain explicit approval. Use the actual live export for rollback unless byte identity with the branch baseline has been proven.
+Finish audit linkage for listing moderation/pins, report status, support and account actions; clarify lifecycle counters; export/hash live Rules/indexes; verify Auth/profile prerequisites; dry-run/back up/verify any historical proposal `proposerId` backfill; deploy to a separate staging project; and obtain explicit approval. Use the actual live export for rollback unless byte identity with the branch baseline is proven.
 
 No Firebase deployment or merge to `main` has occurred.

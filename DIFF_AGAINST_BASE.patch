@@ -1,5 +1,5 @@
 diff --git a/firestore.rules b/firestore.rules
-index 2944d790949a1fd93414a851eaf1f3ca6fef8922..b039f9f896c27314eb1f57594e0c1fe911be92a6 100644
+index 2944d790949a1fd93414a851eaf1f3ca6fef8922..15ae62777f1d9486c3bd15f364b03a82b934b34e 100644
 --- a/firestore.rules
 +++ b/firestore.rules
 @@ -6,8 +6,6 @@ service cloud.firestore {
@@ -11,7 +11,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..b039f9f896c27314eb1f57594e0c1fe9
      // Chat access requires an existing accepted directional friend request.
      function acceptedChatConnectionExists(uidA, uidB) {
        let forwardId = uidA + '_' + uidB;
-@@ -192,6 +190,1749 @@ service cloud.firestore {
+@@ -192,6 +190,1764 @@ service cloud.firestore {
          && data.body == get(requestPath).data.receiverName + ' accepted your friend request.';
      }
  
@@ -1579,11 +1579,26 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..b039f9f896c27314eb1f57594e0c1fe9
 +    }
 +
 +    match /config/{configId} {
++      function marketConfigAuditValid() {
++        let auditLogId = request.resource.data.lastAuditLogId;
++        let auditLogPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
++        return auditLogId is string
++          && auditLogId.size() >= 1 && auditLogId.size() <= 150
++          && existsAfter(auditLogPath)
++          && !exists(auditLogPath)
++          && getAfter(auditLogPath).data.adminId == request.auth.uid
++          && getAfter(auditLogPath).data.action == 'update_market_config'
++          && getAfter(auditLogPath).data.targetType == 'config'
++          && getAfter(auditLogPath).data.targetId == 'market'
++          && getAfter(auditLogPath).data.createdAt == request.time;
++      }
++
 +      allow get: if marketSignedIn() && configId == 'market';
 +      allow list: if false;
 +      allow create, update: if marketVerified() && marketIsAdmin() && configId == 'market'
-+        && request.resource.data.keys().hasAll(['announcement', 'blockedWords', 'rankWeights', 'limits'])
-+        && request.resource.data.keys().hasOnly(['announcement', 'blockedWords', 'rankWeights', 'limits'])
++        && request.resource.data.keys().hasAll(['announcement', 'blockedWords', 'rankWeights', 'limits', 'lastAuditLogId'])
++        && request.resource.data.keys().hasOnly(['announcement', 'blockedWords', 'rankWeights', 'limits', 'lastAuditLogId'])
++        && marketConfigAuditValid()
 +        && request.resource.data.announcement is map
 +        && request.resource.data.announcement.keys().hasAll(['text', 'active', 'until'])
 +        && request.resource.data.announcement.keys().hasOnly(['text', 'active', 'until'])
@@ -1761,7 +1776,7 @@ index 2944d790949a1fd93414a851eaf1f3ca6fef8922..b039f9f896c27314eb1f57594e0c1fe9
      match /profiles/{uid} {
        allow get: if signedInWithVerifiedEmail()
          && resource.data.uid == uid
-@@ -385,7 +2126,6 @@ service cloud.firestore {
+@@ -385,7 +2141,6 @@ service cloud.firestore {
          && request.auth.uid == uid;
      }
  

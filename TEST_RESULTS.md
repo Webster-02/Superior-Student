@@ -1,54 +1,59 @@
 # Test and validation results
 
-## Latest verified CI run
+## Latest verified Rules CI
 
-**Workflow:** [Firestore Rules Review Tests — run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223)  
-**Tested commit:** `46ce86ce325135814963fb5e077b6257694731cb` on `review/market-rules`  
-**Current rules blob:** `b039f9f896c27314eb1f57594e0c1fe911be92a6`.
+**Workflow:** [Firestore Rules Review Tests — run #27](https://github.com/Webster-02/Superior-Student/actions/runs/39858637212)  
+**Rules-tested commit:** `1f5536f4387cb7254e4a0ccae04c896b1a68b511` on `review/market-rules`  
+**Rules blob:** `15ae62777f1d9486c3bd15f364b03a82b934b34e`.
 
 | Check | Actual result |
 |---|---|
 | `npm ci` | Exit 0 |
-| Static validation | **39 passed, 0 failed** |
+| Static validation | **40 passed, 0 failed** |
 | Firestore Rules Emulator | **67 passed, 0 failed, 0 skipped**, across 14 suites |
 | 1,000-expression-ceiling diagnostics | **0** |
 | Expression-ceiling guard | Exit 0 |
-| Overall GitHub Actions job | **Success** |
+| Overall Rules workflow | **Success** |
 | Firebase deployment / merge to `main` | Not performed |
 
-Artifact: [run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223)  
-Artifact name: `firestore-rules-test-results`; ID `12459119458` (185,653 bytes).
+Artifact: `firestore-rules-test-results`, ID `12459668968` (185,402 bytes). The downloaded raw artifact was inspected directly; its summary reports both suites exit 0, diagnostic count 0 and `Overall: PASS`.
 
-The downloaded raw artifact was inspected. Its summary reports static exit code 0, Emulator exit code 0, expression-ceiling diagnostic count 0, guard exit code 0, and `Overall: PASS`.
+## Latest verified Android CI
 
-## Security changes verified by run #24
+**Workflow:** [Market Data Step Check — run #100](https://github.com/Webster-02/Superior-Student/actions/runs/39858373895)  
+**App commit:** [`4a74df5e6d7d383f4f38fda716b8eaafed4ebdb0`](https://github.com/Webster-02/Superior-Student/commit/4a74df5e6d7d383f4f38fda716b8eaafed4ebdb0) on `feature/market-ui-reference`.  
+**Result:** Success. Unit tests and debug APK build completed. Artifact `superior-student-debug-apk`, ID `12459833836`.
 
-1. Self-service `marketProfiles/{uid}` preference changes require a verified email. The regression test denies an unverified student's preference update and accepts the same update for a verified student.
-2. Task acceptance must atomically change the task to assigned, mark the selected proposal accepted, decrement the poster's open-task counter, and create the new deterministic Market conversation. The rules require the conversation to exist after the transaction and not exist before it.
-3. Positive acceptance transaction including the new conversation passes.
-4. Negative acceptance transaction omitting the new conversation is denied.
-5. Existing test coverage for task/offer lifecycle and create operations, proposals, reports/counters, admin operations, ratings, legacy U2U chat, and Nearby-transfer rules remains green.
+The Rules/app commits live on separate branches and are not merged to `main`.
 
-The emulator results cover the tested request shapes and don't guarantee every possible future request shape. Staging verification remains necessary.
+## Security changes currently verified
 
-## Recent CI history
+1. Self-service `marketProfiles/{uid}` preference changes require a verified email.
+2. Task acceptance requires a selected accepted proposal, poster open-task counter decrement, and a brand-new deterministic Market conversation created in the same transaction. A negative test without the conversation is denied.
+3. Market config creation/update requires `lastAuditLogId` to point to a newly created immutable `adminLogs` entry in the same write. The action and target must match the config change, and the log identity/timestamp must match the current admin/request.
+4. Valid config updates through the transaction still pass; standalone config updates and mismatched/stale audit pointers are denied.
+5. Existing test coverage for task/offer lifecycle, proposals, reports/counters, notices/support/config permissions, ratings, legacy U2U chat and Nearby-transfer rules remains green in the tested Emulator suite.
 
-- [Run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223): current rules candidate; static 39/39, Emulator 67/67, zero expression-ceiling diagnostics.
-- [Run #23](https://github.com/Webster-02/Superior-Student/actions/runs/39855566823): verified-email guard; static 38/38, Emulator 66/66, zero expression-ceiling diagnostics.
-- [Run #22](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521): restored baseline; static 37/37, Emulator 65/65, zero expression-ceiling diagnostics.
-- Older run [39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) used an older rules snapshot and recorded 39 expression-ceiling diagnostics. It is historical and is not the current test result.
+## Recent Rules CI history
+
+- [Run #27](https://github.com/Webster-02/Superior-Student/actions/runs/39858637212): current Rules candidate; static 40/40, Emulator 67/67, zero expression-ceiling diagnostics.
+- [Run #26](https://github.com/Webster-02/Superior-Student/actions/runs/39858262063) and [run #25](https://github.com/Webster-02/Superior-Student/actions/runs/39858214859): temporary failures in the newly added mismatched-pointer regression test because its input accidentally matched the created log ID. The test was corrected; run #27 passes.
+- [Run #24](https://github.com/Webster-02/Superior-Student/actions/runs/39856525223): task acceptance/chat guard and email verification; static 39/39, Emulator 67/67.
+- [Run #23](https://github.com/Webster-02/Superior-Student/actions/runs/39855566823): email-verification guard; static 38/38, Emulator 66/66.
+- [Run #22](https://github.com/Webster-02/Superior-Student/actions/runs/39603954521): restored baseline; static 37/37, Emulator 65/65.
+- Older run [39533202614](https://github.com/Webster-02/Superior-Student/actions/runs/39533202614) used an older rules snapshot and recorded 39 expression-ceiling diagnostics. It is historical; current run #27 has zero diagnostics.
 
 ## Remaining production gates
 
 Passing CI does **not** authorize production deployment. Before any production change:
 
-- Export actually published production Rules and indexes, compare with this selected source baseline, and save protected rollback copies and hashes. Git comparison does not prove the live project matches.
+- Export actually published production Rules and indexes, compare with the selected source baseline, and save protected rollback copies and hashes. Git comparison does not prove the live project matches.
 - Verify email-verification readiness and required `profiles/{uid}` records against current Firebase Auth/data.
-- Dry-run, back up, apply, and verify any historical proposal `proposerId` migration using an authorized one-off Admin SDK operation; manually reconcile mismatches rather than guessing.
-- Resolve remaining specification gaps, including admin audit-log/notice atomicity and precise lifecycle-counter requirements.
-- Deploy to a separate staging Firebase project and validate the actual student/admin/query/index flows.
+- Dry-run, back up, apply and verify any historic proposal `proposerId` migration with an authorized one-off Admin SDK operation; manually reconcile mismatches rather than guessing.
+- Finish audit-log/notice linkage for task/offer moderation and pin, report status, support, and account actions; clarify exact lifecycle-counter transitions.
+- Deploy to a separate staging Firebase project and validate actual student/admin/query/index flows.
 - Obtain explicit product-owner approval before any production deployment.
 
-The original `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` is present on the review branch and integrity-checked by static validation. Its semantic gap review remains open; its historical expression-ceiling note should not be confused with run #24.
+The original `MARKET_SPEC_ADDENDUM_RULES_PHASE.md` remains byte-identical to its integrity-checked reference. Its production-gate review remains open.
 
 No Firebase Rules or indexes have been deployed and no merge to `main` has occurred.

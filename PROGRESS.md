@@ -1,7 +1,7 @@
 # Market Rules Review Progress
 
 **Branch:** `review/market-rules`  
-**State:** Verified Rules baseline restored; targeted Market security hardening is underway on this review branch. Market Step 1 build has not started. Historical P1–P4 refactor experiments remain reverted. No merge to `main` and no Firebase deployment.
+**State:** Verified Rules baseline with targeted Market security hardening under review. Current review candidate includes verified-email profile edits, task acceptance/chat atomicity, and linked audit logging for Market configuration edits. Remaining admin actions and production gates are not complete. No merge to `main` and no Firebase deployment.
 
 ## Step Zero verification record
 
@@ -156,7 +156,7 @@ Run #24 tested the rules blob `b039f9f896c27314eb1f57594e0c1fe911be92a6`. The wo
 
 ### Still-open specification gaps — do not deploy yet
 
-- **Admin audit linkage:** current rules permit standalone admin pin and report-status updates without requiring the related immutable `adminLogs` entry / notice in the same batch. Decide whether to enforce atomic audit linkage for every covered admin action, then add positive and negative tests.
+- **Admin audit linkage:** Market configuration changes now require a new linked immutable `adminLogs` entry in the same write. Task/offer pin and moderation, report status, support actions, and account warning/suspension still need their individual audit-log/notice requirements enforced and tested.
 - **Lifecycle-counter wording:** clarify each operation's exact counter transition; do not double-decrement task completion after acceptance or offer removal after pause.
 - **Original addendum §9:** its expression-ceiling note describes older output (including the older 39-diagnostic run). Keep the addendum itself byte-identical because the static validator verifies its supplied source hash; this progress note records the newer verified result.
 - **Production baseline:** live published rules/indexes have not been exported or compared. Email-verification readiness and Market profile completeness are not yet checked against production Auth/data.
@@ -164,3 +164,37 @@ Run #24 tested the rules blob `b039f9f896c27314eb1f57594e0c1fe911be92a6`. The wo
 - **Staging:** no staging Firebase deployment or end-to-end staging flow checks have been performed.
 
 No Firebase Rules or indexes have been published/deployed. No merge to `main` occurred. Existing university sign-in, Student Connect chat, friend requests, notifications and Nearby-transfer rules were not edited by these two targeted Market changes.
+
+
+## Phase 2 — Step 9: Market configuration audit linkage (verified 2026-10-22)
+
+**Rules candidate commit:** [`1f5536f4387cb7254e4a0ccae04c896b1a68b511`](https://github.com/Webster-02/Superior-Student/commit/1f5536f4387cb7254e4a0ccae04c896b1a68b511)  
+**Rules workflow:** [Run #27](https://github.com/Webster-02/Superior-Student/actions/runs/39858637212) — **success**  
+**Rules artifact:** `firestore-rules-test-results`, ID `12459668968`.
+
+Actual downloaded CI output:
+- Static checks: **40 passed, 0 failed**.
+- Firestore Rules Emulator: **67 passed, 0 failed, 0 skipped**, across 14 suites.
+- Expression-ceiling diagnostics: **0**, guard exit code 0; summary `Overall: PASS`.
+- Rules blob tested: `15ae62777f1d9486c3bd15f364b03a82b934b34e`.
+
+### What the safeguard enforces
+
+- `config/market` now has a server-owned `lastAuditLogId` pointer. Admin create/update requires a matching new `adminLogs/{logId}` document in the same atomic write.
+- The linked log must be newly created, immutable after creation, owned by the current admin identity, with action `update_market_config`, target type `config`, target ID `market`, and `createdAt == request.time`.
+- Tests deny a configuration update with no linked log, a stale pointer, and a pointer to a different/nonexistent log. Valid edits with the linked log still pass. Invalid weights and fixed limits continue to be denied.
+- The client repository writes the linked ID and the immutable audit record in the same transaction. The strict config decoder accepts this optional metadata field when reading while keeping the user-facing `MarketConfig` model and converter's ordinary serialized fields unchanged.
+
+**App transaction commit:** [`4a74df5e6d7d383f4f38fda716b8eaafed4ebdb0`](https://github.com/Webster-02/Superior-Student/commit/4a74df5e6d7d383f4f38fda716b8eaafed4ebdb0) on `feature/market-ui-reference`.  
+**Android verification:** [Market Data Step Check — run #100](https://github.com/Webster-02/Superior-Student/actions/runs/39858373895) — **success**; unit tests and debug APK build passed. Artifact `superior-student-debug-apk`, ID `12459833836`.
+
+The two commits are on separate review/app branches by design. The app branch writes the metadata expected by the review Rules; neither branch has been merged to `main`.
+
+### Remaining admin gaps
+
+- Task and offer pin/moderation still permit some direct edits without requiring the matching audit log and user notice.
+- Report status updates are still permitted without a required same-batch audit log and reporter notice.
+- Support reply/resolve and user warning/suspension operations need complete log/notice linkage enforced by Rules, not just by the repository transaction.
+- These other operations are the next review steps. The config audit pointer does not by itself secure them.
+
+No Firebase Rules or indexes were published or deployed. No live data was changed.
