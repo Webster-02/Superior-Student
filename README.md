@@ -45,3 +45,13 @@ Appeal-ticket decision linkage and direct account warning/lift-suspension/profil
 No Firebase Rules or indexes have been deployed and no merge to `main` has occurred.
  
 Step 13 status: appeal-decision Rules linkage passed Rules CI (44 static checks, 69 Emulator tests, zero expression-ceiling diagnostics). The matching Android transaction pointer write passed unit tests and debug APK build/verification in run #104 (https://github.com/Webster-02/Superior-Student/actions/runs/39868829292); APK artifact `superior-student-debug-apk` ID `12464259740`.
+
+ 
+## Phase 2, Step 14 — Latest candidate verification
+
+- Rules run #36: https://github.com/Webster-02/Superior-Student/actions/runs/39880626698 — **45 static checks passed, 71 Emulator tests passed, zero expression-ceiling diagnostics**.
+- Android run #105: https://github.com/Webster-02/Superior-Student/actions/runs/39880533430 — unit tests, debug APK build, APK verification and artifact upload passed. Artifact ID: `12471070183`.
+- Account warning, suspension/ban, and lift-suspension updates now require linked new audit logs and notices in the same atomic write.
+- The implementation stays on `review/market-rules` and `feature/market-ui-reference`. No merge to `main`, Firebase deployment, or live data change occurred.
+
+Before testing against a Firebase project, complete the lifecycle-counter review, independently export/compare live Rules/indexes, confirm Auth/profile prerequisites, and validate historical proposal `proposerId` records. Use a separate staging Firebase project for deployment and smoke tests; production deployment still requires explicit approval.

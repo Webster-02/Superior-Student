@@ -307,3 +307,32 @@ No Firebase Rules or indexes were published or deployed. No live data was change
 - Android CI result: **passed** (run #104, https://github.com/Webster-02/Superior-Student/actions/runs/39868829292). Embedded JavaScript validation, Market route verification, `gradle clean`, `testDebugUnitTest`, debug APK build, APK verification, and artifact upload all passed. APK artifact: `superior-student-debug-apk`, ID `12464259740`.
 
 No Firebase Rules or indexes were deployed; no live Firebase data was changed; neither branch was merged into `main`. No unrelated account warning/lift-suspension/profile-status change was included.
+
+ 
+## Phase 2, Step 14 — Account moderation audit linkage (verified 2026-10-22)
+
+### Rules implementation and verification
+- Rules implementation commit: `d19480430c8aab5aba4585b89b926968dd2d48aa`; follow-up short-circuit/complexity fix: `a40a25847a23453f0b24c0510b282ce2e568ef25`.
+- Final Rules workflow run #36: https://github.com/Webster-02/Superior-Student/actions/runs/39880626698 — **success**.
+- Static validation: **45 passed, 0 failed**.
+- Firestore Rules Emulator: **71 passed, 0 failed, 0 skipped**.
+- Expression-ceiling diagnostics: **0**; guard exit code 0.
+- Profile warning, suspend/ban, and lift-suspension updates now require the profile's `lastAuditLogId` and `lastAdminNoticeId` to point to new records created atomically with the profile change. Rules verify the authenticated admin, user target, action, timestamp, notice type/title and allowed status/counter transition.
+- Warning increments are constrained to exactly +1. Suspension/ban still clears the relevant listing counters and retains the existing same-transaction listing hide/log/notice contract. Lift is limited to a suspended account becoming active; ban review remains separate.
+- Negative and positive Emulator tests cover warnings with missing pointers and mismatched audit targets, lift without pointers and valid lift, and suspension without pointers plus the valid bulk-suspension transaction.
+- A first candidate run tripped the 1,000-expression guard because profile-update branches were evaluated without short-circuit routing. The follow-up restored the existing short-circuit dispatcher. Final run #36 has zero ceiling diagnostics.
+
+### Android implementation and verification
+- Android commit: `de591fdc6d987cf614a7a0011d2fc1490b295160` on `feature/market-ui-reference`.
+- Repository transactions now write matching profile audit pointers and reuse the exact notice IDs. The profile converter safely accepts optional bounded audit pointers without changing the student-facing profile model.
+- Android workflow run #105: https://github.com/Webster-02/Superior-Student/actions/runs/39880533430 — **success**. Embedded JavaScript validation, reference-route checks, clean build, unit tests, debug APK build, APK verification and artifact upload all passed.
+- APK artifact: `superior-student-debug-apk`, ID `12471070183`.
+
+### Current remaining gates before testing/deployment
+- Clarify lifecycle-counter transitions in the spec and validate them against current implementation/tests.
+- Export and compare the currently published production Rules/indexes against the candidate baseline, and separately validate Auth/profile prerequisites.
+- Review historical proposal `proposerId` records before any strict Rules deployment.
+- Deploy to a separate staging Firebase project and perform the full student/admin smoke checklist. No staging project ID or Firebase CLI session is available through the current repository connection.
+- Explicit owner approval is still required before any production deployment.
+
+No Firebase Rules or indexes were deployed, no live Firebase data changed, and neither branch was merged into `main`.

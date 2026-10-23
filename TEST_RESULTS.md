@@ -83,3 +83,23 @@ No Firebase Rules or indexes have been deployed and no merge to `main` has occur
 - Android CI result: **passed** (run #104, https://github.com/Webster-02/Superior-Student/actions/runs/39868829292). Embedded JavaScript validation, Market route verification, `gradle clean`, `testDebugUnitTest`, debug APK build, APK verification, and artifact upload all passed. APK artifact: `superior-student-debug-apk`, ID `12464259740`.
 
 No Firebase Rules or indexes were deployed; no live Firebase data was changed; neither branch was merged into `main`. No unrelated account warning/lift-suspension/profile-status change was included.
+
+ 
+## Phase 2, Step 14 — Account moderation audit linkage
+
+**Rules implementation:** `d19480430c8aab5aba4585b89b926968dd2d48aa`, with short-circuit fix `a40a25847a23453f0b24c0510b282ce2e568ef25`.  
+**Rules CI run #36:** https://github.com/Webster-02/Superior-Student/actions/runs/39880626698 — **success**.  
+**Android commit:** `de591fdc6d987cf614a7a0011d2fc1490b295160`.  
+**Android CI run #105:** https://github.com/Webster-02/Superior-Student/actions/runs/39880533430 — **success**. APK artifact `superior-student-debug-apk`, ID `12471070183`.
+
+- Static validation: **45/45 passed**.
+- Firestore Emulator: **71/71 passed**, 0 skipped.
+- Expression-ceiling diagnostics: **0**.
+- The profile audit pointers now bind account warning, suspension/ban, and lift-suspension updates to their newly created audit logs and notices in the same atomic write.
+- Warnings must increase by exactly one; suspension/ban require the expected resulting status, zero open listing counters, matching user mutation marker, and action-specific notice; lift-suspension can only transition a suspended account to active with its linked audit and activity notice.
+- Negative and positive tests cover missing pointers, wrong audit target, valid warning, lift without links, valid lift, and bulk suspension linkage.
+- Android unit tests and debug APK build/verification/upload passed. The profile decoder accepts optional bounded audit pointer fields while keeping them out of the student-facing model.
+
+## Current production gates (updated after Step 14)
+
+Rules linkage for config, task/offer moderation, report status, ordinary support, appeals, and account moderation is now covered by Emulator-tested same-write audit/notice requirements. Remaining gates are lifecycle-counter specification review; export/hash/compare of currently published production Rules/indexes; Auth and profile readiness checks; historic proposal `proposerId` dry-run/backup/mismatch reconciliation; separate staging deployment and end-to-end smoke tests; then explicit owner approval for production. No Firebase deployment or live data change has occurred.
