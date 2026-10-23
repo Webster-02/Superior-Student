@@ -34,6 +34,8 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketBudgetType
+import com.superiorstudent.app.feature.market.data.MarketConfig
+import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
 import com.superiorstudent.app.feature.market.data.MarketModerationStatus
@@ -371,39 +373,60 @@ class MarketRequestsActivity : AppCompatActivity() {
 
         fun fetchPage(profile: MarketProfile?) {
             if (requestGeneration != loadGeneration) return
-            val category = selectedCategory.takeIf { it != "All" }
-            MarketQueryBuilders.publicTasks(
-                firestore = FirebaseFirestore.getInstance(),
-                category = category,
-                pinnedFirst = selectedSort != MarketRequestSort.NEWEST,
-                pageSize = feedPageSize,
-                startAfter = cursor
-            ).get()
-                .addOnSuccessListener { snapshot ->
-                    if (requestGeneration != loadGeneration) return@addOnSuccessListener
-                    val pageDocuments = snapshot.documents
-                    if (reset) loadedTasks.clear()
-                    val knownIds = loadedTasks.mapTo(HashSet()) { it.id }
-                    pageDocuments.mapNotNull { MarketConverters.task(it) }
-                        .filter {
-                            it.status == MarketTaskStatus.OPEN &&
-                                it.moderation == MarketModerationStatus.OK &&
-                                it.id !in knownIds
-                        }
-                        .forEach(loadedTasks::add)
+            MarketConfigProvider(this).load()
+                .addOnSuccessListener configLoaded@ { config ->
+                    if (requestGeneration != loadGeneration) return@configLoaded
+                    if (config == null) {
+                        loadingTasks = false
+                        loadingMoreTasks = false
+                        swipeRefresh.isRefreshing = false
+                        loadError = "Market configuration is unavailable. Please try again later."
+                        renderRequests()
+                        return@configLoaded
+                    }
+                    val category = selectedCategory.takeIf { it != "All" }
+                    MarketQueryBuilders.publicTasks(
+                        firestore = FirebaseFirestore.getInstance(),
+                        category = category,
+                        pinnedFirst = selectedSort != MarketRequestSort.NEWEST,
+                        pageSize = feedPageSize,
+                        startAfter = cursor
+                    ).get()
+                        .addOnSuccessListener tasksLoaded@ { snapshot ->
+                            if (requestGeneration != loadGeneration) return@tasksLoaded
+                            val pageDocuments = snapshot.documents
+                            if (reset) loadedTasks.clear()
+                            val knownIds = loadedTasks.mapTo(HashSet()) { it.id }
+                            pageDocuments.mapNotNull { MarketConverters.task(it) }
+                                .filter {
+                                    it.status == MarketTaskStatus.OPEN &&
+                                        it.moderation == MarketModerationStatus.OK &&
+                                        it.reportCount < config.limits.reportsToHide &&
+                                        it.id !in knownIds
+                                }
+                                .forEach(loadedTasks::add)
 
-                    if (pageDocuments.isNotEmpty()) lastTaskDocument = pageDocuments.last()
-                    hasMoreTasks = pageDocuments.size == feedPageSize
-                    loadingTasks = false
-                    loadingMoreTasks = false
-                    loadError = null
-                    swipeRefresh.isRefreshing = false
-                    rebuildTaskPreviews(profile)
-                    renderRequests()
-                    maybeFillViewport()
+                            if (pageDocuments.isNotEmpty()) lastTaskDocument = pageDocuments.last()
+                            hasMoreTasks = pageDocuments.size == feedPageSize
+                            loadingTasks = false
+                            loadingMoreTasks = false
+                            loadError = null
+                            swipeRefresh.isRefreshing = false
+                            rebuildTaskPreviews(profile, config)
+                            renderRequests()
+                            maybeFillViewport()
+                        }
+                        .addOnFailureListener tasksFailed@ { failure ->
+                            if (requestGeneration != loadGeneration) return@tasksFailed
+                            loadingTasks = false
+                            loadingMoreTasks = false
+                            swipeRefresh.isRefreshing = false
+                            loadError = MarketErrorMapper.map(failure).message
+                            renderRequests()
+                        }
                 }
-                .addOnFailureListener { failure ->
-                    if (requestGeneration != loadGeneration) return@addOnFailureListener
+                .addOnFailureListener configFailed@ { failure ->
+                    if (requestGeneration != loadGeneration) return@configFailed
                     loadingTasks = false
                     loadingMoreTasks = false
                     swipeRefresh.isRefreshing = false
@@ -433,11 +456,13 @@ class MarketRequestsActivity : AppCompatActivity() {
         }
     }
 
-    private fun rebuildTaskPreviews(profile: MarketProfile?) {
+    private fun rebuildTaskPreviews(profile: MarketProfile?, config: MarketConfig) {
         val now = System.currentTimeMillis()
         val blocked = profile?.blockedUids?.toSet().orEmpty()
         val skills = profile?.skillTags.orEmpty()
-        val eligible = loadedTasks.filter { it.posterId !in blocked }
+        val eligible = loadedTasks.filter {
+            it.posterId !in blocked && it.reportCount < config.limits.reportsToHide
+        }
         val signals = eligible.map { task ->
             val matchesSkills = task.skills.any { required ->
                 skills.any { saved -> saved.equals(required, ignoreCase = true) }
