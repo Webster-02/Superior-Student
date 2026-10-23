@@ -234,7 +234,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             val chip=makeText(name,12f,true,color(R.color.market_ink)).apply {
                 gravity=Gravity.CENTER; setPadding(dp(14),0,dp(14),0)
                 background=rounded(color(R.color.market_card),99f,color(R.color.market_line))
-                setOnClickListener { selectedCategory=name; updateCategoryChips(); loadTasks(reset = true) }
+                setOnClickListener { selectedCategory=name; liveTasks = emptyList(); updateCategoryChips(); loadTasks(reset = true) }
             }
             if(index>0) chips.addView(chip,LinearLayout.LayoutParams(-2,dp(38)).apply { marginStart=dp(8) })
             else chips.addView(chip,LinearLayout.LayoutParams(-2,dp(38)))
@@ -357,7 +357,9 @@ class MarketRequestsActivity : AppCompatActivity() {
         val requestGeneration = if (reset) ++loadGeneration else loadGeneration
         val cursor = if (reset) null else lastTaskDocument
         if (reset) {
-            loadingTasks = liveTasks.isEmpty()
+            // Mark the refresh as in-flight even with stale cards present, so pagination
+            // cannot start a second request against the same cursor.
+            loadingTasks = true
             loadingMoreTasks = false
             lastTaskDocument = null
             hasMoreTasks = true
