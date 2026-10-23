@@ -19,10 +19,11 @@ class MarketFeedCacheStore internal constructor(
         System::currentTimeMillis
     )
 
-    fun saveTasks(items: List<MarketTask>): Boolean = writeDocuments(
+    fun saveTasks(items: List<MarketTask>, lastSyncMillis: Long? = null): Boolean = writeDocuments(
         key = TASKS_KEY,
         kind = "tasks",
         ownerUid = null,
+        lastSyncMillis = lastSyncMillis,
         documents = items.take(MarketFeedCacheCodec.MAX_ITEMS).map { task ->
             MarketFeedCacheDocument(task.id, MarketConverters.toFirestoreMap(task))
         }
@@ -35,10 +36,11 @@ class MarketFeedCacheStore internal constructor(
     /** Timestamp of the latest complete task-cache write; null means a full feed sync is needed. */
     fun tasksSavedAtMillis(): Long? = readEntry(TASKS_KEY, "tasks", null)?.savedAtMillis
 
-    fun saveOffers(items: List<MarketOffer>): Boolean = writeDocuments(
+    fun saveOffers(items: List<MarketOffer>, lastSyncMillis: Long? = null): Boolean = writeDocuments(
         key = OFFERS_KEY,
         kind = "offers",
         ownerUid = null,
+        lastSyncMillis = lastSyncMillis,
         documents = items.take(MarketFeedCacheCodec.MAX_ITEMS).map { offer ->
             val data = MarketConverters.toFirestoreMap(offer).toMutableMap()
             // Feed cards do not render thumbnails. Avoid persisting large base64
@@ -108,9 +110,10 @@ class MarketFeedCacheStore internal constructor(
         key: String,
         kind: String,
         ownerUid: String?,
-        documents: List<MarketFeedCacheDocument>
+        documents: List<MarketFeedCacheDocument>,
+        lastSyncMillis: Long? = null
     ): Boolean {
-        val savedAtMillis = try {
+        val savedAtMillis = lastSyncMillis ?: try {
             nowMillis()
         } catch (_: RuntimeException) {
             return false
