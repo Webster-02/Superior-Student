@@ -88,7 +88,13 @@ class MarketFeedCacheStore internal constructor(
     /** Removes only this user's cached profile; public listing/stat caches remain intact. */
     fun clearProfile(uid: String): Boolean {
         if (uid.isBlank()) return false
-        val entry = readEntry(PROFILE_KEY, "profile", uid) ?: return true
+        val payload = try {
+            preferences.readString(PROFILE_KEY)
+        } catch (_: RuntimeException) {
+            return false
+        } ?: return true
+        val entry = MarketFeedCacheCodec.decode(payload, "profile") ?: return remove(PROFILE_KEY)
+        if (entry.ownerUid != uid) return true
         return remove(PROFILE_KEY)
     }
 
