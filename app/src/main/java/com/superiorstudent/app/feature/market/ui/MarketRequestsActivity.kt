@@ -359,6 +359,8 @@ class MarketRequestsActivity : AppCompatActivity() {
         if (reset) {
             loadingTasks = liveTasks.isEmpty()
             loadingMoreTasks = false
+            lastTaskDocument = null
+            hasMoreTasks = true
             loadError = null
         } else {
             loadingMoreTasks = true
@@ -567,6 +569,15 @@ class MarketRequestsActivity : AppCompatActivity() {
         }
 
         emptyState.visibility = View.GONE
+        loadError?.let { error ->
+            list.addView(makeText(
+                "Refresh failed. Previously loaded requests remain visible. $error",
+                12f, false, color(R.color.market_ink2)
+            ).apply {
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = rounded(color(R.color.market_card), 12f, color(R.color.market_line))
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        }
         shown.forEach { item ->
             list.addView(buildRequestCard(item), LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
