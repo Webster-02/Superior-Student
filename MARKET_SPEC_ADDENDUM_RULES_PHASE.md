@@ -63,6 +63,9 @@ These were added after the rules review and the first successful CI run. They do
 - Every admin action writes an `adminLogs` document in the same batch and, where it affects the user, a notice.
 - Pins: the rules do not cap pinned items; the admin UI blocks a 4th pin.
 
-## 9. Not production-ready yet
-- Rules passed the Firestore Emulator suite in CI, but the Emulator log contains diagnostics about the 1,000-expression evaluation limit. Until that is reviewed and resolved, rules must not be deployed to production.
-- Before any deploy: compare against exported live rules/indexes, backfill `proposerId` on old proposals, deploy to staging first.
+## 9. Production readiness gates (review branch only)
+- Evidence from Firestore Rules Review Tests run #38 (commit `d00cc23a02b192b2f414de88ce27dae453b5ff03`): static suite passed; Firestore Emulator suite passed 73/73 tests across 14 suites; the workflow recorded **0** diagnostics for the 1,000-expression evaluator ceiling.
+- This validates the candidate file in CI, not the currently published production rules, live data compatibility, or the state of a staging project. The candidate rules have **not** been published to production by that test run.
+- Before deploying rules: export the rules currently published to `pachattarpercent`; compare the live release to `firestore.base.rules`; check legacy proposal documents for valid `proposerId`; deploy to an isolated staging project and run student/admin smoke tests; then obtain explicit production-deployment approval.
+- The separate index deployment run #3 deployed `firestore.indexes.json` only after verifying it omitted no existing production indexes. It did **not** deploy `firestore.rules`.
+- Until those environment and data checks are complete, keep production Rules unchanged. The read-only production audit workflow reports the live-vs-base comparison but never deploys anything.

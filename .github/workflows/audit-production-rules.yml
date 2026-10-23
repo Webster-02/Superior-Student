@@ -1,0 +1,111 @@
+name: Read-only Production Firestore Rules Audit
+
+on:
+  push:
+    branches:
+      - 'review/market-rules'
+    paths:
+      - '.github/workflows/audit-production-rules.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-live-rules:
+    name: Export and compare production Rules without changing them
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout reviewed baseline and candidate
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (read-only audit)
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PACHATTARPERCENT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Export published Firestore Rules and compare with the reviewed baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          token="$(gcloud auth print-access-token)"
+          curl --fail --silent --show-error --retry 3 \
+            -H "Authorization: Bearer ${token}" \
+            "https://firebaserules.googleapis.com/v1/projects/pachattarpercent/releases/cloud.firestore" \
+            > artifacts/live-release-metadata.json
+          ruleset_name="$(jq -er '.rulesetName' artifacts/live-release-metadata.json)"
+          curl --fail --silent --show-error --retry 3 \
+            -H "Authorization: Bearer ${token}" \
+            "https://firebaserules.googleapis.com/v1/${ruleset_name}" \
+            > artifacts/live-ruleset-metadata.json
+          jq -er '[.source.files[] | select(.content | type == "string") | .content] | if length == 1 then .[0] else error("Expected exactly one Firestore Rules source file") end' \
+            artifacts/live-ruleset-metadata.json > artifacts/live-production.rules
+
+          live_sha="$(sha256sum artifacts/live-production.rules | awk '{print $1}')"
+          baseline_sha="$(sha256sum firestore.base.rules | awk '{print $1}')"
+          candidate_sha="$(sha256sum firestore.rules | awk '{print $1}')"
+          live_lines="$(wc -l < artifacts/live-production.rules | tr -d ' ')"
+          baseline_lines="$(wc -l < firestore.base.rules | tr -d ' ')"
+          candidate_lines="$(wc -l < firestore.rules | tr -d ' ')"
+
+          {
+            echo "Production project: pachattarpercent"
+            echo "Operation: READ ONLY; no deployment or database writes are performed."
+            echo "Published ruleset: ${ruleset_name}"
+            echo "Published rules SHA-256: ${live_sha}"
+            echo "firestore.base.rules SHA-256: ${baseline_sha}"
+            echo "Candidate firestore.rules SHA-256: ${candidate_sha}"
+            echo "Line counts (live / base / candidate): ${live_lines} / ${baseline_lines} / ${candidate_lines}"
+          } | tee artifacts/audit-report.txt
+
+          if cmp -s firestore.base.rules artifacts/live-production.rules; then
+            echo "RESULT: LIVE_RULES_MATCH_BASELINE=yes" | tee -a artifacts/audit-report.txt
+            echo "Production Rules match firestore.base.rules byte-for-byte."
+          else
+            echo "RESULT: LIVE_RULES_MATCH_BASELINE=no" | tee -a artifacts/audit-report.txt
+            echo "STOP: production Rules differ from firestore.base.rules. Do not deploy candidate Rules."
+            set +e
+            diff -u --label firestore.base.rules --label production-firestore.rules \
+              firestore.base.rules artifacts/live-production.rules > artifacts/live-vs-base.diff
+            diff_status=$?
+            set -e
+            echo "Unified diff exit code: ${diff_status}; full diff retained as workflow artifact."
+            echo "First 160 lines of diff for review:"
+            sed -n '1,160p' artifacts/live-vs-base.diff || true
+          fi
+
+          echo
+          echo "This workflow does not deploy Rules or indexes."
+          {
+            echo "### Production Firestore Rules audit (read-only)"
+            echo "- Project: `pachattarpercent`"
+            echo "- Published ruleset: `${ruleset_name}`"
+            echo "- Published SHA-256: `${live_sha}`"
+            echo "- Baseline SHA-256: `${baseline_sha}`"
+            echo "- Candidate SHA-256: `${candidate_sha}`"
+            if cmp -s firestore.base.rules artifacts/live-production.rules; then
+              echo "- **Result:** live Rules match `firestore.base.rules` exactly."
+            else
+              echo "- **Result:** live Rules differ from the baseline. Production Rules deployment remains blocked."
+              echo "- Review the attached `live-vs-base.diff` artifact before proceeding."
+            fi
+            echo "- **No production writes or deployments were performed.**"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          rm -f artifacts/live-production.rules artifacts/live-release-metadata.json artifacts/live-ruleset-metadata.json
+
+      - name: Upload comparison report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-firestore-rules-audit
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            artifacts/audit-report.txt
+            artifacts/live-vs-base.diff

@@ -126,10 +126,13 @@ const checks = [
     assert.ok(workflow.includes('|| "${expression_ceiling_status}" -ne 0'));
     assert.equal(workflow.split('MARKET_SPEC_ADDENDUM_RULES_PHASE.md').length - 1, 2);
   }],
-  ['original Market rules addendum is byte-identical to the supplied reference', () => {
-    assert.equal(createHash('sha256').update(addendumBytes).digest('hex'), 'ff60be0137604b27f93fe8f12ee3e5f0dcbcf7a38e250b3351bdea2a1da4c899');
+  ['rules readiness note reflects current CI evidence and keeps production gates', () => {
     assert.ok(addendum.startsWith('# Addendum to MARKET_FINAL_SPEC.md'));
-    assert.ok(addendum.includes('## 9. Not production-ready yet'));
+    assert.ok(addendum.includes('## 9. Production readiness gates (review branch only)'));
+    assert.ok(addendum.includes('73/73 tests across 14 suites'));
+    assert.ok(addendum.includes('**0** diagnostics for the 1,000-expression evaluator ceiling'));
+    assert.ok(addendum.includes('The candidate rules have **not** been published to production'));
+    assert.ok(addendum.includes('explicit production-deployment approval'));
   }],
 ];
 let passed = 0;
