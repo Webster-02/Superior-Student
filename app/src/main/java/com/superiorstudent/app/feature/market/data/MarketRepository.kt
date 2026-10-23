@@ -124,6 +124,25 @@ class MarketRepository(
     }
 
     /**
+     * Reads another signed-in user's public aggregate Market rating through the query builder.
+     * No private profile fields or individual rating comments are needed by the feed.
+     */
+    fun loadPublicUserStats(uid: String): Task<MarketUserStats?> {
+        requireSignedInUid()
+        return MarketQueryBuilders.publicUserStats(firestore, uid).get().continueWith { completed ->
+            if (!completed.isSuccessful) {
+                throw completed.exception
+                    ?: IllegalStateException("Seller rating information could not be loaded.")
+            }
+            val snapshot = completed.result
+                ?: throw IllegalStateException("Seller rating information could not be loaded.")
+            if (!snapshot.exists()) null
+            else MarketConverters.userStats(snapshot)
+                ?: throw IllegalStateException("Seller rating information is invalid.")
+        }
+    }
+
+    /**
      * Reads the actual suspension/ban decision notice from the signed-in user's notice inbox.
      * The read is strictly owner-scoped and never changes the notice's read state.
      */
