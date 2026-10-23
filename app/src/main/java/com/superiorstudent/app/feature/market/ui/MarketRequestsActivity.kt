@@ -691,7 +691,7 @@ internal data class MarketRequestPreview(
     val id:String,val category:String,val courseTag:String?,val title:String,val description:String,
     val budgetLabel:String,val budgetValue:Int,val dueLabel:String,val dueDays:Int,val proposalCount:Int,
     val posterName:String,val initials:String,val ageLabel:String,val matchesUser:Boolean,
-    val avatarColor:Int,val recencyOrder:Int,val createdAtMillis:Long
+    val avatarColor:Int,val recencyOrder:Int,val createdAtMillis:Long = 0L
 )
 internal enum class MarketRequestSort { REFERENCE_ORDER, NEWEST, DEADLINE, BUDGET }
 internal object MarketRequestsUiPolicy {
