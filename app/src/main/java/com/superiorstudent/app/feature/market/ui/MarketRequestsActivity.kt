@@ -317,11 +317,17 @@ class MarketRequestsActivity : AppCompatActivity() {
     }
 
     private fun showSortDialog() {
-        val choices=arrayOf("Reference order","Newest first","Deadline soonest","Budget highest")
+        val choices = listOf(
+            "Recommended (pinned first)" to MarketRequestSort.REFERENCE_ORDER,
+            "Newest first" to MarketRequestSort.NEWEST
+        )
+        val selectedIndex = choices.indexOfFirst { it.second == selectedSort }.coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("Sort requests")
-            .setSingleChoiceItems(choices,selectedSort.ordinal) { dialog,which ->
-                selectedSort=MarketRequestSort.values()[which]; renderRequests(); dialog.dismiss()
-            }.setNegativeButton("Cancel",null).show()
+            .setSingleChoiceItems(choices.map { it.first }.toTypedArray(), selectedIndex) { dialog, which ->
+                selectedSort = choices[which].second
+                loadTasks(reset = true)
+                dialog.dismiss()
+            }.setNegativeButton("Cancel", null).show()
     }
 
     override fun onResume() {
@@ -365,7 +371,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             MarketQueryBuilders.publicTasks(
                 firestore = FirebaseFirestore.getInstance(),
                 category = category,
-                pinnedFirst = true,
+                pinnedFirst = selectedSort != MarketRequestSort.NEWEST,
                 pageSize = feedPageSize,
                 startAfter = cursor
             ).get()
