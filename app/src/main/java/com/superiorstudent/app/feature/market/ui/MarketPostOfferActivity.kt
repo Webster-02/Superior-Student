@@ -29,7 +29,14 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import android.util.Base64
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketOfferDraft
+import com.superiorstudent.app.feature.market.data.MarketPriceType
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -51,6 +58,9 @@ class MarketPostOfferActivity : AppCompatActivity() {
     private lateinit var photoSubtitle: TextView
     private lateinit var photoIcon: View
     private lateinit var photoThumb: ImageView
+    private lateinit var submitButton: LinearLayout
+    private lateinit var submitLabel: TextView
+    private var submittingOffer = false
 
     private var selectedCategory = MarketPostOfferUiPolicy.REFERENCE_CATEGORY
     private var selectedPriceMode = MarketPostOfferPriceMode.RUPEES
@@ -104,10 +114,11 @@ class MarketPostOfferActivity : AppCompatActivity() {
 
         form.addView(makeLabel("Title"), fieldParams(bottom = 6))
         titleInput = makeInput(
-            intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { MarketPostOfferUiPolicy.REFERENCE_TITLE }, singleLine = true,
+            intent.getStringExtra(EXTRA_TITLE).orEmpty(), singleLine = true,
             maxLength = MarketPostOfferUiPolicy.MAX_TITLE_LENGTH, inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         ).apply {
             textSize = 16f
+            hint = "Enter an offer title"
             imeOptions = EditorInfo.IME_ACTION_NEXT
         }
         form.addView(titleInput, LinearLayout.LayoutParams(-1, dp(56)).apply {
@@ -161,14 +172,13 @@ class MarketPostOfferActivity : AppCompatActivity() {
             marginEnd = dp(8)
         })
         amountInput = makeInput(
-            intent.getStringExtra(EXTRA_AMOUNT).orEmpty().ifBlank {
-                if (editMode && selectedPriceMode != MarketPostOfferPriceMode.RUPEES) "" else MarketPostOfferUiPolicy.REFERENCE_AMOUNT
-            }, singleLine = true, maxLength = 8,
+            intent.getStringExtra(EXTRA_AMOUNT).orEmpty(), singleLine = true, maxLength = 8,
             inputType = android.text.InputType.TYPE_CLASS_NUMBER, transparentBackground = true
         ).apply {
             textSize = 16f
             imeOptions = EditorInfo.IME_ACTION_NEXT
             setPadding(0, 0, 0, 0)
+            hint = "Enter price"
         }
         amountField.addView(amountInput, LinearLayout.LayoutParams(0, dp(56), 1f))
         amountSection.addView(amountField, LinearLayout.LayoutParams(-1, dp(56)))
@@ -180,14 +190,14 @@ class MarketPostOfferActivity : AppCompatActivity() {
         }
         descriptionHeader.addView(makeLabel("Description"), LinearLayout.LayoutParams(0, -2, 1f))
         descriptionCount = makeText(
-            MarketPostOfferUiPolicy.descriptionCounter(MarketPostOfferUiPolicy.REFERENCE_DESCRIPTION),
+            MarketPostOfferUiPolicy.descriptionCounter(""),
             12f, false, color(R.color.market_ink2)
         )
         descriptionHeader.addView(descriptionCount)
         form.addView(descriptionHeader, fieldParams(bottom = 6))
 
         descriptionInput = makeInput(
-            intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty().ifBlank { MarketPostOfferUiPolicy.REFERENCE_DESCRIPTION }, singleLine = false,
+            intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty(), singleLine = false,
             maxLength = MarketPostOfferUiPolicy.MAX_DESCRIPTION_LENGTH,
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
@@ -199,6 +209,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
             setPadding(dp(14), dp(12), dp(14), dp(12))
             setLineSpacing(dp(3).toFloat(), 1f)
             imeOptions = EditorInfo.IME_ACTION_NONE
+            hint = "Describe what you are offering"
             movementMethod = ScrollingMovementMethod()
         }
         form.addView(descriptionInput, LinearLayout.LayoutParams(-1, dp(124)).apply {
@@ -336,7 +347,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         photoTitle = makeText("Add a cover photo (optional)", 13.5f, true, color(R.color.market_ink))
-        photoSubtitle = makeText("Compressed automatically, under 150 KB", 12f, false,
+        photoSubtitle = makeText("Compressed automatically, under 100 KB", 12f, false,
             color(R.color.market_ink2))
         copy.addView(photoTitle)
         copy.addView(photoSubtitle, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
@@ -366,7 +377,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
         }
     }
 
-    /** Compress to JPEG in memory only; the bytes are discarded with this preview Activity. */
+    /** Compress to a Firestore-safe JPEG thumbnail held only until the offer is saved. */
     private fun compressCover(uri: Uri): ByteArray? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val boundsStream = contentResolver.openInputStream(uri) ?: return null
@@ -408,21 +419,22 @@ class MarketPostOfferActivity : AppCompatActivity() {
             setPadding(dp(16), dp(12), dp(16), dp(20))
             setBackgroundColor(color(R.color.market_bg))
         }
-        val button = LinearLayout(this).apply {
+        submitButton = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             background = rounded(color(R.color.market_match), 16f)
             isClickable = true
             isFocusable = true
-            contentDescription = if (editMode) "Preview offer changes" else "Post offer preview"
+            contentDescription = if (editMode) "Preview offer changes" else "Publish offer"
             addView(MarketPostOfferIconView(this@MarketPostOfferActivity,
                 MarketPostOfferIcon.CHECK, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
-            addView(makeText(if (editMode) "Preview changes" else "Post offer",
-                15f, true, color(R.color.market_match_ink)))
+            submitLabel = makeText(if (editMode) "Preview changes" else "Post offer",
+                15f, true, color(R.color.market_match_ink))
+            addView(submitLabel)
             setOnClickListener { validateAndShowPreview() }
         }
-        footer.addView(button, LinearLayout.LayoutParams(-1, dp(52)))
+        footer.addView(submitButton, LinearLayout.LayoutParams(-1, dp(52)))
         return footer
     }
 
@@ -443,17 +455,107 @@ class MarketPostOfferActivity : AppCompatActivity() {
             return
         }
 
-        val price = MarketPostOfferUiPolicy.priceSummary(selectedPriceMode, input.amount)
+        if (editMode) {
+            AlertDialog.Builder(this)
+                .setTitle("Editing not connected")
+                .setMessage("Creating new offers is connected to Market. Editing an existing offer is not enabled in this build, so no changes were saved.")
+                .setPositiveButton("Got it", null)
+                .show()
+            return
+        }
+        postOffer(input)
+    }
+
+    private fun postOffer(input: MarketPostOfferInput) {
+        if (submittingOffer) return
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null) {
+            toast("Please sign in to your U2U account before posting an offer.")
+            return
+        }
+        if (!user.isEmailVerified) {
+            toast("Verify your account email before posting an offer.")
+            return
+        }
+
+        submittingOffer = true
+        submitButton.isEnabled = false
+        submitButton.alpha = 0.65f
+        submitLabel.text = "Publishing…"
+
+        val repository = MarketRepository()
+        val profileRef = FirebaseFirestore.getInstance()
+            .collection("marketProfiles").document(user.uid)
+        profileRef.get()
+            .addOnSuccessListener { profile ->
+                if (profile.exists()) {
+                    createLiveOffer(repository, input)
+                } else {
+                    val bootstrapTask = runCatching { repository.createMarketProfile() }.getOrElse {
+                        finishPostingWithError(it)
+                        return@addOnSuccessListener
+                    }
+                    bootstrapTask
+                        .addOnSuccessListener { createLiveOffer(repository, input) }
+                        .addOnFailureListener { failure ->
+                            profileRef.get()
+                                .addOnSuccessListener { latest ->
+                                    if (latest.exists()) createLiveOffer(repository, input)
+                                    else finishPostingWithError(failure)
+                                }
+                                .addOnFailureListener { finishPostingWithError(failure) }
+                        }
+                }
+            }
+            .addOnFailureListener { finishPostingWithError(it) }
+    }
+
+    private fun createLiveOffer(repository: MarketRepository, input: MarketPostOfferInput) {
+        val thumbnail = compressedCover?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
+        val priceType = when (input.priceMode) {
+            MarketPostOfferPriceMode.FREE -> MarketPriceType.FREE
+            MarketPostOfferPriceMode.SWAP -> MarketPriceType.SWAP
+            MarketPostOfferPriceMode.RUPEES -> MarketPriceType.AMOUNT
+        }
+        val draft = MarketOfferDraft(
+            title = input.title.trim(),
+            category = input.category,
+            description = input.description.trim(),
+            priceType = priceType,
+            priceAmount = if (priceType == MarketPriceType.AMOUNT) {
+                input.amount.trim().toDoubleOrNull()
+            } else null,
+            thumbnail = thumbnail
+        )
+
+        runCatching { repository.createOffer(draft) }
+            .onSuccess { task ->
+                task.addOnSuccessListener {
+                    restorePostButton()
+                    Toast.makeText(this, "Offer posted to Market.", Toast.LENGTH_LONG).show()
+                    setResult(RESULT_OK)
+                    finish()
+                }.addOnFailureListener { failure -> finishPostingWithError(failure) }
+            }
+            .onFailure { failure -> finishPostingWithError(failure) }
+    }
+
+    private fun finishPostingWithError(failure: Throwable) {
+        restorePostButton()
         AlertDialog.Builder(this)
-            .setTitle(if (editMode) "Changes preview" else "Offer preview")
-            .setMessage(
-                "${input.title.trim()}\n\nCategory: ${input.category}\nPrice: $price\n" +
-                    "Cover photo: ${if (compressedCover == null) "Not added" else "Added for this preview"}\n\n" +
-                    if (editMode) "Changes are preview-only. Nothing has been saved." else
-                        "Live offer publishing is not connected in this step. Nothing has been posted or saved."
-            )
-            .setPositiveButton("Got it", null)
+            .setTitle("Couldn’t post offer")
+            .setMessage(MarketErrorMapper.map(failure).message)
+            .setPositiveButton("OK", null)
             .show()
+    }
+
+    private fun restorePostButton() {
+        submittingOffer = false
+        if (::submitButton.isInitialized) {
+            submitButton.isEnabled = true
+            submitButton.alpha = 1f
+            submitLabel.text = if (editMode) "Preview changes" else "Post offer"
+        }
     }
 
     private fun iconButton(icon: MarketPostOfferIcon, label: String, action: () -> Unit): FrameLayout =

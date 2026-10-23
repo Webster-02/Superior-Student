@@ -25,12 +25,12 @@ internal data class MarketPostOfferValidation(
             amountError == null && descriptionError == null
 }
 
-/** Local form rules only. The Screen 18 form deliberately does not publish or persist offers. */
+/** Client-side validation for the real offer form; Firestore Rules remain authoritative. */
 internal object MarketPostOfferUiPolicy {
-    const val MAX_TITLE_LENGTH = 100
+    const val MAX_TITLE_LENGTH = 80
     const val MAX_DESCRIPTION_LENGTH = 400
     const val MAX_AMOUNT = 99999999
-    const val MAX_COVER_BYTES = 150 * 1024
+    const val MAX_COVER_BYTES = 100 * 1024
 
     const val REFERENCE_TITLE = "Handwritten Ocular Anatomy notes"
     const val REFERENCE_CATEGORY = "Notes"
@@ -49,7 +49,7 @@ internal object MarketPostOfferUiPolicy {
             titleError = when {
                 title.isBlank() -> "Enter an offer title"
                 title.length < 5 -> "Title must be at least 5 characters"
-                title.length > MAX_TITLE_LENGTH -> "Title must be 100 characters or fewer"
+                title.length > MAX_TITLE_LENGTH -> "Title must be 80 characters or fewer"
                 else -> null
             },
             categoryError = if (input.category in categories) null else "Choose a category",
@@ -80,7 +80,7 @@ internal object MarketPostOfferUiPolicy {
 
     fun compressedCoverLabel(byteCount: Int): String {
         val safeCount = byteCount.coerceIn(0, MAX_COVER_BYTES)
-        return if (safeCount < 1024) "${safeCount} bytes · preview only"
-        else "${"%.1f".format(java.util.Locale.US, safeCount / 1024.0)} KB · preview only"
+        return if (safeCount < 1024) "${safeCount} bytes · ready to post"
+        else "${"%.1f".format(java.util.Locale.US, safeCount / 1024.0)} KB · ready to post"
     }
 }

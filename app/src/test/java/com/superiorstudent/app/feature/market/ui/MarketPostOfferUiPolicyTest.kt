@@ -31,8 +31,8 @@ class MarketPostOfferUiPolicyTest {
             MarketPostOfferUiPolicy.validate(referenceInput.copy(title = " ")).titleError)
         assertEquals("Title must be at least 5 characters",
             MarketPostOfferUiPolicy.validate(referenceInput.copy(title = "Book")).titleError)
-        assertEquals("Title must be 100 characters or fewer",
-            MarketPostOfferUiPolicy.validate(referenceInput.copy(title = "x".repeat(101))).titleError)
+        assertEquals("Title must be 80 characters or fewer",
+            MarketPostOfferUiPolicy.validate(referenceInput.copy(title = "x".repeat(81))).titleError)
         assertEquals("Choose a category",
             MarketPostOfferUiPolicy.validate(referenceInput.copy(category = "Other")).categoryError)
         assertNull(MarketPostOfferUiPolicy.validate(referenceInput.copy(category = "Books")).categoryError)
@@ -70,10 +70,10 @@ class MarketPostOfferUiPolicyTest {
 
     @Test
     fun coverCompressionStaysWithinTheReferenceMaximum() {
-        assertEquals(153600, MarketPostOfferUiPolicy.MAX_COVER_BYTES)
-        assertEquals("12.0 KB · preview only",
+        assertEquals(102400, MarketPostOfferUiPolicy.MAX_COVER_BYTES)
+        assertEquals("12.0 KB · ready to post",
             MarketPostOfferUiPolicy.compressedCoverLabel(12288))
-        assertEquals("150.0 KB · preview only",
+        assertEquals("100.0 KB · ready to post",
             MarketPostOfferUiPolicy.compressedCoverLabel(200000))
     }
 }

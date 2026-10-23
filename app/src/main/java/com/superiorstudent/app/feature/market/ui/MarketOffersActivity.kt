@@ -28,7 +28,16 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketConverters
+import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketModerationStatus
+import com.superiorstudent.app.feature.market.data.MarketOffer
+import com.superiorstudent.app.feature.market.data.MarketOfferStatus
+import com.superiorstudent.app.feature.market.data.MarketPriceType
+import com.superiorstudent.app.feature.market.data.MarketQueryBuilders
 import com.superiorstudent.app.ui.AppThemePreferences
 import kotlin.math.min
 
@@ -43,6 +52,10 @@ class MarketOffersActivity : AppCompatActivity() {
     private var selectedCategory = "All"
     private var selectedSort = MarketOfferSort.REFERENCE_ORDER
     private var searchVisible = false
+    private var liveOffers: List<MarketOfferPreview> = emptyList()
+    private var loadingOffers = false
+    private var loadError: String? = null
+    private var loadGeneration = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -291,7 +304,7 @@ class MarketOffersActivity : AppCompatActivity() {
             putExtra(MarketOfferDetailActivity.EXTRA_ID, offer.id)
             putExtra(MarketOfferDetailActivity.EXTRA_CATEGORY, offer.category)
             putExtra(MarketOfferDetailActivity.EXTRA_COURSE,
-                MarketOfferDetailUiPolicy.courseLabel(offer.id, offer.category))
+                offer.courseTag?.takeIf { it.isNotBlank() } ?: "General")
             putExtra(MarketOfferDetailActivity.EXTRA_TITLE, offer.title)
             putExtra(MarketOfferDetailActivity.EXTRA_DESCRIPTION, offer.description)
             putExtra(MarketOfferDetailActivity.EXTRA_PRICE_LABEL, offer.priceLabel)
@@ -306,22 +319,7 @@ class MarketOffersActivity : AppCompatActivity() {
     }
 
     private fun showOfferChatPreview(offer: MarketOfferPreview) {
-        AlertDialog.Builder(this)
-            .setTitle("Chat preview only")
-            .setMessage("Open a sample chat with " + offer.sellerName +
-                "? No message will be sent and no live chat will be created.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Open chat preview") { _, _ ->
-                startActivity(Intent(this, MarketTaskChatActivity::class.java).apply {
-                    putExtra(MarketTaskChatActivity.EXTRA_HELPER_NAME, offer.sellerName)
-                    putExtra(MarketTaskChatActivity.EXTRA_TASK_TITLE, offer.title)
-                    putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR,
-                        MarketOfferDetailUiPolicy.priceValueForChat(offer.priceValue ?: -1))
-                    putExtra(MarketTaskChatActivity.EXTRA_CHAT_CONTEXT,
-                        MarketTaskChatUiPolicy.CHAT_CONTEXT_OFFER)
-                })
-            }
-            .show()
+        toast("Offer details are live. Market messaging is not connected yet.")
     }
 
     private fun showMenu(anchor: View) {
@@ -347,18 +345,115 @@ class MarketOffersActivity : AppCompatActivity() {
             }.setNegativeButton("Cancel", null).show()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::list.isInitialized) loadOffers()
+    }
+
+    private fun loadOffers() {
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null || !user.isEmailVerified) {
+            loadingOffers = false
+            liveOffers = emptyList()
+            loadError = "Sign in with your verified student account to view live offers."
+            renderOffers()
+            return
+        }
+
+        val requestGeneration = ++loadGeneration
+        loadingOffers = true
+        loadError = null
+        renderOffers()
+        MarketQueryBuilders.publicOffers(
+            firestore = FirebaseFirestore.getInstance(),
+            pinnedFirst = true,
+            pageSize = 50
+        ).get()
+            .addOnSuccessListener { snapshot ->
+                if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                liveOffers = snapshot.documents
+                    .mapNotNull { MarketConverters.offer(it) }
+                    .filter {
+                        it.status == MarketOfferStatus.ACTIVE &&
+                            it.moderation == MarketModerationStatus.OK
+                    }
+                    .mapIndexed { index, offer -> toPreview(offer, index) }
+                loadingOffers = false
+                loadError = null
+                renderOffers()
+            }
+            .addOnFailureListener { failure ->
+                if (requestGeneration != loadGeneration) return@addOnFailureListener
+                loadingOffers = false
+                liveOffers = emptyList()
+                loadError = MarketErrorMapper.map(failure).message
+                renderOffers()
+            }
+    }
+
+    private fun toPreview(offer: MarketOffer, order: Int): MarketOfferPreview {
+        val numericPrice = offer.priceAmount?.takeIf {
+            it.isFinite() && it >= 0.0 && it <= Int.MAX_VALUE.toDouble()
+        }?.toInt()
+        val priceLabel = when (offer.priceType) {
+            MarketPriceType.FREE -> "Free"
+            MarketPriceType.SWAP -> "Swap"
+            MarketPriceType.AMOUNT -> "Rs. " + (offer.priceAmount?.let {
+                if (it % 1.0 == 0.0) it.toLong().toString() else it.toString()
+            } ?: "—")
+        }
+        val avatarColor = when (offer.category.lowercase()) {
+            "notes", "books" -> R.color.market_lav
+            "typing" -> R.color.market_peach
+            "tutoring", "coding" -> R.color.market_sky
+            else -> R.color.market_mint
+        }
+        return MarketOfferPreview(
+            id = offer.id,
+            category = offer.category,
+            title = offer.title,
+            description = offer.description,
+            priceLabel = priceLabel,
+            priceValue = numericPrice,
+            sellerName = offer.sellerName,
+            initials = offer.sellerInitials,
+            rating = 0.0,
+            ratingCount = 0,
+            verifiedStudent = false,
+            avatarColor = avatarColor,
+            recencyOrder = order,
+            courseTag = offer.courseTag
+        )
+    }
+
     private fun renderOffers() {
         if (!::list.isInitialized) return
         list.removeAllViews()
+        if (loadingOffers && liveOffers.isEmpty()) {
+            emptyState.text = "Loading live offers…"
+            emptyState.visibility = View.VISIBLE
+            return
+        }
+
         val shown = MarketOffersUiPolicy.filterAndSort(
-            MarketOfferFixtures.all, selectedCategory, searchInput.text?.toString().orEmpty(), selectedSort
+            liveOffers, selectedCategory, searchInput.text?.toString().orEmpty(), selectedSort
         )
+        if (shown.isEmpty()) {
+            emptyState.text = loadError ?: if (liveOffers.isEmpty()) {
+                "No live offers yet. Post an offer to get started."
+            } else {
+                "No offers match this category or search. Try another filter."
+            }
+            emptyState.visibility = View.VISIBLE
+            return
+        }
+
+        emptyState.visibility = View.GONE
         shown.forEach { offer ->
             list.addView(buildOfferCard(offer), LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
             })
         }
-        emptyState.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun buildOfferCard(offer: MarketOfferPreview): View {
@@ -383,13 +478,19 @@ class MarketOffersActivity : AppCompatActivity() {
         val ratingRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        ratingRow.addView(OfferIconView(this, OfferIcon.STAR, 0xFFE8A100.toInt()),
-            LinearLayout.LayoutParams(dp(13), dp(13)))
-        val verified = if (offer.verifiedStudent) " · Verified student" else " · Student"
-        ratingRow.addView(makeText(offer.rating.toString() + " (" + offer.ratingCount + ")" + verified,
-            12f, false, color(R.color.market_ink2)), LinearLayout.LayoutParams(-2, -2).apply {
-            marginStart = dp(3)
-        })
+        if (offer.ratingCount > 0) {
+            ratingRow.addView(OfferIconView(this, OfferIcon.STAR, 0xFFE8A100.toInt()),
+                LinearLayout.LayoutParams(dp(13), dp(13)))
+            val verified = if (offer.verifiedStudent) " · Verified student" else " · Student"
+            ratingRow.addView(makeText(
+                "%.1f".format(java.util.Locale.US, offer.rating) + " (" + offer.ratingCount + ")" + verified,
+                12f, false, color(R.color.market_ink2)), LinearLayout.LayoutParams(-2, -2).apply {
+                marginStart = dp(3)
+            })
+        } else {
+            ratingRow.addView(makeText("New seller · Student", 12f, false,
+                color(R.color.market_ink2)))
+        }
         sellerInfo.addView(ratingRow)
         sellerRow.addView(sellerInfo, LinearLayout.LayoutParams(0, -2, 1f).apply {
             marginStart = dp(10)
