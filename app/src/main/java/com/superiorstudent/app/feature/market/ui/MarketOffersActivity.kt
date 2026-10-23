@@ -30,11 +30,13 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.gms.tasks.Tasks
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketConfig
+import com.superiorstudent.app.feature.market.data.MarketConfigCachePolicy
 import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
@@ -49,6 +51,7 @@ import com.superiorstudent.app.feature.market.data.MarketRankingScorer
 import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.feature.market.data.MarketUserStats
 import com.superiorstudent.app.ui.AppThemePreferences
+import java.util.Date
 import kotlin.math.min
 
 /** Native Offers feed backed by live, rule-aware Firestore queries. */
@@ -413,6 +416,23 @@ class MarketOffersActivity : AppCompatActivity() {
         }
 
         if (!reset && (!hasMoreOffers || loadingMoreOffers || loadingOffers)) return
+        val cacheSavedAt = if (reset && selectedCategory == "All") feedCache.offersSavedAtMillis() else null
+        if (reset && loadedOffers.isEmpty() && liveOffers.isEmpty()) {
+            val cachedProfile = feedCache.readProfile(user.uid)
+            val cachedOffers = feedCache.readOffers()
+            if (cachedProfile != null && cachedOffers.isNotEmpty()) {
+                loadedOffers.addAll(cachedOffers)
+                val cachedStats = feedCache.readStats()
+                cachedOffers.map { it.sellerId }.distinct().forEach { sellerUid ->
+                    cachedStats[sellerUid]?.let { sellerStats[sellerUid] = it }
+                }
+                currentMarketProfile = cachedProfile
+            }
+        }
+        val useDeltaSync = reset && selectedCategory == "All" &&
+            cacheSavedAt != null &&
+            MarketConfigCachePolicy.isFresh(cacheSavedAt, System.currentTimeMillis()) &&
+            loadedOffers.isNotEmpty()
         val requestGeneration = if (reset) ++loadGeneration else loadGeneration
         val cursor = if (reset) null else lastOfferDocument
         if (reset) {
@@ -436,7 +456,7 @@ class MarketOffersActivity : AppCompatActivity() {
                     currentMarketProfile = profile
                     profile?.let { feedCache.saveProfile(it) }
                     marketProfileLoaded = true
-                    loadFeedConfigAndPage(profile, reset, requestGeneration, cursor)
+                    loadFeedConfigAndPage(profile, reset, requestGeneration, cursor, useDeltaSync, cacheSavedAt)
                 }
                 .addOnFailureListener { failure ->
                     failOfferLoad(requestGeneration, failure)
@@ -445,9 +465,9 @@ class MarketOffersActivity : AppCompatActivity() {
             val profile = currentMarketProfile
             val config = currentMarketConfig
             if (config == null) {
-                loadFeedConfigAndPage(profile, reset, requestGeneration, cursor)
+                loadFeedConfigAndPage(profile, reset, requestGeneration, cursor, useDeltaSync, cacheSavedAt)
             } else {
-                loadOfferPage(profile, config, reset, requestGeneration, cursor)
+                loadOfferPage(profile, config, reset, requestGeneration, cursor, useDeltaSync, cacheSavedAt)
             }
         }
     }
@@ -456,7 +476,9 @@ class MarketOffersActivity : AppCompatActivity() {
         profile: MarketProfile?,
         reset: Boolean,
         requestGeneration: Int,
-        cursor: DocumentSnapshot?
+        cursor: DocumentSnapshot?,
+        useDeltaSync: Boolean,
+        cacheSavedAt: Long?
     ) {
         MarketConfigProvider(this).load()
             .addOnSuccessListener { config ->
@@ -470,7 +492,7 @@ class MarketOffersActivity : AppCompatActivity() {
                     return@addOnSuccessListener
                 }
                 currentMarketConfig = config
-                loadOfferPage(profile, config, reset, requestGeneration, cursor)
+                loadOfferPage(profile, config, reset, requestGeneration, cursor, useDeltaSync, cacheSavedAt)
             }
             .addOnFailureListener { failure ->
                 failOfferLoad(requestGeneration, failure)
@@ -482,8 +504,16 @@ class MarketOffersActivity : AppCompatActivity() {
         config: MarketConfig,
         reset: Boolean,
         requestGeneration: Int,
-        cursor: DocumentSnapshot?
+        cursor: DocumentSnapshot?,
+        useDeltaSync: Boolean,
+        cacheSavedAt: Long?
     ) {
+        if (useDeltaSync && cacheSavedAt != null) {
+            val sinceMillis = (cacheSavedAt - MarketFeedCacheCodec.CLOCK_SKEW_BUFFER_MILLIS)
+                .coerceAtLeast(0L)
+            loadChangedOffersSince(profile, config, requestGeneration, Timestamp(Date(sinceMillis)))
+            return
+        }
         val category = selectedCategory.takeIf { it != "All" }
         MarketQueryBuilders.publicOffers(
             firestore = FirebaseFirestore.getInstance(),
@@ -538,6 +568,104 @@ class MarketOffersActivity : AppCompatActivity() {
             }
     }
 
+    private fun loadChangedOffersSince(
+        profile: MarketProfile?,
+        config: MarketConfig,
+        requestGeneration: Int,
+        since: Timestamp
+    ) {
+        val changedDocuments = mutableListOf<DocumentSnapshot>()
+        fun fetchChangedPage(cursor: DocumentSnapshot?) {
+            if (requestGeneration != loadGeneration) return
+            MarketQueryBuilders.publicOffersUpdatedSince(
+                firestore = FirebaseFirestore.getInstance(),
+                since = since,
+                pageSize = MarketQueryBuilders.MAX_DELTA_PAGE_SIZE,
+                startAfter = cursor
+            ).get()
+                .addOnSuccessListener deltaPageLoaded@ { snapshot ->
+                    if (requestGeneration != loadGeneration) return@deltaPageLoaded
+                    changedDocuments.addAll(snapshot.documents)
+                    if (snapshot.documents.size == MarketQueryBuilders.MAX_DELTA_PAGE_SIZE) {
+                        fetchChangedPage(snapshot.documents.last())
+                        return@deltaPageLoaded
+                    }
+
+                    val changedIds = changedDocuments.mapTo(HashSet()) { it.id }
+                    loadedOffers.removeAll { it.id in changedIds }
+                    val blocked = profile?.blockedUids?.toSet().orEmpty()
+                    val now = System.currentTimeMillis()
+                    val updatedOffers = changedDocuments.mapNotNull { MarketConverters.offer(it) }
+                        .filter {
+                            it.status == MarketOfferStatus.ACTIVE &&
+                                it.moderation == MarketModerationStatus.OK &&
+                                it.reportCount < config.limits.reportsToHide &&
+                                it.expiresAt.toDate().time > now &&
+                                it.sellerId !in blocked
+                        }
+                    loadedOffers.addAll(updatedOffers)
+                    val sellerIds = updatedOffers.map { it.sellerId }.distinct()
+                    if (sellerIds.isEmpty()) {
+                        finishChangedOffers(profile, config, requestGeneration, emptyMap())
+                        return@deltaPageLoaded
+                    }
+                    val repository = MarketRepository()
+                    val tasks = sellerIds.map { sellerUid -> repository.loadPublicUserStats(sellerUid) }
+                    Tasks.whenAllSuccess<MarketUserStats?>(tasks)
+                        .addOnSuccessListener statsLoaded@ { results ->
+                            if (requestGeneration != loadGeneration) return@statsLoaded
+                            val stats = linkedMapOf<String, MarketUserStats>()
+                            sellerIds.zip(results).forEach { (uid, item) ->
+                                if (item != null) stats[uid] = item
+                            }
+                            finishChangedOffers(profile, config, requestGeneration, stats)
+                        }
+                        .addOnFailureListener statsFailed@ { failure ->
+                            if (requestGeneration != loadGeneration) return@statsFailed
+                            failOfferLoad(requestGeneration, failure)
+                        }
+                }
+                .addOnFailureListener deltaPageFailed@ { failure ->
+                    if (requestGeneration != loadGeneration) return@deltaPageFailed
+                    failOfferLoad(requestGeneration, failure)
+                }
+        }
+        fetchChangedPage(null)
+    }
+
+    private fun finishChangedOffers(
+        profile: MarketProfile?,
+        config: MarketConfig,
+        requestGeneration: Int,
+        changedStats: Map<String, MarketUserStats>
+    ) {
+        if (requestGeneration != loadGeneration) return
+        sellerStats.putAll(changedStats)
+        val now = System.currentTimeMillis()
+        val blocked = profile?.blockedUids?.toSet().orEmpty()
+        loadedOffers.removeAll {
+            it.status != MarketOfferStatus.ACTIVE ||
+                it.moderation != MarketModerationStatus.OK ||
+                it.reportCount >= config.limits.reportsToHide ||
+                it.expiresAt.toDate().time <= now ||
+                it.sellerId in blocked
+        }
+        feedCache.saveOffers(loadedOffers)
+        feedCache.saveStats(sellerStats.values)
+        lastOfferDocument = null
+        hasMoreOffers = true
+        currentMarketProfile = profile
+        currentMarketConfig = config
+        showingCachedFeed = false
+        loadingOffers = false
+        loadingMoreOffers = false
+        loadError = null
+        swipeRefresh.isRefreshing = false
+        rebuildOfferPreviews(profile, config)
+        renderOffers()
+        maybeFillOfferViewport()
+    }
+
     private fun finishOfferPage(
         profile: MarketProfile?,
         config: MarketConfig,
@@ -577,14 +705,13 @@ class MarketOffersActivity : AppCompatActivity() {
     }
 
     private fun restoreCachedOffersForDisplay(uid: String, requestGeneration: Int) {
-        if (liveOffers.isNotEmpty() || loadedOffers.isNotEmpty()) return
-        val profile = feedCache.readProfile(uid) ?: return
-        val cachedOffers = feedCache.readOffers()
-        if (cachedOffers.isEmpty()) return
-        loadedOffers.addAll(cachedOffers)
+        if (liveOffers.isNotEmpty()) return
+        val profile = currentMarketProfile ?: feedCache.readProfile(uid) ?: return
+        if (loadedOffers.isEmpty()) loadedOffers.addAll(feedCache.readOffers())
+        if (loadedOffers.isEmpty()) return
         val cachedStats = feedCache.readStats()
-        cachedOffers.map { it.sellerId }.distinct().forEach { sellerUid ->
-            cachedStats[sellerUid]?.let { sellerStats[sellerUid] = it }
+        loadedOffers.map { it.sellerId }.distinct().forEach { sellerUid ->
+            if (sellerUid !in sellerStats) cachedStats[sellerUid]?.let { sellerStats[sellerUid] = it }
         }
         currentMarketProfile = profile
         MarketConfigProvider(this).load()
