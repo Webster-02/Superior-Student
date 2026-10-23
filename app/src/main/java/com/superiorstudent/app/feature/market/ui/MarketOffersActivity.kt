@@ -38,6 +38,7 @@ import com.superiorstudent.app.feature.market.data.MarketConfig
 import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketFeedCacheStore
 import com.superiorstudent.app.feature.market.data.MarketModerationStatus
 import com.superiorstudent.app.feature.market.data.MarketOffer
 import com.superiorstudent.app.feature.market.data.MarketOfferStatus
@@ -74,6 +75,8 @@ class MarketOffersActivity : AppCompatActivity() {
     private var loadingMoreOffers = false
     private var loadingOffers = true
     private var loadError: String? = null
+    private var showingCachedFeed = false
+    private val feedCache by lazy { MarketFeedCacheStore(applicationContext) }
     private var loadGeneration = 0
     private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
 
@@ -251,6 +254,8 @@ class MarketOffersActivity : AppCompatActivity() {
                 background = rounded(color(R.color.market_card), 99f, color(R.color.market_line))
                 setOnClickListener {
                     selectedCategory = category
+                    loadedOffers.clear()
+                    sellerStats.clear()
                     liveOffers = emptyList()
                     updateCategoryChips()
                     loadOffers(reset = true)
@@ -421,12 +426,14 @@ class MarketOffersActivity : AppCompatActivity() {
             loadingMoreOffers = true
         }
         renderOffers()
+        if (reset) restoreCachedOffersForDisplay(user.uid, requestGeneration)
 
         if (reset || !marketProfileLoaded) {
             MarketRepository().loadCurrentMarketProfile()
                 .addOnSuccessListener { profile ->
                     if (requestGeneration != loadGeneration) return@addOnSuccessListener
                     currentMarketProfile = profile
+                    profile?.let { feedCache.saveProfile(it) }
                     marketProfileLoaded = true
                     loadFeedConfigAndPage(profile, reset, requestGeneration, cursor)
                 }
@@ -559,8 +566,40 @@ class MarketOffersActivity : AppCompatActivity() {
         loadError = null
         swipeRefresh.isRefreshing = false
         rebuildOfferPreviews(profile, config)
+        if (selectedCategory == "All") {
+            feedCache.saveOffers(loadedOffers)
+            feedCache.saveStats(sellerStats.values)
+        }
+        showingCachedFeed = false
         renderOffers()
         maybeFillOfferViewport()
+    }
+
+    private fun restoreCachedOffersForDisplay(uid: String, requestGeneration: Int) {
+        if (liveOffers.isNotEmpty() || loadedOffers.isNotEmpty()) return
+        val profile = feedCache.readProfile(uid) ?: return
+        val cachedOffers = feedCache.readOffers()
+        if (cachedOffers.isEmpty()) return
+        loadedOffers.addAll(cachedOffers)
+        val cachedStats = feedCache.readStats()
+        cachedOffers.map { it.sellerId }.distinct().forEach { sellerUid ->
+            cachedStats[sellerUid]?.let { sellerStats[sellerUid] = it }
+        }
+        currentMarketProfile = profile
+        MarketConfigProvider(this).load()
+            .addOnSuccessListener cacheConfigLoaded@ { config ->
+                if (requestGeneration != loadGeneration || liveOffers.isNotEmpty() || loadedOffers.isEmpty()) {
+                    return@cacheConfigLoaded
+                }
+                if (config == null) return@cacheConfigLoaded
+                currentMarketConfig = config
+                rebuildOfferPreviews(profile, config)
+                showingCachedFeed = liveOffers.isNotEmpty()
+                renderOffers()
+            }
+            .addOnFailureListener {
+                // The normal refresh failure will surface the error without discarding saved cards.
+            }
     }
 
     private fun rebuildOfferPreviews(profile: MarketProfile?, config: MarketConfig) {
@@ -689,7 +728,8 @@ class MarketOffersActivity : AppCompatActivity() {
         emptyState.visibility = View.GONE
         loadError?.let { error ->
             list.addView(makeText(
-                "Refresh failed. Previously loaded offers remain visible. $error",
+                if (showingCachedFeed) "Offline — showing saved offers. $error"
+                else "Refresh failed. Previously loaded offers remain visible. $error",
                 12f, false, color(R.color.market_ink2)
             ).apply {
                 setPadding(dp(12), dp(10), dp(12), dp(10))
