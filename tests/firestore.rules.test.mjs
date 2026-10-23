@@ -637,16 +637,83 @@ describe('counter drift recovery and lifecycle transitions', () => {
     await assertSucceeds(batch.commit());
   });
 
+  it('account warnings require a matching new audit log and notice', async () => {
+    await seed('admins', 'admin', {});
+    await seedProfile('alice');
+    const db = user('admin');
+
+    const attempt = async ({ logId, noticeId, linkPointers = true, logTargetId = 'alice' }) => {
+      const batch = writeBatch(db);
+      const profilePatch = { warnings: 1, updatedAt: serverTimestamp() };
+      if (linkPointers) {
+        profilePatch.lastAuditLogId = logId;
+        profilePatch.lastAdminNoticeId = noticeId;
+      }
+      batch.update(doc(db, 'marketProfiles', 'alice'), profilePatch);
+      batch.set(doc(db, 'adminLogs', logId), {
+        adminId: 'admin', action: 'warn_user', targetType: 'user', targetId: logTargetId,
+        reason: 'Policy reminder', note: '', createdAt: serverTimestamp(),
+      });
+      batch.set(doc(db, 'users/alice/notices', noticeId), {
+        type: 'warning', title: 'Market warning', body: 'Policy reminder', read: false,
+        createdAt: serverTimestamp(), canAppeal: false, appealed: false,
+      });
+      return batch.commit();
+    };
+
+    await assertFails(attempt({ logId: 'warn-no-pointers', noticeId: 'warn-no-pointers-notice', linkPointers: false }));
+    await assertFails(attempt({ logId: 'warn-wrong-target', noticeId: 'warn-wrong-target-notice', logTargetId: 'bob' }));
+    await assertSucceeds(attempt({ logId: 'warn-valid', noticeId: 'warn-valid-notice' }));
+  });
+
+  it('lift suspension requires a matching new audit log and notice', async () => {
+    await seed('admins', 'admin', {});
+    await seedProfile('alice', {
+      status: 'suspended',
+      suspendedUntil: Timestamp.fromMillis(Date.now() + 7 * 86400000),
+    });
+    const db = user('admin');
+    const missingLinks = writeBatch(db);
+    missingLinks.update(doc(db, 'marketProfiles', 'alice'), {
+      status: 'active', suspendedUntil: null, updatedAt: serverTimestamp(),
+    });
+    await assertFails(missingLinks.commit());
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'marketProfiles', 'alice'), {
+      status: 'active', suspendedUntil: null, updatedAt: serverTimestamp(),
+      lastAuditLogId: 'lift-audit', lastAdminNoticeId: 'lift-notice',
+    });
+    batch.set(doc(db, 'adminLogs', 'lift-audit'), {
+      adminId: 'admin', action: 'lift_suspension', targetType: 'user', targetId: 'alice',
+      reason: 'Review complete', note: '', createdAt: serverTimestamp(),
+    });
+    batch.set(doc(db, 'users/alice/notices', 'lift-notice'), {
+      type: 'activity', title: 'Market suspension lifted',
+      body: 'Your Market posting access has been restored.', read: false,
+      createdAt: serverTimestamp(), canAppeal: false, appealed: false,
+    });
+    await assertSucceeds(batch.commit());
+  });
+
   it('admin without a U2U profile suspends/hides with notice and log in one access-limit batch', async () => {
     await seed('admins', 'admin', {});
     await seedProfile('alice', { openTasks: 2, activeOffers: 1 });
     await seedTask('task-a', 'alice'); await seedTask('task-b', 'alice'); await seedOffer('offer-a', 'alice');
-    const db = user('admin'); const batch = writeBatch(db);
-    batch.update(doc(db, 'marketProfiles', 'alice'), {
-      status: 'suspended', suspendedUntil: Timestamp.fromMillis(Date.now() + 7 * 86400000), warnings: 2,
+    const db = user('admin');
+    await assertFails(updateDoc(doc(db, 'marketProfiles', 'alice'), {
+      status: 'suspended', suspendedUntil: Timestamp.fromMillis(Date.now() + 7 * 86400000),
       openTasks: 0, activeOffers: 0,
       lastMutation: { kind: 'user', operation: 'suspend', targetId: 'alice', at: serverTimestamp() },
       updatedAt: serverTimestamp(),
+    }));
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'marketProfiles', 'alice'), {
+      status: 'suspended', suspendedUntil: Timestamp.fromMillis(Date.now() + 7 * 86400000),
+      openTasks: 0, activeOffers: 0,
+      lastMutation: { kind: 'user', operation: 'suspend', targetId: 'alice', at: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+      lastAuditLogId: 'suspend-alice', lastAdminNoticeId: 'suspension-notice',
     });
     batch.update(doc(db, 'tasks', 'task-a'), {
       moderation: 'hidden', updatedAt: serverTimestamp(),

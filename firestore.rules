@@ -725,93 +725,136 @@ service cloud.firestore {
         return targetAfter.userId == uid && targetAfter.status == 'resolved';
       }
 
+      function marketAccountModerationAuditNoticeValid(uid, after, expectedAction) {
+        let auditLogId = after.get('lastAuditLogId', null);
+        let noticeId = after.get('lastAdminNoticeId', null);
+        let auditPath = /databases/$(database)/documents/adminLogs/$(auditLogId);
+        let noticePath = /databases/$(database)/documents/users/$(uid)/notices/$(noticeId);
+        let auditData = getAfter(auditPath).data;
+        let noticeData = getAfter(noticePath).data;
+        return auditLogId is string && auditLogId.size() >= 1 && auditLogId.size() <= 150
+          && noticeId is string && noticeId.size() >= 1 && noticeId.size() <= 150
+          && existsAfter(auditPath) && !exists(auditPath)
+          && existsAfter(noticePath) && !exists(noticePath)
+          && auditData.adminId == request.auth.uid
+          && auditData.action == expectedAction
+          && auditData.targetType == 'user'
+          && auditData.targetId == uid
+          && auditData.createdAt == request.time
+          && noticeData.createdAt == request.time
+          && (
+            (expectedAction == 'warn_user'
+              && noticeData.type in ['warning', 'removal']
+              && ((noticeData.type == 'warning' && noticeData.title == 'Market warning')
+                || (noticeData.type == 'removal' && noticeData.title == 'Market removal notice'))
+              && noticeData.get('relatedType', null) == null
+              && noticeData.get('relatedId', null) == null
+              && noticeData.canAppeal is bool)
+            || (expectedAction == 'suspend_user'
+              && noticeData.type == 'removal'
+              && noticeData.title == 'Market account suspended'
+              && noticeData.canAppeal == true
+              && noticeData.get('relatedType', null) == null
+              && noticeData.get('relatedId', null) == null)
+            || (expectedAction == 'ban_user'
+              && noticeData.type == 'removal'
+              && noticeData.title == 'Market account banned'
+              && noticeData.canAppeal == true
+              && noticeData.get('relatedType', null) == null
+              && noticeData.get('relatedId', null) == null)
+            || (expectedAction == 'lift_suspension'
+              && noticeData.type == 'activity'
+              && noticeData.title == 'Market suspension lifted'
+              && noticeData.canAppeal == false
+              && noticeData.get('relatedType', null) == null
+              && noticeData.get('relatedId', null) == null)
+          );
+      }
+
+      function marketProfileAdminAccountMutationValid(uid, before, after, changed) {
+        return marketIsAdmin()
+          && changed.hasOnly([
+            'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers',
+            'lastMutation', 'lastAuditLogId', 'lastAdminNoticeId'
+          ])
+          && after.status in ['active', 'suspended', 'banned']
+          && after.warnings is number
+          && after.warnings >= 0
+          && after.warnings <= 1000
+          && (after.suspendedUntil == null || after.suspendedUntil is timestamp)
+          && after.updatedAt == request.time
+          && (
+            (changed.hasOnly(['warnings', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
+              && changed.hasAll(['warnings', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
+              && before.warnings is number
+              && after.warnings == before.warnings + 1
+              && after.status == before.status
+              && after.suspendedUntil == before.suspendedUntil
+              && after.openTasks == before.openTasks
+              && after.activeOffers == before.activeOffers
+              && after.lastMutation == before.lastMutation
+              && marketAccountModerationAuditNoticeValid(uid, after, 'warn_user'))
+            || (changed.hasOnly([
+                'status', 'suspendedUntil', 'updatedAt', 'openTasks', 'activeOffers',
+                'lastMutation', 'lastAuditLogId', 'lastAdminNoticeId'
+              ])
+              && changed.hasAll(['updatedAt', 'lastMutation', 'lastAuditLogId', 'lastAdminNoticeId'])
+              && before.status in ['active', 'suspended']
+              && after.status in ['suspended', 'banned']
+              && after.warnings == before.warnings
+              && after.openTasks == 0
+              && after.activeOffers == 0
+              && after.lastMutation != before.lastMutation
+              && marketValidMutationShape(after.lastMutation)
+              && after.lastMutation.kind == 'user'
+              && after.lastMutation.operation == 'suspend'
+              && after.lastMutation.targetId == uid
+              && (
+                (after.status == 'suspended'
+                  && after.suspendedUntil is timestamp
+                  && uid != request.auth.uid
+                  && marketAccountModerationAuditNoticeValid(uid, after, 'suspend_user'))
+                || (after.status == 'banned'
+                  && after.suspendedUntil == null
+                  && uid != request.auth.uid
+                  && marketAccountModerationAuditNoticeValid(uid, after, 'ban_user'))
+              ))
+            || (before.status == 'suspended'
+              && after.status == 'active'
+              && after.suspendedUntil == null
+              && changed.hasOnly(['status', 'suspendedUntil', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
+              && changed.hasAll(['status', 'updatedAt', 'lastAuditLogId', 'lastAdminNoticeId'])
+              && after.warnings == before.warnings
+              && after.openTasks == before.openTasks
+              && after.activeOffers == before.activeOffers
+              && after.lastMutation == before.lastMutation
+              && marketAccountModerationAuditNoticeValid(uid, after, 'lift_suspension'))
+          );
+      }
+
       function marketProfileUpdateAllowed(uid) {
         let before = resource.data;
         let after = request.resource.data;
         let changed = after.diff(before).affectedKeys();
-        return changed.hasAny(['skillTags', 'blockedUids', 'settings'])
-          ? (request.auth.uid == uid
+        return (
+          (changed.hasAny(['skillTags', 'blockedUids', 'settings'])
+            && request.auth.uid == uid
             && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
             && after.skillTags is list && after.skillTags.size() <= 30
             && after.blockedUids is list && after.blockedUids.size() <= 200
             && marketValidSettings(after.settings)
             && after.updatedAt == request.time)
-          : (after.lastMutation is map
+          || (after.lastMutation is map
             && after.lastMutation != before.lastMutation
-            && after.lastMutation.kind in ['task', 'offer', 'proposal', 'report', 'support'])
-            ? (marketProfileCounterFieldsOnly(changed)
-              && (request.auth.uid == uid || marketIsAdmin())
-              && marketValidProfileCounterUpdate(uid, before, after, changed))
-            : (changed.hasAny(['status', 'suspendedUntil', 'warnings'])
-              || (after.lastMutation is map
-                && after.lastMutation.kind == 'user'
-                && changed.hasAny(['openTasks', 'activeOffers', 'lastMutation'])))
-              ? (changed.hasOnly([
-                  'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers', 'lastMutation'
-                ])
-                && marketIsAdmin()
-                && after.status in ['active', 'suspended', 'banned']
-                && after.warnings is number
-                && after.warnings >= 0
-                && after.warnings <= 1000
-                && (after.suspendedUntil == null || after.suspendedUntil is timestamp)
-                && after.updatedAt == request.time
-                && (
-                  (after.openTasks == before.openTasks
-                    && after.activeOffers == before.activeOffers
-                    && after.lastMutation == before.lastMutation)
-                  || (after.status in ['suspended', 'banned']
-                    && after.openTasks == 0
-                    && after.activeOffers == 0
-                    && marketValidMutationShape(after.lastMutation)
-                    && after.lastMutation.kind == 'user'
-                    && after.lastMutation.operation == 'suspend'
-                    && after.lastMutation.targetId == uid)
-                ))
-              : (
-            (
-              request.auth.uid == uid
-              && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
-              && after.skillTags is list && after.skillTags.size() <= 30
-              && after.blockedUids is list && after.blockedUids.size() <= 200
-              && marketValidSettings(after.settings)
-              && after.updatedAt == request.time
-            )
-            || (
-              after.lastMutation is map
-              && after.lastMutation != before.lastMutation
-              && marketProfileCounterFieldsOnly(changed)
-              && (request.auth.uid == uid || marketIsAdmin())
-              && marketValidProfileCounterUpdate(uid, before, after, changed)
-            )
-            || (
-              changed.hasOnly([
-                'status', 'suspendedUntil', 'warnings', 'updatedAt', 'openTasks', 'activeOffers', 'lastMutation'
-              ])
-              && marketIsAdmin()
-              && after.status in ['active', 'suspended', 'banned']
-              && after.warnings is number
-              && after.warnings >= 0
-              && after.warnings <= 1000
-              && (after.suspendedUntil == null || after.suspendedUntil is timestamp)
-              && after.updatedAt == request.time
-              && (
-                (after.openTasks == before.openTasks
-                  && after.activeOffers == before.activeOffers
-                  && after.lastMutation == before.lastMutation)
-                || (after.status in ['suspended', 'banned']
-                  && after.openTasks == 0
-                  && after.activeOffers == 0
-                  && marketValidMutationShape(after.lastMutation)
-                  && after.lastMutation.kind == 'user'
-                  && after.lastMutation.operation == 'suspend'
-                  && after.lastMutation.targetId == uid)
-              )
-            )
-          );
+            && after.lastMutation.kind in ['task', 'offer', 'proposal', 'report', 'support']
+            && marketProfileCounterFieldsOnly(changed)
+            && (request.auth.uid == uid || marketIsAdmin())
+            && marketValidProfileCounterUpdate(uid, before, after, changed))
+          || marketProfileAdminAccountMutationValid(uid, before, after, changed)
+        );
       }
 
-            function marketValidProfileCounterUpdate(uid, before, after, changed) {
+      function marketValidProfileCounterUpdate(uid, before, after, changed) {
         return after.updatedAt == request.time
           && marketValidMutationShape(after.lastMutation)
           && (after.lastMutation.kind == 'task'

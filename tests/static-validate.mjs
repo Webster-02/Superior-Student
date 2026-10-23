@@ -76,6 +76,12 @@ const checks = [
     assert.ok(tests.includes('admin support reply and resolution require a matching new audit log and notice'));
     assert.ok(tests.includes('admin-profile-support-log'));
   }],
+  ['account warning, suspend/ban, and lift actions require linked audit logs and notices', () => {
+    assert.ok(rules.includes('function marketAccountModerationAuditNoticeValid'));
+    assert.ok(rules.includes('function marketProfileAdminAccountMutationValid'));
+    assert.ok(tests.includes('account warnings require a matching new audit log and notice'));
+    assert.ok(tests.includes('lift suspension requires a matching new audit log and notice'));
+  }],
   ['Market config edits require a newly created matching audit log in the same write', () => {
     assert.match(rules, /function marketConfigAuditValid\(\)[\s\S]{0,1100}existsAfter\(auditLogPath\)[\s\S]{0,300}!exists\(auditLogPath\)[\s\S]{0,500}action == 'update_market_config'/);
     assert.ok(tests.includes('requires a matching new audit log for admin edits'));
