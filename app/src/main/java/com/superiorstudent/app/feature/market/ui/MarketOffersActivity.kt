@@ -650,7 +650,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 it.expiresAt.toDate().time <= now ||
                 it.sellerId in blocked
         }
-        feedCache.saveOffers(loadedOffers)
+        feedCache.saveOffers(loadedOffers, System.currentTimeMillis())
         feedCache.saveStats(sellerStats.values)
         lastOfferDocument = null
         hasMoreOffers = true
@@ -696,7 +696,8 @@ class MarketOffersActivity : AppCompatActivity() {
         swipeRefresh.isRefreshing = false
         rebuildOfferPreviews(profile, config)
         if (selectedCategory == "All") {
-            feedCache.saveOffers(loadedOffers)
+            val syncAt = if (reset) System.currentTimeMillis() else feedCache.offersSavedAtMillis()
+            feedCache.saveOffers(loadedOffers, syncAt)
             feedCache.saveStats(sellerStats.values)
         }
         showingCachedFeed = false
