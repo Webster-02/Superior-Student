@@ -71,3 +71,11 @@ No Firebase Rules or indexes were deployed; no live Firebase data was changed; n
 
 ### Current remaining gates
 Lifecycle-counter specification clarification; production Rules/index export and source-baseline comparison; Auth/profile readiness; historical proposal `proposerId` migration review; isolated staging deployment and end-to-end student/admin smoke tests; explicit owner approval before production.
+
+
+## Phase 2, Step 15 — Lifecycle-counter contract
+
+- [Rules CI run #37](https://github.com/Webster-02/Superior-Student/actions/runs/39881170691) passed: **46 static checks, 73 Emulator tests, zero expression-ceiling diagnostics**.
+- `MARKET_FINAL_SPEC.md` now documents the meaning and transition rules for task, offer, proposal, report, support and warning counters.
+- Regression tests prove task acceptance decrements `openTasks` only once and removing a paused offer does not decrement `activeOffers`.
+- No Firebase deployment, live-data change or merge to `main` occurred.

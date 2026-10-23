@@ -336,3 +336,23 @@ No Firebase Rules or indexes were deployed; no live Firebase data was changed; n
 - Explicit owner approval is still required before any production deployment.
 
 No Firebase Rules or indexes were deployed, no live Firebase data changed, and neither branch was merged into `main`.
+
+
+## Phase 2, Step 15 — Lifecycle-counter contract and no-double-decrement regressions (verified 2026-10-22)
+
+**Rules/spec/test commit:** `b37032cf3198723fe58d25d4bc84302677161a0f`.  
+**Rules CI run #37:** https://github.com/Webster-02/Superior-Student/actions/runs/39881170691 — **success**. Artifact `12471180011`.
+
+- Static validation: **46 passed, 0 failed**.
+- Firestore Rules Emulator: **73 passed, 0 failed, 0 skipped**.
+- Expression-ceiling diagnostics: **0**; guard exit code 0.
+- Added Section 15, “Counter transition contract”, to `MARKET_FINAL_SPEC.md`. It defines the meaning and expected delta for open tasks, active offers, per-task proposal counts, proposal/report rolling-window counts, listing report counts, open support tickets and warning totals.
+- Added an Emulator regression proving that acceptance decrements `openTasks` once, and the later assigned-to-completed transition does not decrement it again.
+- Added an Emulator regression proving removing a paused offer leaves `activeOffers` unchanged, and a paired negative-counter write is rejected.
+- Existing task/offer expiry, admin hide/restore, aggregate suspension, report and support counter tests remain green.
+
+No Android change was needed for this step. No Firebase Rules/indexes were deployed, no live data was changed, and no merge to `main` occurred.
+
+### To start real-device Market functional testing
+
+The Android debug APK from run #105 is ready: https://github.com/Webster-02/Superior-Student/actions/runs/39880533430 (artifact `superior-student-debug-apk`, ID `12471070183`). It is built with the checked-in Firebase app config, project ID `pachattarpercent`. Do not treat that as a staging project. Candidate Rules still need an isolated Firebase staging project with staging Android config and staged Rules/indexes before the app can perform an end-to-end backend test safely.

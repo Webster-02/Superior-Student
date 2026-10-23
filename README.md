@@ -55,3 +55,8 @@ Step 13 status: appeal-decision Rules linkage passed Rules CI (44 static checks,
 - The implementation stays on `review/market-rules` and `feature/market-ui-reference`. No merge to `main`, Firebase deployment, or live data change occurred.
 
 Before testing against a Firebase project, complete the lifecycle-counter review, independently export/compare live Rules/indexes, confirm Auth/profile prerequisites, and validate historical proposal `proposerId` records. Use a separate staging Firebase project for deployment and smoke tests; production deployment still requires explicit approval.
+
+
+## Latest lifecycle-counter verification
+
+[Rules CI run #37](https://github.com/Webster-02/Superior-Student/actions/runs/39881170691) passed 46 static checks and 73 Firestore Emulator tests with zero expression-ceiling diagnostics. `MARKET_FINAL_SPEC.md` now includes the explicit lifecycle-counter contract and tests for no double-decrement on task completion or paused-offer removal. Staging deployment and real-device backend smoke tests remain outstanding.

@@ -103,3 +103,14 @@ No Firebase Rules or indexes were deployed; no live Firebase data was changed; n
 ## Current production gates (updated after Step 14)
 
 Rules linkage for config, task/offer moderation, report status, ordinary support, appeals, and account moderation is now covered by Emulator-tested same-write audit/notice requirements. Remaining gates are lifecycle-counter specification review; export/hash/compare of currently published production Rules/indexes; Auth and profile readiness checks; historic proposal `proposerId` dry-run/backup/mismatch reconciliation; separate staging deployment and end-to-end smoke tests; then explicit owner approval for production. No Firebase deployment or live data change has occurred.
+
+
+## Phase 2, Step 15 — Lifecycle-counter contract
+
+[Rules CI run #37](https://github.com/Webster-02/Superior-Student/actions/runs/39881170691), tested commit `b37032cf3198723fe58d25d4bc84302677161a0f`:
+- Static validation: **46/46 passed**.
+- Firestore Rules Emulator: **73/73 passed**, 0 skipped.
+- Expression-ceiling diagnostics: **0**.
+- Artifact: `firestore-rules-test-results`, ID `12471180011`.
+
+The counter contract is now documented in `MARKET_FINAL_SPEC.md`. New tests cover no second `openTasks` decrement after task acceptance and no `activeOffers` decrement on paused-offer removal. The production and staging deployment gates remain open; these are candidate review results only.
