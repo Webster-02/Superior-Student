@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   export-production-indexes:
-    name: Read current production indexes (no deployment)
+    name: Compare live indexes with the GitHub JSON (no deployment)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -32,12 +32,49 @@ jobs:
           mkdir -p artifacts
           npx --yes firebase-tools@latest firestore:indexes --project pachattarpercent > artifacts/production-indexes-live.json
           jq -e '(.indexes | type == "array") and ((.fieldOverrides // []) | type == "array")' artifacts/production-indexes-live.json >/dev/null
-          echo "Export validated. This workflow only reads indexes; it does not deploy or change them."
+          jq -e '(.indexes | type == "array") and ((.fieldOverrides // []) | type == "array")' firestore.indexes.json >/dev/null
+          echo "Live export and GitHub index JSON both passed basic JSON validation."
 
-      - name: Upload index export
+      - name: Compare live indexes against GitHub JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -cS '.indexes[]?' artifacts/production-indexes-live.json | LC_ALL=C sort > artifacts/live-indexes.lines
+          jq -cS '.indexes[]?' firestore.indexes.json | LC_ALL=C sort > artifacts/github-indexes.lines
+          comm -23 artifacts/live-indexes.lines artifacts/github-indexes.lines > artifacts/live-only-indexes.lines
+          comm -13 artifacts/live-indexes.lines artifacts/github-indexes.lines > artifacts/github-only-indexes.lines
+
+          jq -cS '.fieldOverrides[]?' artifacts/production-indexes-live.json | LC_ALL=C sort > artifacts/live-overrides.lines
+          jq -cS '.fieldOverrides[]?' firestore.indexes.json | LC_ALL=C sort > artifacts/github-overrides.lines
+          comm -23 artifacts/live-overrides.lines artifacts/github-overrides.lines > artifacts/live-only-overrides.lines
+          comm -13 artifacts/live-overrides.lines artifacts/github-overrides.lines > artifacts/github-only-overrides.lines
+
+          {
+            echo "Live composite indexes absent from GitHub JSON (review before deployment): $(wc -l < artifacts/live-only-indexes.lines)"
+            echo "GitHub composite indexes absent from production (candidate additions): $(wc -l < artifacts/github-only-indexes.lines)"
+            echo "Live field overrides absent from GitHub JSON (review before deployment): $(wc -l < artifacts/live-only-overrides.lines)"
+            echo "GitHub field overrides absent from production (candidate changes): $(wc -l < artifacts/github-only-overrides.lines)"
+            echo
+            echo "=== LIVE-ONLY COMPOSITE INDEXES: preserve/review before deployment ==="
+            cat artifacts/live-only-indexes.lines
+            echo
+            echo "=== GITHUB-ONLY COMPOSITE INDEXES: candidate additions ==="
+            cat artifacts/github-only-indexes.lines
+            echo
+            echo "=== LIVE-ONLY FIELD OVERRIDES: preserve/review before deployment ==="
+            cat artifacts/live-only-overrides.lines
+            echo
+            echo "=== GITHUB-ONLY FIELD OVERRIDES: candidate changes ==="
+            cat artifacts/github-only-overrides.lines
+          } | tee artifacts/index-comparison-report.txt
+
+          echo "Comparison only. No Firestore indexes were created, changed, or deleted."
+
+      - name: Upload export and comparison report
         uses: actions/upload-artifact@v4
         with:
-          name: production-firestore-indexes-${{ github.run_number }}
-          path: artifacts/production-indexes-live.json
+          name: production-firestore-index-comparison-${{ github.run_number }}
+          path: artifacts/**
           if-no-files-found: error
           retention-days: 7
