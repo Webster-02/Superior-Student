@@ -69,7 +69,7 @@ class MarketFeedCacheStore internal constructor(
     fun saveStats(stats: Collection<MarketUserStats>): Boolean {
         val merged = readStats().toMutableMap()
         stats.forEach { if (it.uid.isNotBlank()) merged[it.uid] = it }
-        val documents = merged.values.takeLast(MarketFeedCacheCodec.MAX_ITEMS).map { item ->
+        val documents = merged.values.toList().takeLast(MarketFeedCacheCodec.MAX_ITEMS).map { item ->
             MarketFeedCacheDocument(item.uid, MarketConverters.toFirestoreMap(item))
         }
         return writeDocuments(
