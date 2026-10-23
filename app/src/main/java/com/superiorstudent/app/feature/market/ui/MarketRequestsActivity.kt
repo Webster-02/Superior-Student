@@ -352,6 +352,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             hasMoreTasks = false
             loadingTasks = false
             loadingMoreTasks = false
+            showingCachedFeed = false
             swipeRefresh.isRefreshing = false
             loadError = "Sign in with your verified student account to view live tasks."
             renderRequests()
