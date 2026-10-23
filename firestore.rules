@@ -836,22 +836,38 @@ service cloud.firestore {
         let before = resource.data;
         let after = request.resource.data;
         let changed = after.diff(before).affectedKeys();
-        return (
-          (changed.hasAny(['skillTags', 'blockedUids', 'settings'])
-            && request.auth.uid == uid
+        return changed.hasAny(['skillTags', 'blockedUids', 'settings'])
+          ? (request.auth.uid == uid
             && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
             && after.skillTags is list && after.skillTags.size() <= 30
             && after.blockedUids is list && after.blockedUids.size() <= 200
             && marketValidSettings(after.settings)
             && after.updatedAt == request.time)
-          || (after.lastMutation is map
+          : (after.lastMutation is map
             && after.lastMutation != before.lastMutation
-            && after.lastMutation.kind in ['task', 'offer', 'proposal', 'report', 'support']
-            && marketProfileCounterFieldsOnly(changed)
-            && (request.auth.uid == uid || marketIsAdmin())
-            && marketValidProfileCounterUpdate(uid, before, after, changed))
-          || marketProfileAdminAccountMutationValid(uid, before, after, changed)
-        );
+            && after.lastMutation.kind in ['task', 'offer', 'proposal', 'report', 'support'])
+            ? (marketProfileCounterFieldsOnly(changed)
+              && (request.auth.uid == uid || marketIsAdmin())
+              && marketValidProfileCounterUpdate(uid, before, after, changed))
+            : (changed.hasAny(['status', 'suspendedUntil', 'warnings'])
+              || (after.lastMutation is map
+                && after.lastMutation.kind == 'user'
+                && changed.hasAny(['openTasks', 'activeOffers', 'lastMutation'])))
+              ? marketProfileAdminAccountMutationValid(uid, before, after, changed)
+              : (
+                (request.auth.uid == uid
+                  && changed.hasOnly(['skillTags', 'blockedUids', 'settings', 'updatedAt'])
+                  && after.skillTags is list && after.skillTags.size() <= 30
+                  && after.blockedUids is list && after.blockedUids.size() <= 200
+                  && marketValidSettings(after.settings)
+                  && after.updatedAt == request.time)
+                || (after.lastMutation is map
+                  && after.lastMutation != before.lastMutation
+                  && marketProfileCounterFieldsOnly(changed)
+                  && (request.auth.uid == uid || marketIsAdmin())
+                  && marketValidProfileCounterUpdate(uid, before, after, changed))
+                || marketProfileAdminAccountMutationValid(uid, before, after, changed)
+              );
       }
 
       function marketValidProfileCounterUpdate(uid, before, after, changed) {
