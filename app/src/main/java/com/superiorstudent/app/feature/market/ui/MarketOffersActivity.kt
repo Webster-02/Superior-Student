@@ -504,8 +504,8 @@ class MarketOffersActivity : AppCompatActivity() {
                 val repository = MarketRepository()
                 val statsTasks = sellerIds.map { sellerUid -> repository.loadPublicUserStats(sellerUid) }
                 Tasks.whenAllSuccess<MarketUserStats?>(statsTasks)
-                    .addOnSuccessListener { results ->
-                        if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                    .addOnSuccessListener statsComplete@ { results ->
+                        if (requestGeneration != loadGeneration) return@statsComplete
                         val pageStats = linkedMapOf<String, MarketUserStats>()
                         sellerIds.zip(results).forEach { (uid, stats) ->
                             if (stats != null) pageStats[uid] = stats
@@ -515,7 +515,8 @@ class MarketOffersActivity : AppCompatActivity() {
                             pageDocuments, pageOffers, pageStats
                         )
                     }
-                    .addOnFailureListener { failure ->
+                    .addOnFailureListener statsFailed@ { failure ->
+                        if (requestGeneration != loadGeneration) return@statsFailed
                         failOfferLoad(requestGeneration, failure)
                     }
             }
