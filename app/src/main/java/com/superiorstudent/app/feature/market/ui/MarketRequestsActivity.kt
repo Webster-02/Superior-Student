@@ -40,6 +40,7 @@ import com.superiorstudent.app.feature.market.data.MarketConfigCachePolicy
 import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketFeedCacheCodec
 import com.superiorstudent.app.feature.market.data.MarketFeedCacheStore
 import com.superiorstudent.app.feature.market.data.MarketModerationStatus
 import com.superiorstudent.app.feature.market.data.MarketProfile
