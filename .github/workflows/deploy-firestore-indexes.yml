@@ -49,7 +49,7 @@ jobs:
           mkdir -p artifacts
           jq -e '(.indexes | type == "array") and ((.fieldOverrides // []) | type == "array")' firestore.indexes.json >/dev/null
           index_count=$(jq '.indexes | length' firestore.indexes.json)
-          echo "GitHub candidate contains \${index_count} composite index definitions."
+          echo "GitHub candidate contains ${index_count} composite index definitions."
           if [[ "$index_count" -lt 1 ]]; then
             echo "Blocked: candidate index file is empty."
             exit 1
