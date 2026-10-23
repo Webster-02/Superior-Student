@@ -2,7 +2,7 @@
 
 **Working branch:** `feature/market-wiring`  
 **Starting commit:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca` (from `feature/market-ui-reference`)  
-**Current part:** W2 feed wiring implemented in source; CI/build verification pending.  
+**Current part:** W2 feed wiring and persistent offline-cache path implemented in source; latest CI verification pending.  
 **Rules:** No main merge, no deployment, no changes to `firestore.rules`, `firestore.indexes.json` or tests without explicit approval.
 
 ## Part status
@@ -11,7 +11,7 @@
 |---|---|---|---|
 | W0 | Audit only; create wiring report | **COMPLETE** | `WIRING_REPORT.md`; no feature code modified |
 | W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | **COMPLETE — verified** | Run [#111](https://github.com/Webster-02/Superior-Student/actions/runs/40026265620) on commit `693390b6` passed unit tests, APK build, APK verification and upload. Screen 25 loads actual status/expiry and the owner-scoped restriction notice. Artifact `superior-student-debug-apk`, ID `12532932046`. |
-| W2 | Live Requests/Offers feeds, ranking/cache, filtering, paging, pull refresh, states | IMPLEMENTED IN SOURCE — latest verification pending | Both feeds: index-compatible category/order queries, cursor paging, pull-to-refresh, loading/empty/error states, expiry/status/moderation/report-threshold/blocked-user filters, matching/ranking, and at most 3 pinned results. Config is loaded via the six-hour `MarketConfigProvider`; Offers also reads real aggregate `userStats`. Runs #121/#122 passed earlier feed revisions; #124 passed after refresh/paging race guards. Report-threshold/config updates in #125/#126 were still running at this checkpoint. |
+| W2 | Live Requests/Offers feeds, ranking/cache, filtering, paging, pull refresh, states | IMPLEMENTED IN SOURCE — latest cache revision build pending | Both feeds use indexed Firestore builders, cursor paging, pull-to-refresh, loading/empty/error states, configured report thresholds, expiry/status/moderation/blocked-user filters, ranking/matching and a max of 3 pins. Added bounded persistent JSON cache for task/offer records, owner-scoped Market profile, and seller aggregate stats; saved cards remain visible with an offline message when refresh fails. #125/#126 passed the configured-filter revisions; #127/#128 failed because the cache stats collection called `takeLast` before conversion to a list. That issue is fixed in the latest source; #129/#130 are checking it. |
 | W3 | Tasks lifecycle, My Tasks, proposals, accept, complete/rate, Applied | NOT STARTED | Task create exists; most lifecycle screens remain fixtures/preview |
 | W4 | Offers lifecycle and My Offers | IN PROGRESS | My Offers repository actions exist; offer detail/message/expiry/lifecycle coverage remains open. CI #110 is an earlier revision and does not verify the latest branch. |
 | W5 | Market text-only chat | NOT STARTED | Repository APIs exist; screens are fixture messages, not connected |
@@ -72,12 +72,12 @@
 ## Verification checkpoint
 
 - **Base revision:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca`.
-- **W1 verification:** [run #111](https://github.com/Webster-02/Superior-Student/actions/runs/40026265620) passed unit tests, APK build, APK verification and upload for commit `693390b6`; artifact ID `12532932046`.
-- **W2 earlier verification:** [run #124](https://github.com/Webster-02/Superior-Student/actions/runs/40028547655) passed unit tests, APK build, APK verification and upload after both feeds gained cursor resets and refresh/paging race guards. Artifact `superior-student-debug-apk`, ID `12533264170` (41,156,388 bytes).
-- **Latest source at this checkpoint:** `b0e51bd2` adds the configured `reportsToHide` filter to Offers; its parent `7494b0cf` adds cached `config/market` and configured report-threshold filtering to Requests. Runs #125 and #126 were in progress; this checkpoint must be updated with their final results before calling W2 verified.
-- **Rules/indexes/tests:** `firestore.rules`, `firestore.indexes.json` and `tests/` remain untouched. No deployment or merge occurred.
-- **Rules/indexes/tests:** `firestore.rules`, `firestore.indexes.json`, and `tests/` were not edited during W1/W2. No test or APK build output is available for the latest changes.
-- **Deploy/merge:** none.
+- **W1 verified:** [run #111](https://github.com/Webster-02/Superior-Student/actions/runs/40026265620) passed unit tests, APK build, APK verification and upload for commit `693390b6`; artifact ID `12532932046`.
+- **W2 feed baseline verified:** [run #124](https://github.com/Webster-02/Superior-Student/actions/runs/40028547655) passed unit tests, APK build, APK verification and upload after refresh/paging race guards; artifact ID `12533264170`.
+- **Configured visibility verified:** [runs #125](https://github.com/Webster-02/Superior-Student/actions/runs/40028681099) and [#126](https://github.com/Webster-02/Superior-Student/actions/runs/40028718552) both passed after the Requests/Offers `reportsToHide` checks were added.
+- **Latest persistent-cache verification:** [#127](https://github.com/Webster-02/Superior-Student/actions/runs/40029389664) and [#128](https://github.com/Webster-02/Superior-Student/actions/runs/40029417814) failed on the same `MarketFeedCacheStore.kt` collection-type issue (`merged.values.takeLast`). The source was fixed to `merged.values.toList().takeLast`; [#129](https://github.com/Webster-02/Superior-Student/actions/runs/40029663535) and [#130](https://github.com/Webster-02/Superior-Student/actions/runs/40029674196) were still running at the last check.
+- **Rules/indexes/tests:** `firestore.rules`, `firestore.indexes.json` and `tests/` have not been changed. No merge or deployment occurred.
+
 - Source-priority exception: the addendum/Rules allow sign-in-only self-service writes for `skillTags`, `settings` and `blockedUids`; listing/content, profile bootstrap, chat/message, reports/ratings/support/appeals require verified email. These rule-aligned exceptions were not tightened beyond the published contract.
 - Safe profile bootstrap uses empty skills/blocks, active status, null suspension/window markers, zero counters/warnings, and default alerts with task-match alerts off (opt-in). Screen 25 loads the real matching suspension/ban notice through the owner-scoped notices query and displays its title/body without implicitly marking it read.
 - After every completed wiring part, update this table and `WIRING_REPORT.md` in that part's commit. If interrupted, start from this file and `git log`; do not redo W0.
