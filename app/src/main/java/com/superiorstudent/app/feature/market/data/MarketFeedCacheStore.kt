@@ -32,6 +32,9 @@ class MarketFeedCacheStore internal constructor(
         MarketConverters.task(document.id, document.data)
     }
 
+    /** Timestamp of the latest complete task-cache write; null means a full feed sync is needed. */
+    fun tasksSavedAtMillis(): Long? = readEntry(TASKS_KEY, "tasks", null)?.savedAtMillis
+
     fun saveOffers(items: List<MarketOffer>): Boolean = writeDocuments(
         key = OFFERS_KEY,
         kind = "offers",
@@ -48,6 +51,9 @@ class MarketFeedCacheStore internal constructor(
     fun readOffers(): List<MarketOffer> = readDocuments(OFFERS_KEY, "offers").mapNotNull { document ->
         MarketConverters.offer(document.id, document.data)
     }
+
+    /** Timestamp of the latest complete offer-cache write; null means a full feed sync is needed. */
+    fun offersSavedAtMillis(): Long? = readEntry(OFFERS_KEY, "offers", null)?.savedAtMillis
 
     fun saveProfile(profile: MarketProfile): Boolean = writeDocuments(
         key = PROFILE_KEY,
