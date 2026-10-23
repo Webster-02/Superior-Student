@@ -8,6 +8,7 @@ package com.superiorstudent.app.feature.market.data
  */
 object MarketConfigCachePolicy {
     const val CACHE_TTL_MILLIS: Long = 6L * 60L * 60L * 1000L
+    const val FEED_SYNC_CLOCK_SKEW_BUFFER_MILLIS: Long = 30_000L
 
     /**
      * A cache entry is fresh for less than six hours.
