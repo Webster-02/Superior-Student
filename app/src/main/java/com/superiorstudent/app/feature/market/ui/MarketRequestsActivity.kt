@@ -434,22 +434,27 @@ class MarketRequestsActivity : AppCompatActivity() {
         val blocked = profile?.blockedUids?.toSet().orEmpty()
         val skills = profile?.skillTags.orEmpty()
         val eligible = loadedTasks.filter { it.posterId !in blocked }
-        val ranked = MarketRankingScorer.rankTasks(
-            eligible.map { task ->
-                val matchesSkills = task.skills.any { required ->
-                    skills.any { saved -> saved.equals(required, ignoreCase = true) }
-                }
-                val matchesCourse = task.courseTag?.let { course ->
-                    skills.any { saved -> saved.equals(course, ignoreCase = true) }
-                } ?: false
-                MarketRankingScorer.TaskSignals(
-                    task = task,
-                    matchesSkillTags = matchesSkills,
-                    matchesCourse = matchesCourse
-                )
-            },
-            nowMillis = now
-        )
+        val signals = eligible.map { task ->
+            val matchesSkills = task.skills.any { required ->
+                skills.any { saved -> saved.equals(required, ignoreCase = true) }
+            }
+            val matchesCourse = task.courseTag?.let { course ->
+                skills.any { saved -> saved.equals(course, ignoreCase = true) }
+            } ?: false
+            MarketRankingScorer.TaskSignals(
+                task = task,
+                matchesSkillTags = matchesSkills,
+                matchesCourse = matchesCourse
+            )
+        }
+        val ranked = if (selectedSort == MarketRequestSort.NEWEST) {
+            signals.filter {
+                it.task.deadline.toDate().time > now &&
+                    it.task.expiresAt.toDate().time > now
+            }.sortedByDescending { it.task.createdAt.toDate().time }
+        } else {
+            MarketRankingScorer.rankTasks(signals, nowMillis = now)
+        }
         var pinnedCount = 0
         liveTasks = ranked.filter { signal ->
             if (!signal.task.pinned) true
