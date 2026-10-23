@@ -46,6 +46,13 @@ class MarketConvertersTest {
         assertEquals(false, profile.settings.alertMatchingTasks)
         assertEquals(data.keys, MarketConverters.toFirestoreMap(profile).keys)
 
+        val linkedProfile = data +
+            ("lastAuditLogId" to "profile-audit-1") +
+            ("lastAdminNoticeId" to "profile-notice-1")
+        assertNotNull(MarketConverters.profile("uid1", linkedProfile))
+        assertNull(MarketConverters.profile("uid1", linkedProfile + ("lastAuditLogId" to "")))
+        assertNull(MarketConverters.profile("uid1", linkedProfile + ("lastAdminNoticeId" to "n".repeat(151))))
+
         val extraField = data.toMutableMap().apply { put("displayName", "Not a Market field") }
         assertNull(MarketConverters.profile("uid1", extraField))
     }

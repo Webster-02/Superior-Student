@@ -18,6 +18,7 @@ object MarketConverters {
         "reportWindowCount", "reportWindowStartedAt", "openSupportTickets", "lastMutation",
         "createdAt", "updatedAt"
     )
+    private val profileOptionalKeys = setOf("lastAuditLogId", "lastAdminNoticeId")
     private val taskKeys = setOf(
         "title", "category", "description", "budgetType", "deadline", "skills", "posterId",
         "posterName", "posterInitials", "status", "moderation", "pinned", "proposalCount",
@@ -55,7 +56,11 @@ object MarketConverters {
         snapshot.data?.let { profile(snapshot.id, it) }
 
     fun profile(documentId: String, data: Map<String, Any?>): MarketProfile? {
-        if (!exactKeys(data, profileKeys) || documentId != str(data["uid"])) return null
+        if (!exactKeys(data, profileKeys, profileOptionalKeys) ||
+            !validOptionalPointer(data, "lastAuditLogId") ||
+            !validOptionalPointer(data, "lastAdminNoticeId") ||
+            documentId != str(data["uid"])
+        ) return null
         val status = enum<MarketProfileStatus>(data["status"]) ?: return null
         val skillTags = strings(data["skillTags"]) ?: return null
         val blockedUids = strings(data["blockedUids"]) ?: return null

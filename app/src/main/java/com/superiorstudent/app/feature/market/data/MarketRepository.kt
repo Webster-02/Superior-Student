@@ -1464,6 +1464,7 @@ class MarketRepository(
         }
         val profileRef = marketProfileRef(targetUid)
         val logRef = firestore.collection(ADMIN_LOGS).document()
+        val noticeRef = firestore.collection(USERS).document(targetUid).collection(NOTICES).document()
 
         return firestore.runTransaction { tx ->
             val profile = tx.get(profileRef)
@@ -1472,11 +1473,13 @@ class MarketRepository(
             require(warnings < 1000) { "The warning counter has reached its maximum." }
             tx.update(profileRef, mapOf(
                 "warnings" to warnings + 1,
-                "updatedAt" to FieldValue.serverTimestamp()
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastAuditLogId" to logRef.id,
+                "lastAdminNoticeId" to noticeRef.id
             ))
             tx.set(logRef, adminLogMap(adminUid, "warn_user", "user", targetUid, reason, note))
             createNoticeInTransaction(
-                tx, targetUid, null, noticeType,
+                tx, targetUid, noticeRef.id, noticeType,
                 if (noticeType == MarketNoticeType.WARNING) "Market warning" else "Market removal notice",
                 reason.trim(), relatedType = null, relatedId = null, canAppeal = canAppeal
             )
@@ -1579,7 +1582,9 @@ class MarketRepository(
                         "openTasks" to 0,
                         "activeOffers" to 0,
                         "lastMutation" to mutationMap("user", "suspend", targetUid),
-                        "updatedAt" to FieldValue.serverTimestamp()
+                        "updatedAt" to FieldValue.serverTimestamp(),
+                        "lastAuditLogId" to logRef.id,
+                        "lastAdminNoticeId" to noticeRef.id
                     ))
                     tx.set(logRef, adminLogMap(
                         adminUid, if (banned) "ban_user" else "suspend_user", "user", targetUid, reason, note
@@ -1600,20 +1605,23 @@ class MarketRepository(
         val adminUid = requireVerifiedUid()
         val profileRef = marketProfileRef(targetUid)
         val logRef = firestore.collection(ADMIN_LOGS).document()
+        val noticeRef = firestore.collection(USERS).document(targetUid).collection(NOTICES).document()
         return firestore.runTransaction { tx ->
             val profile = tx.get(profileRef)
             require(profile.exists()) { "The target user does not have a Market profile." }
-            require(profile.getString("status") != MarketProfileStatus.BANNED.wireValue) {
-                "A ban must be lifted through the ban-review workflow."
+            require(profile.getString("status") == MarketProfileStatus.SUSPENDED.wireValue) {
+                "Only suspended accounts can be lifted; a ban must be lifted through the ban-review workflow."
             }
             tx.update(profileRef, mapOf(
                 "status" to MarketProfileStatus.ACTIVE.wireValue,
                 "suspendedUntil" to null,
-                "updatedAt" to FieldValue.serverTimestamp()
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastAuditLogId" to logRef.id,
+                "lastAdminNoticeId" to noticeRef.id
             ))
             tx.set(logRef, adminLogMap(adminUid, "lift_suspension", "user", targetUid, reason, note))
             createNoticeInTransaction(
-                tx, targetUid, null, MarketNoticeType.ACTIVITY,
+                tx, targetUid, noticeRef.id, MarketNoticeType.ACTIVITY,
                 "Market suspension lifted",
                 reason.ifBlank { "Your Market posting access has been restored." },
                 relatedType = null, relatedId = null, canAppeal = false
