@@ -29,12 +29,14 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketBudgetType
 import com.superiorstudent.app.feature.market.data.MarketConfig
+import com.superiorstudent.app.feature.market.data.MarketConfigCachePolicy
 import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
@@ -49,6 +51,7 @@ import com.superiorstudent.app.feature.market.data.MarketTaskStatus
 import com.superiorstudent.app.ui.AppThemePreferences
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import kotlin.math.min
 
@@ -360,6 +363,19 @@ class MarketRequestsActivity : AppCompatActivity() {
         }
 
         if (!reset && (!hasMoreTasks || loadingMoreTasks || loadingTasks)) return
+        val cacheSavedAt = if (reset && selectedCategory == "All") feedCache.tasksSavedAtMillis() else null
+        if (reset && loadedTasks.isEmpty() && liveTasks.isEmpty()) {
+            val cachedProfile = feedCache.readProfile(user.uid)
+            val cachedTasks = feedCache.readTasks()
+            if (cachedProfile != null && cachedTasks.isNotEmpty()) {
+                loadedTasks.addAll(cachedTasks)
+                currentMarketProfile = cachedProfile
+            }
+        }
+        val useDeltaSync = reset && selectedCategory == "All" &&
+            cacheSavedAt != null &&
+            MarketConfigCachePolicy.isFresh(cacheSavedAt, System.currentTimeMillis()) &&
+            loadedTasks.isNotEmpty()
         val requestGeneration = if (reset) ++loadGeneration else loadGeneration
         val cursor = if (reset) null else lastTaskDocument
         if (reset) {
@@ -387,6 +403,17 @@ class MarketRequestsActivity : AppCompatActivity() {
                         swipeRefresh.isRefreshing = false
                         loadError = "Market configuration is unavailable. Please try again later."
                         renderRequests()
+                        return@configLoaded
+                    }
+                    if (useDeltaSync && cacheSavedAt != null) {
+                        val sinceMillis = (cacheSavedAt - MarketFeedCacheCodec.CLOCK_SKEW_BUFFER_MILLIS)
+                            .coerceAtLeast(0L)
+                        loadChangedTasksSince(
+                            profile,
+                            config,
+                            requestGeneration,
+                            Timestamp(Date(sinceMillis))
+                        )
                         return@configLoaded
                     }
                     val category = selectedCategory.takeIf { it != "All" }
@@ -464,12 +491,76 @@ class MarketRequestsActivity : AppCompatActivity() {
         }
     }
 
+    private fun loadChangedTasksSince(
+        profile: MarketProfile?,
+        config: MarketConfig,
+        requestGeneration: Int,
+        since: Timestamp
+    ) {
+        val changedDocuments = mutableListOf<DocumentSnapshot>()
+        fun fetchChangedPage(cursor: DocumentSnapshot?) {
+            if (requestGeneration != loadGeneration) return
+            MarketQueryBuilders.publicTasksUpdatedSince(
+                firestore = FirebaseFirestore.getInstance(),
+                since = since,
+                pageSize = MarketQueryBuilders.MAX_DELTA_PAGE_SIZE,
+                startAfter = cursor
+            ).get()
+                .addOnSuccessListener deltaPageLoaded@ { snapshot ->
+                    if (requestGeneration != loadGeneration) return@deltaPageLoaded
+                    changedDocuments.addAll(snapshot.documents)
+                    if (snapshot.documents.size == MarketQueryBuilders.MAX_DELTA_PAGE_SIZE) {
+                        fetchChangedPage(snapshot.documents.last())
+                        return@deltaPageLoaded
+                    }
+
+                    val changedIds = changedDocuments.mapTo(HashSet()) { it.id }
+                    loadedTasks.removeAll { it.id in changedIds }
+                    changedDocuments.mapNotNull { MarketConverters.task(it) }
+                        .filter {
+                            it.status == MarketTaskStatus.OPEN &&
+                                it.moderation == MarketModerationStatus.OK &&
+                                it.reportCount < config.limits.reportsToHide
+                        }
+                        .forEach(loadedTasks::add)
+
+                    val now = System.currentTimeMillis()
+                    loadedTasks.removeAll {
+                        it.status != MarketTaskStatus.OPEN ||
+                            it.moderation != MarketModerationStatus.OK ||
+                            it.reportCount >= config.limits.reportsToHide ||
+                            it.deadline.toDate().time <= now ||
+                            it.expiresAt.toDate().time <= now
+                    }
+                    feedCache.saveTasks(loadedTasks)
+                    lastTaskDocument = null
+                    hasMoreTasks = true
+                    showingCachedFeed = false
+                    loadingTasks = false
+                    loadingMoreTasks = false
+                    loadError = null
+                    swipeRefresh.isRefreshing = false
+                    rebuildTaskPreviews(profile, config)
+                    renderRequests()
+                    maybeFillViewport()
+                }
+                .addOnFailureListener deltaPageFailed@ { failure ->
+                    if (requestGeneration != loadGeneration) return@deltaPageFailed
+                    loadingTasks = false
+                    loadingMoreTasks = false
+                    swipeRefresh.isRefreshing = false
+                    loadError = MarketErrorMapper.map(failure).message
+                    renderRequests()
+                }
+        }
+        fetchChangedPage(null)
+    }
+
     private fun restoreCachedTasksForDisplay(uid: String, requestGeneration: Int) {
-        if (liveTasks.isNotEmpty() || loadedTasks.isNotEmpty()) return
-        val profile = feedCache.readProfile(uid) ?: return
-        val cachedTasks = feedCache.readTasks()
-        if (cachedTasks.isEmpty()) return
-        loadedTasks.addAll(cachedTasks)
+        if (liveTasks.isNotEmpty()) return
+        val profile = currentMarketProfile ?: feedCache.readProfile(uid) ?: return
+        if (loadedTasks.isEmpty()) loadedTasks.addAll(feedCache.readTasks())
+        if (loadedTasks.isEmpty()) return
         currentMarketProfile = profile
         MarketConfigProvider(this).load()
             .addOnSuccessListener cacheConfigLoaded@ { config ->
