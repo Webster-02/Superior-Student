@@ -493,6 +493,7 @@ class MarketOffersActivity : AppCompatActivity() {
                     .filter {
                         it.status == MarketOfferStatus.ACTIVE &&
                             it.moderation == MarketModerationStatus.OK &&
+                            it.reportCount < config.limits.reportsToHide &&
                             it.expiresAt.toDate().time > now &&
                             it.sellerId !in blocked
                     }
@@ -569,6 +570,7 @@ class MarketOffersActivity : AppCompatActivity() {
         val eligible = loadedOffers.filter {
             it.status == MarketOfferStatus.ACTIVE &&
                 it.moderation == MarketModerationStatus.OK &&
+                it.reportCount < config.limits.reportsToHide &&
                 it.expiresAt.toDate().time > now &&
                 it.sellerId !in blocked
         }
