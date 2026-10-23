@@ -1,7 +1,5 @@
 package com.superiorstudent.app.feature.market.ui
 
-import com.superiorstudent.app.R
-
 internal data class MarketOfferPreview(
     val id: String,
     val category: String,
@@ -21,37 +19,6 @@ internal data class MarketOfferPreview(
 
 internal enum class MarketOfferSort { REFERENCE_ORDER, HIGHEST_RATED, LOWEST_PRICE }
 
-internal object MarketOfferFixtures {
-    val all = listOf(
-        MarketOfferPreview(
-            id = "reference-notes-offer", category = "Notes",
-            title = "Handwritten Ocular Anatomy notes, full semester",
-            description = "Clean handwriting, colour-coded diagrams. Scan sent on chat or Nearby share.",
-            priceLabel = "Rs. 300", priceValue = 300,
-            sellerName = "Ayesha Khan", initials = "AK",
-            rating = 4.9, ratingCount = 14, verifiedStudent = true,
-            avatarColor = R.color.market_lav, recencyOrder = 0
-        ),
-        MarketOfferPreview(
-            id = "reference-tutoring-offer", category = "Tutoring",
-            title = "Calculus doubt solving, 1 hour sessions",
-            description = "Explain step by step on campus or chat. First 15 minutes free.",
-            priceLabel = "Rs. 500 / hr", priceValue = 500,
-            sellerName = "Zain Malik", initials = "ZM",
-            rating = 4.7, ratingCount = 9, verifiedStudent = true,
-            avatarColor = R.color.market_sky, recencyOrder = 1
-        ),
-        MarketOfferPreview(
-            id = "reference-typing-offer", category = "Typing",
-            title = "Typing and formatting for reports",
-            description = "Fast, proper margins and headings.",
-            priceLabel = "Swap", priceValue = null,
-            sellerName = "Noor Fatima", initials = "NF",
-            rating = 5.0, ratingCount = 6, verifiedStudent = true,
-            avatarColor = R.color.market_peach, recencyOrder = 2
-        )
-    )
-}
 
 /** Deterministic local policy for reference preview search/filter/sorting. */
 internal object MarketOffersUiPolicy {
