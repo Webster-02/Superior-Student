@@ -67,3 +67,48 @@ firebase deploy --only firestore:rules,firestore:indexes --project <PRODUCTION_P
 - No Cloud Functions, Firebase Storage, server, or deployed Admin SDK runtime.
 - Trusted Admin SDK usage is limited to a supervised one-off migration/verification run from a secure administrative environment.
 - Security decisions must remain enforced in Firestore Security Rules; client checks are UX safeguards only.
+
+
+## 7. Fast path to real-device functional testing (staging only)
+
+**Current evidence:** candidate Rules run #37 passed 46 static checks and 73 Emulator tests with zero expression-ceiling diagnostics. Android run #105 produced a verified debug APK, but that APK uses the Firebase project configured in the repository. The checked-in `app/google-services.json` currently identifies project ID `pachattarpercent`; treat it as the configured/live project until the owner confirms otherwise. Do not send candidate Rules to that project for convenience.
+
+### A. Create an isolated staging target
+
+1. In Firebase Console, create a separate test project and register an Android app whose package name is `com.superiorstudent.app`. Enable the same sign-in provider the app uses, then create two verified student test accounts and one separate admin test account.
+2. Download the staging project's `google-services.json`. Keep it outside Git or in a local-only copy. Do not upload service-account keys, private keys, passwords or access tokens.
+3. From the repository root, check out `review/market-rules` for deployment files and `feature/market-ui-reference` for the APK source (the branches stay separate). Confirm the Rules CI run is green before deploying.
+4. Deploy only to the verified staging project, explicitly naming its ID:
+   
+   ```bash
+   firebase login
+   firebase projects:list
+   export MARKET_STAGING_PROJECT_ID="REPLACE_WITH_THE_SEPARATE_STAGING_PROJECT_ID"
+   test -n "$MARKET_STAGING_PROJECT_ID" || exit 1
+   firebase deploy --only firestore:rules,firestore:indexes --project "$MARKET_STAGING_PROJECT_ID"
+   ```
+
+   Stop if the project shown by `firebase projects:list` is not the newly created staging project. Do not rely on the active/default alias. This command overwrites the target project's published Firestore Rules and deploys the index definitions in this branch; it must not be pointed at the configured `pachattarpercent` project just to speed up testing.
+
+### B. Build an APK that talks to staging
+
+The existing CI APK from run #105 is **not** a staging-configured APK. To create a staging-configured debug APK without changing the committed production config:
+
+1. Back up `app/google-services.json` outside the repository.
+2. Temporarily put the staging `google-services.json` at `app/google-services.json` (its Android package must match `com.superiorstudent.app`).
+3. Run `./gradlew :app:clean :app:assembleDebug` from the repository root.
+4. Restore the backed-up committed `google-services.json` immediately after the build; confirm `git status --short` shows no config change. Install the resulting debug APK on the test phone while signed into staging test accounts only. Do not distribute this staging APK as a production release.
+
+If staging Rules and the staging APK do not point to the same project ID, stop. Do not “test” by publishing candidate Rules to the production project.
+
+### C. Minimum smoke-test order
+
+1. Sign in as verified student A and create a Market profile; verify invalid/unverified student writes are denied.
+2. A creates an open task; student B sends a proposal; A accepts. Confirm the task becomes assigned, the proposal accepted, `openTasks` decrements once, and the new text-only Market conversation opens.
+3. A completes the assigned task. Confirm completion does **not** decrement `openTasks` a second time; then rate from both participants.
+4. Create, pause, resume, renew and remove an offer. Confirm `activeOffers` changes only on the specified counted transitions; removing a paused offer leaves it unchanged.
+5. Test report creation/status changes and verify the matching audit log/notice pointers.
+6. Test warning, suspension/ban, lift, support reply/resolve, appeal reject and appeal approve/restore. Verify every admin decision has its linked audit log and notice, and that suspension releases listing counters as one aggregate action.
+7. Verify ordinary U2U sign-in, friend requests, private chat and Nearby transfer still work unchanged. Record device, app build, staging project ID, expected result and actual result for each case.
+
+Do not promote from staging to production until the separate live Rules/index export comparison, Auth/profile readiness, any required legacy `proposerId` review, and explicit owner approval are complete.
