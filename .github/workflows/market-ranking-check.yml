@@ -7,6 +7,7 @@ on:
       - feature/market-step5-ranking
       - feature/market-step6-errors
       - feature/market-ui-reference
+      - feature/market-wiring
     paths:
       - 'app/src/main/java/com/superiorstudent/app/feature/market/data/MarketRankingScorer.kt'
       - 'app/src/test/java/com/superiorstudent/app/feature/market/data/MarketRankingScorerTest.kt'
