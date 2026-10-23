@@ -526,7 +526,7 @@ class MarketOffersActivity : AppCompatActivity() {
         val category = selectedCategory.takeIf { it != "All" }
         marketRepository.loadPublicOffersPage(
             category = category,
-            pinnedFirst = selectedSort != MarketOfferSort.NEWEST,
+            pinnedFirst = true,
             pageSize = feedPageSize,
             startAfter = cursor
         ).addOnSuccessListener { snapshot ->
@@ -655,18 +655,11 @@ class MarketOffersActivity : AppCompatActivity() {
                 it.expiresAt.toDate().time <= now ||
                 it.sellerId in blocked
         }
-        val cacheOffers = if (selectedSort == MarketOfferSort.NEWEST) {
-            loadedOffers.sortedWith(
-                compareByDescending<MarketOffer> { it.renewedAt.seconds }
-                    .thenByDescending { it.createdAt.seconds }
-            )
-        } else {
-            loadedOffers.sortedWith(
-                compareByDescending<MarketOffer> { it.pinned }
-                    .thenByDescending { it.renewedAt.seconds }
-                    .thenByDescending { it.createdAt.seconds }
-            )
-        }
+        val cacheOffers = loadedOffers.sortedWith(
+            compareByDescending<MarketOffer> { it.pinned }
+                .thenByDescending { it.renewedAt.seconds }
+                .thenByDescending { it.createdAt.seconds }
+        )
         feedCache.saveOffers(cacheOffers, feedSyncStartedAtMillis ?: System.currentTimeMillis())
         feedCache.saveStats(sellerStats.values)
         lastOfferDocument = null
@@ -774,14 +767,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 matchesCourse = matchesCourse
             )
         }
-        val ordered = if (selectedSort == MarketOfferSort.NEWEST) {
-            signals.sortedWith(
-                compareByDescending<MarketRankingScorer.OfferSignals> { it.offer.renewedAt.seconds }
-                    .thenByDescending { it.offer.createdAt.seconds }
-            )
-        } else {
-            MarketRankingScorer.rankOffers(signals, config.rankWeights, now)
-        }
+        val ordered = MarketRankingScorer.rankOffers(signals, config.rankWeights, now)
         var pinnedCount = 0
         liveOffers = ordered.filter { signal ->
             if (!signal.offer.pinned) true
@@ -845,8 +831,7 @@ class MarketOffersActivity : AppCompatActivity() {
             verifiedStudent = false,
             avatarColor = avatarColor,
             recencyOrder = order,
-            courseTag = offer.courseTag,
-            renewedAtMillis = offer.renewedAt.toDate().time
+            courseTag = offer.courseTag
         )
     }
 

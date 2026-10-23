@@ -14,11 +14,10 @@ internal data class MarketOfferPreview(
     val verifiedStudent: Boolean,
     val avatarColor: Int,
     val recencyOrder: Int,
-    val courseTag: String? = null,
-    val renewedAtMillis: Long = 0L
+    val courseTag: String? = null
 )
 
-internal enum class MarketOfferSort { REFERENCE_ORDER, HIGHEST_RATED, LOWEST_PRICE, NEWEST }
+internal enum class MarketOfferSort { REFERENCE_ORDER, HIGHEST_RATED, LOWEST_PRICE }
 
 
 /** Deterministic local policy for reference preview search/filter/sorting. */
@@ -39,7 +38,6 @@ internal object MarketOffersUiPolicy {
         }
         return when (sort) {
             MarketOfferSort.REFERENCE_ORDER -> filtered.sortedBy { it.recencyOrder }
-            MarketOfferSort.NEWEST -> filtered.sortedByDescending { it.renewedAtMillis }
             MarketOfferSort.HIGHEST_RATED -> filtered.sortedByDescending { it.rating }
             MarketOfferSort.LOWEST_PRICE -> filtered.sortedWith(
                 compareBy<MarketOfferPreview> { it.priceValue == null }
