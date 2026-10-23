@@ -23,7 +23,7 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: \${{ secrets.FIREBASE_SERVICE_ACCOUNT_PACHATTARPERCENT }}
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PACHATTARPERCENT }}
 
       - name: Export currently deployed indexes
         shell: bash
@@ -37,7 +37,7 @@ jobs:
       - name: Upload index export
         uses: actions/upload-artifact@v4
         with:
-          name: production-firestore-indexes-\${{ github.run_number }}
+          name: production-firestore-indexes-${{ github.run_number }}
           path: artifacts/production-indexes-live.json
           if-no-files-found: error
           retention-days: 7
