@@ -7,7 +7,7 @@
 
 ## Executive result
 
-- **Current live-data coverage:** Requests and Offers have live list reads through `MarketQueryBuilders`; task/offer posting and My Offers mutations invoke `MarketRepository`. W1 adds idempotent profile bootstrap and current-profile reads to the repository, removes task/offer screens' direct `marketProfiles/{uid}` preflight reads, and connects Screen 25 to real account status/expiry. Build verification for this W1 revision is pending.
+- **Current live-data coverage:** Requests and Offers have live list reads through `MarketQueryBuilders`; task/offer posting and My Offers mutations invoke `MarketRepository`. W1 adds idempotent profile bootstrap and current-profile reads, removes task/offer screens' direct `marketProfiles/{uid}` preflight reads, and connects Screen 25 to real account status/expiry. CI #110 passed tests, APK build, APK verification and artifact upload; broader Market feature wiring remains incomplete.
 - **Confirmed fixture count:** **35 explicit fixture objects** in application-source collections: 3 public offer fixtures, 4 My Offers fixtures, 3 proposal fixtures, 6 My Tasks fixtures, 2 blocked-user fixtures, 4 report fixtures, 6 notice fixtures, 6 chat messages and 1 task-poster seed model. Additional stand-alone detail examples, fake/default counts, ratings and local-only action messages are listed below; they are not included in the 35-object count.
 - **Unconnected feature screens:** Most of the details/lifecycle/trust-and-safety/settings screens currently display reference examples or validate input without invoking the corresponding repository operation.
 - **Direct writes outside `MarketRepository`:** **0 found** in the Market UI activities scanned. The create-task/create-offer flows call repository methods. UI code does bypass the data layer for some reads, noted below.
@@ -106,7 +106,7 @@ Do not widen Rules to accommodate unconnected screens. For any implementation wh
 
 ## Build verification
 
-The pre-W1 revision failed [Market Data Step Check #108](https://github.com/Webster-02/Superior-Student/actions/runs/40020865893) at `MarketMyOffersActivity.kt:146:70` because a `Throwable` was passed where a Google Tasks `Exception` is required. W1 wraps non-`Exception` throwables in an `IllegalStateException`; the new CI result determines whether further compile errors remain.
+The pre-W1 revision failed [run #108](https://github.com/Webster-02/Superior-Student/actions/runs/40020865893) due to a `Throwable`/Google Tasks `Exception` mismatch, and the first W1 run #109 exposed a malformed `mapOf(` helper declaration. Those compile issues were fixed in follow-up commits. [Run #110](https://github.com/Webster-02/Superior-Student/actions/runs/40024930878) passed unit tests, APK build, APK verification and artifact upload on commit `c8afe815b681de380189eccd8d01da6395a185dd`. Artifact `superior-student-debug-apk` ID `12531714428` (41,141,011 bytes) was uploaded successfully.
 
 ## Admin hosting inventory
 
@@ -122,7 +122,7 @@ The pre-W1 revision failed [Market Data Step Check #108](https://github.com/Webs
 - Task/offer creation screens no longer read `marketProfiles/{uid}` directly; bootstrap is repository-owned. Listing writes still re-check status/counters in the repository and remain subject to Rules.
 - Screen 25 displays live profile status and `suspendedUntil`. The Market profile schema has no reason field, so the UI points to Notices rather than inventing a reason; exact notice details remain W7.
 - First-run defaults use empty skill/block lists, active status, null suspension/window markers, zero warnings/counters and proposal/update/notice alerts enabled with task-matching alerts off (opt-in). Per addendum/Rules, `skillTags`, `settings` and `blockedUids` self-service writes remain sign-in-only.
-- No Rules, indexes or tests were changed.
+- No Rules, indexes or test files were changed in W1. The existing test suite was run by CI and passed.
 
 ## W0 exit criteria
 
