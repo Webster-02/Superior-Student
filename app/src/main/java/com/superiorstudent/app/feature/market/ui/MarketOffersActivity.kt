@@ -40,7 +40,6 @@ import com.superiorstudent.app.feature.market.data.MarketConfigCachePolicy
 import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
-import com.superiorstudent.app.feature.market.data.MarketFeedCacheCodec
 import com.superiorstudent.app.feature.market.data.MarketFeedCacheStore
 import com.superiorstudent.app.feature.market.data.MarketModerationStatus
 import com.superiorstudent.app.feature.market.data.MarketOffer
@@ -510,7 +509,7 @@ class MarketOffersActivity : AppCompatActivity() {
         cacheSavedAt: Long?
     ) {
         if (useDeltaSync && cacheSavedAt != null) {
-            val sinceMillis = (cacheSavedAt - MarketFeedCacheCodec.CLOCK_SKEW_BUFFER_MILLIS)
+            val sinceMillis = (cacheSavedAt - MarketConfigCachePolicy.FEED_SYNC_CLOCK_SKEW_BUFFER_MILLIS)
                 .coerceAtLeast(0L)
             loadChangedOffersSince(profile, config, requestGeneration, Timestamp(Date(sinceMillis)))
             return
