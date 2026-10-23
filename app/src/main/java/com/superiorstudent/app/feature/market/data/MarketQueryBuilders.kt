@@ -4,6 +4,7 @@ import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.Timestamp
 
 /**
  * Rule-aware read-query builders for the student Market feeds and owner listing pages.
@@ -13,6 +14,7 @@ import com.google.firebase.firestore.Query
  */
 object MarketQueryBuilders {
     const val DEFAULT_PAGE_SIZE = 20
+    const val MAX_DELTA_PAGE_SIZE = 50
     private const val MAX_PAGE_SIZE = 50
 
     /**
@@ -49,6 +51,47 @@ object MarketQueryBuilders {
             publicOffersPlan(category = category, pinnedFirst = pinnedFirst, pageSize = pageSize)
         )
         return startAfter?.let { query.startAfter(it) } ?: query
+    }
+
+    /**
+     * Incremental task-feed refresh. The public state constraints remain mandatory.
+     * This uses the indexed (moderation, status, updatedAt DESC) query variant and is
+     * intended only for an all-category cached feed; category-specific queries have
+     * separate indexes and must use [publicTasks].
+     */
+    fun publicTasksUpdatedSince(
+        firestore: FirebaseFirestore,
+        since: Timestamp,
+        pageSize: Int = MAX_DELTA_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Query {
+        var query = firestore.collection("tasks")
+            .whereEqualTo("moderation", MarketModerationStatus.OK.wireValue)
+            .whereEqualTo("status", MarketTaskStatus.OPEN.wireValue)
+            .whereGreaterThan("updatedAt", since)
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
+        startAfter?.let { query = query.startAfter(it) }
+        return query.limit(validatedPageSize(pageSize).toLong())
+    }
+
+    /**
+     * Incremental offer-feed refresh. The query follows the indexed public
+     * (moderation, status, updatedAt DESC) variant and must not be used for
+     * category-specific refreshes.
+     */
+    fun publicOffersUpdatedSince(
+        firestore: FirebaseFirestore,
+        since: Timestamp,
+        pageSize: Int = MAX_DELTA_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Query {
+        var query = firestore.collection("offers")
+            .whereEqualTo("moderation", MarketModerationStatus.OK.wireValue)
+            .whereEqualTo("status", MarketOfferStatus.ACTIVE.wireValue)
+            .whereGreaterThan("updatedAt", since)
+            .orderBy("updatedAt", Query.Direction.DESCENDING)
+        startAfter?.let { query = query.startAfter(it) }
+        return query.limit(validatedPageSize(pageSize).toLong())
     }
 
     /**
