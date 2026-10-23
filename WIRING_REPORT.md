@@ -133,7 +133,7 @@ The pre-W1 revision failed [run #108](https://github.com/Webster-02/Superior-Stu
 - [x] No Rules, indexes or test files changed.
 - [ ] Build green — blocked before W0 by the compile error above; fix must be a subsequent wiring part, not smuggled into the audit commit.
 
-## W2 implementation progress — CI/build verification pending
+## W2 implementation progress — verified baseline; latest config-filter revision pending
 
 The following changes have been committed to `feature/market-wiring`. They are source-level implementation notes, not a claim that the APK builds or that live Firestore behavior has been runtime-tested.
 
@@ -143,5 +143,6 @@ The following changes have been committed to `feature/market-wiring`. They are s
 - **Search note:** text search remains client-side over fetched feed items; no full-text Firestore query/index was invented. Category filtering and server-side ordering use existing builder/index variants. Search results are therefore limited to pages currently fetched.
 - **Remaining W2 gap:** a visible offline/cache banner and broader cross-screen expiry reconciliation remain W9. Task detail, offer detail, report and Message actions are not made real by this feed-only work; they stay assigned to W3/W4/W5/W6.
 - **Security/change scope:** the public feed queries retain the rules-required state constraints; seller stats use an authorized single-document read. No Firestore Rules, indexes or test files were modified; no deployment or merge occurred.
-- **Latest feed source commit before these report updates:** `2ae34fe694534939c3a39fed02d7eb0cc0be5a6b`; refresh resets clear the previous page cursor, and a failed refresh remains visible while already-loaded cards stay on screen.
-- **Verification status:** the available GitHub status/commit-run queries returned no checks or workflow runs for the latest push-triggered revisions. Run #110 verifies an earlier commit only. Unit tests, APK build, APK verification and artifact upload for the W1 follow-up/W2 source changes remain unverified.
+- **Refresh/paging verification:** [run #123](https://github.com/Webster-02/Superior-Student/actions/runs/40028535135) and [run #124](https://github.com/Webster-02/Superior-Student/actions/runs/40028547655) passed unit tests, APK build, APK verification and artifact upload after cursor-reset and refresh/paging race guards. Run #124 uploaded artifact `superior-student-debug-apk`, ID `12533264170` (41,156,388 bytes).
+- **Configured report-threshold follow-up:** commit `7494b0cf` wires the Requests feed to cached config/rules threshold; commit `b0e51bd2` applies the same threshold to Offers. Runs [#125](https://github.com/Webster-02/Superior-Student/actions/runs/40028681099) and [#126](https://github.com/Webster-02/Superior-Student/actions/runs/40028718552) were reported in progress and had not yet returned final conclusions at the last check.
+- **Latest confirmed source check:** the prior revision passed in #124; do not treat that run as verifying the newer report-threshold commits until #125/#126 complete. `firestore.rules`, `firestore.indexes.json`, and `tests/` remain untouched; there has been no deployment or merge.
