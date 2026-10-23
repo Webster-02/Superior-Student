@@ -2159,7 +2159,7 @@ class MarketRepository(
         "updatedAt" to FieldValue.serverTimestamp()
     )
 
-    private fun settingsMap(settings: MarketProfileSettings): Map<String, Boolean> = mapOf
+    private fun settingsMap(settings: MarketProfileSettings): Map<String, Boolean> = mapOf(
         "alertProposals" to settings.alertProposals,
         "alertUpdates" to settings.alertUpdates,
         "alertNotices" to settings.alertNotices,
