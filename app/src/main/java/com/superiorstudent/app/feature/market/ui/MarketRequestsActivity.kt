@@ -328,8 +328,10 @@ class MarketRequestsActivity : AppCompatActivity() {
 
     private fun showSortDialog() {
         val choices = listOf(
-            "Recommended (pinned first)" to MarketRequestSort.REFERENCE_ORDER,
-            "Newest first" to MarketRequestSort.NEWEST
+            "Reference order" to MarketRequestSort.REFERENCE_ORDER,
+            "Newest first" to MarketRequestSort.NEWEST,
+            "Deadline soonest" to MarketRequestSort.DEADLINE,
+            "Budget highest" to MarketRequestSort.BUDGET
         )
         val selectedIndex = choices.indexOfFirst { it.second == selectedSort }.coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("Sort requests")

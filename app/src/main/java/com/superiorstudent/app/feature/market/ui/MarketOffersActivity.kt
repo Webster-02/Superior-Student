@@ -379,8 +379,9 @@ class MarketOffersActivity : AppCompatActivity() {
 
     private fun showSortDialog() {
         val options = listOf(
-            "Recommended (pinned first)" to MarketOfferSort.REFERENCE_ORDER,
-            "Newest first" to MarketOfferSort.NEWEST
+            "Reference order" to MarketOfferSort.REFERENCE_ORDER,
+            "Highest rated" to MarketOfferSort.HIGHEST_RATED,
+            "Lowest price" to MarketOfferSort.LOWEST_PRICE
         )
         val selectedIndex = options.indexOfFirst { it.second == selectedSort }.coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("Sort offers")
