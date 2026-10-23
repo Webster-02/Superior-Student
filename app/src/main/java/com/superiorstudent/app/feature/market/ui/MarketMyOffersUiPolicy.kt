@@ -12,10 +12,13 @@ internal data class MarketMyOfferPreview(
     val canRenew: Boolean,
     val description: String,
     val amount: String,
-    val priceMode: MarketPostOfferPriceMode
+    val priceMode: MarketPostOfferPriceMode,
+    val courseTag: String? = null,
+    val thumbnail: String? = null
 )
 
 internal object MarketMyOffersUiPolicy {
+    const val RENEWAL_INTERVAL_MS = 7L * 24 * 60 * 60 * 1000
     const val RENEWAL_RULE = "Renew moves your offer back to the top. You can renew once every 7 days. Offers expire after 30 days."
 
     val referenceOffers = listOf(
@@ -97,7 +100,7 @@ internal object MarketMyOffersUiPolicy {
     }
 
     fun renew(item: MarketMyOfferPreview): MarketMyOfferPreview? {
-        if (!item.canRenew || item.status == MarketMyOfferStatus.PAUSED) return null
+        if (!item.canRenew) return null
         return item.copy(
             status = MarketMyOfferStatus.ACTIVE,
             canRenew = false,

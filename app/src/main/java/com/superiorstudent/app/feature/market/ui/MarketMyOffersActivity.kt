@@ -19,10 +19,23 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.android.gms.tasks.Task
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketConverters
+import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketOffer
+import com.superiorstudent.app.feature.market.data.MarketOfferStatus
+import com.superiorstudent.app.feature.market.data.MarketPriceType
+import com.superiorstudent.app.feature.market.data.MarketQueryBuilders
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
+import java.text.SimpleDateFormat
+import java.util.Locale
 
-/** Screen 19: My offers. The listed offers and controls are local fixtures for UI review only. */
+/** Screen 19: manages offers owned by the verified, signed-in student. */
 class MarketMyOffersActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var offerList: LinearLayout
@@ -30,7 +43,12 @@ class MarketMyOffersActivity : AppCompatActivity() {
     private lateinit var pausedTab: TextView
     private lateinit var expiredTab: TextView
     private var selectedStatus = MarketMyOfferStatus.ACTIVE
-    private val offers = MarketMyOffersUiPolicy.referenceOffers.toMutableList()
+    private val offers = mutableListOf<MarketMyOfferPreview>()
+    private var loadingOffers = false
+    private var loadError: String? = null
+    private var loadGeneration = 0
+    private var actionInProgress = false
+    private val reconcilingExpired = mutableSetOf<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -88,9 +106,112 @@ class MarketMyOffersActivity : AppCompatActivity() {
         })
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::offerList.isInitialized) loadOffers()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(STATE_STATUS, selectedStatus.name)
         super.onSaveInstanceState(outState)
+    }
+
+    private fun loadOffers(reconcileExpired: Boolean = true) {
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null || !user.isEmailVerified) {
+            offers.clear()
+            loadingOffers = false
+            loadError = "Sign in with your verified student account to manage offers."
+            renderOffers()
+            return
+        }
+        val generation = ++loadGeneration
+        loadingOffers = true
+        loadError = null
+        renderOffers()
+        MarketQueryBuilders.myOffers(FirebaseFirestore.getInstance(), user.uid, pageSize = 50).get()
+            .addOnSuccessListener { snapshot ->
+                if (generation != loadGeneration) return@addOnSuccessListener
+                val now = System.currentTimeMillis()
+                val all = snapshot.documents.mapNotNull { MarketConverters.offer(it) }
+                    .filter { it.status != MarketOfferStatus.REMOVED }
+                val stale = if (reconcileExpired) all.filter {
+                    it.status == MarketOfferStatus.ACTIVE && it.expiresAt.toDate().time < now &&
+                        it.id !in reconcilingExpired
+                } else emptyList()
+                if (stale.isNotEmpty()) {
+                    stale.forEach { reconcilingExpired.add(it.id) }
+                    val expiryTasks = stale.map { offer ->
+                        runCatching { MarketRepository().expireOffer(offer.id) }
+                            .getOrElse { Tasks.forException<Boolean>(it) }
+                    }
+                    Tasks.whenAllComplete(expiryTasks).addOnCompleteListener {
+                        stale.forEach { reconcilingExpired.remove(it.id) }
+                        val failed = expiryTasks.firstOrNull { !it.isSuccessful }
+                        if (failed != null) {
+                            loadError = MarketErrorMapper.map(
+                                failed.exception ?: IllegalStateException("Expired offers could not be reconciled.")
+                            ).message
+                        }
+                        loadOffers(reconcileExpired = false)
+                    }
+                    return@addOnSuccessListener
+                }
+                offers.clear()
+                offers.addAll(all.mapNotNull { toMyOffer(it, now) })
+                loadingOffers = false
+                renderOffers()
+            }
+            .addOnFailureListener { failure ->
+                if (generation != loadGeneration) return@addOnFailureListener
+                loadingOffers = false
+                loadError = MarketErrorMapper.map(failure).message
+                renderOffers()
+            }
+    }
+
+    private fun toMyOffer(offer: MarketOffer, now: Long): MarketMyOfferPreview {
+        val expired = offer.status == MarketOfferStatus.EXPIRED || offer.expiresAt.toDate().time < now
+        val status = when {
+            expired -> MarketMyOfferStatus.EXPIRED
+            offer.status == MarketOfferStatus.PAUSED -> MarketMyOfferStatus.PAUSED
+            else -> MarketMyOfferStatus.ACTIVE
+        }
+        val mode = when (offer.priceType) {
+            MarketPriceType.FREE -> MarketPostOfferPriceMode.FREE
+            MarketPriceType.SWAP -> MarketPostOfferPriceMode.SWAP
+            MarketPriceType.AMOUNT -> MarketPostOfferPriceMode.RUPEES
+        }
+        val price = when (offer.priceType) {
+            MarketPriceType.FREE -> "Free"
+            MarketPriceType.SWAP -> "Swap"
+            MarketPriceType.AMOUNT -> "Rs. " + formatAmount(offer.priceAmount)
+        }
+        val fmt = SimpleDateFormat("d MMM", Locale.ENGLISH)
+        val posted = fmt.format(offer.createdAt.toDate())
+        val expires = fmt.format(offer.expiresAt.toDate())
+        val canRenew = now >= offer.renewedAt.toDate().time + MarketMyOffersUiPolicy.RENEWAL_INTERVAL_MS
+        val detail = when (status) {
+            MarketMyOfferStatus.EXPIRED -> "Expired $expires"
+            MarketMyOfferStatus.PAUSED -> "Paused · Posted $posted · Expires $expires"
+            MarketMyOfferStatus.ACTIVE -> "Posted $posted · " +
+                (if (canRenew) "Renew available · " else "") + "Expires $expires"
+        }
+        return MarketMyOfferPreview(
+            id = offer.id, category = offer.category, title = offer.title, priceLabel = price,
+            detailLine = detail, status = status, canRenew = canRenew,
+            description = offer.description,
+            amount = offer.priceAmount?.let {
+                if (it % 1.0 == 0.0) it.toLong().toString() else it.toString()
+            }.orEmpty(),
+            priceMode = mode, courseTag = offer.courseTag, thumbnail = offer.thumbnail
+        )
+    }
+
+    private fun formatAmount(value: Double?): String {
+        if (value == null) return "—"
+        return if (value % 1.0 == 0.0) String.format(Locale.US, "%,d", value.toLong())
+        else String.format(Locale.US, "%,.2f", value)
     }
 
     private fun buildHeader(): View {
@@ -160,6 +281,29 @@ class MarketMyOffersActivity : AppCompatActivity() {
         if (!::offerList.isInitialized) return
         updateTabs()
         offerList.removeAllViews()
+        if (loadingOffers && offers.isEmpty()) {
+            offerList.addView(makeText("Loading your live offers…", 13f, false,
+                color(R.color.market_ink2)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(28), dp(20), dp(28))
+            }, LinearLayout.LayoutParams(-1, -2))
+            return
+        }
+        if (loadError != null && offers.isEmpty()) {
+            offerList.addView(makeText(loadError.orEmpty(), 13f, false,
+                color(R.color.market_bad)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(20), dp(20), dp(12))
+            }, LinearLayout.LayoutParams(-1, -2))
+            offerList.addView(makeText("Retry", 13f, true, color(R.color.market_ink)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(12), dp(20), dp(12))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { loadOffers() }
+            }, LinearLayout.LayoutParams(-1, -2))
+            return
+        }
         val items = MarketMyOffersUiPolicy.visibleItems(offers, selectedStatus)
         items.forEachIndexed { index, item ->
             offerList.addView(buildOfferCard(item), LinearLayout.LayoutParams(-1, -2).apply {
@@ -172,6 +316,14 @@ class MarketMyOffersActivity : AppCompatActivity() {
                 13f, false, color(R.color.market_ink2)
             ).apply { gravity = Gravity.CENTER; setPadding(dp(20), dp(28), dp(20), dp(28)) },
                 LinearLayout.LayoutParams(-1, -2))
+        }
+        if (loadError != null) {
+            offerList.addView(makeText("Some updates need a retry. Tap here to refresh.",
+                12f, false, color(R.color.market_bad)).apply {
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                isClickable = true
+                setOnClickListener { loadOffers() }
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         }
         offerList.addView(makeText(MarketMyOffersUiPolicy.RENEWAL_RULE,
             12f, false, color(R.color.market_ink)).apply {
@@ -243,10 +395,11 @@ class MarketMyOffersActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             setPadding(dp(3), 0, dp(3), 0)
             background = rounded(color(R.color.market_card), 12f, color(R.color.market_line))
-            isClickable = enabled
-            isFocusable = enabled
-            isEnabled = enabled
-            alpha = if (enabled) 1f else 0.42f
+            val actionEnabled = enabled && !actionInProgress
+            isClickable = actionEnabled
+            isFocusable = actionEnabled
+            isEnabled = actionEnabled
+            alpha = if (actionEnabled) 1f else 0.42f
             contentDescription = label
             addView(MarketMyOffersIconView(this@MarketMyOffersActivity, icon,
                 color(if (enabled) R.color.market_ink else R.color.market_ink3)),
@@ -254,7 +407,7 @@ class MarketMyOffersActivity : AppCompatActivity() {
             addView(makeText(label, 11f, true,
                 color(if (enabled) R.color.market_ink else R.color.market_ink3)),
                 LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(4) })
-            setOnClickListener { if (enabled) action() }
+            setOnClickListener { if (actionEnabled) action() }
         }
         row.addView(button, LinearLayout.LayoutParams(0, -1, 1f).apply {
             if (row.childCount > 0) marginStart = dp(6)
@@ -262,59 +415,70 @@ class MarketMyOffersActivity : AppCompatActivity() {
     }
 
     private fun togglePause(item: MarketMyOfferPreview) {
-        if (item.status == MarketMyOfferStatus.EXPIRED) return
-        val updated = MarketMyOffersUiPolicy.pauseOrResume(item)
-        replaceOffer(updated)
-        renderOffers()
-        toast(if (updated.status == MarketMyOfferStatus.PAUSED)
-            "Paused in this preview only." else "Resumed in this preview only.")
+        val repository = MarketRepository()
+        val task = when (item.status) {
+            MarketMyOfferStatus.ACTIVE -> repository.pauseOffer(item.id)
+            MarketMyOfferStatus.PAUSED -> repository.resumeOffer(item.id)
+            MarketMyOfferStatus.EXPIRED -> {
+                toast("Expired offers cannot be paused. Renew the offer when eligible.")
+                return
+            }
+        }
+        runOfferAction(task, if (item.status == MarketMyOfferStatus.ACTIVE) "Offer paused." else "Offer resumed.")
     }
 
     private fun renewOffer(item: MarketMyOfferPreview) {
-        val updated = MarketMyOffersUiPolicy.renew(item)
-        if (updated == null) {
-            toast("Renewal is not available yet.")
+        if (!item.canRenew) {
+            toast("Renewal becomes available 7 days after the last renewal.")
             return
         }
-        replaceOffer(updated)
-        renderOffers()
-        toast("Renewed in this preview only. Nothing was published.")
+        runOfferAction(MarketRepository().renewOffer(item.id), "Offer renewed.")
     }
 
     private fun confirmDelete(item: MarketMyOfferPreview) {
         AlertDialog.Builder(this)
-            .setTitle("Delete offer?")
-            .setMessage("Remove \"${item.title}\" from this local preview? No live offer will be deleted.")
+            .setTitle("Remove offer?")
+            .setMessage("Remove \"${item.title}\" from your live offers? This is a soft delete; the offer won't be permanently erased.")
             .setNegativeButton("Cancel", null)
-            .setPositiveButton("Delete") { _, _ ->
-                offers.removeAll { it.id == item.id }
-                renderOffers()
-                toast("Removed from this preview only.")
+            .setPositiveButton("Remove") { _, _ ->
+                runOfferAction(MarketRepository().removeOffer(item.id), "Offer removed.")
             }
             .show()
     }
 
     private fun editOffer(item: MarketMyOfferPreview) {
-        AlertDialog.Builder(this)
-            .setTitle("Edit offer")
-            .setMessage("Open an editable preview of this offer? Changes remain local and will not be saved.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Open editor") { _, _ ->
-                startActivity(Intent(this, MarketPostOfferActivity::class.java).apply {
-                    putExtra(MarketPostOfferActivity.EXTRA_EDIT_MODE, true)
-                    putExtra(MarketPostOfferActivity.EXTRA_TITLE, item.title)
-                    putExtra(MarketPostOfferActivity.EXTRA_CATEGORY, item.category)
-                    putExtra(MarketPostOfferActivity.EXTRA_PRICE_MODE, item.priceMode.name)
-                    putExtra(MarketPostOfferActivity.EXTRA_AMOUNT, item.amount)
-                    putExtra(MarketPostOfferActivity.EXTRA_DESCRIPTION, item.description)
-                })
-            }
-            .show()
+        startActivity(Intent(this, MarketPostOfferActivity::class.java).apply {
+            putExtra(MarketPostOfferActivity.EXTRA_EDIT_MODE, true)
+            putExtra(MarketPostOfferActivity.EXTRA_ID, item.id)
+            putExtra(MarketPostOfferActivity.EXTRA_TITLE, item.title)
+            putExtra(MarketPostOfferActivity.EXTRA_CATEGORY, item.category)
+            putExtra(MarketPostOfferActivity.EXTRA_PRICE_MODE, item.priceMode.name)
+            putExtra(MarketPostOfferActivity.EXTRA_AMOUNT, item.amount)
+            putExtra(MarketPostOfferActivity.EXTRA_DESCRIPTION, item.description)
+            putExtra(MarketPostOfferActivity.EXTRA_COURSE, item.courseTag)
+            putExtra(MarketPostOfferActivity.EXTRA_THUMBNAIL, item.thumbnail)
+        })
     }
 
-    private fun replaceOffer(updated: MarketMyOfferPreview) {
-        val index = offers.indexOfFirst { it.id == updated.id }
-        if (index >= 0) offers[index] = updated
+    private fun runOfferAction(task: Task<Boolean>, successMessage: String) {
+        actionInProgress = true
+        loadError = null
+        renderOffers()
+        task.addOnSuccessListener { changed ->
+            actionInProgress = false
+            if (!changed) {
+                loadError = "Market did not update this offer. Refresh and try again."
+                renderOffers()
+            } else {
+                toast(successMessage)
+                loadOffers()
+            }
+        }.addOnFailureListener { failure ->
+            actionInProgress = false
+            loadError = MarketErrorMapper.map(failure).message
+            renderOffers()
+            if (offers.isNotEmpty()) toast(loadError.orEmpty())
+        }
     }
 
     private fun buildPostButton(): View = LinearLayout(this).apply {

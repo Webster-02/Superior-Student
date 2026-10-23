@@ -35,6 +35,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
 import com.superiorstudent.app.feature.market.data.MarketOfferDraft
+import com.superiorstudent.app.feature.market.data.MarketOfferEdit
 import com.superiorstudent.app.feature.market.data.MarketPriceType
 import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
@@ -42,7 +43,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import kotlin.math.max
 
-/** Screen 18: preview-only native Post an offer form from the supplied reference. */
+/** Screen 18: creates and edits the student's Market offers. */
 class MarketPostOfferActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var titleInput: EditText
@@ -225,6 +226,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
         })
 
         form.addView(buildPhotoPicker(), LinearLayout.LayoutParams(-1, -2))
+        if (editMode) showExistingCover()
         form.addView(View(this), LinearLayout.LayoutParams(1, dp(4)))
 
         content.addView(buildFooter(), LinearLayout.LayoutParams(-1, -2))
@@ -377,6 +379,20 @@ class MarketPostOfferActivity : AppCompatActivity() {
         }
     }
 
+    private fun showExistingCover() {
+        val encoded = intent.getStringExtra(EXTRA_THUMBNAIL).orEmpty()
+        if (encoded.isBlank() || encoded.length > MarketPostOfferUiPolicy.MAX_COVER_BYTES * 2) return
+        val bytes = runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull() ?: return
+        if (bytes.size > MarketPostOfferUiPolicy.MAX_COVER_BYTES) return
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+        compressedCover = bytes
+        photoThumb.setImageBitmap(bitmap)
+        photoThumb.visibility = View.VISIBLE
+        photoIcon.visibility = View.GONE
+        photoTitle.text = "Current cover photo"
+        photoSubtitle.text = MarketPostOfferUiPolicy.compressedCoverLabel(bytes.size)
+    }
+
     /** Compress to a Firestore-safe JPEG thumbnail held only until the offer is saved. */
     private fun compressCover(uri: Uri): ByteArray? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -429,7 +445,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
             addView(MarketPostOfferIconView(this@MarketPostOfferActivity,
                 MarketPostOfferIcon.CHECK, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
-            submitLabel = makeText(if (editMode) "Preview changes" else "Post offer",
+            submitLabel = makeText(if (editMode) "Save changes" else "Post offer",
                 15f, true, color(R.color.market_match_ink))
             addView(submitLabel)
             setOnClickListener { validateAndShowPreview() }
@@ -455,15 +471,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
             return
         }
 
-        if (editMode) {
-            AlertDialog.Builder(this)
-                .setTitle("Editing not connected")
-                .setMessage("Creating new offers is connected to Market. Editing an existing offer is not enabled in this build, so no changes were saved.")
-                .setPositiveButton("Got it", null)
-                .show()
-            return
-        }
-        postOffer(input)
+        if (editMode) updateOffer(input) else postOffer(input)
     }
 
     private fun postOffer(input: MarketPostOfferInput) {
@@ -510,6 +518,53 @@ class MarketPostOfferActivity : AppCompatActivity() {
             .addOnFailureListener { finishPostingWithError(it) }
     }
 
+    private fun updateOffer(input: MarketPostOfferInput) {
+        if (submittingOffer) return
+        val offerId = intent.getStringExtra(EXTRA_ID).orEmpty()
+        if (offerId.isBlank()) {
+            finishPostingWithError(IllegalArgumentException("The offer ID is missing. Open My Offers and try again."))
+            return
+        }
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null || !user.isEmailVerified) {
+            toast("Sign in with your verified account before editing an offer.")
+            return
+        }
+        submittingOffer = true
+        submitButton.isEnabled = false
+        submitButton.alpha = 0.65f
+        submitLabel.text = "Saving…"
+        val priceType = when (input.priceMode) {
+            MarketPostOfferPriceMode.FREE -> MarketPriceType.FREE
+            MarketPostOfferPriceMode.SWAP -> MarketPriceType.SWAP
+            MarketPostOfferPriceMode.RUPEES -> MarketPriceType.AMOUNT
+        }
+        val edit = MarketOfferEdit(
+            title = input.title.trim(),
+            category = input.category,
+            description = input.description.trim(),
+            priceType = priceType,
+            courseTag = intent.getStringExtra(EXTRA_COURSE)?.takeIf { it.isNotBlank() },
+            priceAmount = if (priceType == MarketPriceType.AMOUNT) input.amount.trim().toDoubleOrNull() else null,
+            clearPriceAmount = priceType != MarketPriceType.AMOUNT,
+            thumbnail = compressedCover?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
+        )
+        runCatching { MarketRepository().editOffer(offerId, edit) }
+            .onSuccess { task ->
+                task.addOnSuccessListener { changed ->
+                    restorePostButton()
+                    if (!changed) {
+                        finishPostingWithError(IllegalStateException("Market did not save the offer changes. Refresh and try again."))
+                    } else {
+                        Toast.makeText(this, "Offer updated in Market.", Toast.LENGTH_LONG).show()
+                        setResult(RESULT_OK)
+                        finish()
+                    }
+                }.addOnFailureListener { failure -> finishPostingWithError(failure) }
+            }
+            .onFailure { failure -> finishPostingWithError(failure) }
+    }
+
     private fun createLiveOffer(repository: MarketRepository, input: MarketPostOfferInput) {
         val thumbnail = compressedCover?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
         val priceType = when (input.priceMode) {
@@ -554,7 +609,7 @@ class MarketPostOfferActivity : AppCompatActivity() {
         if (::submitButton.isInitialized) {
             submitButton.isEnabled = true
             submitButton.alpha = 1f
-            submitLabel.text = if (editMode) "Preview changes" else "Post offer"
+            submitLabel.text = if (editMode) "Save changes" else "Post offer"
         }
     }
 
@@ -651,6 +706,9 @@ class MarketPostOfferActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_EDIT_MODE = "market.postoffer.edit_mode"
+        const val EXTRA_ID = "market.postoffer.id"
+        const val EXTRA_COURSE = "market.postoffer.course"
+        const val EXTRA_THUMBNAIL = "market.postoffer.thumbnail"
         const val EXTRA_TITLE = "market.postoffer.title"
         const val EXTRA_CATEGORY = "market.postoffer.category"
         const val EXTRA_PRICE_MODE = "market.postoffer.price_mode"
