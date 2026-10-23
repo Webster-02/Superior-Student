@@ -440,7 +440,10 @@ class MarketRequestsActivity : AppCompatActivity() {
 
                             if (pageDocuments.isNotEmpty()) lastTaskDocument = pageDocuments.last()
                             hasMoreTasks = pageDocuments.size == feedPageSize
-                            if (selectedCategory == "All") feedCache.saveTasks(loadedTasks)
+                            if (selectedCategory == "All") {
+                                val syncAt = if (reset) System.currentTimeMillis() else feedCache.tasksSavedAtMillis()
+                                feedCache.saveTasks(loadedTasks, syncAt)
+                            }
                             showingCachedFeed = false
                             loadingTasks = false
                             loadingMoreTasks = false
@@ -532,7 +535,7 @@ class MarketRequestsActivity : AppCompatActivity() {
                             it.deadline.toDate().time <= now ||
                             it.expiresAt.toDate().time <= now
                     }
-                    feedCache.saveTasks(loadedTasks)
+                    feedCache.saveTasks(loadedTasks, System.currentTimeMillis())
                     lastTaskDocument = null
                     hasMoreTasks = true
                     showingCachedFeed = false
