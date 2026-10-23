@@ -149,6 +149,23 @@ class MarketSuspendedActivity : AppCompatActivity() {
         }
         deniedHeader.visibility = if (postingBlocked) View.VISIBLE else View.GONE
         deniedRow.visibility = if (postingBlocked) View.VISIBLE else View.GONE
+
+        if (profile.status == MarketProfileStatus.SUSPENDED ||
+            profile.status == MarketProfileStatus.BANNED
+        ) {
+            MarketRepository().loadAccountRestrictionNotice(profile.status)
+                .addOnSuccessListener { notice ->
+                    if (isFinishing || isDestroyed) return@addOnSuccessListener
+                    if (notice != null) {
+                        reasonText.text = notice.title + "\n" + notice.body
+                    }
+                }
+                .addOnFailureListener {
+                    if (isFinishing || isDestroyed) return@addOnFailureListener
+                    // Keep the real status/end date visible and do not retry automatically.
+                    reasonText.text = "The decision notice could not be loaded. Open Notices to review the restriction."
+                }
+        }
     }
 
     private companion object {

@@ -124,6 +124,34 @@ class MarketRepository(
     }
 
     /**
+     * Reads the actual suspension/ban decision notice from the signed-in user's notice inbox.
+     * The read is strictly owner-scoped and never changes the notice's read state.
+     */
+    fun loadAccountRestrictionNotice(status: MarketProfileStatus): Task<MarketNotice?> {
+        val uid = requireSignedInUid()
+        val expectedTitle = when (status) {
+            MarketProfileStatus.SUSPENDED -> "Market account suspended"
+            MarketProfileStatus.BANNED -> "Market account banned"
+            MarketProfileStatus.ACTIVE -> return Tasks.forResult(null)
+        }
+
+        return MarketQueryBuilders.myNotices(firestore, uid, pageSize = 50).get()
+            .continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception
+                        ?: IllegalStateException("Could not read your Market restriction notice.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("Could not read your Market restriction notice.")
+                snapshot.documents.asSequence()
+                    .mapNotNull { MarketConverters.notice(it, uid) }
+                    .firstOrNull {
+                        it.title == expectedTitle && it.type == MarketNoticeType.REMOVAL
+                    }
+            }
+    }
+
+    /**
      * Idempotently creates the allowlisted profile with fixed defaults.
      * Verifies profiles/{uid}.displayName within the transaction and is safe under races.
      */

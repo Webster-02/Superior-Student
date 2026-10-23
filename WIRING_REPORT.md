@@ -120,9 +120,9 @@ The pre-W1 revision failed [run #108](https://github.com/Webster-02/Superior-Stu
 - `MarketRepository.ensureMarketProfile()` performs an idempotent transaction: it requires a verified account and existing `profiles/{uid}.displayName`, then validates the current Market profile or creates it once using the allowlisted schema.
 - `MarketRepository.loadCurrentMarketProfile()` reads only the current user's Market profile and fails closed if an existing document cannot be decoded.
 - Task/offer creation screens no longer read `marketProfiles/{uid}` directly; bootstrap is repository-owned. Listing writes still re-check status/counters in the repository and remain subject to Rules.
-- Screen 25 displays live profile status and `suspendedUntil`. The Market profile schema has no reason field, so the UI points to Notices rather than inventing a reason; exact notice details remain W7.
+- Screen 25 displays live profile status and `suspendedUntil`, and loads the matching account-level suspension/ban notice from the signed-in user's `users/{uid}/notices` collection via `MarketQueryBuilders.myNotices`. It displays the real title/body without marking the notice read implicitly; appeal action and the general Notices inbox remain W7.
 - First-run defaults use empty skill/block lists, active status, null suspension/window markers, zero warnings/counters and proposal/update/notice alerts enabled with task-matching alerts off (opt-in). Per addendum/Rules, `skillTags`, `settings` and `blockedUids` self-service writes remain sign-in-only.
-- No Rules, indexes or test files were changed in W1. The existing test suite was run by CI and passed.
+- No Rules, indexes or test files are changed. Baseline W1 CI passed on run #110; this follow-up wiring of the real notice title/body still needs its own CI run.
 
 ## W0 exit criteria
 

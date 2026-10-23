@@ -2,7 +2,7 @@
 
 **Working branch:** `feature/market-wiring`  
 **Starting commit:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca` (from `feature/market-ui-reference`)  
-**Current part:** W1 complete; next is W2.  
+**Current part:** W1 notice follow-up implemented; awaiting CI before W2.  
 **Rules:** No main merge, no deployment, no changes to `firestore.rules`, `firestore.indexes.json` or tests without explicit approval.
 
 ## Part status
@@ -10,7 +10,7 @@
 | Part | Scope | Status | Evidence / note |
 |---|---|---|---|
 | W0 | Audit only; create wiring report | **COMPLETE** | `WIRING_REPORT.md`; no feature code modified |
-| W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | **COMPLETE** | Repository-owned idempotent bootstrap/current-profile read; task/offer preflight reads removed; Screen 25 status/expiry live. CI #110 passed unit tests, APK build, verification and upload. |
+| W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | IMPLEMENTED — notice follow-up verification pending | Repository-owned bootstrap/current-profile read; task/offer preflight reads removed; Screen 25 shows status/expiry and now loads the real owner-scoped suspension/ban notice. CI #110 passed before this final follow-up; rerun required. |
 | W2 | Live Requests/Offers feeds, ranking/cache, filtering, paging, pull refresh, states | NOT STARTED | Both feeds already read through builders; ratings/matching/ranking/block/expiry/paging gaps remain |
 | W3 | Tasks lifecycle, My Tasks, proposals, accept, complete/rate, Applied | NOT STARTED | Task create exists; most lifecycle screens remain fixtures/preview |
 | W4 | Offers lifecycle and My Offers | IN PROGRESS (build green; feature wiring incomplete) | CI #110 passes the current branch; My Offers reads owner-scoped data and calls repository actions, but broader offer detail/message/expiry/filter coverage remains open. |
@@ -72,9 +72,9 @@
 ## Verification checkpoint
 
 - **Base revision:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca`.
-- **W1 verification:** [run #110](https://github.com/Webster-02/Superior-Student/actions/runs/40024930878) succeeded. `Run unit tests`, `Build debug APK`, `Verify APK` and `Upload APK` all passed. APK artifact: `superior-student-debug-apk`, ID `12531714428` (41,141,011 bytes; not expired at audit time).
+- **W1 baseline verification:** [run #110](https://github.com/Webster-02/Superior-Student/actions/runs/40024930878) succeeded, including unit tests, APK build, verification and upload. The real-notice display follow-up is a later revision and must pass a new CI run.
 - **Rules/indexes/tests:** unchanged through W1; no test files were modified. CI ran the existing unit tests without modifying them.
 - **Deploy/merge:** none.
 - Source-priority exception: the addendum/Rules allow sign-in-only self-service writes for `skillTags`, `settings` and `blockedUids`; listing/content, profile bootstrap, chat/message, reports/ratings/support/appeals require verified email. These rule-aligned exceptions were not tightened beyond the published contract.
-- Safe profile bootstrap uses empty skills/blocks, active status, null suspension/window markers, zero counters/warnings, and default alerts with task-match alerts off (opt-in). The profile schema contains no suspension reason; Screen 25 directs the student to Notices for decision details.
+- Safe profile bootstrap uses empty skills/blocks, active status, null suspension/window markers, zero counters/warnings, and default alerts with task-match alerts off (opt-in). Screen 25 loads the real matching suspension/ban notice through the owner-scoped notices query and displays its title/body without implicitly marking it read.
 - After every completed wiring part, update this table and `WIRING_REPORT.md` in that part's commit. If interrupted, start from this file and `git log`; do not redo W0.
