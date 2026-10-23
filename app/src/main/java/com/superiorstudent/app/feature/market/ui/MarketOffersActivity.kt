@@ -24,38 +24,58 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketConfig
+import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
 import com.superiorstudent.app.feature.market.data.MarketModerationStatus
 import com.superiorstudent.app.feature.market.data.MarketOffer
 import com.superiorstudent.app.feature.market.data.MarketOfferStatus
 import com.superiorstudent.app.feature.market.data.MarketPriceType
+import com.superiorstudent.app.feature.market.data.MarketProfile
 import com.superiorstudent.app.feature.market.data.MarketQueryBuilders
+import com.superiorstudent.app.feature.market.data.MarketRankingScorer
+import com.superiorstudent.app.feature.market.data.MarketRepository
+import com.superiorstudent.app.feature.market.data.MarketUserStats
 import com.superiorstudent.app.ui.AppThemePreferences
 import kotlin.math.min
 
-/** Native reference implementation for screen 03 Offers. Data here is visual preview content only. */
+/** Native Offers feed backed by live, rule-aware Firestore queries. */
 class MarketOffersActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var searchRow: LinearLayout
     private lateinit var searchInput: EditText
     private lateinit var list: LinearLayout
+    private lateinit var scroll: ScrollView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var emptyState: TextView
     private lateinit var categoryChips: Map<String, TextView>
     private var selectedCategory = "All"
     private var selectedSort = MarketOfferSort.REFERENCE_ORDER
     private var searchVisible = false
     private var liveOffers: List<MarketOfferPreview> = emptyList()
-    private var loadingOffers = false
+    private val loadedOffers = mutableListOf<MarketOffer>()
+    private val sellerStats = mutableMapOf<String, MarketUserStats>()
+    private var currentMarketProfile: MarketProfile? = null
+    private var marketProfileLoaded = false
+    private var currentMarketConfig: MarketConfig? = null
+    private var lastOfferDocument: DocumentSnapshot? = null
+    private var hasMoreOffers = true
+    private var loadingMoreOffers = false
+    private var loadingOffers = true
     private var loadError: String? = null
     private var loadGeneration = 0
+    private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -86,10 +106,21 @@ class MarketOffersActivity : AppCompatActivity() {
 
         val panel = FrameLayout(this)
         content.addView(panel, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(12) })
-        val scroll = ScrollView(this).apply {
+        swipeRefresh = SwipeRefreshLayout(this).apply {
+            setColorSchemeColors(color(R.color.market_match_ink))
+            setOnRefreshListener { loadOffers(reset = true) }
+        }
+        panel.addView(swipeRefresh, FrameLayout.LayoutParams(-1, -1))
+        scroll = ScrollView(this).apply {
             clipToPadding = false; isFillViewport = false; overScrollMode = View.OVER_SCROLL_NEVER
         }
-        panel.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        scroll.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            val child = scroll.getChildAt(0)
+            if (scrollY > oldScrollY && child != null &&
+                scrollY + scroll.height >= child.height - dp(220)
+            ) loadOffers(reset = false)
+        }
+        swipeRefresh.addView(scroll, ViewGroup.LayoutParams(-1, -1))
         list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), 0, dp(16), dp(100))
@@ -221,7 +252,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 setOnClickListener {
                     selectedCategory = category
                     updateCategoryChips()
-                    renderOffers()
+                    loadOffers(reset = true)
                 }
             }
             val params = LinearLayout.LayoutParams(-2, dp(38))
@@ -336,11 +367,15 @@ class MarketOffersActivity : AppCompatActivity() {
     }
 
     private fun showSortDialog() {
-        val options = arrayOf("Reference order", "Highest rated", "Lowest price")
+        val options = listOf(
+            "Recommended (pinned first)" to MarketOfferSort.REFERENCE_ORDER,
+            "Newest first" to MarketOfferSort.NEWEST
+        )
+        val selectedIndex = options.indexOfFirst { it.second == selectedSort }.coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("Sort offers")
-            .setSingleChoiceItems(options, selectedSort.ordinal) { dialog, which ->
-                selectedSort = MarketOfferSort.values()[which]
-                renderOffers()
+            .setSingleChoiceItems(options.map { it.first }.toTypedArray(), selectedIndex) { dialog, which ->
+                selectedSort = options[which].second
+                loadOffers(reset = true)
                 dialog.dismiss()
             }.setNegativeButton("Cancel", null).show()
     }
@@ -350,48 +385,241 @@ class MarketOffersActivity : AppCompatActivity() {
         if (::list.isInitialized) loadOffers()
     }
 
-    private fun loadOffers() {
+    private fun loadOffers(reset: Boolean = true) {
         val user = FirebaseAuth.getInstance().currentUser
         if (user == null || !user.isEmailVerified) {
-            loadingOffers = false
+            loadGeneration++
+            loadedOffers.clear()
+            sellerStats.clear()
             liveOffers = emptyList()
+            currentMarketProfile = null
+            marketProfileLoaded = false
+            currentMarketConfig = null
+            lastOfferDocument = null
+            hasMoreOffers = false
+            loadingOffers = false
+            loadingMoreOffers = false
+            swipeRefresh.isRefreshing = false
             loadError = "Sign in with your verified student account to view live offers."
             renderOffers()
             return
         }
 
-        val requestGeneration = ++loadGeneration
-        loadingOffers = true
-        loadError = null
+        if (!reset && (!hasMoreOffers || loadingMoreOffers || loadingOffers)) return
+        val requestGeneration = if (reset) ++loadGeneration else loadGeneration
+        val cursor = if (reset) null else lastOfferDocument
+        if (reset) {
+            loadingOffers = liveOffers.isEmpty()
+            loadingMoreOffers = false
+            loadError = null
+            swipeRefresh.isRefreshing = liveOffers.isNotEmpty()
+        } else {
+            loadingMoreOffers = true
+        }
         renderOffers()
-        MarketQueryBuilders.publicOffers(
-            firestore = FirebaseFirestore.getInstance(),
-            pinnedFirst = true,
-            pageSize = 50
-        ).get()
-            .addOnSuccessListener { snapshot ->
+
+        if (reset || !marketProfileLoaded) {
+            MarketRepository().loadCurrentMarketProfile()
+                .addOnSuccessListener { profile ->
+                    if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                    currentMarketProfile = profile
+                    marketProfileLoaded = true
+                    loadFeedConfigAndPage(profile, reset, requestGeneration, cursor)
+                }
+                .addOnFailureListener { failure ->
+                    failOfferLoad(requestGeneration, failure)
+                }
+        } else {
+            val profile = currentMarketProfile
+            val config = currentMarketConfig
+            if (config == null) {
+                loadFeedConfigAndPage(profile, reset, requestGeneration, cursor)
+            } else {
+                loadOfferPage(profile, config, reset, requestGeneration, cursor)
+            }
+        }
+    }
+
+    private fun loadFeedConfigAndPage(
+        profile: MarketProfile?,
+        reset: Boolean,
+        requestGeneration: Int,
+        cursor: DocumentSnapshot?
+    ) {
+        MarketConfigProvider(this).load()
+            .addOnSuccessListener { config ->
                 if (requestGeneration != loadGeneration) return@addOnSuccessListener
-                liveOffers = snapshot.documents
-                    .mapNotNull { MarketConverters.offer(it) }
-                    .filter {
-                        it.status == MarketOfferStatus.ACTIVE &&
-                            it.moderation == MarketModerationStatus.OK
-                    }
-                    .mapIndexed { index, offer -> toPreview(offer, index) }
-                loadingOffers = false
-                loadError = null
-                renderOffers()
+                if (config == null) {
+                    loadingOffers = false
+                    loadingMoreOffers = false
+                    swipeRefresh.isRefreshing = false
+                    loadError = "Market ranking configuration is unavailable. Please try again later."
+                    renderOffers()
+                    return@addOnSuccessListener
+                }
+                currentMarketConfig = config
+                loadOfferPage(profile, config, reset, requestGeneration, cursor)
             }
             .addOnFailureListener { failure ->
-                if (requestGeneration != loadGeneration) return@addOnFailureListener
-                loadingOffers = false
-                liveOffers = emptyList()
-                loadError = MarketErrorMapper.map(failure).message
-                renderOffers()
+                failOfferLoad(requestGeneration, failure)
             }
     }
 
-    private fun toPreview(offer: MarketOffer, order: Int): MarketOfferPreview {
+    private fun loadOfferPage(
+        profile: MarketProfile?,
+        config: MarketConfig,
+        reset: Boolean,
+        requestGeneration: Int,
+        cursor: DocumentSnapshot?
+    ) {
+        val category = selectedCategory.takeIf { it != "All" }
+        MarketQueryBuilders.publicOffers(
+            firestore = FirebaseFirestore.getInstance(),
+            category = category,
+            pinnedFirst = selectedSort != MarketOfferSort.NEWEST,
+            pageSize = feedPageSize,
+            startAfter = cursor
+        ).get()
+            .addOnSuccessListener { snapshot ->
+                if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                val pageDocuments = snapshot.documents
+                val blocked = profile?.blockedUids?.toSet().orEmpty()
+                val now = System.currentTimeMillis()
+                val pageOffers = pageDocuments.mapNotNull { MarketConverters.offer(it) }
+                    .filter {
+                        it.status == MarketOfferStatus.ACTIVE &&
+                            it.moderation == MarketModerationStatus.OK &&
+                            it.expiresAt.toDate().time > now &&
+                            it.sellerId !in blocked
+                    }
+
+                val alreadyLoadedSellerIds = if (reset) emptySet() else sellerStats.keys
+                val sellerIds = pageOffers.map { it.sellerId }.distinct()
+                    .filterNot { it in alreadyLoadedSellerIds }
+                if (sellerIds.isEmpty()) {
+                    finishOfferPage(profile, config, reset, requestGeneration, cursor, pageDocuments, pageOffers, emptyMap())
+                    return@addOnSuccessListener
+                }
+
+                val repository = MarketRepository()
+                val statsTasks = sellerIds.map { sellerUid -> repository.loadPublicUserStats(sellerUid) }
+                Tasks.whenAllSuccess<MarketUserStats?>(statsTasks)
+                    .addOnSuccessListener { results ->
+                        if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                        val pageStats = linkedMapOf<String, MarketUserStats>()
+                        sellerIds.zip(results).forEach { (uid, stats) ->
+                            if (stats != null) pageStats[uid] = stats
+                        }
+                        finishOfferPage(
+                            profile, config, reset, requestGeneration, cursor,
+                            pageDocuments, pageOffers, pageStats
+                        )
+                    }
+                    .addOnFailureListener { failure ->
+                        failOfferLoad(requestGeneration, failure)
+                    }
+            }
+            .addOnFailureListener { failure ->
+                failOfferLoad(requestGeneration, failure)
+            }
+    }
+
+    private fun finishOfferPage(
+        profile: MarketProfile?,
+        config: MarketConfig,
+        reset: Boolean,
+        requestGeneration: Int,
+        cursor: DocumentSnapshot?,
+        pageDocuments: List<DocumentSnapshot>,
+        pageOffers: List<MarketOffer>,
+        pageStats: Map<String, MarketUserStats>
+    ) {
+        if (requestGeneration != loadGeneration) return
+        if (reset) {
+            loadedOffers.clear()
+            sellerStats.clear()
+        }
+        val knownIds = loadedOffers.mapTo(HashSet()) { it.id }
+        pageOffers.filterNot { it.id in knownIds }.forEach(loadedOffers::add)
+        sellerStats.putAll(pageStats)
+        if (pageDocuments.isNotEmpty()) lastOfferDocument = pageDocuments.last()
+        else if (reset) lastOfferDocument = null
+        hasMoreOffers = pageDocuments.size == feedPageSize
+        currentMarketProfile = profile
+        marketProfileLoaded = true
+        currentMarketConfig = config
+        loadingOffers = false
+        loadingMoreOffers = false
+        loadError = null
+        swipeRefresh.isRefreshing = false
+        rebuildOfferPreviews(profile, config)
+        renderOffers()
+        maybeFillOfferViewport()
+    }
+
+    private fun rebuildOfferPreviews(profile: MarketProfile?, config: MarketConfig) {
+        val now = System.currentTimeMillis()
+        val blocked = profile?.blockedUids?.toSet().orEmpty()
+        val skills = profile?.skillTags.orEmpty()
+        val eligible = loadedOffers.filter {
+            it.status == MarketOfferStatus.ACTIVE &&
+                it.moderation == MarketModerationStatus.OK &&
+                it.expiresAt.toDate().time > now &&
+                it.sellerId !in blocked
+        }
+        val signals = eligible.map { offer ->
+            val stats = sellerStats[offer.sellerId]
+            val matchesSkills = skills.any { saved -> saved.equals(offer.category, ignoreCase = true) }
+            val matchesCourse = offer.courseTag?.let { course ->
+                skills.any { saved -> saved.equals(course, ignoreCase = true) }
+            } ?: false
+            MarketRankingScorer.OfferSignals(
+                offer = offer,
+                ratingSum = stats?.ratingSum ?: 0.0,
+                ratingCount = stats?.ratingCount ?: 0,
+                matchesSkillTags = matchesSkills,
+                matchesCourse = matchesCourse
+            )
+        }
+        val ordered = if (selectedSort == MarketOfferSort.NEWEST) {
+            signals.sortedWith(
+                compareByDescending<MarketRankingScorer.OfferSignals> { it.offer.renewedAt.seconds }
+                    .thenByDescending { it.offer.createdAt.seconds }
+            )
+        } else {
+            MarketRankingScorer.rankOffers(signals, config.rankWeights, now)
+        }
+        var pinnedCount = 0
+        liveOffers = ordered.filter { signal ->
+            if (!signal.offer.pinned) true
+            else if (pinnedCount < 3) {
+                pinnedCount++
+                true
+            } else false
+        }.mapIndexed { index, signal ->
+            toPreview(signal.offer, index, sellerStats[signal.offer.sellerId])
+        }
+    }
+
+    private fun maybeFillOfferViewport() {
+        scroll.post {
+            val child = scroll.getChildAt(0) ?: return@post
+            if (hasMoreOffers && !loadingOffers && !loadingMoreOffers &&
+                child.height <= scroll.height + dp(120)
+            ) loadOffers(reset = false)
+        }
+    }
+
+    private fun failOfferLoad(requestGeneration: Int, failure: Exception) {
+        if (requestGeneration != loadGeneration) return
+        loadingOffers = false
+        loadingMoreOffers = false
+        swipeRefresh.isRefreshing = false
+        loadError = MarketErrorMapper.map(failure).message
+        renderOffers()
+    }
+
+    private fun toPreview(offer: MarketOffer, order: Int, stats: MarketUserStats?): MarketOfferPreview {
         val numericPrice = offer.priceAmount?.takeIf {
             it.isFinite() && it >= 0.0 && it <= Int.MAX_VALUE.toDouble()
         }?.toInt()
@@ -417,12 +645,15 @@ class MarketOffersActivity : AppCompatActivity() {
             priceValue = numericPrice,
             sellerName = offer.sellerName,
             initials = offer.sellerInitials,
-            rating = 0.0,
-            ratingCount = 0,
+            rating = if (stats != null && stats.ratingCount > 0) {
+                (stats.ratingSum / stats.ratingCount).coerceIn(0.0, 5.0)
+            } else 0.0,
+            ratingCount = stats?.ratingCount ?: 0,
             verifiedStudent = false,
             avatarColor = avatarColor,
             recencyOrder = order,
-            courseTag = offer.courseTag
+            courseTag = offer.courseTag,
+            renewedAtMillis = offer.renewedAt.toDate().time
         )
     }
 
@@ -488,7 +719,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 marginStart = dp(3)
             })
         } else {
-            ratingRow.addView(makeText("New seller · Student", 12f, false,
+            ratingRow.addView(makeText("No ratings yet · Student", 12f, false,
                 color(R.color.market_ink2)))
         }
         sellerInfo.addView(ratingRow)
