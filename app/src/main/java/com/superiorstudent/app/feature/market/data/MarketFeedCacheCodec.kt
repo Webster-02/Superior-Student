@@ -26,6 +26,7 @@ internal object MarketFeedCacheCodec {
     const val FORMAT_VERSION = 1
     const val MAX_ITEMS = 50
     const val MAX_PAYLOAD_BYTES = 512 * 1024
+    const val CLOCK_SKEW_BUFFER_MILLIS = 30_000L
 
     private const val MAX_DEPTH = 16
     private const val MAX_VALUE_NODES = 20_000
