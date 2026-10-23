@@ -251,6 +251,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 background = rounded(color(R.color.market_card), 99f, color(R.color.market_line))
                 setOnClickListener {
                     selectedCategory = category
+                    liveOffers = emptyList()
                     updateCategoryChips()
                     loadOffers(reset = true)
                 }
@@ -409,12 +410,13 @@ class MarketOffersActivity : AppCompatActivity() {
         val requestGeneration = if (reset) ++loadGeneration else loadGeneration
         val cursor = if (reset) null else lastOfferDocument
         if (reset) {
-            loadingOffers = liveOffers.isEmpty()
+            // Keep the current cards visible while marking the refresh in-flight,
+            // so the scroll listener cannot start a second request at the old cursor.
+            loadingOffers = true
             loadingMoreOffers = false
             lastOfferDocument = null
             hasMoreOffers = true
             loadError = null
-            swipeRefresh.isRefreshing = liveOffers.isNotEmpty()
         } else {
             loadingMoreOffers = true
         }
