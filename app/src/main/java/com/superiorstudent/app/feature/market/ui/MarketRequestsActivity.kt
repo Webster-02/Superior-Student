@@ -24,17 +24,22 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketBudgetType
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
 import com.superiorstudent.app.feature.market.data.MarketModerationStatus
+import com.superiorstudent.app.feature.market.data.MarketProfile
+import com.superiorstudent.app.feature.market.data.MarketRankingScorer
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.feature.market.data.MarketQueryBuilders
 import com.superiorstudent.app.feature.market.data.MarketTask
 import com.superiorstudent.app.feature.market.data.MarketTaskStatus
@@ -50,6 +55,8 @@ class MarketRequestsActivity : AppCompatActivity() {
     private lateinit var searchRow: LinearLayout
     private lateinit var searchInput: EditText
     private lateinit var list: LinearLayout
+    private lateinit var scroll: ScrollView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var emptyState: TextView
     private lateinit var categoryChips: Map<String, TextView>
     private var selectedCategory = "All"
@@ -57,9 +64,16 @@ class MarketRequestsActivity : AppCompatActivity() {
     private var searchVisible = false
 
     private var liveTasks: List<MarketRequestPreview> = emptyList()
+    private val loadedTasks = mutableListOf<MarketTask>()
+    private var currentMarketProfile: MarketProfile? = null
+    private var marketProfileLoaded = false
+    private var lastTaskDocument: DocumentSnapshot? = null
+    private var hasMoreTasks = true
+    private var loadingMoreTasks = false
     private var loadingTasks = true
     private var loadError: String? = null
     private var loadGeneration = 0
+    private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -90,10 +104,21 @@ class MarketRequestsActivity : AppCompatActivity() {
 
         val panel = FrameLayout(this)
         content.addView(panel, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(12) })
-        val scroll = ScrollView(this).apply {
+        swipeRefresh = SwipeRefreshLayout(this).apply {
+            setColorSchemeColors(color(R.color.market_match_ink))
+            setOnRefreshListener { loadTasks(reset = true) }
+        }
+        panel.addView(swipeRefresh, FrameLayout.LayoutParams(-1, -1))
+        scroll = ScrollView(this).apply {
             clipToPadding = false; isFillViewport = false; overScrollMode = View.OVER_SCROLL_NEVER
         }
-        panel.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        scroll.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            val child = scroll.getChildAt(0)
+            if (scrollY > oldScrollY && child != null &&
+                scrollY + scroll.height >= child.height - dp(220)
+            ) loadTasks(reset = false)
+        }
+        swipeRefresh.addView(scroll, ViewGroup.LayoutParams(-1, -1))
         list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), 0, dp(16), dp(96))
@@ -209,7 +234,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             val chip=makeText(name,12f,true,color(R.color.market_ink)).apply {
                 gravity=Gravity.CENTER; setPadding(dp(14),0,dp(14),0)
                 background=rounded(color(R.color.market_card),99f,color(R.color.market_line))
-                setOnClickListener { selectedCategory=name; updateCategoryChips(); renderRequests() }
+                setOnClickListener { selectedCategory=name; updateCategoryChips(); loadTasks(reset = true) }
             }
             if(index>0) chips.addView(chip,LinearLayout.LayoutParams(-2,dp(38)).apply { marginStart=dp(8) })
             else chips.addView(chip,LinearLayout.LayoutParams(-2,dp(38)))
@@ -304,48 +329,147 @@ class MarketRequestsActivity : AppCompatActivity() {
         if (::list.isInitialized) loadTasks()
     }
 
-    private fun loadTasks() {
+    private fun loadTasks(reset: Boolean = true) {
         val user = FirebaseAuth.getInstance().currentUser
         if (user == null || !user.isEmailVerified) {
-            loadingTasks = false
+            loadGeneration++
+            loadedTasks.clear()
             liveTasks = emptyList()
+            marketProfileLoaded = false
+            currentMarketProfile = null
+            lastTaskDocument = null
+            hasMoreTasks = false
+            loadingTasks = false
+            loadingMoreTasks = false
+            swipeRefresh.isRefreshing = false
             loadError = "Sign in with your verified student account to view live tasks."
             renderRequests()
             return
         }
 
-        val requestGeneration = ++loadGeneration
-        loadingTasks = true
-        loadError = null
+        if (!reset && (!hasMoreTasks || loadingMoreTasks || loadingTasks)) return
+        val requestGeneration = if (reset) ++loadGeneration else loadGeneration
+        val cursor = if (reset) null else lastTaskDocument
+        if (reset) {
+            loadingTasks = liveTasks.isEmpty()
+            loadingMoreTasks = false
+            loadError = null
+        } else {
+            loadingMoreTasks = true
+        }
         renderRequests()
-        MarketQueryBuilders.publicTasks(
-            firestore = FirebaseFirestore.getInstance(),
-            pinnedFirst = true,
-            pageSize = 50
-        ).get()
-            .addOnSuccessListener { snapshot ->
-                if (requestGeneration != loadGeneration) return@addOnSuccessListener
-                liveTasks = snapshot.documents
-                    .mapNotNull { MarketConverters.task(it) }
-                    .filter {
-                        it.status == MarketTaskStatus.OPEN &&
-                            it.moderation == MarketModerationStatus.OK
-                    }
-                    .mapIndexed { index, task -> toRequestPreview(task, index) }
-                loadingTasks = false
-                loadError = null
-                renderRequests()
-            }
-            .addOnFailureListener { failure ->
-                if (requestGeneration != loadGeneration) return@addOnFailureListener
-                loadingTasks = false
-                liveTasks = emptyList()
-                loadError = MarketErrorMapper.map(failure).message
-                renderRequests()
-            }
+
+        fun fetchPage(profile: MarketProfile?) {
+            if (requestGeneration != loadGeneration) return
+            val category = selectedCategory.takeIf { it != "All" }
+            MarketQueryBuilders.publicTasks(
+                firestore = FirebaseFirestore.getInstance(),
+                category = category,
+                pinnedFirst = true,
+                pageSize = feedPageSize,
+                startAfter = cursor
+            ).get()
+                .addOnSuccessListener { snapshot ->
+                    if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                    val pageDocuments = snapshot.documents
+                    if (reset) loadedTasks.clear()
+                    val knownIds = loadedTasks.mapTo(HashSet()) { it.id }
+                    pageDocuments.mapNotNull { MarketConverters.task(it) }
+                        .filter {
+                            it.status == MarketTaskStatus.OPEN &&
+                                it.moderation == MarketModerationStatus.OK &&
+                                it.id !in knownIds
+                        }
+                        .forEach(loadedTasks::add)
+
+                    if (pageDocuments.isNotEmpty()) lastTaskDocument = pageDocuments.last()
+                    hasMoreTasks = pageDocuments.size == feedPageSize
+                    loadingTasks = false
+                    loadingMoreTasks = false
+                    loadError = null
+                    swipeRefresh.isRefreshing = false
+                    rebuildTaskPreviews(profile)
+                    renderRequests()
+                    maybeFillViewport()
+                }
+                .addOnFailureListener { failure ->
+                    if (requestGeneration != loadGeneration) return@addOnFailureListener
+                    loadingTasks = false
+                    loadingMoreTasks = false
+                    swipeRefresh.isRefreshing = false
+                    loadError = MarketErrorMapper.map(failure).message
+                    renderRequests()
+                }
+        }
+
+        if (reset || !marketProfileLoaded) {
+            MarketRepository().loadCurrentMarketProfile()
+                .addOnSuccessListener { profile ->
+                    if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                    currentMarketProfile = profile
+                    marketProfileLoaded = true
+                    fetchPage(profile)
+                }
+                .addOnFailureListener { failure ->
+                    if (requestGeneration != loadGeneration) return@addOnFailureListener
+                    loadingTasks = false
+                    loadingMoreTasks = false
+                    swipeRefresh.isRefreshing = false
+                    loadError = MarketErrorMapper.map(failure).message
+                    renderRequests()
+                }
+        } else {
+            fetchPage(currentMarketProfile)
+        }
     }
 
-    private fun toRequestPreview(task: MarketTask, order: Int): MarketRequestPreview {
+    private fun rebuildTaskPreviews(profile: MarketProfile?) {
+        val now = System.currentTimeMillis()
+        val blocked = profile?.blockedUids?.toSet().orEmpty()
+        val skills = profile?.skillTags.orEmpty()
+        val eligible = loadedTasks.filter { it.posterId !in blocked }
+        val ranked = MarketRankingScorer.rankTasks(
+            eligible.map { task ->
+                val matchesSkills = task.skills.any { required ->
+                    skills.any { saved -> saved.equals(required, ignoreCase = true) }
+                }
+                val matchesCourse = task.courseTag?.let { course ->
+                    skills.any { saved -> saved.equals(course, ignoreCase = true) }
+                } ?: false
+                MarketRankingScorer.TaskSignals(
+                    task = task,
+                    matchesSkillTags = matchesSkills,
+                    matchesCourse = matchesCourse
+                )
+            },
+            nowMillis = now
+        )
+        var pinnedCount = 0
+        liveTasks = ranked.filter { signal ->
+            if (!signal.task.pinned) true
+            else if (pinnedCount < 3) {
+                pinnedCount++
+                true
+            } else false
+        }.mapIndexed { index, signal ->
+            toRequestPreview(
+                signal.task,
+                index,
+                signal.matchesSkillTags || signal.matchesCourse
+            )
+        }
+    }
+
+    private fun maybeFillViewport() {
+        scroll.post {
+            val child = scroll.getChildAt(0) ?: return@post
+            if (hasMoreTasks && !loadingTasks && !loadingMoreTasks &&
+                child.height <= scroll.height + dp(120)
+            ) loadTasks(reset = false)
+        }
+    }
+
+    private fun toRequestPreview(task: MarketTask, order: Int, matchesUser: Boolean): MarketRequestPreview {
         val amount = task.budgetAmount?.takeIf {
             it.isFinite() && it >= 0.0 && it <= Int.MAX_VALUE.toDouble()
         }
@@ -393,9 +517,10 @@ class MarketRequestsActivity : AppCompatActivity() {
             posterName = task.posterName,
             initials = task.posterInitials,
             ageLabel = ageLabel,
-            matchesUser = false,
+            matchesUser = matchesUser,
             avatarColor = avatarColor,
-            recencyOrder = order
+            recencyOrder = order,
+            createdAtMillis = task.createdAt.toDate().time
         )
     }
 
@@ -435,6 +560,17 @@ class MarketRequestsActivity : AppCompatActivity() {
             list.addView(buildRequestCard(item), LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
             })
+        }
+        if (loadingMoreTasks) {
+            list.addView(makeText("Loading more requests…", 12f, false, color(R.color.market_ink2)).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(14), 0, dp(14))
+            }, LinearLayout.LayoutParams(-1, -2))
+        } else if (hasMoreTasks) {
+            list.addView(makeText("Scroll to load more requests", 12f, false, color(R.color.market_ink2)).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(14), 0, dp(14))
+            }, LinearLayout.LayoutParams(-1, -2))
         }
     }
 
@@ -544,7 +680,7 @@ internal data class MarketRequestPreview(
     val id:String,val category:String,val courseTag:String?,val title:String,val description:String,
     val budgetLabel:String,val budgetValue:Int,val dueLabel:String,val dueDays:Int,val proposalCount:Int,
     val posterName:String,val initials:String,val ageLabel:String,val matchesUser:Boolean,
-    val avatarColor:Int,val recencyOrder:Int
+    val avatarColor:Int,val recencyOrder:Int,val createdAtMillis:Long
 )
 internal enum class MarketRequestSort { REFERENCE_ORDER, NEWEST, DEADLINE, BUDGET }
 internal object MarketRequestsUiPolicy {
@@ -555,9 +691,10 @@ internal object MarketRequestsUiPolicy {
                 item.title.contains(q,true)||item.category.contains(q,true)||item.courseTag.orEmpty().contains(q,true))
         }
         return when(sort) {
-            MarketRequestSort.REFERENCE_ORDER,MarketRequestSort.NEWEST->filtered.sortedBy { it.recencyOrder }
-            MarketRequestSort.DEADLINE->filtered.sortedBy { it.dueDays }
-            MarketRequestSort.BUDGET->filtered.sortedByDescending { it.budgetValue }
+            MarketRequestSort.REFERENCE_ORDER -> filtered.sortedBy { it.recencyOrder }
+            MarketRequestSort.NEWEST -> filtered.sortedByDescending { it.createdAtMillis }
+            MarketRequestSort.DEADLINE -> filtered.sortedBy { it.dueDays }
+            MarketRequestSort.BUDGET -> filtered.sortedByDescending { it.budgetValue }
         }
     }
 }
