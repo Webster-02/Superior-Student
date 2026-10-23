@@ -79,6 +79,7 @@ class MarketRequestsActivity : AppCompatActivity() {
     private var loadingTasks = true
     private var loadError: String? = null
     private var showingCachedFeed = false
+    private var feedSyncStartedAtMillis: Long? = null
     private val feedCache by lazy { MarketFeedCacheStore(applicationContext) }
     private var loadGeneration = 0
     private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
@@ -356,6 +357,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             loadingTasks = false
             loadingMoreTasks = false
             showingCachedFeed = false
+            feedSyncStartedAtMillis = null
             swipeRefresh.isRefreshing = false
             loadError = "Sign in with your verified student account to view live tasks."
             renderRequests()
@@ -376,6 +378,11 @@ class MarketRequestsActivity : AppCompatActivity() {
             cacheSavedAt != null &&
             MarketConfigCachePolicy.isFresh(cacheSavedAt, System.currentTimeMillis()) &&
             loadedTasks.isNotEmpty()
+        if (reset) {
+            // Record a conservative lower bound before any profile/config/query round trips.
+            // Changes written while a refresh is running will therefore be picked up next time.
+            feedSyncStartedAtMillis = if (selectedCategory == "All") System.currentTimeMillis() else null
+        }
         val requestGeneration = if (reset) ++loadGeneration else loadGeneration
         val cursor = if (reset) null else lastTaskDocument
         if (reset) {
@@ -441,7 +448,8 @@ class MarketRequestsActivity : AppCompatActivity() {
                             if (pageDocuments.isNotEmpty()) lastTaskDocument = pageDocuments.last()
                             hasMoreTasks = pageDocuments.size == feedPageSize
                             if (selectedCategory == "All") {
-                                val syncAt = if (reset) System.currentTimeMillis() else feedCache.tasksSavedAtMillis()
+                                val syncAt = if (reset) feedSyncStartedAtMillis ?: System.currentTimeMillis()
+                                    else feedCache.tasksSavedAtMillis()
                                 feedCache.saveTasks(loadedTasks, syncAt)
                             }
                             showingCachedFeed = false
@@ -535,7 +543,18 @@ class MarketRequestsActivity : AppCompatActivity() {
                             it.deadline.toDate().time <= now ||
                             it.expiresAt.toDate().time <= now
                     }
-                    feedCache.saveTasks(loadedTasks, System.currentTimeMillis())
+                    val cacheTasks = if (selectedSort == MarketRequestSort.NEWEST) {
+                        loadedTasks.sortedByDescending { it.createdAt.seconds }
+                    } else {
+                        loadedTasks.sortedWith(
+                            compareByDescending<MarketTask> { it.pinned }
+                                .thenByDescending { it.createdAt.seconds }
+                        )
+                    }
+                    feedCache.saveTasks(
+                        cacheTasks,
+                        feedSyncStartedAtMillis ?: System.currentTimeMillis()
+                    )
                     lastTaskDocument = null
                     hasMoreTasks = true
                     showingCachedFeed = false

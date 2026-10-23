@@ -79,6 +79,7 @@ class MarketOffersActivity : AppCompatActivity() {
     private var loadingOffers = true
     private var loadError: String? = null
     private var showingCachedFeed = false
+    private var feedSyncStartedAtMillis: Long? = null
     private val feedCache by lazy { MarketFeedCacheStore(applicationContext) }
     private var loadGeneration = 0
     private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
@@ -409,6 +410,7 @@ class MarketOffersActivity : AppCompatActivity() {
             loadingOffers = false
             loadingMoreOffers = false
             showingCachedFeed = false
+            feedSyncStartedAtMillis = null
             swipeRefresh.isRefreshing = false
             loadError = "Sign in with your verified student account to view live offers."
             renderOffers()
@@ -433,6 +435,11 @@ class MarketOffersActivity : AppCompatActivity() {
             cacheSavedAt != null &&
             MarketConfigCachePolicy.isFresh(cacheSavedAt, System.currentTimeMillis()) &&
             loadedOffers.isNotEmpty()
+        if (reset) {
+            // Keep a lower-bound checkpoint from before profile/config/query requests so writes
+            // occurring during refresh are not skipped by the next delta-sync round.
+            feedSyncStartedAtMillis = if (selectedCategory == "All") System.currentTimeMillis() else null
+        }
         val requestGeneration = if (reset) ++loadGeneration else loadGeneration
         val cursor = if (reset) null else lastOfferDocument
         if (reset) {
@@ -650,7 +657,19 @@ class MarketOffersActivity : AppCompatActivity() {
                 it.expiresAt.toDate().time <= now ||
                 it.sellerId in blocked
         }
-        feedCache.saveOffers(loadedOffers, System.currentTimeMillis())
+        val cacheOffers = if (selectedSort == MarketOfferSort.NEWEST) {
+            loadedOffers.sortedWith(
+                compareByDescending<MarketOffer> { it.renewedAt.seconds }
+                    .thenByDescending { it.createdAt.seconds }
+            )
+        } else {
+            loadedOffers.sortedWith(
+                compareByDescending<MarketOffer> { it.pinned }
+                    .thenByDescending { it.renewedAt.seconds }
+                    .thenByDescending { it.createdAt.seconds }
+            )
+        }
+        feedCache.saveOffers(cacheOffers, feedSyncStartedAtMillis ?: System.currentTimeMillis())
         feedCache.saveStats(sellerStats.values)
         lastOfferDocument = null
         hasMoreOffers = true
@@ -696,7 +715,8 @@ class MarketOffersActivity : AppCompatActivity() {
         swipeRefresh.isRefreshing = false
         rebuildOfferPreviews(profile, config)
         if (selectedCategory == "All") {
-            val syncAt = if (reset) System.currentTimeMillis() else feedCache.offersSavedAtMillis()
+            val syncAt = if (reset) feedSyncStartedAtMillis ?: System.currentTimeMillis()
+                else feedCache.offersSavedAtMillis()
             feedCache.saveOffers(loadedOffers, syncAt)
             feedCache.saveStats(sellerStats.values)
         }
