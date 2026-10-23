@@ -79,3 +79,10 @@ Lifecycle-counter specification clarification; production Rules/index export and
 - `MARKET_FINAL_SPEC.md` now documents the meaning and transition rules for task, offer, proposal, report, support and warning counters.
 - Regression tests prove task acceptance decrements `openTasks` only once and removing a paused offer does not decrement `activeOffers`.
 - No Firebase deployment, live-data change or merge to `main` occurred.
+
+
+## Staging test path validated — run #38
+
+- [Rules workflow run #38](https://github.com/Webster-02/Superior-Student/actions/runs/39881528899) passed: **46 static checks, 73 Emulator tests, zero expression-ceiling diagnostics**.
+- `DEPLOY_CHECKLIST.md` now includes explicit staging deployment steps, a staging-configured debug APK process, and a minimum student/admin smoke-test order.
+- No Firebase resources were deployed or altered.

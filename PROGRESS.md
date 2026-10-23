@@ -356,3 +356,10 @@ No Android change was needed for this step. No Firebase Rules/indexes were deplo
 ### To start real-device Market functional testing
 
 The Android debug APK from run #105 is ready: https://github.com/Webster-02/Superior-Student/actions/runs/39880533430 (artifact `superior-student-debug-apk`, ID `12471070183`). It is built with the checked-in Firebase app config, project ID `pachattarpercent`. Do not treat that as a staging project. Candidate Rules still need an isolated Firebase staging project with staging Android config and staged Rules/indexes before the app can perform an end-to-end backend test safely.
+
+
+## Staging procedure validation (workflow run #38)
+
+- Updated `DEPLOY_CHECKLIST.md` with a copy-ready, staging-only deployment/build sequence and an ordered phone smoke-test plan.
+- [Run #38](https://github.com/Webster-02/Superior-Student/actions/runs/39881528899), commit `d00cc23a02b192b2f414de88ce27dae453b5ff03`, passed again: **46 static checks, 73 Emulator tests, zero expression-ceiling diagnostics**. Artifact ID `12470767412`.
+- This does not substitute for deployment to a separately created staging project. The current checked-in Android Firebase config targets `pachattarpercent`; do not use the candidate Rules on that project solely to speed up testing.

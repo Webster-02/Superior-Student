@@ -60,3 +60,8 @@ Before testing against a Firebase project, complete the lifecycle-counter review
 ## Latest lifecycle-counter verification
 
 [Rules CI run #37](https://github.com/Webster-02/Superior-Student/actions/runs/39881170691) passed 46 static checks and 73 Firestore Emulator tests with zero expression-ceiling diagnostics. `MARKET_FINAL_SPEC.md` now includes the explicit lifecycle-counter contract and tests for no double-decrement on task completion or paused-offer removal. Staging deployment and real-device backend smoke tests remain outstanding.
+
+
+## Staging test readiness
+
+Rules run #38 passed **46 static checks and 73 Emulator tests**, with zero expression-ceiling diagnostics (artifact ID `12470767412`). `DEPLOY_CHECKLIST.md` has the staging-only deploy and test sequence. The checked-in app Firebase configuration targets `pachattarpercent`; build a separate staging-configured APK and deploy candidate Rules only to a distinct staging project. No deployment was performed.

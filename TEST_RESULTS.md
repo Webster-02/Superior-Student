@@ -114,3 +114,8 @@ Rules linkage for config, task/offer moderation, report status, ordinary support
 - Artifact: `firestore-rules-test-results`, ID `12471180011`.
 
 The counter contract is now documented in `MARKET_FINAL_SPEC.md`. New tests cover no second `openTasks` decrement after task acceptance and no `activeOffers` decrement on paused-offer removal. The production and staging deployment gates remain open; these are candidate review results only.
+
+
+## Staging instructions revalidated — Rules run #38
+
+[Run #38](https://github.com/Webster-02/Superior-Student/actions/runs/39881528899) for staging checklist commit `d00cc23a02b192b2f414de88ce27dae453b5ff03` passed **46 static checks, 73 Emulator tests, and zero expression-ceiling diagnostics**. Artifact `12470767412`. The checked-in app config uses project ID `pachattarpercent`; the phone smoke test must use a separately created staging project and staging-specific Google Services config.
