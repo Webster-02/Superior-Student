@@ -1,0 +1,126 @@
+name: Deploy Firestore Indexes Safely
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_project:
+        description: "Type exactly pachattarpercent to confirm the production target"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-indexes:
+    name: Compare production indexes, then deploy additions
+    if: github.ref == 'refs/heads/review/market-rules'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout reviewed index configuration
+        uses: actions/checkout@v4
+
+      - name: Confirm exact branch and project
+        env:
+          CONFIRM_PROJECT: ${{ inputs.confirm_project }}
+          SELECTED_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$SELECTED_REF" != "refs/heads/review/market-rules" ]]; then
+            echo "Blocked: run this workflow only from review/market-rules."
+            exit 1
+          fi
+          if [[ "$CONFIRM_PROJECT" != "pachattarpercent" ]]; then
+            echo "Blocked: project confirmation did not match. Nothing was deployed."
+            exit 1
+          fi
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate GitHub index JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          jq -e '(.indexes | type == "array") and ((.fieldOverrides // []) | type == "array")' firestore.indexes.json >/dev/null
+          index_count=$(jq '.indexes | length' firestore.indexes.json)
+          echo "GitHub candidate contains \${index_count} composite index definitions."
+          if [[ "$index_count" -lt 1 ]]; then
+            echo "Blocked: candidate index file is empty."
+            exit 1
+          fi
+          cp firestore.indexes.json artifacts/github-indexes-candidate.json
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PACHATTARPERCENT }}
+
+      - name: Export indexes currently deployed in production
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@latest firestore:indexes --project pachattarpercent > artifacts/production-indexes-live.json
+          jq -e '(.indexes | type == "array") and ((.fieldOverrides // []) | type == "array")' artifacts/production-indexes-live.json >/dev/null
+
+      - name: Compare and block if deployment could remove existing indexes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -cS '.indexes[]?' artifacts/production-indexes-live.json | LC_ALL=C sort > artifacts/live-indexes.lines
+          jq -cS '.indexes[]?' firestore.indexes.json | LC_ALL=C sort > artifacts/github-indexes.lines
+          comm -23 artifacts/live-indexes.lines artifacts/github-indexes.lines > artifacts/live-only-indexes.lines
+          comm -13 artifacts/live-indexes.lines artifacts/github-indexes.lines > artifacts/github-only-indexes.lines
+
+          jq -cS '.fieldOverrides[]?' artifacts/production-indexes-live.json | LC_ALL=C sort > artifacts/live-overrides.lines
+          jq -cS '.fieldOverrides[]?' firestore.indexes.json | LC_ALL=C sort > artifacts/github-overrides.lines
+          comm -23 artifacts/live-overrides.lines artifacts/github-overrides.lines > artifacts/live-only-overrides.lines
+          comm -13 artifacts/live-overrides.lines artifacts/github-overrides.lines > artifacts/github-only-overrides.lines
+
+          {
+            echo "Live composite indexes missing from the GitHub JSON: $(wc -l < artifacts/live-only-indexes.lines)"
+            echo "Candidate composite indexes not yet in production: $(wc -l < artifacts/github-only-indexes.lines)"
+            echo "Live field overrides missing from the GitHub JSON: $(wc -l < artifacts/live-only-overrides.lines)"
+            echo "Candidate field overrides not yet in production: $(wc -l < artifacts/github-only-overrides.lines)"
+            echo
+            echo "=== LIVE-ONLY INDEXES (must be preserved before deployment) ==="
+            cat artifacts/live-only-indexes.lines
+            echo
+            echo "=== CANDIDATE INDEXES TO ADD ==="
+            cat artifacts/github-only-indexes.lines
+            echo
+            echo "=== LIVE-ONLY FIELD OVERRIDES (must be preserved before deployment) ==="
+            cat artifacts/live-only-overrides.lines
+            echo
+            echo "=== CANDIDATE FIELD OVERRIDES ==="
+            cat artifacts/github-only-overrides.lines
+          } | tee artifacts/index-comparison-report.txt
+
+          if [[ -s artifacts/live-only-indexes.lines || -s artifacts/live-only-overrides.lines ]]; then
+            echo "Blocked: production has index definitions absent from firestore.indexes.json. No deployment was performed."
+            exit 1
+          fi
+
+          echo "Comparison passed: the candidate does not omit any currently deployed composite indexes or field overrides."
+
+      - name: Deploy indexes only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@latest deploy --only firestore:indexes --project pachattarpercent --non-interactive
+          echo "Index deployment command completed. Check Firestore Console until new indexes show Enabled."
+
+      - name: Upload comparison artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-index-deployment-review-${{ github.run_number }}
+          path: artifacts/**
+          if-no-files-found: warn
+          retention-days: 14
