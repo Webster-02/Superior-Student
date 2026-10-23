@@ -7,7 +7,7 @@
 
 ## Executive result
 
-- **Current live-data coverage:** Requests and Offers have live list reads through `MarketQueryBuilders`; posting a task/offer already invokes `MarketRepository`. My Offers now has a live query and repository mutation wiring in the base commit, but the current base commit does not build (see the build blocker below).
+- **Current live-data coverage:** Requests and Offers have live list reads through `MarketQueryBuilders`; task/offer posting and My Offers mutations invoke `MarketRepository`. W1 adds idempotent profile bootstrap and current-profile reads to the repository, removes task/offer screens' direct `marketProfiles/{uid}` preflight reads, and connects Screen 25 to real account status/expiry. Build verification for this W1 revision is pending.
 - **Confirmed fixture count:** **35 explicit fixture objects** in application-source collections: 3 public offer fixtures, 4 My Offers fixtures, 3 proposal fixtures, 6 My Tasks fixtures, 2 blocked-user fixtures, 4 report fixtures, 6 notice fixtures, 6 chat messages and 1 task-poster seed model. Additional stand-alone detail examples, fake/default counts, ratings and local-only action messages are listed below; they are not included in the 35-object count.
 - **Unconnected feature screens:** Most of the details/lifecycle/trust-and-safety/settings screens currently display reference examples or validate input without invoking the corresponding repository operation.
 - **Direct writes outside `MarketRepository`:** **0 found** in the Market UI activities scanned. The create-task/create-offer flows call repository methods. UI code does bypass the data layer for some reads, noted below.
@@ -28,7 +28,7 @@ Status meanings: **real** = works from live data or is intentionally static cont
 | 06 Task detail (poster) | Reference model/data; not connected to a selected live owned task | Owner-scoped task lookup via repository; proposals via `MarketQueryBuilders.taskProposals`; `editTask` / `cancelTask` | Owner-only reads/mutations; edits require an open task; counters must be paired atomically | demo |
 | 07 Post task — title/category | User-entered local draft | Keep draft between steps; no remote write until submit | Validate shape before final repository create | partly real — draft UI exists |
 | 08 Post task — details/budget/skills/deadline | User-entered local draft plus fixed selectable category/skill vocabulary | Carry the draft through to step 3; normalize validation in repository | Exact allowed fields, length/range limits and timestamps | partly real — draft UI exists |
-| 09 Post task — review/publish | Calls `MarketRepository.createTask`; reads `marketProfiles/{uid}` directly in the Activity before bootstrapping | `createMarketProfile`, `createTask`; profile bootstrap/read should be centralized behind repository | Verified email + existing `profiles/{uid}.displayName`; task creation and `openTasks` increment/lastMutation in one valid transaction | partly real — publish write exists, preflight reads bypass repository, and live counter/status UX is incomplete |
+| 09 Post task — review/publish | Calls `MarketRepository.ensureMarketProfile` then `createTask`; verified-email check shown before submit | `ensureMarketProfile`, `createTask` | Verified email + existing `profiles/{uid}.displayName`; task creation and `openTasks` increment/lastMutation in one valid transaction | partly real — profile bootstrap/read is centralized; live counter/status UX remains incomplete |
 | 10 Task posting rules acknowledgement | Acknowledgement is local state in the posting flow; no separately wired live operation | Rules content can remain static; final submit should require acknowledgement | Rules enforce the write contract, not the UI checkbox | partly real — acknowledgement is local, not a permission boundary |
 | 11 Send proposal | Form validation/quick picks; submit ends with “sending is not connected” | `MarketRepository.createProposal` | Verified student, task open and not expired, proposer not poster, deterministic document ID/immutable `proposerId`, daily and per-task limits | demo |
 | 12 Proposals list | Three hard-coded people/proposals; count constant says 4 despite 3 fixture cards | `MarketQueryBuilders.taskProposals`, converters, `setProposalStatus` | Task poster only; proposal reads limited to the parent task; status changes only on allowed transitions | demo |
@@ -37,14 +37,14 @@ Status meanings: **real** = works from live data or is intentionally static cont
 | 15 My Tasks (Posted/Applied) | 2 hard-coded posted tasks + 4 hard-coded applied tasks; tab labels say “Posted 2”/“Applied 3” despite 4 applied cards | `myTasks`, `appliedProposals` collection-group query, task/proposal converters; lifecycle methods | Owner-scoped tasks; Applied query must use `proposerId == auth.uid` and `updatedAt desc` | demo |
 | 16 Rate completed task | Form and selected tags are local; no live rating submit observed | `MarketRepository.rateCompletedTask`; load existing rating to prevent duplicate UI path | Only participants of completed task; one rating per user/task; rating + `userStats` update in same batch | demo |
 | 17 Offer detail | Live offer fields are passed from the Offers card; save/report/message outcomes are local previews | Repository offer lookup; `submitReport`, local bookmark store, `openOfferConversation` | Public/owner visibility; do not report own listing; Market chat must be separate text-only flow | partly real — primary display can be live, actions cannot |
-| 18 Post/Edit offer | Create calls `MarketRepository.createOffer`; edit path calls `MarketRepository.editOffer`; reads profile directly before bootstrap | `createMarketProfile`, `createOffer`, `editOffer` | Verified email, existing student profile, exact offer schema, 5-active-offer counter; owner edits require active posting status | partly real — real write methods exist, but direct preflight read bypasses repository and build is currently failing |
+| 18 Post/Edit offer | Create calls `MarketRepository.ensureMarketProfile` then `createOffer`; edit calls `editOffer`; no UI-side profile preflight read | `ensureMarketProfile`, `createOffer`, `editOffer` | Verified email, existing `profiles/{uid}.displayName`, exact offer schema, 5-active-offer counter; owner edits require allowed posting status | partly real — identity/profile setup is centralized; full offer lifecycle remains in W4 |
 | 19 My Offers | Current branch contains a live owner-scoped `MarketQueryBuilders.myOffers` read and repository calls for pause/resume/renew/remove/edit | `myOffers`, `pauseOffer`, `resumeOffer`, `renewOffer`, `removeOffer`, `editOffer`, `expireOffer` | Owner query (`sellerId == auth.uid`); counters only move with valid lifecycle `lastMutation`; paused removal must not decrement twice | partly real — wired in source, but current base commit fails compilation (see blocker) |
 | 20 Report sheet | Validates selected reason then shows “preview only”; optional block is local | `submitReport`; `blockUser` only if the user confirms the separate block action | Deterministic report ID; target owner cannot report own listing; one report per user/item; report counter/status change in same batch | demo |
 | 21 Loading/empty/offline/error/expired states | Static reference ordering and copy; no complete offline/cache banner integration | Shared query/error/cache state in live screens; expiry cleanup via owner lifecycle methods | Must keep public feed query constraints, avoid retry loops and use allowed lifecycle transitions | demo as a unified real-state system |
 | 22 Notices inbox | Six local notice fixtures; unread counts fixed at Activity=3 and U2U team=2 | `MarketQueryBuilders.myNotices` + `markNoticeRead` and actual tab/count calculations | Student reads/updates only `users/{auth.uid}/notices`; user must not create notices | demo |
 | 23 Notice detail | Hard-coded “Your offer was removed” content | Load the notice ID from the owner-scoped notices path; mark read through repository | Owner-only notice read/update; appeals must refer to a real appealable notice | demo |
 | 24 Appeal | Example removed offer and “appeal preview” message; nothing is sent | `MarketRepository.submitAppeal` using deterministic `appeal_{noticeId}_{uid}` | Verified account; one appeal per removal/notice; create allowed support ticket shape and open-ticket limit | demo |
-| 25 Suspended account | Screen is not tied to the signed-in user's Market profile/status/until timestamp | Read Market profile through repository; show actual `status` and `suspendedUntil` | Suspended/banned users retain permitted reads/cleanup but cannot create/edit content; banned users do not auto-reactivate | demo |
+| 25 Suspended account | Reads current profile through `MarketRepository.loadCurrentMarketProfile`; displays real status and formatted `suspendedUntil` | `loadCurrentMarketProfile`; connect exact decision notice via W7's owner-scoped notice flow | Owner-scoped profile read; banned/active-suspended users cannot post; Rules/addendum allow posting at/after `suspendedUntil` | partly real — status/expiry is live; reason is in Notices because the profile schema has no reason field |
 | 26 Help and safety | Navigation and static help copy exist; several links/messages explicitly describe preview-only features | Route to real FAQ/rules/reports/support screens; live reports via `myReports` | Any account/report data must remain owner-scoped | partly real |
 | 27 FAQs | Static FAQ list/copy; no account records needed | Static content is acceptable; remove “preview/not connected” copy where it implies this page itself is incomplete | No Firestore write needed for static FAQs | real as static content, subject to content review |
 | 28 Posting rules and safety | Static rule copy; no Firestore operation needed | Static policy page aligned with `MARKET_FINAL_SPEC.md` and addendum | Rules in Firestore remain authoritative; UI is informational only | partly real — verify content completeness |
@@ -85,7 +85,7 @@ Additional placeholders not counted as those fixture objects: a fixed `2` menu b
 
 1. `MarketRepository.adminSuspendUser` performs two collection queries directly (`tasks` by `posterId/status`, `offers` by `sellerId/status`) rather than using `MarketQueryBuilders`.
 2. `MarketConfigReader` reads singleton `config/market` directly. A single-document read need not be a composite-index query, but the desired query-builder/repository contract should be made explicit so it is not an ad hoc UI query.
-3. `MarketPostOfferActivity` and `MarketPostTaskStep3Activity` directly read `marketProfiles/{uid}` before calling `createMarketProfile`. These are document reads (not writes); move the gate/read behind the data layer so UI screens do not own Firestore bootstrap logic.
+3. **Resolved in W1:** `MarketPostOfferActivity` and `MarketPostTaskStep3Activity` call `MarketRepository.ensureMarketProfile()`; their direct `marketProfiles/{uid}` reads and UI bootstrap logic are removed.
 4. Requests, Offers and My Offers are the only list feeds found wired through their required builders. Notices, My Tasks/Applied, proposals, reports, support and chat lists are still unwired rather than incorrectly querying collections.
 
 ## Rules constraints and potential blockers
@@ -104,9 +104,9 @@ No feature was proven **fundamentally blocked** by the checked-in Rules in this 
 
 Do not widen Rules to accommodate unconnected screens. For any implementation where emulator tests show a mismatch between a required feature and a rule, stop and document the exact match/function and denied write before requesting a Rules change.
 
-## Existing build blocker
+## Build verification
 
-The latest CI result associated with the base Market commit is [Market Data Step Check #108](https://github.com/Webster-02/Superior-Student/actions/runs/40020865893). It fails during Kotlin compilation at `MarketMyOffersActivity.kt:146:70`: **actual type `Throwable`, expected `Exception`** in the task failure conversion. No APK was produced by that run. This was already present in the base commit; W0 does not change code.
+The pre-W1 revision failed [Market Data Step Check #108](https://github.com/Webster-02/Superior-Student/actions/runs/40020865893) at `MarketMyOffersActivity.kt:146:70` because a `Throwable` was passed where a Google Tasks `Exception` is required. W1 wraps non-`Exception` throwables in an `IllegalStateException`; the new CI result determines whether further compile errors remain.
 
 ## Admin hosting inventory
 
@@ -114,6 +114,15 @@ The latest CI result associated with the base Market commit is [Market Data Step
 - There is no `admin/` directory, admin HTML/JS entry point, web-app build or admin page route in this repository.
 - Repository methods for admin mutations are not a deployed panel. There is no valid hosted admin URL to report from this source tree.
 - Creating `admins/{uid}` authorizes the Google account but cannot create or host a web page by itself.
+
+## W1 implementation notes
+
+- `MarketRepository.ensureMarketProfile()` performs an idempotent transaction: it requires a verified account and existing `profiles/{uid}.displayName`, then validates the current Market profile or creates it once using the allowlisted schema.
+- `MarketRepository.loadCurrentMarketProfile()` reads only the current user's Market profile and fails closed if an existing document cannot be decoded.
+- Task/offer creation screens no longer read `marketProfiles/{uid}` directly; bootstrap is repository-owned. Listing writes still re-check status/counters in the repository and remain subject to Rules.
+- Screen 25 displays live profile status and `suspendedUntil`. The Market profile schema has no reason field, so the UI points to Notices rather than inventing a reason; exact notice details remain W7.
+- First-run defaults use empty skill/block lists, active status, null suspension/window markers, zero warnings/counters and proposal/update/notice alerts enabled with task-matching alerts off (opt-in). Per addendum/Rules, `skillTags`, `settings` and `blockedUids` self-service writes remain sign-in-only.
+- No Rules, indexes or tests were changed.
 
 ## W0 exit criteria
 

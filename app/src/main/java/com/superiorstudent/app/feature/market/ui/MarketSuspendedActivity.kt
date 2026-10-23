@@ -18,14 +18,22 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketProfile
+import com.superiorstudent.app.feature.market.data.MarketProfileStatus
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
+import java.text.SimpleDateFormat
+import java.util.Locale
 
-/**
- * Screen 25 reference page for a paused-posting state.
- * It does not read or enforce an actual account restriction.
- */
+/** Screen 25 reads the signed-in student's real Market account status. */
 class MarketSuspendedActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
+    private lateinit var statusTitleText: TextView
+    private lateinit var untilText: TextView
+    private lateinit var reasonText: TextView
+    private lateinit var deniedHeader: TextView
+    private lateinit var deniedRow: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -60,16 +68,91 @@ class MarketSuspendedActivity : AppCompatActivity() {
                 bottomMargin = dp(8)
             })
         }
-        page.addView(makeText(MarketSuspendedUiPolicy.DENIED_TITLE, 13f, true, color(R.color.market_ink)),
+        deniedHeader = makeText(MarketSuspendedUiPolicy.DENIED_TITLE, 13f, true, color(R.color.market_ink))
+        page.addView(deniedHeader,
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8); bottomMargin = dp(7) })
-        page.addView(buildRuleRow(MarketSuspendedUiPolicy.DENIED_ACTIONS, false),
-            LinearLayout.LayoutParams(-1, -2))
+        deniedRow = buildRuleRow(MarketSuspendedUiPolicy.DENIED_ACTIONS, false)
+        page.addView(deniedRow, LinearLayout.LayoutParams(-1, -2))
 
         main.addView(buildFooter(), LinearLayout.LayoutParams(-1, -2))
         applyWindowInsets()
+        loadAccountStatus()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
+    }
+
+    private fun loadAccountStatus() {
+        MarketRepository().loadCurrentMarketProfile()
+            .addOnSuccessListener { profile ->
+                if (isFinishing || isDestroyed) return@addOnSuccessListener
+                renderAccountStatus(profile)
+            }
+            .addOnFailureListener { failure ->
+                if (isFinishing || isDestroyed) return@addOnFailureListener
+                statusTitleText.text = "Account status unavailable"
+                untilText.text = "Market could not verify your current posting status."
+                reasonText.text = MarketErrorMapper.map(failure).message
+                // Fail closed in the presentation; Firestore Rules remain the actual protection.
+                deniedHeader.visibility = View.VISIBLE
+                deniedRow.visibility = View.VISIBLE
+            }
+    }
+
+    private fun renderAccountStatus(profile: MarketProfile?) {
+        if (profile == null) {
+            statusTitleText.text = "Market profile not found"
+            untilText.text = "No Market profile is linked to this account yet."
+            reasonText.text = "A profile is created when your verified student account first uses Market."
+            deniedHeader.visibility = View.VISIBLE
+            deniedRow.visibility = View.VISIBLE
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        var postingBlocked = false
+        when (profile.status) {
+            MarketProfileStatus.ACTIVE -> {
+                statusTitleText.text = "No active posting restriction"
+                untilText.text = "Account status: Active"
+                reasonText.text = "Your Market profile does not show a current posting restriction."
+            }
+            MarketProfileStatus.BANNED -> {
+                postingBlocked = true
+                statusTitleText.text = "Market account banned"
+                untilText.text = "This restriction has no automatic end date."
+                reasonText.text = "This account is banned from posting. Check your Market notices for the decision details."
+            }
+            MarketProfileStatus.SUSPENDED -> {
+                val until = profile.suspendedUntil?.toDate()
+                if (until == null) {
+                    postingBlocked = true
+                    statusTitleText.text = "Posting is paused"
+                    untilText.text = "No automatic end date is recorded."
+                    reasonText.text = "Check your Market notices for the decision details."
+                } else {
+                    val formatted = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()).format(until)
+                    val remaining = until.time - now
+                    if (remaining > 0L) {
+                        postingBlocked = true
+                        val days = ((remaining + DAY_MS - 1L) / DAY_MS).coerceAtLeast(1L)
+                        statusTitleText.text = "Posting is paused"
+                        untilText.text = "Until $formatted · $days day${if (days == 1L) "" else "s"} left"
+                        reasonText.text = "Your account is temporarily restricted from posting. Check your Market notices for the decision details."
+                    } else {
+                        statusTitleText.text = "Suspension period ended"
+                        untilText.text = "Restriction ended $formatted"
+                        reasonText.text = "The Rules allow posting after suspendedUntil. Your profile still records the past suspension."
+                    }
+                }
+            }
+        }
+        deniedHeader.visibility = if (postingBlocked) View.VISIBLE else View.GONE
+        deniedRow.visibility = if (postingBlocked) View.VISIBLE else View.GONE
+    }
+
+    private companion object {
+        const val DAY_MS = 24L * 60 * 60 * 1000
     }
 
     private fun buildHeader(): View {
@@ -105,12 +188,16 @@ class MarketSuspendedActivity : AppCompatActivity() {
         card.addView(iconTile, LinearLayout.LayoutParams(dp(64), dp(64)).apply {
             gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(12)
         })
-        card.addView(makeText(MarketSuspendedUiPolicy.STATUS_TITLE, 20f, true, color(R.color.market_ink)).apply {
+        statusTitleText = makeText("Checking account status…", 20f, true, color(R.color.market_ink)).apply {
             gravity = Gravity.CENTER; textAlignment = View.TEXT_ALIGNMENT_CENTER
-        }, LinearLayout.LayoutParams(-1, -2))
-        card.addView(makeText(MarketSuspendedUiPolicy.UNTIL_LABEL, 12f, false, color(R.color.market_ink2)).apply {
+        }
+        card.addView(statusTitleText, LinearLayout.LayoutParams(-1, -2))
+        untilText = makeText("Loading your Market profile…", 12f, false, color(R.color.market_ink2)).apply {
             gravity = Gravity.CENTER; textAlignment = View.TEXT_ALIGNMENT_CENTER
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(14) })
+        }
+        card.addView(untilText, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(4); bottomMargin = dp(14)
+        })
 
         val reason = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -119,9 +206,9 @@ class MarketSuspendedActivity : AppCompatActivity() {
             setPadding(dp(14), dp(12), dp(14), dp(12))
         }
         reason.addView(makeText(MarketSuspendedUiPolicy.REASON_LABEL, 13f, true, color(R.color.market_ink)))
-        reason.addView(makeText(MarketSuspendedUiPolicy.REASON, 13f, false, color(R.color.market_ink)).apply {
-            setLineSpacing(dp(2).toFloat(), 1f)
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
+        reasonText = makeText("Your Market account status is being checked.", 13f, false,
+            color(R.color.market_ink)).apply { setLineSpacing(dp(2).toFloat(), 1f) }
+        reason.addView(reasonText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
         card.addView(reason, LinearLayout.LayoutParams(-1, -2))
         return card
     }

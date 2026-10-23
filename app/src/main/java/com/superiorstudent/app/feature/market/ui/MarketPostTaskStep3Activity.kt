@@ -28,7 +28,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.appcompat.app.AlertDialog
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketBudgetType
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
@@ -457,30 +456,9 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
         }
 
         val repository = MarketRepository()
-        val profileRef = FirebaseFirestore.getInstance()
-            .collection("marketProfiles").document(user.uid)
-        profileRef.get()
-            .addOnSuccessListener { profile ->
-                if (profile.exists()) {
-                    createLiveTask(repository, draft)
-                } else {
-                    val bootstrapTask = runCatching { repository.createMarketProfile() }.getOrElse {
-                        finishTaskPostingWithError(it)
-                        return@addOnSuccessListener
-                    }
-                    bootstrapTask
-                        .addOnSuccessListener { createLiveTask(repository, draft) }
-                        .addOnFailureListener { failure ->
-                            profileRef.get()
-                                .addOnSuccessListener { latest ->
-                                    if (latest.exists()) createLiveTask(repository, draft)
-                                    else finishTaskPostingWithError(failure)
-                                }
-                                .addOnFailureListener { finishTaskPostingWithError(failure) }
-                        }
-                }
-            }
-            .addOnFailureListener { finishTaskPostingWithError(it) }
+        repository.ensureMarketProfile()
+            .addOnSuccessListener { createLiveTask(repository, draft) }
+            .addOnFailureListener { failure -> finishTaskPostingWithError(failure) }
     }
 
     private fun createLiveTask(repository: MarketRepository, draft: MarketTaskDraft) {

@@ -2,7 +2,7 @@
 
 **Working branch:** `feature/market-wiring`  
 **Starting commit:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca` (from `feature/market-ui-reference`)  
-**Current part:** W0 complete; next is W1.  
+**Current part:** W1 implemented; awaiting CI verification before W2.  
 **Rules:** No main merge, no deployment, no changes to `firestore.rules`, `firestore.indexes.json` or tests without explicit approval.
 
 ## Part status
@@ -10,10 +10,10 @@
 | Part | Scope | Status | Evidence / note |
 |---|---|---|---|
 | W0 | Audit only; create wiring report | **COMPLETE** | `WIRING_REPORT.md`; no feature code modified |
-| W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | NOT STARTED | Must centralize direct profile preflight reads in repository |
+| W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | IMPLEMENTED — verification pending | Repository owns idempotent profile bootstrap and current-profile read; task/offer UIs no longer directly read `marketProfiles`; Screen 25 reads actual status/expiry. |
 | W2 | Live Requests/Offers feeds, ranking/cache, filtering, paging, pull refresh, states | NOT STARTED | Both feeds already read through builders; ratings/matching/ranking/block/expiry/paging gaps remain |
 | W3 | Tasks lifecycle, My Tasks, proposals, accept, complete/rate, Applied | NOT STARTED | Task create exists; most lifecycle screens remain fixtures/preview |
-| W4 | Offers lifecycle and My Offers | IN PROGRESS (source wiring exists; verification blocked) | My Offers calls builders/repository; current source commit fails Kotlin compilation; do not call it verified |
+| W4 | Offers lifecycle and My Offers | IN PROGRESS (build verification pending) | My Offers calls builders/repository; known Throwable/Exception compile blocker corrected in W1; verify with CI. |
 | W5 | Market text-only chat | NOT STARTED | Repository APIs exist; screens are fixture messages, not connected |
 | W6 | Report, block, rating/trust-and-safety | NOT STARTED | Repository methods exist; report/block/rating UI remains preview |
 | W7 | Notices, support, appeals, settings | NOT STARTED | Repository methods exist; screens do not call them |
@@ -72,7 +72,9 @@
 ## Verification checkpoint
 
 - **Base revision:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca`.
-- **Latest known CI:** [run #108](https://github.com/Webster-02/Superior-Student/actions/runs/40020865893) failed before APK build at `MarketMyOffersActivity.kt:146:70` because a `Throwable` was passed where an `Exception` is required.
+- **Latest known CI before W1:** [run #108](https://github.com/Webster-02/Superior-Student/actions/runs/40020865893) failed at `MarketMyOffersActivity.kt:146:70` because a `Throwable` was passed where an `Exception` is required. W1 corrects the conversion; the W1 CI result is pending.
 - **Rules/indexes/tests:** unchanged in W0.
 - **Deploy/merge:** none.
+- Source-priority exception: the addendum/Rules allow sign-in-only self-service writes for `skillTags`, `settings` and `blockedUids`; listing/content, profile bootstrap, chat/message, reports/ratings/support/appeals require verified email. These rule-aligned exceptions were not tightened beyond the published contract.
+- Safe profile bootstrap uses empty skills/blocks, active status, null suspension/window markers, zero counters/warnings, and default alerts with task-match alerts off (opt-in). The profile schema contains no suspension reason; Screen 25 directs the student to Notices for decision details.
 - After every completed wiring part, update this table and `WIRING_REPORT.md` in that part's commit. If interrupted, start from this file and `git log`; do not redo W0.

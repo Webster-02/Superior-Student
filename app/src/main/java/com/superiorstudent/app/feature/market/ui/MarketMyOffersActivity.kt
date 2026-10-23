@@ -143,7 +143,11 @@ class MarketMyOffersActivity : AppCompatActivity() {
                     stale.forEach { reconcilingExpired.add(it.id) }
                     val expiryTasks = stale.map { offer ->
                         runCatching { MarketRepository().expireOffer(offer.id) }
-                            .getOrElse { Tasks.forException<Boolean>(it) }
+                            .getOrElse { failure ->
+                                val exception = failure as? Exception
+                                    ?: IllegalStateException("Could not reconcile an expired offer.", failure)
+                                Tasks.forException<Boolean>(exception)
+                            }
                     }
                     Tasks.whenAllComplete(expiryTasks).addOnCompleteListener {
                         stale.forEach { reconcilingExpired.remove(it.id) }

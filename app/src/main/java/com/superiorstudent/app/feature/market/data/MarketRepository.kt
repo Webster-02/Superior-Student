@@ -102,26 +102,67 @@ class MarketRepository(
             requireValidDisplayName(studentProfile.getString("displayName"))
             require(!tx.get(profileRef).exists()) { "Your Market profile already exists." }
 
-            tx.set(profileRef, linkedMapOf<String, Any?>(
-                "uid" to uid,
-                "skillTags" to skillTags,
-                "blockedUids" to emptyList<String>(),
-                "status" to MarketProfileStatus.ACTIVE.wireValue,
-                "suspendedUntil" to null,
-                "warnings" to 0,
-                "settings" to settingsMap(settings),
-                "openTasks" to 0,
-                "activeOffers" to 0,
-                "proposalWindowCount" to 0,
-                "proposalWindowStartedAt" to null,
-                "reportWindowCount" to 0,
-                "reportWindowStartedAt" to null,
-                "openSupportTickets" to 0,
-                "lastMutation" to null,
-                "createdAt" to FieldValue.serverTimestamp(),
-                "updatedAt" to FieldValue.serverTimestamp()
-            ))
+            tx.set(profileRef, newMarketProfileData(uid, skillTags, settings))
             true
+        }
+    }
+
+    /** Reads only the current user's Market profile. Missing is null; invalid data fails closed. */
+    fun loadCurrentMarketProfile(): Task<MarketProfile?> {
+        val uid = requireSignedInUid()
+        return marketProfileRef(uid).get().continueWith { completed ->
+            if (!completed.isSuccessful) {
+                throw completed.exception
+                    ?: IllegalStateException("Could not read your Market account status.")
+            }
+            val snapshot = completed.result
+                ?: throw IllegalStateException("Could not read your Market account status.")
+            if (!snapshot.exists()) null
+            else MarketConverters.profile(snapshot)
+                ?: throw IllegalStateException("Your Market profile is invalid. Contact Market support.")
+        }
+    }
+
+    /**
+     * Idempotently creates the allowlisted profile with fixed defaults.
+     * Verifies profiles/{uid}.displayName within the transaction and is safe under races.
+     */
+    fun ensureMarketProfile(): Task<MarketProfile> {
+        val uid = requireVerifiedUid()
+        validateSkillTags(emptyList())
+        val profileRef = marketProfileRef(uid)
+        val studentProfileRef = studentProfileRef(uid)
+
+        return firestore.runTransaction { tx ->
+            val studentProfile = tx.get(studentProfileRef)
+            require(studentProfile.exists()) {
+                "Create your Student Connect profile before enabling Market."
+            }
+            requireValidDisplayName(studentProfile.getString("displayName"))
+            val existing = tx.get(profileRef)
+            if (existing.exists()) {
+                require(MarketConverters.profile(existing) != null) {
+                    "Your Market profile is invalid. Contact Market support."
+                }
+            } else {
+                tx.set(profileRef, newMarketProfileData(uid, emptyList(), defaultSettings()))
+            }
+            true
+        }.continueWithTask { completed ->
+            if (!completed.isSuccessful) {
+                throw completed.exception
+                    ?: IllegalStateException("Could not initialise your Market profile.")
+            }
+            profileRef.get().continueWith { read ->
+                if (!read.isSuccessful) {
+                    throw read.exception
+                        ?: IllegalStateException("Could not read your Market profile.")
+                }
+                val snapshot = read.result
+                    ?: throw IllegalStateException("Could not read your Market profile.")
+                MarketConverters.profile(snapshot)
+                    ?: throw IllegalStateException("Your Market profile is invalid. Contact Market support.")
+            }
         }
     }
 
@@ -2094,7 +2135,31 @@ class MarketRepository(
         return name
     }
 
-    private fun settingsMap(settings: MarketProfileSettings): Map<String, Boolean> = mapOf(
+    private fun newMarketProfileData(
+        uid: String,
+        skillTags: List<String>,
+        settings: MarketProfileSettings
+    ): Map<String, Any?> = linkedMapOf<String, Any?>(
+        "uid" to uid,
+        "skillTags" to skillTags,
+        "blockedUids" to emptyList<String>(),
+        "status" to MarketProfileStatus.ACTIVE.wireValue,
+        "suspendedUntil" to null,
+        "warnings" to 0,
+        "settings" to settingsMap(settings),
+        "openTasks" to 0,
+        "activeOffers" to 0,
+        "proposalWindowCount" to 0,
+        "proposalWindowStartedAt" to null,
+        "reportWindowCount" to 0,
+        "reportWindowStartedAt" to null,
+        "openSupportTickets" to 0,
+        "lastMutation" to null,
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+
+    private fun settingsMap(settings: MarketProfileSettings): Map<String, Boolean> = mapOf
         "alertProposals" to settings.alertProposals,
         "alertUpdates" to settings.alertUpdates,
         "alertNotices" to settings.alertNotices,
@@ -2203,7 +2268,7 @@ class MarketRepository(
         alertProposals = true,
         alertUpdates = true,
         alertNotices = true,
-        alertMatchingTasks = true
+        alertMatchingTasks = false
     )
 }
 

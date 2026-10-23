@@ -31,7 +31,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import android.util.Base64
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
 import com.superiorstudent.app.feature.market.data.MarketOfferDraft
@@ -492,30 +491,9 @@ class MarketPostOfferActivity : AppCompatActivity() {
         submitLabel.text = "Publishing…"
 
         val repository = MarketRepository()
-        val profileRef = FirebaseFirestore.getInstance()
-            .collection("marketProfiles").document(user.uid)
-        profileRef.get()
-            .addOnSuccessListener { profile ->
-                if (profile.exists()) {
-                    createLiveOffer(repository, input)
-                } else {
-                    val bootstrapTask = runCatching { repository.createMarketProfile() }.getOrElse {
-                        finishPostingWithError(it)
-                        return@addOnSuccessListener
-                    }
-                    bootstrapTask
-                        .addOnSuccessListener { createLiveOffer(repository, input) }
-                        .addOnFailureListener { failure ->
-                            profileRef.get()
-                                .addOnSuccessListener { latest ->
-                                    if (latest.exists()) createLiveOffer(repository, input)
-                                    else finishPostingWithError(failure)
-                                }
-                                .addOnFailureListener { finishPostingWithError(failure) }
-                        }
-                }
-            }
-            .addOnFailureListener { finishPostingWithError(it) }
+        repository.ensureMarketProfile()
+            .addOnSuccessListener { createLiveOffer(repository, input) }
+            .addOnFailureListener { failure -> finishPostingWithError(failure) }
     }
 
     private fun updateOffer(input: MarketPostOfferInput) {
