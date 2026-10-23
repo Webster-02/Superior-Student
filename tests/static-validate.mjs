@@ -82,6 +82,11 @@ const checks = [
     assert.ok(tests.includes('account warnings require a matching new audit log and notice'));
     assert.ok(tests.includes('lift suspension requires a matching new audit log and notice'));
   }],
+  ['lifecycle counter transitions are documented and protected against double decrement', () => {
+    assert.ok(spec.includes('## 15. Counter transition contract'));
+    assert.ok(tests.includes('task acceptance releases openTasks once and completion does not decrement again'));
+    assert.ok(tests.includes('removing a paused offer leaves activeOffers unchanged and rejects a second decrement'));
+  }],
   ['Market config edits require a newly created matching audit log in the same write', () => {
     assert.match(rules, /function marketConfigAuditValid\(\)[\s\S]{0,1100}existsAfter\(auditLogPath\)[\s\S]{0,300}!exists\(auditLogPath\)[\s\S]{0,500}action == 'update_market_config'/);
     assert.ok(tests.includes('requires a matching new audit log for admin edits'));

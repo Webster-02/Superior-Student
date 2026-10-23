@@ -260,3 +260,55 @@ In-app only: the Notices screen and badges. Local notifications only for things 
 - Rotate, background 1 hour, kill process and reopen: tab, filters, scroll and draft restored.
 - Paper and Night on every screen; large font size; keyboard open on every form.
 - Performance: 100 items scroll smoothly, cold start to cached Market under 1 s, read counter within budget.
+
+
+## 15. Counter transition contract
+
+These counters represent capacity/rolling-window usage, not a historical event total. Every counted transition must update its target document and its relevant profile counter in the same atomic transaction or batch. If the transition does not change counted eligibility, it must not change the counter. Never apply both an aggregate account moderation reset and individual listing decrements in the same operation.
+
+### Counter meanings
+
+- `marketProfiles/{uid}.openTasks`: tasks owned by the student whose lifecycle status is `open` and moderation status is `ok` or `under_review`. An open task hidden/removed by admin moderation releases its slot; a report moving `ok` to `under_review` does not release a slot.
+- `marketProfiles/{uid}.activeOffers`: offers owned by the student whose lifecycle status is `active` and moderation status is `ok` or `under_review`. Paused, expired, removed, hidden, or otherwise non-counted offers do not occupy an active-offer slot.
+- `tasks/{taskId}.proposalCount`: number of proposal documents created for that task. It is incremented once on proposal create, and is not decremented on withdraw, decline, acceptance, or task completion. A per-user proposal is unique by document ID.
+- `marketProfiles/{uid}.proposalWindowCount`: proposals created by the user in the current rolling 24-hour window. Each newly created proposal consumes one; editing, withdrawing, declining, or accepting does not refund the usage. The window reset behavior follows the same server-validated start timestamp used by the Rules.
+- `marketProfiles/{uid}.reportWindowCount`: reports created by the user in the current rolling 24-hour window. Each allowed report consumes one; changing a report's status does not refund usage. The window may reset only after the existing rolling-window interval has passed.
+- `tasks/{taskId}.reportCount` and `offers/{offerId}.reportCount`: unique reports against that listing; increment exactly once with its deterministic report document. Dismissing a report does not decrement this number. A separate explicit Clear reports action, if implemented, needs its own reviewed rule and audit design.
+- `marketProfiles/{uid}.openSupportTickets`: support tickets in `open` or `replied` status. Creating a normal ticket or appeal increments once. Admin replies leave it unchanged. The first resolution changes the ticket to `resolved` and decrements once; repeat resolution is denied. Appeal restoration of a listing and resolution of its ticket are separate transactions and affect different counters.
+- `marketProfiles/{uid}.warnings`: lifetime warning count, increased by exactly one for a warning action. Suspension, ban, appeal outcome, and lift do not silently decrement it.
+
+### Required counter transitions
+
+| Operation | Counter rule |
+| --- | --- |
+| Create an open eligible task | `openTasks + 1` |
+| Owner cancels or expires an open task | `openTasks - 1`; expiry only after `expiresAt` |
+| Accept a proposal (task `open -> assigned`) | `openTasks - 1` in the same acceptance write that assigns the task, accepts the proposal and creates the Market conversation |
+| Complete an already assigned task | **No counter change**; acceptance already released the slot |
+| Admin hides/removes a counted open task | `openTasks - 1` |
+| Admin restores an eligible hidden/removed open task to `ok` | `openTasks + 1`, only if the profile remains below the task limit |
+| Pin/unpin a task, or moderate it without changing counted eligibility | No counter change |
+| Create an active eligible offer | `activeOffers + 1` |
+| Pause, expire or remove an active offer | `activeOffers - 1` |
+| Remove an already paused offer | **No counter change** |
+| Resume a paused, unexpired offer | `activeOffers + 1`; subject to the active-offer limit |
+| Renew an already active offer after the renewal interval | No counter change |
+| Renew a paused/expired offer after the renewal interval | `activeOffers + 1`; subject to the active-offer limit |
+| Admin hides/removes a counted active offer | `activeOffers - 1` |
+| Admin restores an eligible hidden/removed active offer to `ok` | `activeOffers + 1`, only if the profile remains below the active-offer limit |
+| Pin/unpin an offer, or moderate without changing counted eligibility | No counter change |
+| Suspend/ban an account | Aggregate operation: hide the user's counted active listings and set `openTasks` and `activeOffers` to zero in the same transaction; do not also decrement one-by-one |
+| Report a task/offer | Listing `reportCount + 1` and reporter `reportWindowCount + 1`; moderation to `under_review` at the threshold does not change the owner's slot counter |
+| Create a support ticket or appeal | `openSupportTickets + 1` |
+| Reply to an open/replied support ticket | No `openSupportTickets` change |
+| Resolve a support ticket or appeal | `openSupportTickets - 1` exactly once in the same write as ticket resolution |
+| Warning | `warnings + 1` exactly |
+| Decline, withdraw or accept a proposal; mark an assigned task complete | No decrement of `proposalCount` or any profile counter other than the documented acceptance `openTasks - 1` |
+
+### Edge cases and regression expectations
+
+- Counters follow the before/after counted state, not just the label a UI button uses. Removing a paused offer must succeed without a profile counter mutation and must fail if the same batch tries to decrement `activeOffers` again.
+- An accepted task releases its `openTasks` slot once. The later `assigned -> completed` transition is status-only and must not decrement the profile again.
+- During suspension/ban, a listing slot is released by the aggregate profile reset. When an admin later restores an eligible listing, only that restore operation increments the matching counter; assigned/completed tasks and paused/removed offers do not regain a slot.
+- If a profile counter is already inconsistent or zero when an operation requires decrement, reject and surface the existing “counter needs attention” flow; never write a negative counter to force the operation through.
+- Each operation-specific `lastMutation` marker is consumed once per target transition. For task and offer changes that can release or reclaim a slot, the target listing status/moderation and profile delta must validate each other in the same atomic write.

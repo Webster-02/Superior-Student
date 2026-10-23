@@ -623,6 +623,32 @@ describe('counter drift recovery and lifecycle transitions', () => {
     await assertSucceeds(batch.commit());
   });
 
+  it('removing a paused offer leaves activeOffers unchanged and rejects a second decrement', async () => {
+    await seedProfile('alice', { activeOffers: 0 });
+    await seedOffer('paused-offer', 'alice', { status: 'paused' });
+    const db = user('alice');
+    await assertSucceeds(updateDoc(doc(db, 'offers', 'paused-offer'), {
+      status: 'removed', updatedAt: serverTimestamp(),
+    }));
+    assert.equal((await getDoc(doc(db, 'marketProfiles', 'alice'))).get('activeOffers'), 0);
+
+    await seedOffer('paused-offer-double-decrement', 'alice', { status: 'paused' });
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'offers', 'paused-offer-double-decrement'), {
+      status: 'removed', updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'marketProfiles', 'alice'), {
+      activeOffers: -1,
+      updatedAt: serverTimestamp(),
+      lastMutation: {
+        kind: 'offer', operation: 'deactivate', targetId: 'paused-offer-double-decrement',
+        at: serverTimestamp(),
+      },
+    });
+    await assertFails(batch.commit());
+    assert.equal((await getDoc(doc(db, 'marketProfiles', 'alice'))).get('activeOffers'), 0);
+  });
+
   it('allows atomic soft removal of an active offer but denies a counter-free active removal', async () => {
     await seedProfile('alice', { activeOffers: 1 });
     await seedOffer('remove-offer', 'alice');
@@ -1063,6 +1089,56 @@ describe('additional allowed flows and daily-limit denial coverage', () => {
 });
 
 describe('review policy regressions: task completion, profile prerequisite, and ratings', () => {
+  it('task acceptance releases openTasks once and completion does not decrement again', async () => {
+    await seedProfile('alice', { openTasks: 1 });
+    await seedProfile('bob');
+    await seedTask('accept-complete-counter', 'alice', { proposalCount: 1 });
+    await seed('tasks/accept-complete-counter/proposals', 'bob', {
+      proposerId: 'bob',
+      message: 'I can complete this task carefully and explain the result.',
+      price: 0,
+      deliveryDays: 2,
+      status: 'sent',
+      proposerName: 'Bob',
+      proposerInitials: 'BO',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+
+    const db = user('alice');
+    const accept = writeBatch(db);
+    accept.update(doc(db, 'tasks', 'accept-complete-counter'), {
+      status: 'assigned', assignedTo: 'bob', updatedAt: serverTimestamp(),
+    });
+    accept.update(doc(db, 'tasks/accept-complete-counter/proposals', 'bob'), {
+      status: 'accepted', updatedAt: serverTimestamp(),
+    });
+    accept.update(doc(db, 'marketProfiles', 'alice'), {
+      openTasks: 0,
+      lastMutation: {
+        kind: 'task', operation: 'close', targetId: 'accept-complete-counter',
+        at: serverTimestamp(),
+      },
+      updatedAt: serverTimestamp(),
+    });
+    accept.set(doc(db, 'marketConversations', 'task_accept-complete-counter_alice_bob'), {
+      participants: ['alice', 'bob'],
+      kind: 'task',
+      listingId: 'accept-complete-counter',
+      taskId: 'accept-complete-counter',
+      listingOwnerUid: 'alice',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    await assertSucceeds(accept.commit());
+    assert.equal((await getDoc(doc(db, 'marketProfiles', 'alice'))).get('openTasks'), 0);
+
+    await assertSucceeds(updateDoc(doc(db, 'tasks', 'accept-complete-counter'), {
+      status: 'completed', updatedAt: serverTimestamp(),
+    }));
+    assert.equal((await getDoc(doc(db, 'marketProfiles', 'alice'))).get('openTasks'), 0);
+  });
+
   it('allows the poster but denies the assigned helper from completing a task', async () => {
     await seedProfile('alice'); await seedProfile('bob');
     await seedTask('poster-completes', 'alice', { status: 'assigned', assignedTo: 'bob' });
