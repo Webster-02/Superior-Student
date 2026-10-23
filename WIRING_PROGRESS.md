@@ -74,6 +74,7 @@
 - **Base revision:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca`.
 - **W1 baseline verification:** [run #110](https://github.com/Webster-02/Superior-Student/actions/runs/40024930878) succeeded for an earlier revision, including unit tests, APK build, verification and upload. It does not cover the restriction-notice follow-up or W2 changes.
 - **Latest run evidence:** available status/commit-run queries returned no checks and no runs for the current push-triggered commit; no successful build is claimed.
+- **Latest feed source commit:** `2ae34fe694534939c3a39fed02d7eb0cc0be5a6b` hardened reset cursors and keeps a visible refresh-error row when previously loaded feed items remain. No CI/build output has been verified for this code.
 - **Rules/indexes/tests:** `firestore.rules`, `firestore.indexes.json`, and `tests/` were not edited during W1/W2. No test or APK build output is available for the latest changes.
 - **Deploy/merge:** none.
 - Source-priority exception: the addendum/Rules allow sign-in-only self-service writes for `skillTags`, `settings` and `blockedUids`; listing/content, profile bootstrap, chat/message, reports/ratings/support/appeals require verified email. These rule-aligned exceptions were not tightened beyond the published contract.
