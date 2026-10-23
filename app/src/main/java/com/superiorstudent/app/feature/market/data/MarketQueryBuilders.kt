@@ -1,5 +1,7 @@
 package com.superiorstudent.app.feature.market.data
 
+import com.google.firebase.firestore.DocumentReference
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 
@@ -21,11 +23,15 @@ object MarketQueryBuilders {
         firestore: FirebaseFirestore,
         category: String? = null,
         pinnedFirst: Boolean = true,
-        pageSize: Int = DEFAULT_PAGE_SIZE
-    ): Query = execute(
-        firestore,
-        publicTasksPlan(category = category, pinnedFirst = pinnedFirst, pageSize = pageSize)
-    )
+        pageSize: Int = DEFAULT_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Query {
+        val query = execute(
+            firestore,
+            publicTasksPlan(category = category, pinnedFirst = pinnedFirst, pageSize = pageSize)
+        )
+        return startAfter?.let { query.startAfter(it) } ?: query
+    }
 
     /**
      * Public offer feed. Public queries must constrain BOTH moderation=ok and status=active.
@@ -35,11 +41,15 @@ object MarketQueryBuilders {
         firestore: FirebaseFirestore,
         category: String? = null,
         pinnedFirst: Boolean = true,
-        pageSize: Int = DEFAULT_PAGE_SIZE
-    ): Query = execute(
-        firestore,
-        publicOffersPlan(category = category, pinnedFirst = pinnedFirst, pageSize = pageSize)
-    )
+        pageSize: Int = DEFAULT_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Query {
+        val query = execute(
+            firestore,
+            publicOffersPlan(category = category, pinnedFirst = pinnedFirst, pageSize = pageSize)
+        )
+        return startAfter?.let { query.startAfter(it) } ?: query
+    }
 
     /**
      * Owner-scoped task list. The posterId filter is mandatory even when status is omitted.
@@ -66,6 +76,15 @@ object MarketQueryBuilders {
         firestore,
         myOffersPlan(uid = uid, status = status, pageSize = pageSize)
     )
+
+    /**
+     * Publicly readable aggregate rating stats for one seller. The Rules permit single-user
+     * gets for signed-in users; list queries remain separately governed by Rules.
+     */
+    fun publicUserStats(firestore: FirebaseFirestore, uid: String): DocumentReference {
+        requireValidUid(uid)
+        return firestore.collection("userStats").document(uid)
+    }
 
     /**
      * Applied proposals across task subcollections. The proposerId filter is mandatory
