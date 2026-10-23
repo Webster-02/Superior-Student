@@ -2,7 +2,7 @@
 
 **Working branch:** `feature/market-wiring`  
 **Starting commit:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca` (from `feature/market-ui-reference`)  
-**Current part:** W1 notice follow-up implemented; awaiting CI before W2.  
+**Current part:** W2 feed wiring implemented in source; CI/build verification pending.  
 **Rules:** No main merge, no deployment, no changes to `firestore.rules`, `firestore.indexes.json` or tests without explicit approval.
 
 ## Part status
@@ -10,15 +10,15 @@
 | Part | Scope | Status | Evidence / note |
 |---|---|---|---|
 | W0 | Audit only; create wiring report | **COMPLETE** | `WIRING_REPORT.md`; no feature code modified |
-| W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | IMPLEMENTED — notice follow-up verification pending | Repository-owned bootstrap/current-profile read; task/offer preflight reads removed; Screen 25 shows status/expiry and now loads the real owner-scoped suspension/ban notice. CI #110 passed before this final follow-up; rerun required. |
-| W2 | Live Requests/Offers feeds, ranking/cache, filtering, paging, pull refresh, states | NOT STARTED | Both feeds already read through builders; ratings/matching/ranking/block/expiry/paging gaps remain |
+| W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | IMPLEMENTED — verification pending | Repository-owned bootstrap/current-profile read; task/offer preflight reads removed; Screen 25 loads real status/expiry and the owner-scoped restriction notice. CI #110 was on an earlier revision; this W1 follow-up has not been verified by a confirmed run. |
+| W2 | Live Requests/Offers feeds, ranking/cache, filtering, paging, pull refresh, states | IMPLEMENTED IN SOURCE — CI/build pending | Requests: rule-aware category/order queries, cursor pagination, pull refresh, expiry and blocked-poster filtering, skill/course matching, rank order, max 3 pins. Offers: same paging/refresh/filter pattern, cached config/weights, aggregate seller stats, ranking and max 3 pins. Verification remains open. |
 | W3 | Tasks lifecycle, My Tasks, proposals, accept, complete/rate, Applied | NOT STARTED | Task create exists; most lifecycle screens remain fixtures/preview |
-| W4 | Offers lifecycle and My Offers | IN PROGRESS (build green; feature wiring incomplete) | CI #110 passes the current branch; My Offers reads owner-scoped data and calls repository actions, but broader offer detail/message/expiry/filter coverage remains open. |
+| W4 | Offers lifecycle and My Offers | IN PROGRESS | My Offers repository actions exist; offer detail/message/expiry/lifecycle coverage remains open. CI #110 is an earlier revision and does not verify the latest branch. |
 | W5 | Market text-only chat | NOT STARTED | Repository APIs exist; screens are fixture messages, not connected |
 | W6 | Report, block, rating/trust-and-safety | NOT STARTED | Repository methods exist; report/block/rating UI remains preview |
 | W7 | Notices, support, appeals, settings | NOT STARTED | Repository methods exist; screens do not call them |
 | W8 | Admin panel source, admin setup, real admin queries and mutations | NOT STARTED | No admin web source or Firebase Hosting config exists |
-| W9 | Expiry/counter cleanup, offline and consistency | NOT STARTED | My Offers attempts expiry reconcile; build is blocked; My Tasks/feed cleanup still absent |
+| W9 | Expiry/counter cleanup, offline and consistency | NOT STARTED | My Offers expiry reconciliation exists; My Tasks cleanup and offline/cached-feed banners remain open. |
 | W10 | Zero fixture/direct write audit, QA checklist, tests/build | NOT STARTED | Must re-run source searches and automated tests after wiring |
 
 ## Per-screen checkpoint
@@ -28,8 +28,8 @@
 | Screen | Current status | Next part |
 |---|---|---|
 | 01 Market entry | Partly real; route/count not verified | W1/W2 |
-| 02 Requests | Partly real live feed | W2 |
-| 03 Offers | Partly real live feed | W2 |
+| 02 Requests | Feed wired in source; waiting on build verification | W2 verification / W10 |
+| 03 Offers | Feed wired in source; waiting on build verification | W2 verification / W10 |
 | 04 Menu/badges | Partly real, badge static | W7 |
 | 05 Helper task detail | Partly real display; actions preview | W3/W6 |
 | 06 Poster task detail | Demo | W3 |
@@ -45,7 +45,7 @@
 | 16 Rate task | Demo | W6 |
 | 17 Offer detail | Partly real display; actions preview | W4/W6 |
 | 18 Post/Edit offer | Partly real; repository bootstrap/create/edit | W4 |
-| 19 My Offers | Partly real source; CI build now green | W4/W10 |
+| 19 My Offers | Partly real source; latest branch not build-verified | W4/W10 |
 | 20 Report sheet | Demo | W6 |
 | 21 States/offline/expiry | Demo as a connected system | W2/W9 |
 | 22 Notices | Demo | W7 |
@@ -72,8 +72,9 @@
 ## Verification checkpoint
 
 - **Base revision:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca`.
-- **W1 baseline verification:** [run #110](https://github.com/Webster-02/Superior-Student/actions/runs/40024930878) succeeded, including unit tests, APK build, verification and upload. The real-notice display follow-up is a later revision and must pass a new CI run.
-- **Rules/indexes/tests:** unchanged through W1; no test files were modified. CI ran the existing unit tests without modifying them.
+- **W1 baseline verification:** [run #110](https://github.com/Webster-02/Superior-Student/actions/runs/40024930878) succeeded for an earlier revision, including unit tests, APK build, verification and upload. It does not cover the restriction-notice follow-up or W2 changes.
+- **Latest run evidence:** available status/commit-run queries returned no checks and no runs for the current push-triggered commit; no successful build is claimed.
+- **Rules/indexes/tests:** `firestore.rules`, `firestore.indexes.json`, and `tests/` were not edited during W1/W2. No test or APK build output is available for the latest changes.
 - **Deploy/merge:** none.
 - Source-priority exception: the addendum/Rules allow sign-in-only self-service writes for `skillTags`, `settings` and `blockedUids`; listing/content, profile bootstrap, chat/message, reports/ratings/support/appeals require verified email. These rule-aligned exceptions were not tightened beyond the published contract.
 - Safe profile bootstrap uses empty skills/blocks, active status, null suspension/window markers, zero counters/warnings, and default alerts with task-match alerts off (opt-in). Screen 25 loads the real matching suspension/ban notice through the owner-scoped notices query and displays its title/body without implicitly marking it read.
