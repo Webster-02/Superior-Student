@@ -28,6 +28,10 @@ class MarketPostTaskStep1UiPolicyTest {
             "Title must be at least 5 characters",
             MarketPostTaskStep1UiPolicy.validate(referenceInput.copy(title = "Help")).titleError
         )
+        assertEquals(
+            "Title must be 80 characters or fewer",
+            MarketPostTaskStep1UiPolicy.validate(referenceInput.copy(title = "x".repeat(81))).titleError
+        )
     }
 
     @Test

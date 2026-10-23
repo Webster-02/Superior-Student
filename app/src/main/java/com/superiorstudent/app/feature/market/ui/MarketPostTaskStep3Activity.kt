@@ -25,7 +25,15 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.appcompat.app.AlertDialog
+import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketBudgetType
+import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketRepository
+import com.superiorstudent.app.feature.market.data.MarketTaskDraft
 import com.superiorstudent.app.ui.AppThemePreferences
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -36,7 +44,10 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
     private lateinit var rulesCheckbox: FrameLayout
     private lateinit var rulesError: TextView
     private lateinit var root: FrameLayout
-    private var rulesAcknowledged = true
+    private lateinit var postButton: LinearLayout
+    private lateinit var postLabel: TextView
+    private var publishingTask = false
+    private var rulesAcknowledged = false
 
     private val titleText by lazy { intent.getStringExtra(MarketPostTaskStep2Activity.EXTRA_TITLE).orEmpty() }
     private val categoryText by lazy { intent.getStringExtra(MarketPostTaskStep2Activity.EXTRA_CATEGORY).orEmpty() }
@@ -50,7 +61,7 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
-        rulesAcknowledged = savedInstanceState?.getBoolean(STATE_RULES_ACKNOWLEDGED, true) ?: true
+        rulesAcknowledged = savedInstanceState?.getBoolean(STATE_RULES_ACKNOWLEDGED, false) ?: false
         root = FrameLayout(this).apply { setBackgroundColor(color(R.color.market_bg)); clipToPadding = false }
         window.statusBarColor = color(R.color.market_bg)
         window.navigationBarColor = color(R.color.market_bg)
@@ -359,22 +370,23 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
             isClickable = true; isFocusable = true
             setOnClickListener { finish() }
         }
-        val post = LinearLayout(this).apply {
+        postButton = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
             setPadding(dp(16), 0, dp(16), 0)
             background = rounded(color(R.color.market_match), 16f)
             isClickable = true; isFocusable = true
             addView(ReviewStepIconView(this@MarketPostTaskStep3Activity, ReviewStepIcon.CHECK, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
-            addView(makeText("Post task", 15f, true, color(R.color.market_match_ink)))
-            setOnClickListener { validateAndPreviewOnly() }
+            postLabel = makeText("Post task", 15f, true, color(R.color.market_match_ink))
+            addView(postLabel)
+            setOnClickListener { validateAndPublish() }
         }
         footer.addView(back, LinearLayout.LayoutParams(0, dp(52), 1f))
-        footer.addView(post, LinearLayout.LayoutParams(0, dp(52), 1.6f).apply { marginStart = dp(10) })
+        footer.addView(postButton, LinearLayout.LayoutParams(0, dp(52), 1.6f).apply { marginStart = dp(10) })
         return footer
     }
 
-    private fun validateAndPreviewOnly() {
+    private fun validateAndPublish() {
         val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
         val validation = MarketPostTaskStep3UiPolicy.validate(MarketPostTaskStep3Input(
             title = titleText, category = categoryText, course = courseText, description = descriptionText,
@@ -386,7 +398,120 @@ class MarketPostTaskStep3Activity : AppCompatActivity() {
             toast("Please review the form and correct any incomplete fields.")
             return
         }
-        toast("Preview validated. Task publishing is not connected.")
+        publishTask()
+    }
+
+    private fun publishTask() {
+        if (publishingTask) return
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null) {
+            toast("Please sign in to your U2U account before posting a task.")
+            return
+        }
+        if (!user.isEmailVerified) {
+            toast("Verify your account email before posting a task.")
+            return
+        }
+
+        publishingTask = true
+        postButton.isEnabled = false
+        postButton.alpha = 0.65f
+        postLabel.text = "Publishing…"
+
+        val draftResult = runCatching {
+            val parsedDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                isLenient = false
+            }.parse(deadlineIso) ?: throw IllegalArgumentException("Choose a task deadline.")
+            val deadlineCalendar = Calendar.getInstance().apply {
+                time = parsedDate
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+                set(Calendar.MILLISECOND, 999)
+            }
+            val type = when (budgetType) {
+                "Free help" -> MarketBudgetType.FREE
+                "Fixed" -> MarketBudgetType.FIXED
+                "Negotiable" -> MarketBudgetType.NEGOTIABLE
+                else -> throw IllegalArgumentException("Choose a budget option.")
+            }
+            val cleanAmount = amountText.trim().replace(",", "")
+            val amount = cleanAmount.takeIf { it.isNotBlank() }?.toDoubleOrNull()
+            if (type == MarketBudgetType.FIXED && amount == null) {
+                throw IllegalArgumentException("Enter a valid task budget.")
+            }
+            MarketTaskDraft(
+                title = titleText.trim(),
+                category = categoryText.trim(),
+                description = descriptionText.trim(),
+                budgetType = type,
+                deadline = Timestamp(deadlineCalendar.time),
+                skills = skills,
+                courseTag = courseText.trim().takeIf { it.isNotEmpty() },
+                budgetAmount = if (type == MarketBudgetType.FREE) null else amount
+            )
+        }
+        val draft = draftResult.getOrElse {
+            finishTaskPostingWithError(it)
+            return
+        }
+
+        val repository = MarketRepository()
+        val profileRef = FirebaseFirestore.getInstance()
+            .collection("marketProfiles").document(user.uid)
+        profileRef.get()
+            .addOnSuccessListener { profile ->
+                if (profile.exists()) {
+                    createLiveTask(repository, draft)
+                } else {
+                    val bootstrapTask = runCatching { repository.createMarketProfile() }.getOrElse {
+                        finishTaskPostingWithError(it)
+                        return@addOnSuccessListener
+                    }
+                    bootstrapTask
+                        .addOnSuccessListener { createLiveTask(repository, draft) }
+                        .addOnFailureListener { failure ->
+                            profileRef.get()
+                                .addOnSuccessListener { latest ->
+                                    if (latest.exists()) createLiveTask(repository, draft)
+                                    else finishTaskPostingWithError(failure)
+                                }
+                                .addOnFailureListener { finishTaskPostingWithError(failure) }
+                        }
+                }
+            }
+            .addOnFailureListener { finishTaskPostingWithError(it) }
+    }
+
+    private fun createLiveTask(repository: MarketRepository, draft: MarketTaskDraft) {
+        runCatching { repository.createTask(draft) }
+            .onSuccess { task ->
+                task.addOnSuccessListener {
+                    restoreTaskPostButton()
+                    Toast.makeText(this, "Task posted to Market.", Toast.LENGTH_LONG).show()
+                    setResult(RESULT_OK)
+                    finish()
+                }.addOnFailureListener { failure -> finishTaskPostingWithError(failure) }
+            }
+            .onFailure { failure -> finishTaskPostingWithError(failure) }
+    }
+
+    private fun finishTaskPostingWithError(failure: Throwable) {
+        restoreTaskPostButton()
+        AlertDialog.Builder(this)
+            .setTitle("Couldn’t post task")
+            .setMessage(MarketErrorMapper.map(failure).message)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun restoreTaskPostButton() {
+        publishingTask = false
+        if (::postButton.isInitialized) {
+            postButton.isEnabled = true
+            postButton.alpha = 1f
+            postLabel.text = "Post task"
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

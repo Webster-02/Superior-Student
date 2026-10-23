@@ -48,7 +48,7 @@ class MarketPostTaskStep2Activity : AppCompatActivity() {
     private lateinit var skillChips: Map<String, TextView>
 
     private var selectedBudget = "Fixed"
-    private val selectedSkills = linkedSetOf("Canva", "Photoshop", "Layout")
+    private val selectedSkills = linkedSetOf<String>()
     private val availableSkills = listOf("Canva", "Photoshop", "Layout", "Illustrator", "Figma")
     private var selectedDeadline: Calendar = referenceDeadline()
 
@@ -108,7 +108,7 @@ class MarketPostTaskStep2Activity : AppCompatActivity() {
         amountField.addView(makeText("Rs.", 14f, false, color(R.color.market_ink2)),
             LinearLayout.LayoutParams(-2, -1).apply { marginEnd = dp(8) })
         amountInput = EditText(this).apply {
-            setText("1,500")
+            setText("")
             textSize = 14f
             setSingleLine(true)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
@@ -437,23 +437,12 @@ class MarketPostTaskStep2Activity : AppCompatActivity() {
         ViewCompat.requestApplyInsets(root)
     }
 
-    private fun referenceDeadline(): Calendar {
-        val reference = Calendar.getInstance().apply {
-            set(Calendar.YEAR, 2026)
-            set(Calendar.MONTH, Calendar.OCTOBER)
-            set(Calendar.DAY_OF_MONTH, 24)
-            set(Calendar.HOUR_OF_DAY, 12)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        if (reference.before(startOfToday())) {
-            return startOfToday().apply {
-                add(Calendar.DAY_OF_MONTH, 3)
-                set(Calendar.HOUR_OF_DAY, 12)
-            }
-        }
-        return reference
+    private fun referenceDeadline(): Calendar = Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_MONTH, 3)
+        set(Calendar.HOUR_OF_DAY, 12)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
     }
 
     private fun startOfToday(): Calendar = Calendar.getInstance().apply {

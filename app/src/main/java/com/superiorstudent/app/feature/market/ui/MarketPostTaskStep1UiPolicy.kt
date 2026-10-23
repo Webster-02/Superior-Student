@@ -17,8 +17,8 @@ internal data class MarketPostTaskStep1Validation(
 }
 
 internal object MarketPostTaskStep1UiPolicy {
-    const val MAX_TITLE_LENGTH = 100
-    const val MAX_COURSE_LENGTH = 80
+    const val MAX_TITLE_LENGTH = 80
+    const val MAX_COURSE_LENGTH = 60
     const val MAX_DESCRIPTION_LENGTH = 500
     val categories = listOf("Notes", "Tutoring", "Design", "Coding", "Project", "Typing")
 
@@ -29,7 +29,7 @@ internal object MarketPostTaskStep1UiPolicy {
             titleError = when {
                 title.isBlank() -> "Enter a task title"
                 title.length < 5 -> "Title must be at least 5 characters"
-                title.length > MAX_TITLE_LENGTH -> "Title must be 100 characters or fewer"
+                title.length > MAX_TITLE_LENGTH -> "Title must be 80 characters or fewer"
                 else -> null
             },
             categoryError = if (input.category in categories) null else "Choose a category",

@@ -28,14 +28,23 @@ import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketBudgetType
+import com.superiorstudent.app.feature.market.data.MarketConverters
+import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketModerationStatus
+import com.superiorstudent.app.feature.market.data.MarketQueryBuilders
+import com.superiorstudent.app.feature.market.data.MarketTask
+import com.superiorstudent.app.feature.market.data.MarketTaskStatus
 import com.superiorstudent.app.ui.AppThemePreferences
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.min
 
-/**
- * First native implementation of the supplied Requests mockup.
- * The three cards below are reference fixtures; live Firestore reads/cache are a separate step.
- */
+/** Native Requests feed backed by the live, rule-filtered Firestore task collection. */
 class MarketRequestsActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var searchRow: LinearLayout
@@ -47,20 +56,10 @@ class MarketRequestsActivity : AppCompatActivity() {
     private var selectedSort = MarketRequestSort.REFERENCE_ORDER
     private var searchVisible = false
 
-    private val referenceRequests = listOf(
-        MarketRequestPreview("reference-design","Design","BSOPM",
-            "Poster for Optometry Society health camp",
-            "Need an A3 poster, 2 colour options, text will be provided. Canva or Photoshop is fine.",
-            "Rs. 1,500",1500,"Due in 3 days",3,4,"Hamza Ali","HA","· 2h ago",true,R.color.market_sky,0),
-        MarketRequestPreview("reference-notes","Notes","Anatomy",
-            "Handwritten notes for Ocular Anatomy (Ch 1-5)",
-            "Looking for clear, complete handwritten notes. Scan or photos are fine, can meet on campus.",
-            "Negotiable",0,"Due in 5 days",5,2,"Sara Ahmed","SA","· 5h ago",false,R.color.market_mint,1),
-        MarketRequestPreview("reference-coding","Coding",null,
-            "Help fixing a Python lab program",
-            "Loop and file handling error. Need someone to explain what is wrong, not do the whole lab.",
-            "Free help",0,"Due tomorrow",1,7,"Bilal Raza","BR","· 1d ago",false,R.color.market_peach,2)
-    )
+    private var liveTasks: List<MarketRequestPreview> = emptyList()
+    private var loadingTasks = true
+    private var loadError: String? = null
+    private var loadGeneration = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -204,7 +203,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             isHorizontalScrollBarEnabled=false; overScrollMode=View.OVER_SCROLL_NEVER; clipToPadding=false
         }
         val chips=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL }
-        val names=listOf("All","Design","Notes","Coding","Tutoring")
+        val names=listOf("All","Design","Notes","Coding","Tutoring","Project","Typing")
         val chipMap=linkedMapOf<String,TextView>()
         names.forEachIndexed { index,name ->
             val chip=makeText(name,12f,true,color(R.color.market_ink)).apply {
@@ -300,14 +299,143 @@ class MarketRequestsActivity : AppCompatActivity() {
             }.setNegativeButton("Cancel",null).show()
     }
 
-    private fun renderRequests() {
-        if(!::list.isInitialized) return
-        list.removeAllViews()
-        val shown=MarketRequestsUiPolicy.filterAndSort(referenceRequests,selectedCategory,searchInput.text?.toString().orEmpty(),selectedSort)
-        shown.forEach { item ->
-            list.addView(buildRequestCard(item),LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(10) })
+    override fun onResume() {
+        super.onResume()
+        if (::list.isInitialized) loadTasks()
+    }
+
+    private fun loadTasks() {
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null || !user.isEmailVerified) {
+            loadingTasks = false
+            liveTasks = emptyList()
+            loadError = "Sign in with your verified student account to view live tasks."
+            renderRequests()
+            return
         }
-        emptyState.visibility=if(shown.isEmpty()) View.VISIBLE else View.GONE
+
+        val requestGeneration = ++loadGeneration
+        loadingTasks = true
+        loadError = null
+        renderRequests()
+        MarketQueryBuilders.publicTasks(
+            firestore = FirebaseFirestore.getInstance(),
+            pinnedFirst = true,
+            pageSize = 50
+        ).get()
+            .addOnSuccessListener { snapshot ->
+                if (requestGeneration != loadGeneration) return@addOnSuccessListener
+                liveTasks = snapshot.documents
+                    .mapNotNull { MarketConverters.task(it) }
+                    .filter {
+                        it.status == MarketTaskStatus.OPEN &&
+                            it.moderation == MarketModerationStatus.OK
+                    }
+                    .mapIndexed { index, task -> toRequestPreview(task, index) }
+                loadingTasks = false
+                loadError = null
+                renderRequests()
+            }
+            .addOnFailureListener { failure ->
+                if (requestGeneration != loadGeneration) return@addOnFailureListener
+                loadingTasks = false
+                liveTasks = emptyList()
+                loadError = MarketErrorMapper.map(failure).message
+                renderRequests()
+            }
+    }
+
+    private fun toRequestPreview(task: MarketTask, order: Int): MarketRequestPreview {
+        val amount = task.budgetAmount?.takeIf {
+            it.isFinite() && it >= 0.0 && it <= Int.MAX_VALUE.toDouble()
+        }
+        val budgetValue = amount?.toInt() ?: 0
+        val budgetLabel = when (task.budgetType) {
+            MarketBudgetType.FREE -> "Free help"
+            MarketBudgetType.FIXED -> "Rs. " + formatAmount(amount)
+            MarketBudgetType.NEGOTIABLE -> amount?.let { "Negotiable · Rs. " + formatAmount(it) }
+                ?: "Negotiable"
+        }
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(today.time)
+        val deadlineIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(task.deadline.toDate())
+        val dueDays = ((task.deadline.toDate().time - today.timeInMillis) / 86_400_000L)
+            .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+        val ageMillis = (System.currentTimeMillis() - task.createdAt.toDate().time).coerceAtLeast(0L)
+        val ageLabel = when {
+            ageMillis < 60_000L -> "· just now"
+            ageMillis < 3_600_000L -> "· ${ageMillis / 60_000L}m ago"
+            ageMillis < 86_400_000L -> "· ${ageMillis / 3_600_000L}h ago"
+            else -> "· ${ageMillis / 86_400_000L}d ago"
+        }
+        val avatarColor = when (task.category.lowercase(Locale.ROOT)) {
+            "notes" -> R.color.market_lav
+            "design", "project" -> R.color.market_peach
+            "coding" -> R.color.market_mint
+            else -> R.color.market_sky
+        }
+        return MarketRequestPreview(
+            id = task.id,
+            category = task.category,
+            courseTag = task.courseTag,
+            title = task.title,
+            description = task.description,
+            budgetLabel = budgetLabel,
+            budgetValue = budgetValue,
+            dueLabel = MarketPostTaskStep3UiPolicy.deadlineLabel(todayIso, deadlineIso),
+            dueDays = dueDays,
+            proposalCount = task.proposalCount,
+            posterName = task.posterName,
+            initials = task.posterInitials,
+            ageLabel = ageLabel,
+            matchesUser = false,
+            avatarColor = avatarColor,
+            recencyOrder = order
+        )
+    }
+
+    private fun formatAmount(amount: Double?): String {
+        if (amount == null) return "—"
+        return if (amount % 1.0 == 0.0) {
+            String.format(Locale.US, "%,d", amount.toLong())
+        } else {
+            String.format(Locale.US, "%,.2f", amount)
+        }
+    }
+
+    private fun renderRequests() {
+        if (!::list.isInitialized) return
+        list.removeAllViews()
+        if (loadingTasks && liveTasks.isEmpty()) {
+            emptyState.text = "Loading live tasks…"
+            emptyState.visibility = View.VISIBLE
+            return
+        }
+
+        val shown = MarketRequestsUiPolicy.filterAndSort(
+            liveTasks, selectedCategory, searchInput.text?.toString().orEmpty(), selectedSort
+        )
+        if (shown.isEmpty()) {
+            emptyState.text = loadError ?: if (liveTasks.isEmpty()) {
+                "No live tasks yet. Post a task to get started."
+            } else {
+                "No tasks match this category or search. Try another filter."
+            }
+            emptyState.visibility = View.VISIBLE
+            return
+        }
+
+        emptyState.visibility = View.GONE
+        shown.forEach { item ->
+            list.addView(buildRequestCard(item), LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(10)
+            })
+        }
     }
 
     private fun buildRequestCard(item:MarketRequestPreview):View {

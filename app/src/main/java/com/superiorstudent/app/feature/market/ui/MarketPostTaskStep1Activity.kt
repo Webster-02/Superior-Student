@@ -42,11 +42,6 @@ class MarketPostTaskStep1Activity : AppCompatActivity() {
     private lateinit var categoryChips: Map<String, TextView>
     private var selectedCategory = "Design"
 
-    private val referenceTitle = "Poster for Optometry Society health camp"
-    private val referenceCourse = "BSOPM · Ocular Anatomy"
-    private val referenceDescription =
-        "Need an A3 poster for our health camp on 28 Oct. Two colour options please. Text and logo will be shared on chat after selection."
-
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
@@ -88,8 +83,9 @@ class MarketPostTaskStep1Activity : AppCompatActivity() {
         scroll.addView(form, FrameLayout.LayoutParams(-1, -2))
 
         form.addView(makeLabel("Title"))
-        titleInput = makeInput(referenceTitle, singleLine = true, maxLength = 100).apply {
+        titleInput = makeInput("", singleLine = true, maxLength = 80).apply {
             textSize = 14f
+            hint = "Enter a clear task title"
             imeOptions = EditorInfo.IME_ACTION_NEXT
         }
         form.addView(titleInput, fieldParams(top = 5, bottom = 12))
@@ -107,8 +103,9 @@ class MarketPostTaskStep1Activity : AppCompatActivity() {
         form.addView(categoryError, fieldParams(bottom = 10))
 
         form.addView(makeLabel("Course (optional)"), fieldParams(bottom = 5))
-        courseInput = makeInput(referenceCourse, singleLine = true, maxLength = 80).apply {
+        courseInput = makeInput("", singleLine = true, maxLength = 60).apply {
             textSize = 14f
+            hint = "Course or subject (optional)"
         }
         val courseField = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -126,13 +123,14 @@ class MarketPostTaskStep1Activity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         descriptionHeader.addView(makeLabel("Description"), LinearLayout.LayoutParams(0, -2, 1f))
-        descriptionCount = makeText("${referenceDescription.length}/500", 12f, false, color(R.color.market_ink2))
+        descriptionCount = makeText("0/500", 12f, false, color(R.color.market_ink2))
         descriptionHeader.addView(descriptionCount)
         form.addView(descriptionHeader, fieldParams(bottom = 5))
 
-        descriptionInput = makeInput(referenceDescription, singleLine = false, maxLength = 500).apply {
+        descriptionInput = makeInput("", singleLine = false, maxLength = 500).apply {
             textSize = 13.5f
             gravity = Gravity.TOP
+            hint = "Describe the help you need (20–500 characters)"
             minHeight = dp(104)
             setPadding(dp(14), dp(12), dp(14), dp(12))
             setLineSpacing(dp(3).toFloat(), 1f)
