@@ -38,6 +38,7 @@ import com.superiorstudent.app.feature.market.data.MarketConfig
 import com.superiorstudent.app.feature.market.data.MarketConfigProvider
 import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
+import com.superiorstudent.app.feature.market.data.MarketFeedCacheStore
 import com.superiorstudent.app.feature.market.data.MarketModerationStatus
 import com.superiorstudent.app.feature.market.data.MarketProfile
 import com.superiorstudent.app.feature.market.data.MarketRankingScorer
@@ -74,6 +75,8 @@ class MarketRequestsActivity : AppCompatActivity() {
     private var loadingMoreTasks = false
     private var loadingTasks = true
     private var loadError: String? = null
+    private var showingCachedFeed = false
+    private val feedCache by lazy { MarketFeedCacheStore(applicationContext) }
     private var loadGeneration = 0
     private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
 
@@ -236,7 +239,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             val chip=makeText(name,12f,true,color(R.color.market_ink)).apply {
                 gravity=Gravity.CENTER; setPadding(dp(14),0,dp(14),0)
                 background=rounded(color(R.color.market_card),99f,color(R.color.market_line))
-                setOnClickListener { selectedCategory=name; liveTasks = emptyList(); updateCategoryChips(); loadTasks(reset = true) }
+                setOnClickListener { selectedCategory=name; loadedTasks.clear(); liveTasks = emptyList(); updateCategoryChips(); loadTasks(reset = true) }
             }
             if(index>0) chips.addView(chip,LinearLayout.LayoutParams(-2,dp(38)).apply { marginStart=dp(8) })
             else chips.addView(chip,LinearLayout.LayoutParams(-2,dp(38)))
@@ -370,6 +373,7 @@ class MarketRequestsActivity : AppCompatActivity() {
             loadingMoreTasks = true
         }
         renderRequests()
+        if (reset) restoreCachedTasksForDisplay(user.uid, requestGeneration)
 
         fun fetchPage(profile: MarketProfile?) {
             if (requestGeneration != loadGeneration) return
@@ -408,6 +412,8 @@ class MarketRequestsActivity : AppCompatActivity() {
 
                             if (pageDocuments.isNotEmpty()) lastTaskDocument = pageDocuments.last()
                             hasMoreTasks = pageDocuments.size == feedPageSize
+                            if (selectedCategory == "All") feedCache.saveTasks(loadedTasks)
+                            showingCachedFeed = false
                             loadingTasks = false
                             loadingMoreTasks = false
                             loadError = null
@@ -440,6 +446,7 @@ class MarketRequestsActivity : AppCompatActivity() {
                 .addOnSuccessListener { profile ->
                     if (requestGeneration != loadGeneration) return@addOnSuccessListener
                     currentMarketProfile = profile
+                    profile?.let { feedCache.saveProfile(it) }
                     marketProfileLoaded = true
                     fetchPage(profile)
                 }
@@ -454,6 +461,29 @@ class MarketRequestsActivity : AppCompatActivity() {
         } else {
             fetchPage(currentMarketProfile)
         }
+    }
+
+    private fun restoreCachedTasksForDisplay(uid: String, requestGeneration: Int) {
+        if (liveTasks.isNotEmpty() || loadedTasks.isNotEmpty()) return
+        val profile = feedCache.readProfile(uid) ?: return
+        val cachedTasks = feedCache.readTasks()
+        if (cachedTasks.isEmpty()) return
+        loadedTasks.addAll(cachedTasks)
+        currentMarketProfile = profile
+        MarketConfigProvider(this).load()
+            .addOnSuccessListener cacheConfigLoaded@ { config ->
+                if (requestGeneration != loadGeneration || liveTasks.isNotEmpty() || loadedTasks.isEmpty()) {
+                    return@cacheConfigLoaded
+                }
+                if (config == null) return@cacheConfigLoaded
+                rebuildTaskPreviews(profile, config)
+                showingCachedFeed = liveTasks.isNotEmpty()
+                renderRequests()
+            }
+            .addOnFailureListener {
+                // Keep the decoded records staged; the normal request's failure row will explain
+                // why fresh data was unavailable. Invalid cached records never pass the converter.
+            }
     }
 
     private fun rebuildTaskPreviews(profile: MarketProfile?, config: MarketConfig) {
@@ -598,7 +628,8 @@ class MarketRequestsActivity : AppCompatActivity() {
         emptyState.visibility = View.GONE
         loadError?.let { error ->
             list.addView(makeText(
-                "Refresh failed. Previously loaded requests remain visible. $error",
+                if (showingCachedFeed) "Offline — showing saved requests. $error"
+                else "Refresh failed. Previously loaded requests remain visible. $error",
                 12f, false, color(R.color.market_ink2)
             ).apply {
                 setPadding(dp(12), dp(10), dp(12), dp(10))
