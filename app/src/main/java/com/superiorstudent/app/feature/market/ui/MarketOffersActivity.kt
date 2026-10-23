@@ -81,6 +81,7 @@ class MarketOffersActivity : AppCompatActivity() {
     private var showingCachedFeed = false
     private var feedSyncStartedAtMillis: Long? = null
     private val feedCache by lazy { MarketFeedCacheStore(applicationContext) }
+    private val marketRepository by lazy { MarketRepository() }
     private var loadGeneration = 0
     private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
 
@@ -457,7 +458,7 @@ class MarketOffersActivity : AppCompatActivity() {
         if (reset) restoreCachedOffersForDisplay(user.uid, requestGeneration)
 
         if (reset || !marketProfileLoaded) {
-            MarketRepository().loadCurrentMarketProfile()
+            marketRepository.loadCurrentMarketProfile()
                 .addOnSuccessListener { profile ->
                     if (requestGeneration != loadGeneration) return@addOnSuccessListener
                     currentMarketProfile = profile
@@ -522,14 +523,12 @@ class MarketOffersActivity : AppCompatActivity() {
             return
         }
         val category = selectedCategory.takeIf { it != "All" }
-        MarketQueryBuilders.publicOffers(
-            firestore = FirebaseFirestore.getInstance(),
+        marketRepository.loadPublicOffersPage(
             category = category,
             pinnedFirst = selectedSort != MarketOfferSort.NEWEST,
             pageSize = feedPageSize,
             startAfter = cursor
-        ).get()
-            .addOnSuccessListener { snapshot ->
+        ).addOnSuccessListener { snapshot ->
                 if (requestGeneration != loadGeneration) return@addOnSuccessListener
                 val pageDocuments = snapshot.documents
                 val blocked = profile?.blockedUids?.toSet().orEmpty()
@@ -551,7 +550,7 @@ class MarketOffersActivity : AppCompatActivity() {
                     return@addOnSuccessListener
                 }
 
-                val repository = MarketRepository()
+                val repository = marketRepository
                 val statsTasks = sellerIds.map { sellerUid -> repository.loadPublicUserStats(sellerUid) }
                 Tasks.whenAllSuccess<MarketUserStats?>(statsTasks)
                     .addOnSuccessListener statsComplete@ { results ->
@@ -584,13 +583,11 @@ class MarketOffersActivity : AppCompatActivity() {
         val changedDocuments = mutableListOf<DocumentSnapshot>()
         fun fetchChangedPage(cursor: DocumentSnapshot?) {
             if (requestGeneration != loadGeneration) return
-            MarketQueryBuilders.publicOffersUpdatedSince(
-                firestore = FirebaseFirestore.getInstance(),
+            marketRepository.loadPublicOffersChangedSince(
                 since = since,
                 pageSize = MarketQueryBuilders.MAX_DELTA_PAGE_SIZE,
                 startAfter = cursor
-            ).get()
-                .addOnSuccessListener deltaPageLoaded@ { snapshot ->
+            ).addOnSuccessListener deltaPageLoaded@ { snapshot ->
                     if (requestGeneration != loadGeneration) return@deltaPageLoaded
                     changedDocuments.addAll(snapshot.documents)
                     if (snapshot.documents.size == MarketQueryBuilders.MAX_DELTA_PAGE_SIZE) {

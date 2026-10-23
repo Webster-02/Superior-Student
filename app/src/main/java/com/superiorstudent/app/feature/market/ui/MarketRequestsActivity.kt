@@ -81,6 +81,7 @@ class MarketRequestsActivity : AppCompatActivity() {
     private var showingCachedFeed = false
     private var feedSyncStartedAtMillis: Long? = null
     private val feedCache by lazy { MarketFeedCacheStore(applicationContext) }
+    private val marketRepository by lazy { MarketRepository() }
     private var loadGeneration = 0
     private val feedPageSize = MarketQueryBuilders.DEFAULT_PAGE_SIZE
 
@@ -424,14 +425,12 @@ class MarketRequestsActivity : AppCompatActivity() {
                         return@configLoaded
                     }
                     val category = selectedCategory.takeIf { it != "All" }
-                    MarketQueryBuilders.publicTasks(
-                        firestore = FirebaseFirestore.getInstance(),
+                    marketRepository.loadPublicTasksPage(
                         category = category,
                         pinnedFirst = selectedSort != MarketRequestSort.NEWEST,
                         pageSize = feedPageSize,
                         startAfter = cursor
-                    ).get()
-                        .addOnSuccessListener tasksLoaded@ { snapshot ->
+                    ).addOnSuccessListener tasksLoaded@ { snapshot ->
                             if (requestGeneration != loadGeneration) return@tasksLoaded
                             val pageDocuments = snapshot.documents
                             if (reset) loadedTasks.clear()
@@ -481,7 +480,7 @@ class MarketRequestsActivity : AppCompatActivity() {
         }
 
         if (reset || !marketProfileLoaded) {
-            MarketRepository().loadCurrentMarketProfile()
+            marketRepository.loadCurrentMarketProfile()
                 .addOnSuccessListener { profile ->
                     if (requestGeneration != loadGeneration) return@addOnSuccessListener
                     currentMarketProfile = profile
@@ -511,13 +510,11 @@ class MarketRequestsActivity : AppCompatActivity() {
         val changedDocuments = mutableListOf<DocumentSnapshot>()
         fun fetchChangedPage(cursor: DocumentSnapshot?) {
             if (requestGeneration != loadGeneration) return
-            MarketQueryBuilders.publicTasksUpdatedSince(
-                firestore = FirebaseFirestore.getInstance(),
+            marketRepository.loadPublicTasksChangedSince(
                 since = since,
                 pageSize = MarketQueryBuilders.MAX_DELTA_PAGE_SIZE,
                 startAfter = cursor
-            ).get()
-                .addOnSuccessListener deltaPageLoaded@ { snapshot ->
+            ).addOnSuccessListener deltaPageLoaded@ { snapshot ->
                     if (requestGeneration != loadGeneration) return@deltaPageLoaded
                     changedDocuments.addAll(snapshot.documents)
                     if (snapshot.documents.size == MarketQueryBuilders.MAX_DELTA_PAGE_SIZE) {

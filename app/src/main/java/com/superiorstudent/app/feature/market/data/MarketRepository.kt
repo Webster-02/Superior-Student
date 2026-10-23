@@ -9,6 +9,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.Transaction
 import java.util.Date
 import java.util.Locale
@@ -140,6 +141,70 @@ class MarketRepository(
             else MarketConverters.userStats(snapshot)
                 ?: throw IllegalStateException("Seller rating information is invalid.")
         }
+    }
+
+    /** Public Requests page. The repository enforces the verified-session precondition. */
+    fun loadPublicTasksPage(
+        category: String? = null,
+        pinnedFirst: Boolean = true,
+        pageSize: Int = MarketQueryBuilders.DEFAULT_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Task<QuerySnapshot> {
+        requireVerifiedUid()
+        return MarketQueryBuilders.publicTasks(
+            firestore = firestore,
+            category = category,
+            pinnedFirst = pinnedFirst,
+            pageSize = pageSize,
+            startAfter = startAfter
+        ).get()
+    }
+
+    /** Public Offers page with the same verified-session boundary as Requests. */
+    fun loadPublicOffersPage(
+        category: String? = null,
+        pinnedFirst: Boolean = true,
+        pageSize: Int = MarketQueryBuilders.DEFAULT_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Task<QuerySnapshot> {
+        requireVerifiedUid()
+        return MarketQueryBuilders.publicOffers(
+            firestore = firestore,
+            category = category,
+            pinnedFirst = pinnedFirst,
+            pageSize = pageSize,
+            startAfter = startAfter
+        ).get()
+    }
+
+    /** Incremental Requests reads preserve the Rules-required public state filters. */
+    fun loadPublicTasksChangedSince(
+        since: Timestamp,
+        pageSize: Int = MarketQueryBuilders.MAX_DELTA_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Task<QuerySnapshot> {
+        requireVerifiedUid()
+        return MarketQueryBuilders.publicTasksUpdatedSince(
+            firestore = firestore,
+            since = since,
+            pageSize = pageSize,
+            startAfter = startAfter
+        ).get()
+    }
+
+    /** Incremental Offers reads preserve the Rules-required public state filters. */
+    fun loadPublicOffersChangedSince(
+        since: Timestamp,
+        pageSize: Int = MarketQueryBuilders.MAX_DELTA_PAGE_SIZE,
+        startAfter: DocumentSnapshot? = null
+    ): Task<QuerySnapshot> {
+        requireVerifiedUid()
+        return MarketQueryBuilders.publicOffersUpdatedSince(
+            firestore = firestore,
+            since = since,
+            pageSize = pageSize,
+            startAfter = startAfter
+        ).get()
     }
 
     /**
