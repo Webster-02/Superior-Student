@@ -411,6 +411,8 @@ class MarketOffersActivity : AppCompatActivity() {
         if (reset) {
             loadingOffers = liveOffers.isEmpty()
             loadingMoreOffers = false
+            lastOfferDocument = null
+            hasMoreOffers = true
             loadError = null
             swipeRefresh.isRefreshing = liveOffers.isNotEmpty()
         } else {
@@ -681,6 +683,15 @@ class MarketOffersActivity : AppCompatActivity() {
         }
 
         emptyState.visibility = View.GONE
+        loadError?.let { error ->
+            list.addView(makeText(
+                "Refresh failed. Previously loaded offers remain visible. $error",
+                12f, false, color(R.color.market_ink2)
+            ).apply {
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = rounded(color(R.color.market_card), 12f, color(R.color.market_line))
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        }
         shown.forEach { offer ->
             list.addView(buildOfferCard(offer), LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
