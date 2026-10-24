@@ -30,16 +30,16 @@
 
 | Screen | Current status | Next part |
 |---|---|---|
-| 01 Market entry | Partly real; route/count not verified | W1/W2 |
+| 01 Market entry | Student Connect Market tile opens the live Requests feed directly; no separate Market entry counters are shown | Verified |
 | 02 Requests | Feed verified in CI; device/Firebase runtime check still pending | W10 runtime QA |
 | 03 Offers | Feed verified in CI; device/Firebase runtime check still pending | W10 runtime QA |
 | 04 Menu/badges | Live unread notice count | W7 |
 | 05 Helper task detail | Live feed record, seller aggregate rating, proposal/report actions | W3/W6 |
 | 06 Poster task detail | Live owned task, proposals and lifecycle actions | W3 |
-| 07 Post-task title/category | Partly real draft | W3 |
-| 08 Post-task details | Partly real draft | W3 |
-| 09 Publish task | Partly real; repository bootstrap/create real | W3 |
-| 10 Posting rules acknowledgement | Partly real/local state | W3 |
+| 07 Post-task title/category | Local multi-step form draft; persisted with the task at publish | W3 |
+| 08 Post-task details | Local multi-step form draft; persisted with the task at publish | W3 |
+| 09 Publish task | Live profile bootstrap and repository-backed task create | W3 |
+| 10 Posting rules acknowledgement | Local confirmation in the publish flow; not a separate account record | W3 |
 | 11 Send proposal | Live task check and repository create | W3 |
 | 12 Proposals list | Live proposals and shortlist/decline/accept/chat actions | W3 |
 | 13 Accept sheet | Acceptance is live in Proposals | W3 |
@@ -57,7 +57,7 @@
 | 25 Suspended account | Live status/end date and matching decision notice; Rules/appeal routes | W7 |
 | 26 Help & safety | Live routes to Rules, FAQ, reports and support; static safety guidance | W7 |
 | 27 FAQs | Real static content; review copy | W7 |
-| 28 Rules/safety | Partly real static content | W7 |
+| 28 Rules/safety | Static guidance content; the app opens the real Rules screen and uses the current published Firestore Rules | W7 |
 | 29 Contact support | Live ticket create/history/replies | W7 |
 | 30 My reports | Live reporter-scoped report history | W6 |
 | 31 Market settings | Live profile skills/alerts and blocked count | W7 |
