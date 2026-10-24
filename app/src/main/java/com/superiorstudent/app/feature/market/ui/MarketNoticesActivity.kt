@@ -21,15 +21,22 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketNotice
+import com.superiorstudent.app.feature.market.data.MarketNoticeType
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 22 reference inbox. Notice rows, counts and read markers are local fixtures only. */
+/** Screen 22: signed-in student's Market notice inbox. */
 class MarketNoticesActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var tabActivity: TextView
     private lateinit var tabTeam: TextView
     private lateinit var noticeList: LinearLayout
-    private var selectedTab = MarketNoticesTab.TEAM
+    private val repository by lazy { MarketRepository() }
+    private var notices: List<MarketNotice> = emptyList()
+    private var loading = true
+    private var loadError: String? = null
+    private var selectedTab = MarketNoticesTab.ACTIVITY
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -54,10 +61,11 @@ class MarketNoticesActivity : AppCompatActivity() {
         page.addView(buildTabs(), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         noticeList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         page.addView(noticeList, LinearLayout.LayoutParams(-1, -2))
-        page.addView(makeText(MarketNoticesUiPolicy.RETENTION_NOTE, 12f, false, color(R.color.market_ink2)).apply {
+        page.addView(makeText("Open a notice to see its details and any available next steps.",
+            12f, false, color(R.color.market_ink2)).apply {
             gravity = Gravity.CENTER; textAlignment = View.TEXT_ALIGNMENT_CENTER
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-        renderTabs(); renderNotices(); applyWindowInsets()
+        renderTabs(); renderNotices(); applyWindowInsets(); loadNotices()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
@@ -86,11 +94,11 @@ class MarketNoticesActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL; setPadding(dp(5), dp(5), dp(5), dp(5))
             background = rounded(color(R.color.market_card), 20f, color(R.color.market_line))
         }
-        tabActivity = makeText(MarketNoticesTab.ACTIVITY.label, 13.5f, true, color(R.color.market_ink2)).apply {
+        tabActivity = makeText(MarketNoticesTab.ACTIVITY.caption, 13.5f, true, color(R.color.market_ink2)).apply {
             gravity = Gravity.CENTER; setPadding(dp(4), 0, dp(4), 0); isClickable = true; isFocusable = true
             setOnClickListener { selectedTab = MarketNoticesTab.ACTIVITY; renderTabs(); renderNotices() }
         }
-        tabTeam = makeText(MarketNoticesTab.TEAM.label, 13.5f, true, color(R.color.market_ink2)).apply {
+        tabTeam = makeText(MarketNoticesTab.TEAM.caption, 13.5f, true, color(R.color.market_ink2)).apply {
             gravity = Gravity.CENTER; setPadding(dp(4), 0, dp(4), 0); isClickable = true; isFocusable = true
             setOnClickListener { selectedTab = MarketNoticesTab.TEAM; renderTabs(); renderNotices() }
         }
@@ -100,6 +108,8 @@ class MarketNoticesActivity : AppCompatActivity() {
     }
 
     private fun renderTabs() {
+        tabActivity.text = "${MarketNoticesTab.ACTIVITY.caption} ${notices.count { isActivityNotice(it) && !it.read }}"
+        tabTeam.text = "${MarketNoticesTab.TEAM.caption} ${notices.count { !isActivityNotice(it) && !it.read }}"
         styleTab(tabActivity, selectedTab == MarketNoticesTab.ACTIVITY)
         styleTab(tabTeam, selectedTab == MarketNoticesTab.TEAM)
     }
@@ -117,32 +127,45 @@ class MarketNoticesActivity : AppCompatActivity() {
             background = rounded(color(R.color.market_card), 24f, color(R.color.market_line))
             clipToOutline = true
         }
-        val notices = MarketNoticesUiPolicy.noticesFor(selectedTab)
-        notices.forEachIndexed { index, notice ->
+        val shown = notices.filter {
+            if (selectedTab == MarketNoticesTab.ACTIVITY) isActivityNotice(it) else !isActivityNotice(it)
+        }
+        if (loading || loadError != null || shown.isEmpty()) {
+            val message = loadError ?: if (loading) "Loading your notices…" else "No notices in this section yet."
+            card.addView(makeText(message, 13f, false, color(R.color.market_ink2)).apply {
+                setPadding(dp(16), dp(18), dp(16), dp(18))
+            }, LinearLayout.LayoutParams(-1, -2))
+            noticeList.addView(card, LinearLayout.LayoutParams(-1, -2))
+            return
+        }
+        shown.forEachIndexed { index, notice ->
             card.addView(buildNoticeRow(notice), LinearLayout.LayoutParams(-1, -2))
-            if (index < notices.lastIndex) card.addView(View(this).apply {
+            if (index < shown.lastIndex) card.addView(View(this).apply {
                 setBackgroundColor(color(R.color.market_line))
             }, LinearLayout.LayoutParams(-1, dp(1)))
         }
         noticeList.addView(card, LinearLayout.LayoutParams(-1, -2))
     }
 
-    private fun buildNoticeRow(notice: MarketNoticeFixture): View {
+    private fun buildNoticeRow(notice: MarketNotice): View {
+        val timeLabel = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,
+            java.text.DateFormat.SHORT).format(notice.createdAt.toDate())
+        val glyph = when (notice.type) {
+            MarketNoticeType.ANNOUNCEMENT -> MarketNoticesGlyph.SPEAKER
+            MarketNoticeType.WARNING, MarketNoticeType.REMOVAL -> MarketNoticesGlyph.ALERT
+            else -> MarketNoticesGlyph.MAIL
+        }
+        val iconBackground = if (notice.type == MarketNoticeType.REMOVAL ||
+            notice.type == MarketNoticeType.WARNING) R.color.market_peach else R.color.market_sky
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP
             setPadding(dp(14), dp(13), dp(14), dp(13)); isClickable = true; isFocusable = true
-            contentDescription = notice.title + ". " + notice.description + ". " + notice.timeLabel
-            setOnClickListener {
-                if (notice.id == "offer-removed") {
-                    startActivity(Intent(this@MarketNoticesActivity, MarketNoticeDetailActivity::class.java))
-                } else {
-                    showNoticePreview(notice)
-                }
-            }
+            contentDescription = "${notice.title}. ${notice.body}. $timeLabel"
+            setOnClickListener { openNotice(notice) }
         }
         val iconTile = FrameLayout(this).apply {
-            background = rounded(color(notice.iconBackground), 14f)
-            addView(MarketNoticesIconView(this@MarketNoticesActivity, notice.glyph, color(R.color.market_ink)),
+            background = rounded(color(iconBackground), 14f)
+            addView(MarketNoticesIconView(this@MarketNoticesActivity, glyph, color(R.color.market_ink)),
                 FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
         }
         row.addView(iconTile, LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) })
@@ -150,23 +173,59 @@ class MarketNoticesActivity : AppCompatActivity() {
         val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
         titleRow.addView(makeText(notice.title, 14f, true, color(R.color.market_ink)),
             LinearLayout.LayoutParams(0, -2, 1f))
-        if (notice.unread) titleRow.addView(View(this).apply {
+        if (!notice.read) titleRow.addView(View(this).apply {
             background = oval(color(R.color.market_menu_dot)); contentDescription = "Unread"
         }, LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginStart = dp(8); topMargin = dp(5) })
         textColumn.addView(titleRow, LinearLayout.LayoutParams(-1, -2))
-        textColumn.addView(makeText(notice.description, 13f, false, color(R.color.market_ink)).apply {
+        textColumn.addView(makeText(notice.body, 13f, false, color(R.color.market_ink)).apply {
             setLineSpacing(dp(2).toFloat(), 1f)
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
-        textColumn.addView(makeText(notice.timeLabel, 11.5f, false, color(R.color.market_ink2)),
+        textColumn.addView(makeText(timeLabel, 11.5f, false, color(R.color.market_ink2)),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
         row.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
         return row
     }
 
-    private fun showNoticePreview(notice: MarketNoticeFixture) {
-        AlertDialog.Builder(this).setTitle(notice.title)
-            .setMessage(notice.description + "\n\n" + MarketNoticesUiPolicy.disclosureFor(notice))
-            .setPositiveButton("Got it", null).show()
+    private fun isActivityNotice(notice: MarketNotice): Boolean =
+        notice.type !in setOf(MarketNoticeType.SUPPORT_REPLY, MarketNoticeType.ANNOUNCEMENT)
+
+    private fun openNotice(notice: MarketNotice) {
+        try {
+            if (!notice.read) {
+                repository.markNoticeRead(notice.id).addOnSuccessListener {
+                    notices = notices.map { if (it.id == notice.id) it.copy(read = true) else it }
+                    renderTabs(); renderNotices()
+                }
+            }
+        } catch (_: Exception) { /* The detail remains available if its read marker fails. */ }
+        startActivity(Intent(this, MarketNoticeDetailActivity::class.java).apply {
+            putExtra(MarketNoticeDetailActivity.EXTRA_NOTICE_ID, notice.id)
+            putExtra(MarketNoticeDetailActivity.EXTRA_TITLE, notice.title)
+            putExtra(MarketNoticeDetailActivity.EXTRA_BODY, notice.body)
+            putExtra(MarketNoticeDetailActivity.EXTRA_CREATED_AT, notice.createdAt.toDate().time)
+            putExtra(MarketNoticeDetailActivity.EXTRA_CAN_APPEAL, notice.canAppeal && !notice.appealed)
+        })
+    }
+
+    private fun loadNotices() {
+        try {
+            repository.loadMyNotices().addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                loading = false
+                if (result.isSuccessful) {
+                    notices = result.result.orEmpty()
+                    loadError = null
+                } else {
+                    notices = emptyList()
+                    loadError = result.exception?.localizedMessage ?: "Your notices could not be loaded."
+                }
+                renderTabs(); renderNotices()
+            }
+        } catch (error: Exception) {
+            loading = false
+            loadError = error.localizedMessage ?: "Your notices could not be loaded."
+            renderTabs(); renderNotices()
+        }
     }
 
     private fun makeText(value: String, size: Float, medium: Boolean, textColor: Int): TextView =

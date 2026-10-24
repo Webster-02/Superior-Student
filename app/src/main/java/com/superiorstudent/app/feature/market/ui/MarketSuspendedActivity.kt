@@ -11,7 +11,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
@@ -21,6 +20,7 @@ import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
 import com.superiorstudent.app.feature.market.data.MarketProfile
 import com.superiorstudent.app.feature.market.data.MarketProfileStatus
+import com.superiorstudent.app.feature.market.data.MarketNotice
 import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 import java.text.SimpleDateFormat
@@ -34,6 +34,9 @@ class MarketSuspendedActivity : AppCompatActivity() {
     private lateinit var reasonText: TextView
     private lateinit var deniedHeader: TextView
     private lateinit var deniedRow: View
+    private var appealButton: View? = null
+    private var restrictionNotice: MarketNotice? = null
+    private val repository by lazy { MarketRepository() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -83,7 +86,7 @@ class MarketSuspendedActivity : AppCompatActivity() {
     }
 
     private fun loadAccountStatus() {
-        MarketRepository().loadCurrentMarketProfile()
+        repository.loadCurrentMarketProfile()
             .addOnSuccessListener { profile ->
                 if (isFinishing || isDestroyed) return@addOnSuccessListener
                 renderAccountStatus(profile)
@@ -153,15 +156,20 @@ class MarketSuspendedActivity : AppCompatActivity() {
         if (profile.status == MarketProfileStatus.SUSPENDED ||
             profile.status == MarketProfileStatus.BANNED
         ) {
-            MarketRepository().loadAccountRestrictionNotice(profile.status)
+            repository.loadAccountRestrictionNotice(profile.status)
                 .addOnSuccessListener { notice ->
                     if (isFinishing || isDestroyed) return@addOnSuccessListener
+                    restrictionNotice = notice
                     if (notice != null) {
                         reasonText.text = notice.title + "\n" + notice.body
                     }
+                    appealButton?.visibility = if (notice?.canAppeal == true && !notice.appealed)
+                        View.VISIBLE else View.GONE
                 }
                 .addOnFailureListener {
                     if (isFinishing || isDestroyed) return@addOnFailureListener
+                    restrictionNotice = null
+                    appealButton?.visibility = View.GONE
                     // Keep the real status/end date visible and do not retry automatically.
                     reasonText.text = "The decision notice could not be loaded. Open Notices to review the restriction."
                 }
@@ -268,20 +276,28 @@ class MarketSuspendedActivity : AppCompatActivity() {
                 else rounded(color(R.color.market_card), 16f, color(R.color.market_line))
             isClickable = true; isFocusable = true; contentDescription = label
         }
+        if (primary) {
+            appealButton = button
+            button.visibility = View.GONE
+        }
         val glyph = if (primary) MarketSuspendedGlyph.FLAG else MarketSuspendedGlyph.RULES
         button.addView(MarketSuspendedIconView(this, glyph, foreground),
             LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
         button.addView(makeText(label, 15f, true, foreground))
         button.setOnClickListener {
             if (primary) {
-                startActivity(Intent(this, MarketAppealActivity::class.java))
+                val notice = restrictionNotice ?: return@setOnClickListener
+                if (notice.canAppeal && !notice.appealed) {
+                    startActivity(Intent(this, MarketNoticeDetailActivity::class.java).apply {
+                        putExtra(MarketNoticeDetailActivity.EXTRA_NOTICE_ID, notice.id)
+                        putExtra(MarketNoticeDetailActivity.EXTRA_TITLE, notice.title)
+                        putExtra(MarketNoticeDetailActivity.EXTRA_BODY, notice.body)
+                        putExtra(MarketNoticeDetailActivity.EXTRA_CREATED_AT, notice.createdAt.toDate().time)
+                        putExtra(MarketNoticeDetailActivity.EXTRA_CAN_APPEAL, true)
+                    })
+                }
             } else {
-                AlertDialog.Builder(this)
-                    .setTitle(MarketSuspendedUiPolicy.RULES_BUTTON)
-                    .setMessage(MarketSuspendedUiPolicy.RULES_PREVIEW + "\n\n" +
-                        MarketSuspendedUiPolicy.PREVIEW_DISCLOSURE)
-                    .setPositiveButton("Got it", null)
-                    .show()
+                startActivity(Intent(this, MarketRulesActivity::class.java))
             }
         }
         return button

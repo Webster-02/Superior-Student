@@ -1,6 +1,5 @@
 package com.superiorstudent.app.feature.market.ui
 
-import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -19,36 +18,38 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketReportTargetType
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 17: native Offer detail page built from local reference fixtures only. */
+/** Screen 17: live Offer detail page opened from the public offer feed. */
 class MarketOfferDetailActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
-    private lateinit var saveLabel: TextView
-    private var isSaved = false
+    private val repository by lazy { MarketRepository() }
+    private var ratingView: TextView? = null
+    private var messageButton: View? = null
 
     private val offerId get() = intent.getStringExtra(EXTRA_ID).orEmpty()
-        .ifBlank { MarketOfferDetailUiPolicy.REFERENCE_OFFER_ID }
     private val category get() = intent.getStringExtra(EXTRA_CATEGORY).orEmpty()
-        .ifBlank { MarketOfferDetailUiPolicy.REFERENCE_CATEGORY }
+        .ifBlank { "Offer" }
     private val course get() = intent.getStringExtra(EXTRA_COURSE).orEmpty()
-        .ifBlank { MarketOfferDetailUiPolicy.courseLabel(offerId, category) }
     private val offerTitle get() = intent.getStringExtra(EXTRA_TITLE).orEmpty()
-        .ifBlank { MarketOfferDetailUiPolicy.REFERENCE_TITLE }
+        .ifBlank { "Offer unavailable" }
     private val sellerName get() = intent.getStringExtra(EXTRA_SELLER).orEmpty()
-        .ifBlank { MarketOfferDetailUiPolicy.REFERENCE_SELLER }
+        .ifBlank { "Market seller" }
+    private val sellerId get() = intent.getStringExtra(EXTRA_SELLER_ID).orEmpty()
     private val sellerInitials get() = intent.getStringExtra(EXTRA_INITIALS).orEmpty()
-        .ifBlank { MarketOfferDetailUiPolicy.REFERENCE_INITIALS }
+        .ifBlank { "ST" }
     private val priceLabel get() = intent.getStringExtra(EXTRA_PRICE_LABEL).orEmpty()
-        .ifBlank { MarketOfferDetailUiPolicy.REFERENCE_PRICE }
-    private val priceValue get() = intent.getIntExtra(EXTRA_PRICE_VALUE, 300)
-    private val rating get() = intent.getDoubleExtra(EXTRA_RATING, MarketOfferDetailUiPolicy.REFERENCE_RATING)
-    private val reviewCount get() = intent.getIntExtra(EXTRA_REVIEW_COUNT, MarketOfferDetailUiPolicy.REFERENCE_REVIEW_COUNT)
-    private val verified get() = intent.getBooleanExtra(EXTRA_VERIFIED, true)
+        .ifBlank { "Price unavailable" }
+    private val priceValue get() = intent.getIntExtra(EXTRA_PRICE_VALUE, -1)
+    private val rating get() = intent.getDoubleExtra(EXTRA_RATING, 0.0)
+    private val reviewCount get() = intent.getIntExtra(EXTRA_REVIEW_COUNT, 0)
+    private val verified get() = intent.getBooleanExtra(EXTRA_VERIFIED, false)
     private val avatarColor get() = intent.getIntExtra(EXTRA_AVATAR_COLOR,
         MarketOfferDetailUiPolicy.avatarColorFor(offerId))
-    private val aboutText get() = MarketOfferDetailUiPolicy.descriptionFor(
-        offerId, intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty())
+    private val aboutText get() = intent.getStringExtra(EXTRA_DESCRIPTION).orEmpty()
+        .ifBlank { "No description provided." }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -95,6 +96,7 @@ class MarketOfferDetailActivity : AppCompatActivity() {
             topMargin = dp(12)
         })
         content.addView(buildFooter(), LinearLayout.LayoutParams(-1, -2))
+        loadSellerRating()
         applyWindowInsets()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
@@ -111,10 +113,11 @@ class MarketOfferDetailActivity : AppCompatActivity() {
         row.addView(makeText("Offer", 20f, true, color(R.color.market_ink)),
             LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
         row.addView(iconButton(MarketOfferDetailIcon.FLAG, "Report offer", color(R.color.market_ink)) {
-            AlertDialog.Builder(this)
-                .setTitle("Report offer")
-                .setMessage("Reporting is not connected in this reference preview. No report was submitted.")
-                .setPositiveButton("Got it", null).show()
+            if (offerId.isBlank()) {
+                Toast.makeText(this, "This offer link is missing its ID.", Toast.LENGTH_SHORT).show()
+            } else {
+                MarketReportSheet.show(this, sellerName, MarketReportTargetType.OFFER, offerId, sellerId)
+            }
         }, LinearLayout.LayoutParams(dp(40), dp(40)))
         return row
     }
@@ -125,8 +128,10 @@ class MarketOfferDetailActivity : AppCompatActivity() {
         }
         row.addView(makePill(category, color(R.color.market_lav), color(R.color.market_ink)),
             LinearLayout.LayoutParams(-2, -2))
-        row.addView(makePill(course, color(R.color.market_bg), color(R.color.market_ink)),
-            LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+        course.takeIf { it.isNotBlank() }?.let {
+            row.addView(makePill(it, color(R.color.market_bg), color(R.color.market_ink)),
+                LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(6) })
+        }
         return row
     }
 
@@ -154,7 +159,7 @@ class MarketOfferDetailActivity : AppCompatActivity() {
         ratingRow.addView(makeText(
             MarketOfferDetailUiPolicy.ratingLine(rating, reviewCount, verified),
             12f, false, color(R.color.market_ink2)
-        ), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(4) })
+        ).also { ratingView = it }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(4) })
         seller.addView(ratingRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
         card.addView(seller, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(12) })
         return card
@@ -166,7 +171,7 @@ class MarketOfferDetailActivity : AppCompatActivity() {
         }
         row.addView(metricCard("Price", priceLabel, color(R.color.market_lav)),
             LinearLayout.LayoutParams(0, dp(94), 1f))
-        row.addView(metricCard("Delivery", MarketOfferDetailUiPolicy.DELIVERY_LABEL,
+        row.addView(metricCard("Delivery", "Ask the seller in chat",
             color(R.color.market_sky)), LinearLayout.LayoutParams(0, dp(94), 1f).apply {
             marginStart = dp(8)
         })
@@ -209,25 +214,6 @@ class MarketOfferDetailActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        val save = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            background = rounded(color(R.color.market_card), 16f, color(R.color.market_line))
-            isClickable = true; isFocusable = true; contentDescription = "Save offer"
-            addView(MarketOfferDetailIconView(this@MarketOfferDetailActivity,
-                MarketOfferDetailIcon.SAVE, color(R.color.market_ink)),
-                LinearLayout.LayoutParams(dp(20), dp(20)))
-            saveLabel = makeText("Save", 15f, true, color(R.color.market_ink))
-            addView(saveLabel, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
-            setOnClickListener {
-                isSaved = !isSaved
-                saveLabel.text = if (isSaved) "Saved" else "Save"
-                contentDescription = if (isSaved) "Offer saved in this preview" else "Save offer"
-                Toast.makeText(this@MarketOfferDetailActivity,
-                    if (isSaved) "Saved in this preview only." else "Removed from preview saves.",
-                    Toast.LENGTH_SHORT).show()
-            }
-        }
-        row.addView(save, LinearLayout.LayoutParams(0, dp(52), 1f))
         val message = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
             background = rounded(color(R.color.market_match), 16f)
@@ -237,28 +223,68 @@ class MarketOfferDetailActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(dp(20), dp(20)))
             addView(makeText("Message", 15f, true, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
-            setOnClickListener { showChatPreviewConfirmation() }
+            val canMessage = offerId.isNotBlank() && sellerId.isNotBlank() &&
+                sellerId != com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            isEnabled = canMessage
+            alpha = if (canMessage) 1f else 0.55f
+            setOnClickListener { openOfferConversation() }
         }
-        row.addView(message, LinearLayout.LayoutParams(0, dp(52), 1f).apply { marginStart = dp(10) })
+        messageButton = message
+        row.addView(message, LinearLayout.LayoutParams(-1, dp(52)))
         footer.addView(row, LinearLayout.LayoutParams(-1, -2))
         return footer
     }
 
-    private fun showChatPreviewConfirmation() {
-        AlertDialog.Builder(this)
-            .setTitle("Chat preview only")
-            .setMessage("Open a sample chat with $sellerName about this offer? No message will be sent and no live chat will be created.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Open chat preview") { _, _ ->
-                startActivity(Intent(this, MarketTaskChatActivity::class.java).apply {
+    private fun openOfferConversation() {
+        if (offerId.isBlank()) {
+            Toast.makeText(this, "This offer link is missing its ID.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        messageButton?.isEnabled = false
+        try {
+            repository.openOfferConversation(offerId).addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                messageButton?.isEnabled = sellerId != com.google.firebase.auth.FirebaseAuth
+                    .getInstance().currentUser?.uid
+                if (!result.isSuccessful) {
+                    Toast.makeText(this, result.exception?.localizedMessage
+                        ?: "A Market conversation could not be opened.", Toast.LENGTH_SHORT).show()
+                    return@addOnCompleteListener
+                }
+                startActivity(android.content.Intent(this, MarketTaskChatActivity::class.java).apply {
+                    putExtra(MarketTaskChatActivity.EXTRA_CONVERSATION_ID, result.result)
                     putExtra(MarketTaskChatActivity.EXTRA_HELPER_NAME, sellerName)
                     putExtra(MarketTaskChatActivity.EXTRA_TASK_TITLE, offerTitle)
-                    putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR,
-                        MarketOfferDetailUiPolicy.priceValueForChat(priceValue))
-                    putExtra(MarketTaskChatActivity.EXTRA_CHAT_CONTEXT,
-                        MarketTaskChatUiPolicy.CHAT_CONTEXT_OFFER)
+                    putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR, priceValue.coerceAtLeast(0))
                 })
-            }.show()
+            }
+        } catch (error: Exception) {
+            messageButton?.isEnabled = true
+            Toast.makeText(this, error.localizedMessage
+                ?: "A Market conversation could not be opened.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun loadSellerRating() {
+        if (sellerId.isBlank()) {
+            ratingView?.text = "Seller rating unavailable"
+            return
+        }
+        try {
+            repository.loadPublicUserStats(sellerId).addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                val stats = if (result.isSuccessful) result.result else null
+                ratingView?.text = when {
+                    !result.isSuccessful -> "Seller rating unavailable"
+                    stats == null || stats.ratingCount == 0 -> "No ratings yet"
+                    else -> "%.1f · %d %s".format(java.util.Locale.US,
+                        stats.ratingSum / stats.ratingCount, stats.ratingCount,
+                        if (stats.ratingCount == 1) "rating" else "ratings")
+                }
+            }
+        } catch (_: Exception) {
+            ratingView?.text = "Seller rating unavailable"
+        }
     }
 
     private fun iconButton(icon: MarketOfferDetailIcon, description: String, tint: Int,
@@ -320,6 +346,7 @@ class MarketOfferDetailActivity : AppCompatActivity() {
         const val EXTRA_PRICE_LABEL = "market.offer.price_label"
         const val EXTRA_PRICE_VALUE = "market.offer.price_value"
         const val EXTRA_SELLER = "market.offer.seller"
+        const val EXTRA_SELLER_ID = "market.offer.seller_id"
         const val EXTRA_INITIALS = "market.offer.initials"
         const val EXTRA_RATING = "market.offer.rating"
         const val EXTRA_REVIEW_COUNT = "market.offer.review_count"

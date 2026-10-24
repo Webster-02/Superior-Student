@@ -27,7 +27,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 26 native reference implementation. FAQs open Screen 27; other topic actions remain previews. */
+/** Screen 26 help hub. Account-specific reports and support open their live Market screens. */
 class MarketHelpActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var searchInput: EditText
@@ -270,7 +270,7 @@ class MarketHelpActivity : AppCompatActivity() {
     private fun openTopic(topic: MarketHelpTopic) {
         when (topic.label) {
             MarketHelpUiPolicy.TOPIC_POSTING_RULES -> openRules()
-            MarketHelpUiPolicy.TOPIC_SAFETY_TIPS -> showPreview(
+            MarketHelpUiPolicy.TOPIC_SAFETY_TIPS -> showHelpInfo(
                 topic.label, MarketHelpUiPolicy.SAFETY_TIPS
             )
             MarketHelpUiPolicy.TOPIC_FAQS -> openFaq()
@@ -345,10 +345,10 @@ class MarketHelpActivity : AppCompatActivity() {
         return footer
     }
 
-    private fun showPreview(title: String, message: String) {
+    private fun showHelpInfo(title: String, message: String) {
         AlertDialog.Builder(this)
             .setTitle(title)
-            .setMessage(message + "\n\n" + MarketHelpUiPolicy.PREVIEW_DISCLOSURE)
+            .setMessage(message)
             .setPositiveButton("Got it", null)
             .show()
     }

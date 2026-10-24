@@ -1,7 +1,9 @@
 package com.superiorstudent.app.feature.market.ui
 
 internal enum class MarketMyTasksTab { POSTED, APPLIED }
-internal enum class MarketMyTaskAction { OPEN_POSTED_DETAIL, OPEN_CHAT_PREVIEW, PREVIEW_INFO }
+internal enum class MarketMyTaskAction {
+    OPEN_POSTED_DETAIL, OPEN_CHAT_PREVIEW, RATE_TASK, WITHDRAW_PROPOSAL, PREVIEW_INFO
+}
 internal enum class MarketMyTaskTone { PEACH, MINT, LAVENDER, SKY, LIME, SUCCESS, WARNING }
 
 internal data class MarketMyTaskItem(
@@ -14,7 +16,9 @@ internal data class MarketMyTaskItem(
     val detailLine: String,
     val action: MarketMyTaskAction,
     val pricePkr: Int = 0,
-    val helperName: String = MarketTaskChatUiPolicy.HELPER_NAME
+    val helperName: String = "",
+    val conversationId: String? = null,
+    val counterpartUid: String? = null
 )
 
 /**

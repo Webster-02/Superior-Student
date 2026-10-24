@@ -1,5 +1,7 @@
 package com.superiorstudent.app.feature.market.ui
 
+import com.superiorstudent.app.feature.market.data.MarketProposalStatus
+
 internal enum class MarketProposalsFilter { ALL, SHORTLISTED, CHEAPEST, TOP_RATED }
 
 internal data class MarketProposalPreview(
@@ -12,7 +14,9 @@ internal data class MarketProposalPreview(
     val pricePkr: Int,
     val message: String,
     val avatarTone: String,
-    val shortlisted: Boolean = false
+    val shortlisted: Boolean = false,
+    val status: MarketProposalStatus = MarketProposalStatus.SENT,
+    val deliveryDays: Int = 1
 )
 
 internal object MarketProposalsUiPolicy {
@@ -58,12 +62,13 @@ internal object MarketProposalsUiPolicy {
     )
 
     fun capacityLabel(): String = "$TOTAL_PROPOSALS of $MAX_PROPOSALS"
+    fun capacityLabel(count: Int): String = "$count of $MAX_PROPOSALS"
 
     fun shortlistedLabel(items: List<MarketProposalPreview>): String =
         "${shortlistedCount(items)} shortlisted"
 
     fun shortlistedCount(items: List<MarketProposalPreview>): Int =
-        items.count { it.shortlisted }.coerceIn(0, TOTAL_PROPOSALS)
+        items.count { it.shortlisted }
 
     fun filterAndSort(
         items: List<MarketProposalPreview>,

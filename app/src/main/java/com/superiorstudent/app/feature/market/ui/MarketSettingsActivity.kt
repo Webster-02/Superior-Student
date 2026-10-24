@@ -19,16 +19,21 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketProfileSettings
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 31. Settings controls are local previews; Firebase settings persistence is not connected. */
+/** Screen 31. Market skills and alert preferences are loaded from and saved to the student's profile. */
 class MarketSettingsActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var skillsContainer: LinearLayout
-    private val selectedSkills = MarketSettingsUiPolicy.defaultSkills.toMutableList()
-    private val alertValues = MarketSettingsUiPolicy.alerts.associateWith { it.initialEnabled }.toMutableMap()
+    private val repository by lazy { MarketRepository() }
+    private val selectedSkills = mutableListOf<String>()
+    private val alertValues = MarketSettingsUiPolicy.alerts.associateWith { false }.toMutableMap()
     private val alertSwitches = linkedMapOf<MarketSettingsAlert, FrameLayout>()
     private val alertRows = linkedMapOf<MarketSettingsAlert, View>()
+    private var settingsLoaded = false
+    private var blockedUsersSubtitle: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -77,6 +82,7 @@ class MarketSettingsActivity : AppCompatActivity() {
         })
 
         applyWindowInsets()
+        loadSettings()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
@@ -172,6 +178,7 @@ class MarketSettingsActivity : AppCompatActivity() {
             setOnClickListener {
                 selectedSkills.remove(skill)
                 renderSkills()
+                saveSkills()
             }
         }
 
@@ -192,6 +199,7 @@ class MarketSettingsActivity : AppCompatActivity() {
                 if (MarketSettingsUiPolicy.canAddSkill(selectedSkills, skill)) {
                     selectedSkills.add(skill)
                     renderSkills()
+                    saveSkills()
                 }
                 dialog.dismiss()
             }
@@ -240,8 +248,10 @@ class MarketSettingsActivity : AppCompatActivity() {
     }
 
     private fun toggleAlert(alert: MarketSettingsAlert) {
+        if (!settingsLoaded) return
         alertValues[alert] = !(alertValues[alert] ?: false)
         refreshAlertSwitch(alert)
+        saveAlertSettings()
     }
 
     private fun refreshAlertSwitch(alert: MarketSettingsAlert) {
@@ -271,7 +281,7 @@ class MarketSettingsActivity : AppCompatActivity() {
             clipToOutline = true
         }
         card.addView(buildLinkRow(MarketSettingsUiPolicy.BLOCKED_USERS, MarketSettingsGlyph.BLOCKED,
-            R.color.market_rules_ban_bg, MarketSettingsUiPolicy.BLOCKED_COUNT) {
+            R.color.market_rules_ban_bg, "Loading…") {
             startActivity(Intent(this, MarketBlockedUsersActivity::class.java))
         })
         addDivider(card)
@@ -315,7 +325,9 @@ class MarketSettingsActivity : AppCompatActivity() {
         val textColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         textColumn.addView(makeText(title, 14f, true, color(R.color.market_ink)))
         if (!subtitle.isNullOrBlank()) {
-            textColumn.addView(makeText(subtitle, 12f, false, color(R.color.market_ink2)),
+            val subtitleView = makeText(subtitle, 12f, false, color(R.color.market_ink2))
+            if (title == MarketSettingsUiPolicy.BLOCKED_USERS) blockedUsersSubtitle = subtitleView
+            textColumn.addView(subtitleView,
                 LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
         }
         row.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
@@ -337,13 +349,64 @@ class MarketSettingsActivity : AppCompatActivity() {
     private fun skillTextColor(): Int =
         if (AppThemePreferences.isNight(this)) color(R.color.market_match_ink) else Color.WHITE
 
-    private fun showLocalPreviewNotice() {
-        AlertDialog.Builder(this)
-            .setTitle(MarketSettingsUiPolicy.LOCAL_PREVIEW_TITLE)
-            .setMessage(MarketSettingsUiPolicy.LOCAL_PREVIEW_MESSAGE)
-            .setPositiveButton("OK", null)
-            .show()
+    private fun loadSettings() {
+        try {
+            repository.ensureMarketProfile().addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                if (!result.isSuccessful) {
+                    AlertDialog.Builder(this).setTitle("Settings unavailable")
+                        .setMessage(result.exception?.localizedMessage ?: "Market settings could not be loaded.")
+                        .setPositiveButton("OK", null).show()
+                    return@addOnCompleteListener
+                }
+                val profile = result.result ?: return@addOnCompleteListener
+                selectedSkills.clear()
+                selectedSkills.addAll(profile.skillTags)
+                alertValues[MarketSettingsAlert.NEW_PROPOSALS] = profile.settings.alertProposals
+                alertValues[MarketSettingsAlert.PROPOSAL_UPDATES] = profile.settings.alertUpdates
+                alertValues[MarketSettingsAlert.TEAM_MESSAGES] = profile.settings.alertNotices
+                alertValues[MarketSettingsAlert.MATCHING_TASKS] = profile.settings.alertMatchingTasks
+                settingsLoaded = true
+                blockedUsersSubtitle?.text = "${profile.blockedUids.size} blocked"
+                renderSkills()
+                MarketSettingsUiPolicy.alerts.forEach(::refreshAlertSwitch)
+            }
+        } catch (error: Exception) {
+            AlertDialog.Builder(this).setTitle("Settings unavailable")
+                .setMessage(error.localizedMessage ?: "Market settings could not be loaded.")
+                .setPositiveButton("OK", null).show()
+        }
     }
+
+    private fun saveSkills() {
+        if (!settingsLoaded) return
+        try {
+            repository.updateSkillTags(selectedSkills.toList()).addOnFailureListener { error ->
+                if (!isFinishing && !isDestroyed) toast(error.localizedMessage ?: "Skills could not be saved.")
+            }
+        } catch (error: Exception) {
+            toast(error.localizedMessage ?: "Skills could not be saved.")
+        }
+    }
+
+    private fun saveAlertSettings() {
+        val settings = MarketProfileSettings(
+            alertProposals = alertValues[MarketSettingsAlert.NEW_PROPOSALS] == true,
+            alertUpdates = alertValues[MarketSettingsAlert.PROPOSAL_UPDATES] == true,
+            alertNotices = alertValues[MarketSettingsAlert.TEAM_MESSAGES] == true,
+            alertMatchingTasks = alertValues[MarketSettingsAlert.MATCHING_TASKS] == true
+        )
+        try {
+            repository.updateSettings(settings).addOnFailureListener { error ->
+                if (!isFinishing && !isDestroyed) toast(error.localizedMessage ?: "Alert settings could not be saved.")
+            }
+        } catch (error: Exception) {
+            toast(error.localizedMessage ?: "Alert settings could not be saved.")
+        }
+    }
+
+    private fun toast(message: String) = android.widget.Toast.makeText(this, message,
+        android.widget.Toast.LENGTH_SHORT).show()
 
     private fun makeText(value: String, size: Float, medium: Boolean, textColor: Int): TextView =
         TextView(this).apply {

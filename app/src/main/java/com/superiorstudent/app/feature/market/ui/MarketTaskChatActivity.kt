@@ -1,6 +1,5 @@
 package com.superiorstudent.app.feature.market.ui
 
-import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -24,36 +23,55 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketConversation
+import com.superiorstudent.app.feature.market.data.MarketConversationMessage
+import com.superiorstudent.app.feature.market.data.MarketListingKind
+import com.superiorstudent.app.feature.market.data.MarketRepository
+import com.superiorstudent.app.feature.market.data.MarketTaskStatus
 import com.superiorstudent.app.ui.AppThemePreferences
 
 /**
- * Screen 14 reference chat preview. It uses local fixture messages and never calls Student Connect chat.
+ * Screen 14: live Market text chat, stored separately from Student Connect conversations.
  */
 class MarketTaskChatActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var chatScroll: ScrollView
     private lateinit var messageList: LinearLayout
     private lateinit var messageInput: EditText
-    private var messages = MarketTaskChatUiPolicy.referenceMessages
-    private var offerChatContext = false
+    private val repository by lazy { MarketRepository() }
+    private var messages: List<MarketTaskChatMessage> = emptyList()
+    private var conversation: MarketConversation? = null
+    private var currentUid = ""
+    private var recipientUid = ""
+    private var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
+    private var liveLoadError: String? = null
+    private var partnerDisplayName = intent.getStringExtra(EXTRA_HELPER_NAME).orEmpty()
+        .ifBlank { "Market participant" }
+    private var partnerNameView: TextView? = null
+    private var taskTitleView: TextView? = null
+    private var summaryStatusView: TextView? = null
+    private var completionButton: TextView? = null
 
     private val helperName: String
-        get() = intent.getStringExtra(EXTRA_HELPER_NAME).orEmpty()
-            .ifBlank { MarketTaskChatUiPolicy.HELPER_NAME }
+        get() = partnerDisplayName
     private val helperInitials: String
         get() = MarketTaskChatUiPolicy.initials(helperName)
     private val taskTitle: String
-        get() = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty()
-            .ifBlank { MarketTaskChatUiPolicy.TASK_TITLE }
+        get() = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank {
+            val current = conversation
+            val id = current?.taskId ?: current?.offerId ?: ""
+            val type = if (current?.kind == MarketListingKind.OFFER) "Offer" else "Task"
+            if (id.isBlank()) "Market conversation" else "$type · ${id.takeLast(6)}"
+        }
     private val pricePkr: Int
-        get() = intent.getIntExtra(EXTRA_PRICE_PKR, MarketTaskChatUiPolicy.PRICE_PKR)
+        get() = intent.getIntExtra(EXTRA_PRICE_PKR, 0)
+    private val conversationId: String
+        get() = intent.getStringExtra(EXTRA_CONVERSATION_ID).orEmpty()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
-        offerChatContext = intent.getStringExtra(EXTRA_CHAT_CONTEXT) ==
-            MarketTaskChatUiPolicy.CHAT_CONTEXT_OFFER
-        if (offerChatContext) messages = MarketTaskChatUiPolicy.offerPreviewMessages
+        currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
         root = FrameLayout(this).apply {
             setBackgroundColor(color(R.color.market_bg))
             clipToPadding = false
@@ -91,10 +109,145 @@ class MarketTaskChatActivity : AppCompatActivity() {
         })
 
         renderMessages()
+        loadConversation()
         applyWindowInsets()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
+    }
+
+    override fun onStart() {
+        super.onStart()
+        conversation?.let(::startMessageListener)
+    }
+
+    override fun onStop() {
+        listenerRegistration?.remove()
+        listenerRegistration = null
+        super.onStop()
+    }
+
+    private fun loadConversation() {
+        if (conversationId.isBlank()) {
+            liveLoadError = "This Market chat is missing its conversation ID. Open it from a task or offer."
+            renderMessages()
+            return
+        }
+        val load = try {
+            repository.loadMarketConversation(conversationId)
+        } catch (error: Exception) {
+            liveLoadError = error.localizedMessage ?: "The Market conversation could not be loaded."
+            renderMessages()
+            return
+        }
+        load.addOnCompleteListener { result ->
+            if (isFinishing || isDestroyed) return@addOnCompleteListener
+            if (!result.isSuccessful || result.result == null) {
+                liveLoadError = result.exception?.localizedMessage
+                    ?: "This Market conversation is unavailable."
+                renderMessages()
+                return@addOnCompleteListener
+            }
+            val loadedConversation = result.result ?: return@addOnCompleteListener
+            conversation = loadedConversation
+            recipientUid = loadedConversation.participants.firstOrNull { it != currentUid }.orEmpty()
+            taskTitleView?.text = taskTitle
+            summaryStatusView?.text = if (loadedConversation.kind == MarketListingKind.OFFER)
+                "Offer chat" else "Task chat"
+            completionButton?.visibility = View.GONE
+            messageInput.isEnabled = recipientUid.isNotBlank()
+            liveLoadError = null
+            try {
+                repository.markConversationRead(loadedConversation.id)
+            } catch (_: Exception) {
+                // Message access remains valid even if the optional read marker update fails.
+            }
+            renderMessages()
+            startMessageListener(loadedConversation)
+            if (loadedConversation.kind == MarketListingKind.TASK &&
+                loadedConversation.listingOwnerUid == currentUid && !loadedConversation.taskId.isNullOrBlank()) {
+                try {
+                    repository.loadOwnedTask(loadedConversation.taskId).addOnCompleteListener { taskResult ->
+                        if (isFinishing || isDestroyed) return@addOnCompleteListener
+                        val liveTask = if (taskResult.isSuccessful) taskResult.result else null
+                        completionButton?.visibility = if (liveTask?.status == MarketTaskStatus.ASSIGNED)
+                            View.VISIBLE else View.GONE
+                        summaryStatusView?.text = when (liveTask?.status) {
+                            MarketTaskStatus.COMPLETED -> "Completed"
+                            MarketTaskStatus.CANCELLED -> "Cancelled"
+                            MarketTaskStatus.EXPIRED -> "Expired"
+                            MarketTaskStatus.ASSIGNED -> "Assigned"
+                            else -> "Task chat"
+                        }
+                    }
+                } catch (_: Exception) {
+                    completionButton?.visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    private fun startMessageListener(chat: MarketConversation) {
+        if (listenerRegistration != null || isFinishing || isDestroyed) return
+        try {
+            listenerRegistration = repository.listenMarketMessages(chat) { rows, error ->
+                if (isFinishing || isDestroyed) return@listenMarketMessages
+                if (error != null) {
+                    liveLoadError = error.localizedMessage ?: "Market messages could not be loaded."
+                    renderMessages()
+                    return@listenMarketMessages
+                }
+                liveLoadError = null
+                val firstOtherSender = rows.firstOrNull { it.senderUid != currentUid }?.senderName
+                if (intent.getStringExtra(EXTRA_HELPER_NAME).isNullOrBlank() &&
+                    !firstOtherSender.isNullOrBlank()) {
+                    partnerDisplayName = firstOtherSender
+                    partnerNameView?.text = firstOtherSender
+                }
+                messages = rows.map(::toChatMessage)
+                renderMessages()
+                chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
+            }
+        } catch (error: Exception) {
+            liveLoadError = error.localizedMessage ?: "Market messages could not be loaded."
+            renderMessages()
+        }
+    }
+
+    private fun toChatMessage(message: MarketConversationMessage) = MarketTaskChatMessage(
+        id = message.id,
+        body = message.text,
+        timeLabel = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+            .format(message.createdAt.toDate()),
+        fromMe = message.senderUid == currentUid
+    )
+
+    private fun confirmTaskCompletion() {
+        val chat = conversation ?: return
+        val taskId = chat.taskId ?: return
+        AlertDialog.Builder(this)
+            .setTitle("Mark task complete?")
+            .setMessage("Confirm that the task has been completed.")
+            .setNegativeButton("Not yet", null)
+            .setPositiveButton("Complete task") { _, _ ->
+                try {
+                    repository.completeTask(taskId).addOnCompleteListener { result ->
+                        if (isFinishing || isDestroyed) return@addOnCompleteListener
+                        if (result.isSuccessful) {
+                            completionButton?.visibility = View.GONE
+                summaryStatusView?.text = "Completed"
+                            Toast.makeText(this, "Task marked complete.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this, result.exception?.localizedMessage
+                                ?: "Task could not be completed.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (error: Exception) {
+                    Toast.makeText(this, error.localizedMessage ?: "Task could not be completed.",
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
     }
 
     private fun buildHeader(): View {
@@ -118,22 +271,17 @@ class MarketTaskChatActivity : AppCompatActivity() {
         })
 
         val headings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        headings.addView(makeText(helperName, 16f, true, color(R.color.market_ink)).apply {
+        val partnerName = makeText(helperName, 16f, true, color(R.color.market_ink)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        headings.addView(makeText("Task chat", 12f, false, color(R.color.market_ink2)))
+        }
+        partnerNameView = partnerName
+        headings.addView(partnerName)
+        headings.addView(makeText("Market chat", 12f, false, color(R.color.market_ink2)))
         row.addView(headings, LinearLayout.LayoutParams(0, -2, 1f).apply {
             marginStart = dp(12)
             marginEnd = dp(8)
         })
-        row.addView(iconButton(MarketTaskChatIcon.FLAG, "Report chat", color(R.color.market_ink)) {
-            AlertDialog.Builder(this)
-                .setTitle("Report chat")
-                .setMessage("Reporting is not connected in this reference preview. No report was submitted.")
-                .setPositiveButton("Got it", null)
-                .show()
-        }, LinearLayout.LayoutParams(dp(44), dp(44)))
         return row
     }
 
@@ -156,11 +304,15 @@ class MarketTaskChatActivity : AppCompatActivity() {
         heading.addView(briefcase, LinearLayout.LayoutParams(dp(42), dp(42)))
 
         val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        labels.addView(makeText(taskTitle, 13.5f, true, color(R.color.market_ink)).apply {
+        val taskTitleLabel = makeText(taskTitle, 13.5f, true, color(R.color.market_ink)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        labels.addView(makeText(MarketTaskChatUiPolicy.taskBudgetLine(pricePkr), 12.5f,
+        }
+        taskTitleView = taskTitleLabel
+        labels.addView(taskTitleLabel)
+        val priceLine = if (pricePkr > 0) "Proposal price ${MarketTaskChatUiPolicy.priceLabel(pricePkr)}"
+            else "Market conversation"
+        labels.addView(makeText(priceLine, 12.5f,
             false, color(R.color.market_ink2)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -170,13 +322,14 @@ class MarketTaskChatActivity : AppCompatActivity() {
             marginEnd = dp(8)
         })
 
-        val status = makeText(MarketTaskChatUiPolicy.STATUS_LABEL, 11.5f, true,
+        val summaryStatus = makeText("Market chat", 11.5f, true,
             color(R.color.ok)).apply {
             gravity = Gravity.CENTER
             setPadding(dp(11), dp(7), dp(11), dp(7))
             background = rounded(color(R.color.market_mint), 99f)
         }
-        heading.addView(status, LinearLayout.LayoutParams(-2, -2))
+        summaryStatusView = summaryStatus
+        heading.addView(summaryStatus, LinearLayout.LayoutParams(-2, -2))
         card.addView(heading)
 
         val actions = LinearLayout(this).apply {
@@ -186,25 +339,16 @@ class MarketTaskChatActivity : AppCompatActivity() {
         actions.addView(taskActionButton("View task", false) {
             AlertDialog.Builder(this@MarketTaskChatActivity)
                 .setTitle(taskTitle)
-                .setMessage("Budget: " + MarketTaskChatUiPolicy.priceLabel(pricePkr) +
-                    "\nDeadline: " + MarketTaskChatUiPolicy.DUE_LABEL +
-                    "\n\nThis task summary is sample data. No live task was opened.")
+                .setMessage("Conversation ID: ${conversation?.id ?: conversationId}\n" +
+                    "Listing ID: ${conversation?.listingId.orEmpty()}")
                 .setPositiveButton("Got it", null)
                 .show()
         }, LinearLayout.LayoutParams(0, dp(42), 1f))
-        actions.addView(taskActionButton("Mark complete", true) {
-            AlertDialog.Builder(this@MarketTaskChatActivity)
-                .setTitle("Preview completion and rating")
-                .setMessage("Open the task completion and rating preview? This will not change task status or submit a review.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Open rating preview") { _, _ ->
-                    startActivity(Intent(this@MarketTaskChatActivity, MarketTaskRatingActivity::class.java).apply {
-                        putExtra(MarketTaskRatingActivity.EXTRA_HELPER_NAME, helperName)
-                        putExtra(MarketTaskRatingActivity.EXTRA_TASK_TITLE, taskTitle)
-                    })
-                }
-                .show()
-        }, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+        val completeButton = taskActionButton("Mark complete", true) {
+            confirmTaskCompletion()
+        }.apply { visibility = View.GONE }
+        completionButton = completeButton
+        actions.addView(completeButton, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
             marginStart = dp(8)
         })
         card.addView(actions, LinearLayout.LayoutParams(-1, -2).apply {
@@ -231,10 +375,9 @@ class MarketTaskChatActivity : AppCompatActivity() {
     private fun renderMessages() {
         if (!::messageList.isInitialized) return
         messageList.removeAllViews()
-        val event = makeText(
-            if (offerChatContext) "Offer chat preview · Sample messages"
-            else MarketTaskChatUiPolicy.EVENT_LABEL,
-            12.5f, true,
+        val kindLabel = if (conversation?.kind == MarketListingKind.OFFER) "Offer conversation"
+            else "Task conversation"
+        val event = makeText(kindLabel, 12.5f, true,
             color(R.color.market_ink2)).apply {
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(7), dp(12), dp(7))
@@ -244,6 +387,24 @@ class MarketTaskChatActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             bottomMargin = dp(10)
         })
+        if (liveLoadError != null) {
+            messageList.addView(makeText(liveLoadError.orEmpty(), 13f, false,
+                color(R.color.market_ink2)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(20), dp(12), dp(20))
+            }, LinearLayout.LayoutParams(-1, -2))
+            return
+        }
+        if (messages.isEmpty()) {
+            val emptyCopy = if (conversation == null) "Connecting to Market chat…"
+                else "No messages yet. Send a message to start."
+            messageList.addView(makeText(emptyCopy, 13f, false,
+                color(R.color.market_ink2)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(20), dp(12), dp(20))
+            }, LinearLayout.LayoutParams(-1, -2))
+            return
+        }
         messages.forEachIndexed { index, message ->
             messageList.addView(buildMessageRow(message), LinearLayout.LayoutParams(-1, -2).apply {
                 if (index > 0) topMargin = dp(8)
@@ -295,11 +456,6 @@ class MarketTaskChatActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        row.addView(iconButton(MarketTaskChatIcon.PLUS, "Attachments",
-            color(R.color.market_message_ink), color(R.color.market_message_bg)) {
-            showAttachmentPreview()
-        }, LinearLayout.LayoutParams(dp(46), dp(46)))
-
         messageInput = EditText(this).apply {
             hint = "Message"
             textSize = 14f
@@ -309,14 +465,15 @@ class MarketTaskChatActivity : AppCompatActivity() {
             setHintTextColor(color(R.color.market_ink3))
             setPadding(dp(18), 0, dp(14), 0)
             background = rounded(color(R.color.market_card), 99f, color(R.color.market_line))
-            filters = arrayOf(InputFilter.LengthFilter(MarketTaskChatUiPolicy.MAX_MESSAGE_LENGTH))
+            filters = arrayOf(InputFilter.LengthFilter(2000))
             isSingleLine = true
+            isEnabled = false
             imeOptions = EditorInfo.IME_ACTION_SEND
             setOnEditorActionListener { _, actionId, event ->
                 val sendKey = event?.keyCode == KeyEvent.KEYCODE_ENTER &&
                     event?.action == KeyEvent.ACTION_UP
                 if (actionId == EditorInfo.IME_ACTION_SEND || sendKey) {
-                    sendPreviewMessage()
+                    sendMessage()
                     true
                 } else false
             }
@@ -327,35 +484,42 @@ class MarketTaskChatActivity : AppCompatActivity() {
         })
         row.addView(iconButton(MarketTaskChatIcon.SEND, "Send message",
             color(R.color.market_match_ink), color(R.color.market_match)) {
-            sendPreviewMessage()
+            sendMessage()
         }, LinearLayout.LayoutParams(dp(46), dp(46)))
         return row
     }
 
-    private fun sendPreviewMessage() {
+    private fun sendMessage() {
         val raw = messageInput.text?.toString().orEmpty()
-        val normalised = MarketTaskChatUiPolicy.normaliseMessage(raw)
-        if (normalised == null) {
+        if (raw.trim().isEmpty()) {
             Toast.makeText(this, "Type a message first.", Toast.LENGTH_SHORT).show()
             return
         }
-        messages = MarketTaskChatUiPolicy.appendPreviewMessage(messages, normalised, "Now")
-        messageInput.setText("")
-        renderMessages()
-        chatScroll.post { chatScroll.fullScroll(View.FOCUS_DOWN) }
-        Toast.makeText(this, "Added to this preview only · Not sent.", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showAttachmentPreview() {
-        val options = arrayOf("Choose file", "Share via Nearby")
-        AlertDialog.Builder(this)
-            .setTitle("Attach to chat")
-            .setItems(options) { _, which ->
-                Toast.makeText(this, options[which] + " is not connected in this preview.",
-                    Toast.LENGTH_SHORT).show()
+        val chat = conversation
+        if (chat == null || recipientUid.isBlank()) {
+            Toast.makeText(this, "This Market conversation is not ready.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        messageInput.isEnabled = false
+        val send = try {
+            repository.sendMarketMessage(chat.id, recipientUid, raw)
+        } catch (error: Exception) {
+            messageInput.isEnabled = true
+            Toast.makeText(this, error.localizedMessage ?: "Message could not be sent.",
+                Toast.LENGTH_SHORT).show()
+            return
+        }
+        send.addOnCompleteListener { result ->
+            if (isFinishing || isDestroyed) return@addOnCompleteListener
+            messageInput.isEnabled = conversation != null
+            if (result.isSuccessful) {
+                messageInput.setText("")
+                liveLoadError = null
+            } else {
+                Toast.makeText(this, result.exception?.localizedMessage
+                    ?: "Message could not be sent.", Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
     }
 
     private fun iconButton(
@@ -420,6 +584,7 @@ class MarketTaskChatActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_HELPER_NAME = "market.chat.helper_name"
+        const val EXTRA_CONVERSATION_ID = "market.chat.conversation_id"
         const val EXTRA_TASK_TITLE = "market.chat.task_title"
         const val EXTRA_PRICE_PKR = "market.chat.price_pkr"
         const val EXTRA_CHAT_CONTEXT = "market.chat.context"

@@ -18,11 +18,19 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketReport
+import com.superiorstudent.app.feature.market.data.MarketRepository
+import com.superiorstudent.app.feature.market.data.MarketReportStatus
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 30. Reference rows are examples, not account report data. */
+/** Screen 30: account-scoped report history. */
 class MarketMyReportsActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
+    private lateinit var reportList: LinearLayout
+    private val repository by lazy { MarketRepository() }
+    private var reports: List<MarketReport> = emptyList()
+    private var loading = true
+    private var loadError: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -54,11 +62,13 @@ class MarketMyReportsActivity : AppCompatActivity() {
             clipToPadding = false
         }
         scroll.addView(page, FrameLayout.LayoutParams(-1, -2))
-        page.addView(buildReportList(), LinearLayout.LayoutParams(-1, -2))
+        reportList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        page.addView(reportList, LinearLayout.LayoutParams(-1, -2))
         page.addView(buildPrivacyNote(), LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(12)
         })
         applyWindowInsets()
+        loadReports()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
@@ -99,9 +109,17 @@ class MarketMyReportsActivity : AppCompatActivity() {
             background = rounded(color(R.color.market_card), 24f, color(R.color.market_line))
             clipToOutline = true
         }
-        MarketMyReportsUiPolicy.reports.forEachIndexed { index, report ->
+        val rows = reports
+        if (loading || loadError != null || rows.isEmpty()) {
+            val message = loadError ?: if (loading) "Loading your reports…" else "You have not submitted any reports."
+            list.addView(makeText(message, 13f, false, color(R.color.market_ink2)).apply {
+                setPadding(dp(16), dp(18), dp(16), dp(18))
+            }, LinearLayout.LayoutParams(-1, -2))
+            return list
+        }
+        rows.forEachIndexed { index, report ->
             list.addView(buildReportRow(report), LinearLayout.LayoutParams(-1, -2))
-            if (index < MarketMyReportsUiPolicy.reports.lastIndex) {
+            if (index < rows.lastIndex) {
                 list.addView(View(this).apply {
                     setBackgroundColor(color(R.color.market_line))
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -111,24 +129,34 @@ class MarketMyReportsActivity : AppCompatActivity() {
         return list
     }
 
-    private fun buildReportRow(report: MarketMyReport): View {
+    private fun buildReportRow(report: MarketReport): View {
+        val title = "${report.targetType.wireValue.replaceFirstChar { it.uppercase() }} · ${report.targetId}"
+        val reason = report.reason.wireValue.replace('_', ' ').replaceFirstChar { it.uppercase() }
+        val date = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM)
+            .format(report.createdAt.toDate())
+        val (status, bg, fg) = when (report.status) {
+            MarketReportStatus.ACTION_TAKEN -> Triple("Action taken", R.color.market_report_ok_bg, R.color.market_report_ok)
+            MarketReportStatus.UNDER_REVIEW -> Triple("Under review", R.color.market_report_warn_bg, R.color.market_report_warn)
+            MarketReportStatus.DISMISSED -> Triple("Dismissed", R.color.market_line, R.color.market_ink2)
+            MarketReportStatus.OPEN -> Triple("Received", R.color.market_sky, R.color.market_ink)
+        }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(13), dp(14), dp(13))
             isClickable = true
             isFocusable = true
-            contentDescription = report.title + ", " + report.context + ", " + report.status.label
+            contentDescription = "$title, $reason, $status"
             setOnClickListener {
                 AlertDialog.Builder(this@MarketMyReportsActivity)
-                    .setTitle(MarketMyReportsUiPolicy.SAMPLE_ROW_NOTICE_TITLE)
-                    .setMessage(MarketMyReportsUiPolicy.SAMPLE_ROW_NOTICE)
+                    .setTitle(title)
+                    .setMessage("Reason: $reason\nStatus: $status\nSubmitted: $date")
                     .setPositiveButton("OK", null)
                     .show()
             }
         }
         val icon = FrameLayout(this).apply {
-            background = rounded(color(report.iconBackgroundRes), 14f)
+            background = rounded(color(R.color.market_peach), 14f)
             addView(MarketMyReportsIconView(this@MarketMyReportsActivity,
                 MarketMyReportsGlyph.FLAG, color(R.color.market_ink)),
                 FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
@@ -137,22 +165,44 @@ class MarketMyReportsActivity : AppCompatActivity() {
             marginEnd = dp(12)
         })
         val textColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        textColumn.addView(makeText(report.title, 13.5f, true, color(R.color.market_ink)))
-        textColumn.addView(makeText(report.context, 12f, false, color(R.color.market_ink2)),
+        textColumn.addView(makeText(title, 13.5f, true, color(R.color.market_ink)))
+        textColumn.addView(makeText("$reason · $date", 12f, false, color(R.color.market_ink2)),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
         row.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f).apply {
             marginEnd = dp(8)
         })
-        val badge = makeText(report.status.label, 11.5f, true,
-            color(report.status.textRes)).apply {
+        val badge = makeText(status, 11.5f, true, color(fg)).apply {
             gravity = Gravity.CENTER
-            background = rounded(color(report.status.backgroundRes), 99f)
+            background = rounded(color(bg), 99f)
             setPadding(dp(10), dp(6), dp(10), dp(6))
             maxLines = 1
-            contentDescription = "Status: " + report.status.label
+            contentDescription = "Status: $status"
         }
         row.addView(badge, LinearLayout.LayoutParams(-2, -2))
         return row
+    }
+
+    private fun loadReports() {
+        try {
+            repository.loadMyReports().addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                loading = false
+                if (result.isSuccessful) {
+                    reports = result.result.orEmpty()
+                    loadError = null
+                } else {
+                    reports = emptyList()
+                    loadError = result.exception?.localizedMessage ?: "Your reports could not be loaded."
+                }
+                reportList.removeAllViews()
+                reportList.addView(buildReportList(), LinearLayout.LayoutParams(-1, -2))
+            }
+        } catch (error: Exception) {
+            loading = false
+            loadError = error.localizedMessage ?: "Your reports could not be loaded."
+            reportList.removeAllViews()
+            reportList.addView(buildReportList(), LinearLayout.LayoutParams(-1, -2))
+        }
     }
 
     private fun buildPrivacyNote(): View {

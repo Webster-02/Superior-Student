@@ -26,17 +26,21 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketRepository
+import com.superiorstudent.app.feature.market.data.MarketUserStats
 import com.superiorstudent.app.ui.AppThemePreferences
 import kotlin.math.min
 
 /** Screen 05: task detail as seen by a student considering sending a proposal. */
 class MarketTaskDetailActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
-    private var bookmarkedForPreview = false
-    private var bookmarkButton: FrameLayout? = null
+    private val repository by lazy { MarketRepository() }
+    private var posterRatingLabel = "Loading rating…"
+    private var posterRatingView: TextView? = null
+    private var posterRatingIcon: View? = null
 
     private val model: MarketTaskDetailUiModel by lazy {
-        MarketTaskDetailUiPolicy.create(
+        MarketTaskDetailUiPolicy.createLive(
             MarketTaskDetailSeed(
                 id = intent.getStringExtra(EXTRA_ID).orEmpty(),
                 category = intent.getStringExtra(EXTRA_CATEGORY).orEmpty(),
@@ -48,7 +52,13 @@ class MarketTaskDetailActivity : AppCompatActivity() {
                 proposalCount = intent.getIntExtra(EXTRA_PROPOSALS, 0),
                 author = intent.getStringExtra(EXTRA_AUTHOR).orEmpty(),
                 initials = intent.getStringExtra(EXTRA_INITIALS).orEmpty(),
-                ageLabel = intent.getStringExtra(EXTRA_AGE).orEmpty()
+                ageLabel = intent.getStringExtra(EXTRA_AGE).orEmpty(),
+                skillTags = intent.getStringArrayListExtra(EXTRA_SKILLS).orEmpty(),
+                ratingLabel = posterRatingLabel,
+                budgetFootnote = intent.getStringExtra(EXTRA_BUDGET_FOOTNOTE).orEmpty()
+                    .ifBlank { "Budget" },
+                deadlineFootnote = intent.getStringExtra(EXTRA_DEADLINE_FOOTNOTE).orEmpty()
+                    .ifBlank { "Deadline" }
             )
         )
     }
@@ -115,6 +125,7 @@ class MarketTaskDetailActivity : AppCompatActivity() {
         root.addView(buildProposalFooter(), FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
 
         applyWindowInsets()
+        loadPosterRating()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
@@ -132,16 +143,9 @@ class MarketTaskDetailActivity : AppCompatActivity() {
                 marginStart = dp(12)
             })
 
-        bookmarkButton = iconButton(TaskDetailIcon.BOOKMARK, "Save task", 44) {
-            bookmarkedForPreview = !bookmarkedForPreview
-            bookmarkButton?.alpha = if (bookmarkedForPreview) 0.62f else 1f
-            toast("Bookmark is preview-only and is not saved yet.")
-        }.also { row.addView(it, LinearLayout.LayoutParams(dp(44), dp(44)).apply {
-            marginEnd = dp(10)
-        }) }
-
         row.addView(iconButton(TaskDetailIcon.FLAG, "Report task", 44) {
-            MarketReportSheet.show(this, model.author)
+            MarketReportSheet.show(this, model.author, com.superiorstudent.app.feature.market.data.MarketReportTargetType.TASK,
+                intent.getStringExtra(EXTRA_ID).orEmpty(), intent.getStringExtra(EXTRA_POSTER_ID))
         })
         return row
     }
@@ -175,10 +179,14 @@ class MarketTaskDetailActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        rating.addView(TaskDetailIconView(this, TaskDetailIcon.STAR, 0xFFE8A100.toInt()),
-            LinearLayout.LayoutParams(dp(13), dp(13)))
-        rating.addView(makeText(model.ratingLabel, 12f, false, color(R.color.market_ink2)),
-            LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(3) })
+        posterRatingIcon = TaskDetailIconView(this, TaskDetailIcon.STAR, 0xFFE8A100.toInt()).apply {
+            visibility = if (model.ratingLabel.firstOrNull()?.isDigit() == true) View.VISIBLE else View.GONE
+        }.also { rating.addView(it, LinearLayout.LayoutParams(dp(13), dp(13))) }
+        posterRatingView = makeText(model.ratingLabel, 12f, false, color(R.color.market_ink2)).also {
+            rating.addView(it, LinearLayout.LayoutParams(-2, -2).apply {
+                marginStart = dp(3)
+            })
+        }
         info.addView(rating)
         row.addView(info, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
         row.addView(makeText(model.ageLabel, 12f, false, color(R.color.market_ink2)))
@@ -226,6 +234,9 @@ class MarketTaskDetailActivity : AppCompatActivity() {
             if (index > 0) params.marginStart = dp(6)
             row.addView(chip, params)
         }
+        if (model.skillTags.isEmpty()) {
+            row.addView(makeText("No skills specified", 12f, false, color(R.color.market_ink2)))
+        }
         scroll.addView(row, FrameLayout.LayoutParams(-2, -2))
         return scroll
     }
@@ -251,16 +262,23 @@ class MarketTaskDetailActivity : AppCompatActivity() {
             setPadding(dp(16), dp(12), dp(16), dp(20))
             setBackgroundColor(color(R.color.market_bg))
         }
+        val taskId = intent.getStringExtra(EXTRA_ID).orEmpty()
+        val ownTask = intent.getStringExtra(EXTRA_POSTER_ID).orEmpty() ==
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        val canPropose = taskId.isNotBlank() && !ownTask
         val button = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             background = rounded(color(R.color.market_match), 16f)
-            isClickable = true
-            isFocusable = true
+            isClickable = canPropose
+            isFocusable = canPropose
+            isEnabled = canPropose
+            alpha = if (canPropose) 1f else 0.55f
             setPadding(dp(16), 0, dp(16), 0)
             addView(TaskDetailIconView(this@MarketTaskDetailActivity, TaskDetailIcon.SEND, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
-            addView(makeText("Send proposal", 15f, true, color(R.color.market_match_ink)))
+            addView(makeText(if (ownTask) "Your task" else "Send proposal", 15f, true,
+                color(R.color.market_match_ink)))
         }
         button.setOnClickListener {
             startActivity(Intent(this@MarketTaskDetailActivity, MarketSendProposalActivity::class.java).apply {
@@ -347,6 +365,40 @@ class MarketTaskDetailActivity : AppCompatActivity() {
 
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
+    private fun loadPosterRating() {
+        val posterId = intent.getStringExtra(EXTRA_POSTER_ID).orEmpty()
+        if (posterId.isBlank()) {
+            posterRatingLabel = "Rating unavailable"
+            posterRatingView?.text = posterRatingLabel
+            posterRatingIcon?.visibility = View.GONE
+            return
+        }
+        try {
+            repository.loadPublicUserStats(posterId).addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                val stats = if (result.isSuccessful) result.result else null
+                posterRatingLabel = when {
+                    !result.isSuccessful -> "Rating unavailable"
+                    stats == null || stats.ratingCount <= 0 -> "No ratings yet"
+                    else -> formatRating(stats)
+                }
+                posterRatingView?.text = posterRatingLabel
+                posterRatingIcon?.visibility = if (posterRatingLabel.firstOrNull()?.isDigit() == true)
+                    View.VISIBLE else View.GONE
+            }
+        } catch (_: Exception) {
+            posterRatingLabel = "Rating unavailable"
+            posterRatingView?.text = posterRatingLabel
+            posterRatingIcon?.visibility = View.GONE
+        }
+    }
+
+    private fun formatRating(stats: MarketUserStats): String {
+        val average = stats.ratingSum / stats.ratingCount
+        val label = if (stats.ratingCount == 1) "rating" else "ratings"
+        return "%.1f · %d %s".format(java.util.Locale.US, average, stats.ratingCount, label)
+    }
+
     companion object {
         const val EXTRA_ID = "market_task_id"
         const val EXTRA_CATEGORY = "market_task_category"
@@ -360,5 +412,9 @@ class MarketTaskDetailActivity : AppCompatActivity() {
         const val EXTRA_INITIALS = "market_task_initials"
         const val EXTRA_AGE = "market_task_age"
         const val EXTRA_AVATAR_COLOR = "market_task_avatar_color"
+        const val EXTRA_POSTER_ID = "market_task_poster_id"
+        const val EXTRA_SKILLS = "market_task_skills"
+        const val EXTRA_BUDGET_FOOTNOTE = "market_task_budget_footnote"
+        const val EXTRA_DEADLINE_FOOTNOTE = "market_task_deadline_footnote"
     }
 }

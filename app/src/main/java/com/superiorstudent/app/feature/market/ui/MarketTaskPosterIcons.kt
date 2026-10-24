@@ -7,7 +7,7 @@ import android.graphics.Path
 import android.view.View
 import kotlin.math.min
 
-internal enum class PosterDetailIcon { EDIT, USERS, CHEVRON, CLOSE }
+internal enum class PosterDetailIcon { EDIT, USERS, CHEVRON, CLOSE, CHECK }
 
 internal class PosterDetailIconView(
     context: Context,
@@ -54,6 +54,10 @@ internal class PosterDetailIconView(
             PosterDetailIcon.CLOSE -> {
                 path.moveTo(5f, 5f); path.lineTo(19f, 19f)
                 path.moveTo(19f, 5f); path.lineTo(5f, 19f)
+                canvas.drawPath(path, paint)
+            }
+            PosterDetailIcon.CHECK -> {
+                path.moveTo(4f, 12f); path.lineTo(9f, 17f); path.lineTo(20f, 6f)
                 canvas.drawPath(path, paint)
             }
         }

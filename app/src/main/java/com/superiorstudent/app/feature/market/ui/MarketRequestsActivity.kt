@@ -32,7 +32,6 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketBudgetType
 import com.superiorstudent.app.feature.market.data.MarketConfig
@@ -703,7 +702,19 @@ class MarketRequestsActivity : AppCompatActivity() {
             matchesUser = matchesUser,
             avatarColor = avatarColor,
             recencyOrder = order,
-            createdAtMillis = task.createdAt.toDate().time
+            createdAtMillis = task.createdAt.toDate().time,
+            posterId = task.posterId,
+            skillTags = task.skills,
+            budgetFootnote = when (task.budgetType) {
+                MarketBudgetType.FREE -> "no payment"
+                MarketBudgetType.FIXED -> "fixed"
+                MarketBudgetType.NEGOTIABLE -> "negotiable"
+            },
+            deadlineFootnote = when {
+                dueDays == 0 -> "Due today"
+                dueDays == 1 -> "1 day left"
+                else -> "$dueDays days left"
+            }
         )
     }
 
@@ -839,6 +850,10 @@ class MarketRequestsActivity : AppCompatActivity() {
                 putExtra(MarketTaskDetailActivity.EXTRA_INITIALS, item.initials)
                 putExtra(MarketTaskDetailActivity.EXTRA_AGE, item.ageLabel)
                 putExtra(MarketTaskDetailActivity.EXTRA_AVATAR_COLOR, item.avatarColor)
+                putExtra(MarketTaskDetailActivity.EXTRA_POSTER_ID, item.posterId)
+                putStringArrayListExtra(MarketTaskDetailActivity.EXTRA_SKILLS, ArrayList(item.skillTags))
+                putExtra(MarketTaskDetailActivity.EXTRA_BUDGET_FOOTNOTE, item.budgetFootnote)
+                putExtra(MarketTaskDetailActivity.EXTRA_DEADLINE_FOOTNOTE, item.deadlineFootnote)
             })
         }
         return card
@@ -873,7 +888,9 @@ internal data class MarketRequestPreview(
     val id:String,val category:String,val courseTag:String?,val title:String,val description:String,
     val budgetLabel:String,val budgetValue:Int,val dueLabel:String,val dueDays:Int,val proposalCount:Int,
     val posterName:String,val initials:String,val ageLabel:String,val matchesUser:Boolean,
-    val avatarColor:Int,val recencyOrder:Int,val createdAtMillis:Long = 0L
+    val avatarColor:Int,val recencyOrder:Int,val createdAtMillis:Long = 0L,
+    val posterId:String = "",val skillTags:List<String> = emptyList(),
+    val budgetFootnote:String = "Budget",val deadlineFootnote:String = "Deadline"
 )
 internal enum class MarketRequestSort { REFERENCE_ORDER, NEWEST, DEADLINE, BUDGET }
 internal object MarketRequestsUiPolicy {

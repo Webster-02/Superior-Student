@@ -21,16 +21,23 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 
 /**
- * Screen 24: appeal form. Editing is local; Send appeal intentionally remains preview-only
- * until a separately approved appeal submission flow exists.
+ * Screen 24: appeal form for one eligible notice decision.
  */
 class MarketAppealActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var reasonInput: EditText
     private lateinit var countLabel: TextView
+    private var sendButton: View? = null
+    private val repository by lazy { MarketRepository() }
+    private val noticeId get() = intent.getStringExtra(EXTRA_NOTICE_ID).orEmpty()
+    private val noticeTitle get() = intent.getStringExtra(EXTRA_NOTICE_TITLE).orEmpty()
+    private val noticeBody get() = intent.getStringExtra(EXTRA_NOTICE_BODY).orEmpty()
+    private val appealEligible get() = noticeId.isNotBlank() &&
+        intent.getBooleanExtra(EXTRA_CAN_APPEAL, false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -67,7 +74,7 @@ class MarketAppealActivity : AppCompatActivity() {
         promptRow.addView(makeText(MarketAppealUiPolicy.REASON_PROMPT, 14f, true, color(R.color.market_ink)),
             LinearLayout.LayoutParams(0, -2, 1f))
         countLabel = makeText(
-            MarketAppealUiPolicy.characterCount(MarketAppealUiPolicy.DEFAULT_REASON).toString() +
+            MarketAppealUiPolicy.characterCount("").toString() +
                 "/" + MarketAppealUiPolicy.MAX_REASON_LENGTH,
             12f, false, color(R.color.market_ink2)
         )
@@ -77,7 +84,7 @@ class MarketAppealActivity : AppCompatActivity() {
         })
 
         reasonInput = EditText(this).apply {
-            setText(MarketAppealUiPolicy.DEFAULT_REASON)
+            setText("")
             textSize = 14f
             typeface = font(false)
             setTextColor(color(R.color.market_ink))
@@ -137,20 +144,31 @@ class MarketAppealActivity : AppCompatActivity() {
 
     private fun buildOfferSummary(): View {
         val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.VERTICAL
             background = rounded(color(R.color.market_card), 24f, color(R.color.market_line))
             setPadding(dp(14), dp(12), dp(14), dp(12))
         }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        texts.addView(makeText(MarketAppealUiPolicy.OFFER_TITLE, 14f, true, color(R.color.market_ink)))
-        texts.addView(makeText(MarketAppealUiPolicy.OFFER_SUBTITLE, 12f, false, color(R.color.market_ink2)),
+        texts.addView(makeText(noticeTitle.ifBlank { "Market decision" }, 14f, true, color(R.color.market_ink)))
+        texts.addView(makeText("Decision notice", 12f, false, color(R.color.market_ink2)),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
-        card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        val badge = makeText(MarketAppealUiPolicy.REMOVED_LABEL, 12f, true, color(R.color.market_ink))
+        header.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        val badge = makeText(if (appealEligible) "Eligible" else "Unavailable", 12f, true,
+            color(R.color.market_ink))
         badge.gravity = Gravity.CENTER
         badge.setPadding(dp(12), dp(7), dp(12), dp(7))
         badge.background = rounded(color(R.color.market_peach), 99f)
-        card.addView(badge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        header.addView(badge, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+        card.addView(header, LinearLayout.LayoutParams(-1, -2))
+        if (noticeBody.isNotBlank()) {
+            card.addView(makeText(noticeBody, 12f, false, color(R.color.market_ink2)).apply {
+                setLineSpacing(dp(2).toFloat(), 1f)
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        }
         return card
     }
 
@@ -162,7 +180,9 @@ class MarketAppealActivity : AppCompatActivity() {
         }
         banner.addView(MarketAppealIconView(this, MarketAppealGlyph.INFO, color(R.color.market_ink)),
             LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(12); topMargin = dp(1) })
-        banner.addView(makeText(MarketAppealUiPolicy.INFO_TEXT, 12f, false, color(R.color.market_ink)).apply {
+        val info = if (appealEligible) "Your appeal will be saved with this decision. Follow any reply in Notices."
+            else "Open an eligible decision notice to submit an appeal."
+        banner.addView(makeText(info, 12f, false, color(R.color.market_ink)).apply {
             setLineSpacing(dp(2).toFloat(), 1f)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         return banner
@@ -185,13 +205,16 @@ class MarketAppealActivity : AppCompatActivity() {
                 marginEnd = dp(10)
             })
             addView(makeText(MarketAppealUiPolicy.SEND_BUTTON, 16f, true, color(R.color.market_match_ink)))
-            setOnClickListener { sendAppealPreview() }
+            isEnabled = appealEligible
+            alpha = if (appealEligible) 1f else 0.55f
+            sendButton = this
+            setOnClickListener { sendAppeal() }
         }
         footer.addView(send, LinearLayout.LayoutParams(-1, dp(52)))
         return footer
     }
 
-    private fun sendAppealPreview() {
+    private fun sendAppeal() {
         val reason = reasonInput.text?.toString().orEmpty()
         if (!MarketAppealUiPolicy.isReasonValid(reason)) {
             AlertDialog.Builder(this).setTitle(MarketAppealUiPolicy.EMPTY_REASON_TITLE)
@@ -199,9 +222,31 @@ class MarketAppealActivity : AppCompatActivity() {
                 .setPositiveButton("Got it", null).show()
             return
         }
-        AlertDialog.Builder(this).setTitle(MarketAppealUiPolicy.PREVIEW_TITLE)
-            .setMessage(MarketAppealUiPolicy.PREVIEW_MESSAGE)
-            .setPositiveButton("Got it", null).show()
+        if (!appealEligible) {
+            AlertDialog.Builder(this).setTitle("Appeal unavailable")
+                .setMessage("This form was not opened from an eligible Market notice.")
+                .setPositiveButton("Got it", null).show()
+            return
+        }
+        val subject = ("Appeal: " + noticeTitle.ifBlank { "Market decision" }).take(80)
+        try {
+            sendButton?.isEnabled = false
+            repository.submitAppeal(noticeId, subject, reason.trim()).addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                sendButton?.isEnabled = !result.isSuccessful
+                AlertDialog.Builder(this)
+                    .setTitle(if (result.isSuccessful) "Appeal submitted" else "Appeal not submitted")
+                    .setMessage(if (result.isSuccessful) "Your appeal was saved. You can follow updates in Notices."
+                        else result.exception?.localizedMessage ?: "Your appeal could not be submitted.")
+                    .setPositiveButton("OK") { _, _ -> if (result.isSuccessful) finish() }
+                    .show()
+            }
+        } catch (error: Exception) {
+            sendButton?.isEnabled = true
+            AlertDialog.Builder(this).setTitle("Appeal not submitted")
+                .setMessage(error.localizedMessage ?: "Your appeal could not be submitted.")
+                .setPositiveButton("OK", null).show()
+        }
     }
 
     private fun makeText(value: String, size: Float, medium: Boolean, textColor: Int): TextView =
@@ -232,4 +277,11 @@ class MarketAppealActivity : AppCompatActivity() {
     private fun color(id: Int) = getColor(id)
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        const val EXTRA_NOTICE_ID = "market.appeal.notice_id"
+        const val EXTRA_NOTICE_TITLE = "market.appeal.notice_title"
+        const val EXTRA_NOTICE_BODY = "market.appeal.notice_body"
+        const val EXTRA_CAN_APPEAL = "market.appeal.can_appeal"
+    }
 }

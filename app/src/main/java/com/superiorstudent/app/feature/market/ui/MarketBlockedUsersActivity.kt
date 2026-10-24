@@ -18,14 +18,18 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 32: blocked-user reference UI with explicitly local-only unblock preview behavior. */
+/** Screen 32: blocked-user list from the signed-in student's Market profile. */
 class MarketBlockedUsersActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var countText: TextView
     private lateinit var usersCard: LinearLayout
-    private val blockedUsers = MarketBlockedUsersUiPolicy.referenceUsers.toMutableList()
+    private val repository by lazy { MarketRepository() }
+    private val blockedUsers = mutableListOf<MarketBlockedUser>()
+    private var loading = true
+    private var loadError: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -70,6 +74,7 @@ class MarketBlockedUsersActivity : AppCompatActivity() {
         }
         page.addView(usersCard, LinearLayout.LayoutParams(-1, -2))
         renderBlockedUsers()
+        loadBlockedUsers()
 
         page.addView(buildInformationNote(), LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(12)
@@ -122,9 +127,17 @@ class MarketBlockedUsersActivity : AppCompatActivity() {
         usersCard.removeAllViews()
         countText.text = MarketBlockedUsersUiPolicy.countLabel(blockedUsers.size)
 
+        if (loading || loadError != null) {
+            usersCard.addView(makeText(loadError ?: "Loading blocked users…", 14f, false,
+                color(R.color.market_ink2)), LinearLayout.LayoutParams(-1, -2).apply {
+                setMargins(dp(16), dp(18), dp(16), dp(18))
+            })
+            return
+        }
+
         if (blockedUsers.isEmpty()) {
             usersCard.addView(makeText(
-                MarketBlockedUsersUiPolicy.EMPTY_TITLE, 14f, false, color(R.color.market_ink2)
+                "No blocked students.", 14f, false, color(R.color.market_ink2)
             ), LinearLayout.LayoutParams(-1, -2).apply {
                 setMargins(dp(16), dp(18), dp(16), dp(18))
             })
@@ -185,27 +198,61 @@ class MarketBlockedUsersActivity : AppCompatActivity() {
             background = rounded(color(R.color.market_card), 12f, color(R.color.market_line))
             isClickable = true
             isFocusable = true
-            contentDescription = "Unblock " + user.name + " preview"
-            setOnClickListener { confirmRemoveExample(user) }
+            contentDescription = "Unblock " + user.name
+            setOnClickListener { confirmUnblock(user) }
         }
         row.addView(unblock, LinearLayout.LayoutParams(-2, dp(36)))
         return row
     }
 
-    private fun confirmRemoveExample(user: MarketBlockedUser) {
-        AlertDialog.Builder(this)
-            .setTitle(MarketBlockedUsersUiPolicy.PREVIEW_CONFIRM_TITLE)
-            .setMessage(
-                "Remove " + user.name + " from this example list?\n\n" +
-                    MarketBlockedUsersUiPolicy.PREVIEW_CONFIRM_MESSAGE
-            )
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton(MarketBlockedUsersUiPolicy.PREVIEW_CONFIRM_BUTTON) { _, _ ->
-                val updated = MarketBlockedUsersUiPolicy.withoutUser(blockedUsers, user.id)
-                blockedUsers.clear()
-                blockedUsers.addAll(updated)
+    private fun loadBlockedUsers() {
+        try {
+            repository.ensureMarketProfile().addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                loading = false
+                if (!result.isSuccessful) {
+                    loadError = result.exception?.localizedMessage ?: "Blocked users could not be loaded."
+                } else {
+                    loadError = null
+                    blockedUsers.clear()
+                    blockedUsers.addAll(result.result?.blockedUids.orEmpty().map { uid ->
+                        MarketBlockedUser(uid, "Blocked student", uid,
+                            "ST", R.color.market_sky)
+                    })
+                }
                 renderBlockedUsers()
-                countText.announceForAccessibility(user.name + " example removed")
+            }
+        } catch (error: Exception) {
+            loading = false
+            loadError = error.localizedMessage ?: "Blocked users could not be loaded."
+            renderBlockedUsers()
+        }
+    }
+
+    private fun confirmUnblock(user: MarketBlockedUser) {
+        AlertDialog.Builder(this)
+            .setTitle("Unblock student?")
+            .setMessage("You may see this student's Market listings again.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Unblock") { _, _ ->
+                try {
+                    repository.unblockUser(user.id).addOnCompleteListener { result ->
+                        if (isFinishing || isDestroyed) return@addOnCompleteListener
+                        if (result.isSuccessful) {
+                            blockedUsers.removeAll { it.id == user.id }
+                            renderBlockedUsers()
+                            countText.announceForAccessibility("Student unblocked")
+                        } else {
+                            android.widget.Toast.makeText(this,
+                                result.exception?.localizedMessage ?: "Student could not be unblocked.",
+                                android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (error: Exception) {
+                    android.widget.Toast.makeText(this,
+                        error.localizedMessage ?: "Student could not be unblocked.",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
             .show()
     }

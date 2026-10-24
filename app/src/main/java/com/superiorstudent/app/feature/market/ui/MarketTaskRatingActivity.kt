@@ -23,42 +23,44 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 16: task completion rating. UI state stays local until the real task/review flow is approved. */
+/** Screen 16: task completion rating written atomically with public aggregate statistics. */
 class MarketTaskRatingActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var starsRow: LinearLayout
     private lateinit var tagsContainer: LinearLayout
     private lateinit var commentInput: EditText
     private lateinit var commentCounter: TextView
+    private val repository by lazy { MarketRepository() }
+    private val taskId get() = intent.getStringExtra(EXTRA_TASK_ID).orEmpty()
+    private val targetUid get() = intent.getStringExtra(EXTRA_TARGET_UID).orEmpty()
+    private var submitButton: View? = null
 
-    private var selectedRating = MarketTaskRatingUiPolicy.DEFAULT_RATING
-    private val selectedTags = linkedSetOf<String>().apply {
-        addAll(MarketTaskRatingUiPolicy.defaultSelectedTags)
-    }
-    private var initialComment = MarketTaskRatingUiPolicy.DEFAULT_COMMENT
+    private var selectedRating = 0
+    private val selectedTags = linkedSetOf<String>()
+    private var initialComment = ""
 
     private val helperName: String
         get() = intent.getStringExtra(EXTRA_HELPER_NAME).orEmpty()
-            .ifBlank { MarketTaskRatingUiPolicy.DEFAULT_HELPER_NAME }
+            .ifBlank { "Student" }
 
     private val taskTitle: String
         get() = intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty()
-            .ifBlank { MarketTaskRatingUiPolicy.DEFAULT_TASK_TITLE }
+            .ifBlank { "Completed Market task" }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
         super.onCreate(savedInstanceState)
-        selectedRating = MarketTaskRatingUiPolicy.clampRating(
-            savedInstanceState?.getInt(STATE_RATING, MarketTaskRatingUiPolicy.DEFAULT_RATING)
-                ?: MarketTaskRatingUiPolicy.DEFAULT_RATING
-        )
+        selectedRating = savedInstanceState?.getInt(STATE_RATING, 0)?.let {
+            if (it == 0) 0 else MarketTaskRatingUiPolicy.clampRating(it)
+        } ?: 0
         selectedTags.clear()
         selectedTags.addAll(savedInstanceState?.getStringArrayList(STATE_TAGS)
-            ?: MarketTaskRatingUiPolicy.defaultSelectedTags.toList())
+            ?: emptyList())
         initialComment = savedInstanceState?.getString(STATE_COMMENT)
-            ?: MarketTaskRatingUiPolicy.DEFAULT_COMMENT
+            ?: ""
 
         root = FrameLayout(this).apply {
             setBackgroundColor(color(R.color.market_bg))
@@ -320,13 +322,20 @@ class MarketTaskRatingActivity : AppCompatActivity() {
                 color(R.color.market_match_ink)), LinearLayout.LayoutParams(-2, -2).apply {
                 marginStart = dp(8)
             })
-            setOnClickListener { showPreviewConfirmation() }
+            setOnClickListener { submitRating() }
         }
+        submitButton = button
         footer.addView(button, LinearLayout.LayoutParams(-1, dp(52)))
         return footer
     }
 
-    private fun showPreviewConfirmation() {
+    private fun submitRating() {
+        if (selectedRating !in 1..MarketTaskRatingUiPolicy.MAX_RATING) {
+            AlertDialog.Builder(this).setTitle("Choose a rating")
+                .setMessage("Select one to five stars before submitting.")
+                .setPositiveButton("Got it", null).show()
+            return
+        }
         val comment = MarketTaskRatingUiPolicy.normaliseComment(
             commentInput.text?.toString().orEmpty()
         )
@@ -338,12 +347,31 @@ class MarketTaskRatingActivity : AppCompatActivity() {
                 .show()
             return
         }
-        val reasons = if (selectedTags.isEmpty()) "No tags selected" else selectedTags.joinToString(", ")
-        AlertDialog.Builder(this)
-            .setTitle("Preview only")
-            .setMessage("Your $selectedRating-star rating is ready, with: $reasons. No rating will be submitted or saved in this screen.")
-            .setPositiveButton("Got it", null)
-            .show()
+        if (taskId.isBlank() || targetUid.isBlank()) {
+            AlertDialog.Builder(this).setTitle("Rating unavailable")
+                .setMessage("Open rating from one of your completed Market tasks.")
+                .setPositiveButton("Got it", null).show()
+            return
+        }
+        submitButton?.isEnabled = false
+        try {
+            repository.rateCompletedTask(taskId, targetUid, selectedRating,
+                selectedTags.toList(), comment).addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                submitButton?.isEnabled = true
+                AlertDialog.Builder(this)
+                    .setTitle(if (result.isSuccessful) "Rating submitted" else "Rating not submitted")
+                    .setMessage(if (result.isSuccessful) "Your rating was saved. Thanks for sharing your experience."
+                        else result.exception?.localizedMessage ?: "Your rating could not be submitted.")
+                    .setPositiveButton("OK") { _, _ -> if (result.isSuccessful) finish() }
+                    .show()
+            }
+        } catch (error: Exception) {
+            submitButton?.isEnabled = true
+            AlertDialog.Builder(this).setTitle("Rating not submitted")
+                .setMessage(error.localizedMessage ?: "Your rating could not be submitted.")
+                .setPositiveButton("OK", null).show()
+        }
     }
 
     private fun applyWindowInsets() {
@@ -390,6 +418,8 @@ class MarketTaskRatingActivity : AppCompatActivity() {
     private fun dp(value: Float) = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        const val EXTRA_TASK_ID = "market.rating.task_id"
+        const val EXTRA_TARGET_UID = "market.rating.target_uid"
         const val EXTRA_HELPER_NAME = "market.rating.helper_name"
         const val EXTRA_TASK_TITLE = "market.rating.task_title"
         private const val STATE_RATING = "market.rating.selected_rating"

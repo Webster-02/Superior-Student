@@ -14,7 +14,8 @@ internal data class MarketOfferPreview(
     val verifiedStudent: Boolean,
     val avatarColor: Int,
     val recencyOrder: Int,
-    val courseTag: String? = null
+    val courseTag: String? = null,
+    val sellerId: String = ""
 )
 
 internal enum class MarketOfferSort { REFERENCE_ORDER, HIGHEST_RATED, LOWEST_PRICE }

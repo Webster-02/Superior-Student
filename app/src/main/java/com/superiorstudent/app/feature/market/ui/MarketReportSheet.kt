@@ -17,16 +17,25 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.res.ResourcesCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketReportReason
+import com.superiorstudent.app.feature.market.data.MarketReportTargetType
+import com.superiorstudent.app.feature.market.data.MarketRepository
 
 /**
  * Screen 20: reference-matched report sheet shown over the existing task detail page.
- * Submit and block are intentionally preview-only: this class performs no network or Firestore writes.
+ * Report and optional block actions use the signed-in student's Market repository.
  */
 internal object MarketReportSheet {
-    fun show(activity: AppCompatActivity, authorName: String) {
+    fun show(
+        activity: AppCompatActivity,
+        authorName: String,
+        targetType: MarketReportTargetType,
+        targetId: String,
+        blockedUid: String? = null
+    ) {
         val dialog = Dialog(activity)
         var selectedReason = MarketReportUiPolicy.DEFAULT_REASON
-        var alsoBlock = true
+        var alsoBlock = !blockedUid.isNullOrBlank()
         val radioMarkers = linkedMapOf<String, FrameLayout>()
 
         val sheet = LinearLayout(activity).apply {
@@ -140,7 +149,9 @@ internal object MarketReportSheet {
             refreshBlockSwitch()
         }
         refreshBlockSwitch()
-        sheet.addView(blockRow, LinearLayout.LayoutParams(-1, -2))
+        if (!blockedUid.isNullOrBlank()) {
+            sheet.addView(blockRow, LinearLayout.LayoutParams(-1, -2))
+        }
 
         val submitButton = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -159,13 +170,62 @@ internal object MarketReportSheet {
                 color(activity, R.color.market_match_ink)))
         }
         submitButton.setOnClickListener {
-            val message = MarketReportUiPolicy.previewConfirmation(authorName, selectedReason, alsoBlock)
-            dialog.dismiss()
-            AlertDialog.Builder(activity)
-                .setTitle("Preview only")
-                .setMessage(message)
-                .setPositiveButton("Got it", null)
-                .show()
+            val reason = when (selectedReason) {
+                MarketReportUiPolicy.REASONS[0] -> MarketReportReason.GRADED_WORK
+                MarketReportUiPolicy.REASONS[1] -> MarketReportReason.SCAM
+                MarketReportUiPolicy.REASONS[2] -> MarketReportReason.SPAM
+                MarketReportUiPolicy.REASONS[3] -> MarketReportReason.ABUSIVE
+                else -> MarketReportReason.OTHER
+            }
+            val uidToBlock = if (alsoBlock) blockedUid?.takeIf { it.isNotBlank() } else null
+            submitButton.isEnabled = false
+            val repository = MarketRepository()
+            val report = try {
+                repository.submitReport(targetType, targetId, reason)
+            } catch (error: Exception) {
+                submitButton.isEnabled = true
+                AlertDialog.Builder(activity).setTitle("Report not submitted")
+                    .setMessage(error.localizedMessage ?: "The report could not be submitted.")
+                    .setPositiveButton("Got it", null).show()
+                return@setOnClickListener
+            }
+            report.addOnCompleteListener { result ->
+                if (activity.isFinishing || activity.isDestroyed) return@addOnCompleteListener
+                if (!result.isSuccessful) {
+                    submitButton.isEnabled = true
+                    AlertDialog.Builder(activity).setTitle("Report not submitted")
+                        .setMessage(result.exception?.localizedMessage ?: "The report could not be submitted.")
+                        .setPositiveButton("Got it", null).show()
+                    return@addOnCompleteListener
+                }
+                val blockTask = if (uidToBlock != null) {
+                    try { repository.blockUser(uidToBlock) } catch (error: Exception) {
+                        dialog.dismiss()
+                        AlertDialog.Builder(activity).setTitle("Report submitted")
+                            .setMessage("Your report was saved, but blocking could not be completed: " +
+                                (error.localizedMessage ?: "please try again from Market settings."))
+                            .setPositiveButton("Got it", null).show()
+                        return@addOnCompleteListener
+                    }
+                } else null
+                if (blockTask == null) {
+                    dialog.dismiss()
+                    AlertDialog.Builder(activity).setTitle("Report submitted")
+                        .setMessage("Your report was submitted for review.")
+                        .setPositiveButton("Got it", null).show()
+                } else {
+                    blockTask.addOnCompleteListener { blocked ->
+                        if (activity.isFinishing || activity.isDestroyed) return@addOnCompleteListener
+                        dialog.dismiss()
+                        AlertDialog.Builder(activity).setTitle("Report submitted")
+                            .setMessage(if (blocked.isSuccessful)
+                                "Your report was submitted and this user was blocked."
+                            else "Your report was submitted, but the user could not be blocked: " +
+                                (blocked.exception?.localizedMessage ?: "please try again from Market settings."))
+                            .setPositiveButton("Got it", null).show()
+                    }
+                }
+            }
         }
         sheet.addView(submitButton, LinearLayout.LayoutParams(-1, dp(activity, 52)))
 

@@ -17,11 +17,19 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.ui.MarketNoticesActivity
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Screen 23: detail for the sample offer-removal notice. Appeal and live rules routes are separate steps. */
+/** Screen 23: detail opened from the signed-in user's notice inbox. */
 class MarketNoticeDetailActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
+    private val noticeId get() = intent.getStringExtra(EXTRA_NOTICE_ID).orEmpty()
+    private val noticeTitle get() = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "Market notice" }
+    private val noticeBody get() = intent.getStringExtra(EXTRA_BODY).orEmpty().ifBlank { "No notice details were provided." }
+    private val canAppeal get() = intent.getBooleanExtra(EXTRA_CAN_APPEAL, false) && noticeId.isNotBlank()
+    private val noticeDate get() = intent.getLongExtra(EXTRA_CREATED_AT, -1L).takeIf { it >= 0L }
+        ?.let { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,
+            java.text.DateFormat.SHORT).format(java.util.Date(it)) } ?: "Date unavailable"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -98,29 +106,14 @@ class MarketNoticeDetailActivity : AppCompatActivity() {
         }
         titleRow.addView(iconTile, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) })
         val titleColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        titleColumn.addView(makeText(MarketNoticeDetailUiPolicy.NOTICE_TITLE, 16f, true, color(R.color.market_ink)))
-        titleColumn.addView(makeText(MarketNoticeDetailUiPolicy.TIMESTAMP, 12f, false, color(R.color.market_ink2)),
+        titleColumn.addView(makeText(noticeTitle, 16f, true, color(R.color.market_ink)))
+        titleColumn.addView(makeText(noticeDate, 12f, false, color(R.color.market_ink2)),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
         titleRow.addView(titleColumn, LinearLayout.LayoutParams(0, -2, 1f))
         card.addView(titleRow)
-
-        val offerSummary = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = rounded(color(R.color.market_bg), 16f)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-        }
-        offerSummary.addView(makeText(MarketNoticeDetailUiPolicy.OFFER_TITLE, 14f, true, color(R.color.market_ink)))
-        offerSummary.addView(makeText(MarketNoticeDetailUiPolicy.OFFER_META, 12f, false, color(R.color.market_ink2)),
-            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2) })
-        card.addView(offerSummary, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
-        card.addView(makeText(MarketNoticeDetailUiPolicy.WHY_LABEL, 14f, true, color(R.color.market_ink)),
+        card.addView(makeText("Details", 14f, true, color(R.color.market_ink)),
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
-        card.addView(makeText(MarketNoticeDetailUiPolicy.WHY_TEXT, 13f, false, color(R.color.market_ink)).apply {
-            setLineSpacing(dp(2).toFloat(), 1f)
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-        card.addView(makeText(MarketNoticeDetailUiPolicy.WHAT_HAPPENED_LABEL, 14f, true, color(R.color.market_ink)),
-            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-        card.addView(makeText(MarketNoticeDetailUiPolicy.WHAT_HAPPENED_TEXT, 13f, false, color(R.color.market_ink)).apply {
+        card.addView(makeText(noticeBody, 13f, false, color(R.color.market_ink)).apply {
             setLineSpacing(dp(2).toFloat(), 1f)
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
         return card
@@ -137,7 +130,9 @@ class MarketNoticeDetailActivity : AppCompatActivity() {
             color(R.color.market_ink)), LinearLayout.LayoutParams(dp(20), dp(20)).apply {
             marginEnd = dp(12); topMargin = dp(1)
         })
-        banner.addView(makeText(MarketNoticeDetailUiPolicy.INFO_TEXT, 12f, false,
+        val info = if (canAppeal) "You can submit one appeal for this decision." else
+            "This notice is saved in your Market account. Contact support if you need help."
+        banner.addView(makeText(info, 12f, false,
             color(R.color.market_ink)).apply { setLineSpacing(dp(2).toFloat(), 1f) },
             LinearLayout.LayoutParams(0, -2, 1f))
         return banner
@@ -151,8 +146,14 @@ class MarketNoticeDetailActivity : AppCompatActivity() {
         }
         val appeal = actionButton(MarketNoticeDetailUiPolicy.APPEAL_BUTTON,
             color(R.color.market_match), color(R.color.market_match_ink), MarketNoticeDetailGlyph.FLAG)
+        appeal.visibility = if (canAppeal) View.VISIBLE else View.GONE
         appeal.setOnClickListener {
-            startActivity(android.content.Intent(this, MarketAppealActivity::class.java))
+            startActivity(android.content.Intent(this, MarketAppealActivity::class.java).apply {
+                putExtra(MarketAppealActivity.EXTRA_NOTICE_ID, noticeId)
+                putExtra(MarketAppealActivity.EXTRA_NOTICE_TITLE, noticeTitle)
+                putExtra(MarketAppealActivity.EXTRA_NOTICE_BODY, noticeBody)
+                putExtra(MarketAppealActivity.EXTRA_CAN_APPEAL, canAppeal)
+            })
         }
         footer.addView(appeal, LinearLayout.LayoutParams(-1, dp(52)))
         val rules = actionButton(MarketNoticeDetailUiPolicy.RULES_BUTTON,
@@ -160,11 +161,7 @@ class MarketNoticeDetailActivity : AppCompatActivity() {
             background = rounded(color(R.color.market_card), 16f, color(R.color.market_line))
         }
         rules.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle(MarketNoticeDetailUiPolicy.RULES_BUTTON)
-                .setMessage(MarketNoticeDetailUiPolicy.RULES_PREVIEW_MESSAGE)
-                .setPositiveButton("Got it", null)
-                .show()
+            startActivity(android.content.Intent(this, MarketRulesActivity::class.java))
         }
         footer.addView(rules, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(8) })
         return footer
@@ -215,4 +212,12 @@ class MarketNoticeDetailActivity : AppCompatActivity() {
     private fun color(id: Int) = getColor(id)
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        const val EXTRA_NOTICE_ID = "market.notice.id"
+        const val EXTRA_TITLE = "market.notice.title"
+        const val EXTRA_BODY = "market.notice.body"
+        const val EXTRA_CREATED_AT = "market.notice.created_at"
+        const val EXTRA_CAN_APPEAL = "market.notice.can_appeal"
+    }
 }

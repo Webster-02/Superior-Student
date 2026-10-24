@@ -15,7 +15,7 @@ internal object MarketSupportUiPolicy {
     const val CATEGORY_PROMPT = "What is this about?"
     const val SUBJECT_LABEL = "Subject"
     const val DETAILS_LABEL = "Details"
-    const val ATTACH_TITLE = "Attach a listing (optional)"
+    const val ATTACH_TITLE = "Related listing"
     const val SAMPLE_LISTING_TITLE = "Poster for health camp"
     const val SAFETY_MESSAGE = "Never send passwords. We will never ask for your ERP password."
     const val SEND_BUTTON = "Send message"
