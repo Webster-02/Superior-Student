@@ -4,7 +4,7 @@
 
 **Starting commit:** `c6b7d13578e82bbcb0724aaca1969d3fcccd35ca` (from `feature/market-ui-reference`)
 
-**Current part:** W3–W7 live wiring is implemented in the working tree; W9 is in progress; W10 build/device verification is pending.
+**Current part:** W3–W7 live wiring is implemented on the task branch; W9 is in progress; W10 CI passed and device verification remains.
 
 **Rules:** No main merge, no deployment, no changes to `firestore.rules`, `firestore.indexes.json` or tests without explicit approval.
 
@@ -15,14 +15,14 @@
 | W0 | Audit only; create wiring report | **COMPLETE** | `WIRING_REPORT.md`; no feature code modified |
 | W1 | Identity, verified-email gate, profile bootstrap, suspension state/until | **COMPLETE — verified** | Run [#111](https://github.com/Webster-02/Superior-Student/actions/runs/40026265620) on commit `693390b6` passed unit tests, APK build, APK verification and upload. Screen 25 loads actual status/expiry and the owner-scoped restriction notice. Artifact `superior-student-debug-apk`, ID `12532932046`. |
 | W2 | Live Requests/Offers feeds, ranking/cache, filtering, paging, pull refresh, states | **COMPLETE — CI verified** | Both feeds use `MarketRepository` wrappers over index-compatible query builders, cursor paging, pull-to-refresh, loading/empty/error states, configured report thresholds, expiry/status/moderation/blocked-user filters, ranking/matching and max 3 pins. Bounded persistent cache holds up to 50 real listings plus the signed-in user's Market profile and seller aggregate stats; saved cards remain visible with an offline message. Fresh all-category caches use indexed `updatedAt > lastSync` delta queries with paging and a 30-second overlap; checkpoints are captured before network round trips. Reference sort choices are preserved; local deadline/budget/rating/price sorts do not invent server indexes. Final source verification [run #142](https://github.com/Webster-02/Superior-Student/actions/runs/40031623298) passed tests, APK build, APK verification and upload; artifact ID `12535691277`. |
-| W3 | Tasks lifecycle, My Tasks, proposals, accept, complete/rate, Applied | **IMPLEMENTED — verification pending** | Create/edit/cancel/expire/accept/withdraw/complete/rate and proposal/list/chat routes use live repository data. My Tasks reconciles expired open tasks; CI/device verification of this working revision is pending. |
-| W4 | Offers lifecycle and My Offers | **IMPLEMENTED — verification pending** | Create/edit/pause/renew/remove/expire, live offer detail, seller rating, report and Market offer chat are wired. Delivery terms are not stored in the current schema, so detail directs users to chat. |
-| W5 | Market text-only chat | **IMPLEMENTED — verification pending** | Participant-scoped conversation reads, realtime text messages, send, read markers and task completion action use Market repositories and existing Rules. |
-| W6 | Report, block, rating/trust-and-safety | **IMPLEMENTED — verification pending** | Account-owned report history, report submission, optional block, blocked-user management and completed-task ratings use live data. |
-| W7 | Notices, support, appeals, settings | **IMPLEMENTED — verification pending** | Live notices/read state, eligible-notice appeals, support ticket create/history/replies, saved preferences and blocked counts are connected. |
+| W3 | Tasks lifecycle, My Tasks, proposals, accept, complete/rate, Applied | **IMPLEMENTED — CI verified** | Create/edit/cancel/expire/accept/withdraw/complete/rate and proposal/list/chat routes use live repository data. My Tasks reconciles expired open tasks. Run [#611](https://github.com/Webster-02/Superior-Student/actions/runs/40044769582) passed unit tests and APK build. |
+| W4 | Offers lifecycle and My Offers | **IMPLEMENTED — CI verified** | Create/edit/pause/renew/remove/expire, live offer detail, seller rating, report and Market offer chat are wired. Delivery terms are not stored in the current schema, so detail directs users to chat. Run #611 passed. |
+| W5 | Market text-only chat | **IMPLEMENTED — CI verified** | Participant-scoped conversation reads, realtime text messages, send, read markers and task completion action use Market repositories and existing Rules. Run #611 passed. |
+| W6 | Report, block, rating/trust-and-safety | **IMPLEMENTED — CI verified** | Account-owned report history, report submission, optional block, blocked-user management and completed-task ratings use live data. Run #611 passed. |
+| W7 | Notices, support, appeals, settings | **IMPLEMENTED — CI verified** | Live notices/read state, eligible-notice appeals, support ticket create/history/replies, saved preferences and blocked counts are connected. Run #611 passed. |
 | W8 | Admin panel source, admin setup, real admin queries and mutations | NOT STARTED | No admin web source or Firebase Hosting config exists |
 | W9 | Expiry/counter cleanup, offline and consistency | **IN PROGRESS** | My Offers and My Tasks reconcile expired owner listings through transactional repository methods. Wider background cleanup for inactive users and emulator consistency checks remain open. |
-| W10 | Zero fixture/direct write audit, QA checklist, tests/build | **IN PROGRESS** | Source/diff checks are being rerun. Current local build is pending; device-level validation against live Firebase remains outstanding. |
+| W10 | Zero fixture/direct write audit, QA checklist, tests/build | **CI VERIFIED — runtime QA pending** | `git diff --check` and runtime fixture/direct-Firestore scans pass. Run #611 passed unit tests, APK build, APK verification and artifact upload; device-level validation against live Firebase remains outstanding. |
 
 ## Per-screen checkpoint
 
