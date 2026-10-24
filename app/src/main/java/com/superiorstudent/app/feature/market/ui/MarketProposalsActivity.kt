@@ -666,11 +666,15 @@ class MarketProposalsActivity : AppCompatActivity() {
             if (isFinishing || isDestroyed) return@addOnCompleteListener
             pendingProposalIds.remove(proposal.id)
             if (result.isSuccessful) {
-                val conversationId = result.result.orEmpty()
+                val acceptance = result.result
+                val conversationId = acceptance?.conversationId.orEmpty()
                 if (conversationId.isBlank()) {
                     toast("Proposal accepted, but the conversation ID was missing.")
                     finish()
                     return@addOnCompleteListener
+                }
+                if (acceptance?.otherProposalsClosed == false) {
+                    toast("Proposal accepted. Some other proposals may still appear pending until refreshed.")
                 }
                 startActivity(Intent(this, MarketTaskChatActivity::class.java).apply {
                     putExtra(MarketTaskChatActivity.EXTRA_CONVERSATION_ID, conversationId)
@@ -755,6 +759,7 @@ class MarketProposalsActivity : AppCompatActivity() {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     companion object {
+        const val EXTRA_TASK_ID = "market.proposals.task_id"
         const val EXTRA_TASK_LABEL = "market.proposals.task_label"
     }
 }

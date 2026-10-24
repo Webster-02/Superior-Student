@@ -78,6 +78,12 @@ data class MarketAppliedTask(
     val task: MarketTask?
 )
 
+/** Outcome of assignment plus best-effort closure of the remaining proposals. */
+data class MarketProposalAcceptance(
+    val conversationId: String,
+    val otherProposalsClosed: Boolean
+)
+
 /**
  * The only Firestore write boundary for Market documents.
  *
@@ -900,7 +906,7 @@ class MarketRepository(
     }
 
     /** Assignment, accepted proposal, poster counter decrement, and task chat are one transaction. */
-    fun acceptProposal(taskId: String, proposerUid: String): Task<String> {
+    fun acceptProposal(taskId: String, proposerUid: String): Task<MarketProposalAcceptance> {
         val uid = requireVerifiedUid()
         require(proposerUid.isNotBlank() && proposerUid != uid) { "Choose a valid proposal." }
         val taskRef = firestore.collection(TASKS).document(taskId)
@@ -912,15 +918,10 @@ class MarketRepository(
         )
         val conversationRef = firestore.collection(MARKET_CONVERSATIONS).document(conversationId)
 
-        return firestore.runTransaction { tx ->
+        val assignment = firestore.runTransaction { tx ->
             val task = tx.get(taskRef)
             val proposal = tx.get(proposalRef)
             val posterProfile = tx.get(posterProfileRef)
-            val activeProposals = tx.get(taskRef.collection(PROPOSALS)
-                .whereIn("status", listOf(
-                    MarketProposalStatus.SENT.wireValue,
-                    MarketProposalStatus.SHORTLISTED.wireValue
-                )))
             require(task.exists() && proposal.exists()) { "The task or proposal no longer exists." }
             require(task.getString("posterId") == uid) { "Only the task poster can accept a proposal." }
             require(task.getString("status") == MarketTaskStatus.OPEN.wireValue) {
@@ -945,14 +946,6 @@ class MarketRepository(
                 "status" to MarketProposalStatus.ACCEPTED.wireValue,
                 "updatedAt" to FieldValue.serverTimestamp()
             ))
-            activeProposals.documents
-                .filter { it.id != proposerUid }
-                .forEach { otherProposal ->
-                    tx.update(otherProposal.reference, mapOf(
-                        "status" to MarketProposalStatus.DECLINED.wireValue,
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    ))
-                }
             tx.update(posterProfileRef, mapOf(
                 "openTasks" to openTasks - 1,
                 "lastMutation" to mutationMap("task", "close", taskId),
@@ -968,6 +961,53 @@ class MarketRepository(
                 "updatedAt" to FieldValue.serverTimestamp()
             ))
             conversationId
+        }
+
+        // Android Firestore transactions read document references, not collection queries.
+        // Assignment closes the task first, so no proposal can be created after this query;
+        // proposals that committed before assignment are then safely declined in a batch.
+        return assignment.continueWithTask { completed ->
+            if (!completed.isSuccessful) {
+                return@continueWithTask Tasks.forException<MarketProposalAcceptance>(
+                    completed.exception ?: IllegalStateException("The proposal could not be accepted.")
+                )
+            }
+            val acceptedConversationId = completed.result
+                ?: return@continueWithTask Tasks.forException<MarketProposalAcceptance>(
+                    IllegalStateException("The proposal was accepted without a conversation ID.")
+                )
+            taskRef.collection(PROPOSALS)
+                .whereIn("status", listOf(
+                    MarketProposalStatus.SENT.wireValue,
+                    MarketProposalStatus.SHORTLISTED.wireValue
+                ))
+                .get()
+                .continueWithTask { pending ->
+                    if (!pending.isSuccessful) {
+                        return@continueWithTask Tasks.forResult(
+                            MarketProposalAcceptance(acceptedConversationId, otherProposalsClosed = false)
+                        )
+                    }
+                    val remaining = pending.result?.documents.orEmpty().filter { it.id != proposerUid }
+                    if (remaining.isEmpty()) {
+                        return@continueWithTask Tasks.forResult(
+                            MarketProposalAcceptance(acceptedConversationId, otherProposalsClosed = true)
+                        )
+                    }
+                    val batch = firestore.batch()
+                    remaining.forEach { otherProposal ->
+                        batch.update(otherProposal.reference, mapOf(
+                            "status" to MarketProposalStatus.DECLINED.wireValue,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ))
+                    }
+                    batch.commit().continueWith { closed ->
+                        MarketProposalAcceptance(
+                            acceptedConversationId,
+                            otherProposalsClosed = closed.isSuccessful
+                        )
+                    }
+                }
         }
     }
 
