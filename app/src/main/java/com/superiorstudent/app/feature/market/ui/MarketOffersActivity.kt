@@ -33,7 +33,6 @@ import com.google.android.gms.tasks.Tasks
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
 import com.superiorstudent.app.feature.market.data.MarketConfig
 import com.superiorstudent.app.feature.market.data.MarketConfigCachePolicy
@@ -345,13 +344,13 @@ class MarketOffersActivity : AppCompatActivity() {
         startActivity(Intent(this, MarketOfferDetailActivity::class.java).apply {
             putExtra(MarketOfferDetailActivity.EXTRA_ID, offer.id)
             putExtra(MarketOfferDetailActivity.EXTRA_CATEGORY, offer.category)
-            putExtra(MarketOfferDetailActivity.EXTRA_COURSE,
-                offer.courseTag?.takeIf { it.isNotBlank() } ?: "General")
+            putExtra(MarketOfferDetailActivity.EXTRA_COURSE, offer.courseTag.orEmpty())
             putExtra(MarketOfferDetailActivity.EXTRA_TITLE, offer.title)
             putExtra(MarketOfferDetailActivity.EXTRA_DESCRIPTION, offer.description)
             putExtra(MarketOfferDetailActivity.EXTRA_PRICE_LABEL, offer.priceLabel)
             putExtra(MarketOfferDetailActivity.EXTRA_PRICE_VALUE, offer.priceValue ?: -1)
             putExtra(MarketOfferDetailActivity.EXTRA_SELLER, offer.sellerName)
+            putExtra(MarketOfferDetailActivity.EXTRA_SELLER_ID, offer.sellerId)
             putExtra(MarketOfferDetailActivity.EXTRA_INITIALS, offer.initials)
             putExtra(MarketOfferDetailActivity.EXTRA_RATING, offer.rating)
             putExtra(MarketOfferDetailActivity.EXTRA_REVIEW_COUNT, offer.ratingCount)
@@ -360,8 +359,20 @@ class MarketOffersActivity : AppCompatActivity() {
         })
     }
 
-    private fun showOfferChatPreview(offer: MarketOfferPreview) {
-        toast("Offer details are live. Market messaging is not connected yet.")
+    private fun openOfferConversation(offer: MarketOfferPreview) {
+        marketRepository.openOfferConversation(offer.id).addOnCompleteListener { result ->
+            if (isFinishing || isDestroyed) return@addOnCompleteListener
+            if (!result.isSuccessful) {
+                toast(result.exception?.localizedMessage ?: "A Market conversation could not be opened.")
+                return@addOnCompleteListener
+            }
+            startActivity(Intent(this, MarketTaskChatActivity::class.java).apply {
+                putExtra(MarketTaskChatActivity.EXTRA_CONVERSATION_ID, result.result)
+                putExtra(MarketTaskChatActivity.EXTRA_HELPER_NAME, offer.sellerName)
+                putExtra(MarketTaskChatActivity.EXTRA_TASK_TITLE, offer.title)
+                putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR, offer.priceValue?.toInt() ?: 0)
+            })
+        }
     }
 
     private fun showMenu(anchor: View) {
@@ -831,7 +842,8 @@ class MarketOffersActivity : AppCompatActivity() {
             verifiedStudent = false,
             avatarColor = avatarColor,
             recencyOrder = order,
-            courseTag = offer.courseTag
+            courseTag = offer.courseTag,
+            sellerId = offer.sellerId
         )
     }
 
@@ -941,7 +953,7 @@ class MarketOffersActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(6) })
             addView(makeText("Message", 13f, true, color(R.color.market_message_ink)))
             isClickable = true; isFocusable = true
-            setOnClickListener { showOfferChatPreview(offer) }
+            setOnClickListener { openOfferConversation(offer) }
         }
         footer.addView(message, LinearLayout.LayoutParams(-2, dp(34)))
         card.addView(footer, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })

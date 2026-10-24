@@ -27,9 +27,10 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Reference screen 11: editable, preview-only proposal form. */
+/** Screen 11: submit a proposal for a live task. */
 class MarketSendProposalActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var messageInput: EditText
@@ -39,25 +40,25 @@ class MarketSendProposalActivity : AppCompatActivity() {
     private lateinit var priceError: TextView
     private lateinit var deliveryInput: EditText
     private lateinit var deliveryError: TextView
+    private lateinit var submitButton: LinearLayout
+    private val repository by lazy { MarketRepository() }
     private val quickPickViews = mutableMapOf<Int, TextView>()
 
     private val taskId by lazy { intent.getStringExtra(EXTRA_TASK_ID).orEmpty() }
     private val taskTitle by lazy {
-        intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty().ifBlank {
-            "Poster for Optometry Society health camp"
-        }
+        intent.getStringExtra(EXTRA_TASK_TITLE).orEmpty()
     }
     private val taskCategory by lazy {
-        intent.getStringExtra(EXTRA_CATEGORY).orEmpty().ifBlank { "Design" }
+        intent.getStringExtra(EXTRA_CATEGORY).orEmpty()
     }
     private val taskBudget by lazy {
-        intent.getStringExtra(EXTRA_BUDGET).orEmpty().ifBlank { "Rs. 1,500 fixed" }
+        intent.getStringExtra(EXTRA_BUDGET).orEmpty()
     }
     private val taskDeadline by lazy {
-        intent.getStringExtra(EXTRA_DEADLINE).orEmpty().ifBlank { "24 Oct" }
+        intent.getStringExtra(EXTRA_DEADLINE).orEmpty()
     }
     private val taskAuthor by lazy {
-        intent.getStringExtra(EXTRA_AUTHOR).orEmpty().ifBlank { "Hamza" }
+        intent.getStringExtra(EXTRA_AUTHOR).orEmpty()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,13 +167,17 @@ class MarketSendProposalActivity : AppCompatActivity() {
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
-        taskInfo.addView(makeText(taskBudget + " · Due " + taskDeadline.removePrefix("Due "),
+        val summary = listOfNotNull(
+            taskBudget.takeIf { it.isNotBlank() },
+            taskDeadline.removePrefix("Due ").takeIf { it.isNotBlank() }?.let { "Due $it" }
+        ).joinToString(" · ").ifBlank { "Task details unavailable" }
+        taskInfo.addView(makeText(summary,
             12f, false, color(R.color.market_ink2)).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
         card.addView(taskInfo, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(makeChip(taskCategory), LinearLayout.LayoutParams(-2, -2).apply {
+        card.addView(makeChip(taskCategory.ifBlank { "Task" }), LinearLayout.LayoutParams(-2, -2).apply {
             marginStart = dp(10)
         })
         return card
@@ -195,7 +200,7 @@ class MarketSendProposalActivity : AppCompatActivity() {
         })
 
         messageInput = EditText(this).apply {
-            setText(MarketSendProposalUiPolicy.defaultMessage(taskId, taskAuthor))
+            setText("")
             textSize = 13.5f
             typeface = font(false)
             setTextColor(color(R.color.market_ink))
@@ -245,7 +250,7 @@ class MarketSendProposalActivity : AppCompatActivity() {
         priceBox.addView(makeText("Rs.", 14f, false, color(R.color.market_ink2)),
             LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) })
         priceInput = EditText(this).apply {
-            setText(MarketSendProposalUiPolicy.DEFAULT_PRICE)
+            setText("")
             textSize = 14f
             typeface = font(false)
             setTextColor(color(R.color.market_ink))
@@ -369,7 +374,7 @@ class MarketSendProposalActivity : AppCompatActivity() {
                 topMargin = dp(1)
             })
         panel.addView(makeText(
-            "Be specific about what you will deliver. Proposals left today: 9 of 10.",
+            "Be specific about what you will deliver. Your account’s daily proposal limit is checked when you send.",
             12f, false, color(R.color.market_ink)
         ).apply { setLineSpacing(dp(3).toFloat(), 1f) },
             LinearLayout.LayoutParams(0, -2, 1f))
@@ -385,25 +390,31 @@ class MarketSendProposalActivity : AppCompatActivity() {
                 intArrayOf(0x00FFFFFF, color(R.color.market_bg))
             )
         }
-        val button = LinearLayout(this).apply {
+        submitButton = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(16), 0, dp(16), 0)
             background = rounded(color(R.color.market_match), 16f)
             isClickable = true
             isFocusable = true
-            contentDescription = "Send proposal"
+            contentDescription = if (taskId.isBlank()) "Task is unavailable" else "Send proposal"
+            isEnabled = taskId.isNotBlank()
+            alpha = if (isEnabled) 1f else 0.5f
             addView(ProposalScreenIconView(this@MarketSendProposalActivity,
                 ProposalScreenIcon.SEND, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
             addView(makeText("Send proposal", 15f, true, color(R.color.market_match_ink)))
-            setOnClickListener { validateAndPreviewOnly() }
+            setOnClickListener { submitProposal() }
         }
-        footer.addView(button, LinearLayout.LayoutParams(-1, dp(52)))
+        footer.addView(submitButton, LinearLayout.LayoutParams(-1, dp(52)))
         return footer
     }
 
-    private fun validateAndPreviewOnly() {
+    private fun submitProposal() {
+        if (taskId.isBlank()) {
+            toast("This task is unavailable. Open a task from Requests and try again.")
+            return
+        }
         val validation = MarketSendProposalUiPolicy.validate(
             MarketSendProposalDraft(
                 message = messageInput.text.toString(),
@@ -411,14 +422,39 @@ class MarketSendProposalActivity : AppCompatActivity() {
                 deliveryDays = deliveryInput.text.toString()
             )
         )
-        setError(messageError, validation.messageError)
+        val messageErrorText = validation.messageError ?: when {
+            messageInput.text.toString().trim().length < 20 ->
+                "Write at least 20 characters so the poster understands your proposal."
+            else -> null
+        }
+        setError(messageError, messageErrorText)
         setError(priceError, validation.priceError)
         setError(deliveryError, validation.deliveryError)
-        if (!validation.isValid) {
+        if (!validation.isValid || messageErrorText != null) {
             toast("Please review the proposal details.")
             return
         }
-        toast("Proposal preview validated. Sending is not connected.")
+        val price = priceInput.text.toString().replace(",", "").toDoubleOrNull()
+        val deliveryDays = deliveryInput.text.toString().toIntOrNull()
+        if (price == null || deliveryDays == null) {
+            toast("Please review the proposal details.")
+            return
+        }
+        submitButton.isEnabled = false
+        submitButton.alpha = 0.6f
+        repository.createProposal(taskId, messageInput.text.toString(), price, deliveryDays)
+            .addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                submitButton.isEnabled = true
+                submitButton.alpha = 1f
+                if (result.isSuccessful) {
+                    toast("Proposal sent to the task poster.")
+                    finish()
+                } else {
+                    toast(result.exception?.localizedMessage
+                        ?: "Your proposal could not be sent. Please try again.")
+                }
+            }
     }
 
     private fun setError(view: TextView, message: String?) {

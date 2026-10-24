@@ -11,7 +11,11 @@ internal data class MarketTaskDetailSeed(
     val proposalCount: Int,
     val author: String,
     val initials: String,
-    val ageLabel: String
+    val ageLabel: String,
+    val skillTags: List<String> = emptyList(),
+    val ratingLabel: String = "Rating unavailable",
+    val budgetFootnote: String = "Budget",
+    val deadlineFootnote: String = "Deadline"
 )
 
 internal data class MarketTaskDetailUiModel(
@@ -76,6 +80,25 @@ internal object MarketTaskDetailUiPolicy {
             contactLockMessage = "Contact details and chat unlock only after the poster accepts your proposal."
         )
     }
+
+    /** Live feed mapping that never fills absent task fields with reference content. */
+    fun createLive(seed: MarketTaskDetailSeed): MarketTaskDetailUiModel = MarketTaskDetailUiModel(
+        category = seed.category.ifBlank { "Task" },
+        courseTag = seed.courseTag?.takeIf { it.isNotBlank() },
+        title = seed.title.ifBlank { "Task unavailable" },
+        author = seed.author.ifBlank { "Student" },
+        initials = seed.initials.ifBlank { "ST" },
+        ageLabel = seed.ageLabel.trim().removePrefix("·").trim().ifBlank { "Recently" },
+        ratingLabel = seed.ratingLabel,
+        budgetValue = seed.budgetLabel.ifBlank { "Not set" },
+        budgetFootnote = seed.budgetFootnote,
+        deadlineDate = deadlineHeading(seed.dueLabel),
+        deadlineFootnote = seed.deadlineFootnote,
+        proposalsValue = "${seed.proposalCount.coerceAtLeast(0)} of $MAX_PROPOSALS",
+        details = seed.description.ifBlank { "No task details were provided." },
+        skillTags = seed.skillTags.filter { it.isNotBlank() },
+        contactLockMessage = "Contact details and chat unlock only after the poster accepts your proposal."
+    )
 
     private fun deadlineHeading(label: String): String {
         val normalized = label.trim()

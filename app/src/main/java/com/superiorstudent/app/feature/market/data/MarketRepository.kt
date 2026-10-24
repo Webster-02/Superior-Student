@@ -8,6 +8,7 @@ import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.Transaction
@@ -71,6 +72,12 @@ data class MarketSupportDraft(
     val relatedId: String? = null
 )
 
+/** A signed-in user's proposal together with its parent task when Rules allow that task read. */
+data class MarketAppliedTask(
+    val proposal: MarketProposal,
+    val task: MarketTask?
+)
+
 /**
  * The only Firestore write boundary for Market documents.
  *
@@ -122,6 +129,267 @@ class MarketRepository(
             else MarketConverters.profile(snapshot)
                 ?: throw IllegalStateException("Your Market profile is invalid. Contact Market support.")
         }
+    }
+
+    /** Loads this user's owner-scoped offers for My Offers. */
+    fun loadMyOffers(pageSize: Int = MarketQueryBuilders.DEFAULT_PAGE_SIZE): Task<List<MarketOffer>> {
+        val uid = requireVerifiedUid()
+        return MarketQueryBuilders.myOffers(firestore, uid, pageSize = pageSize).get()
+            .continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception ?: IllegalStateException("Your offers could not be loaded.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("Your offers could not be loaded.")
+                snapshot.documents.mapNotNull(MarketConverters::offer)
+            }
+    }
+
+    /** Loads reports filed by the signed-in student with the required reporterId filter. */
+    fun loadMyReports(pageSize: Int = MarketQueryBuilders.DEFAULT_PAGE_SIZE): Task<List<MarketReport>> {
+        val uid = requireVerifiedUid()
+        return MarketQueryBuilders.myReports(firestore, uid, pageSize = pageSize).get()
+            .continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception ?: IllegalStateException("Your reports could not be loaded.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("Your reports could not be loaded.")
+                snapshot.documents.mapNotNull(MarketConverters::report)
+            }
+    }
+
+    /** Loads notices only from the signed-in student's own notices subcollection. */
+    fun loadMyNotices(
+        unreadOnly: Boolean = false,
+        pageSize: Int = MarketQueryBuilders.DEFAULT_PAGE_SIZE
+    ): Task<List<MarketNotice>> {
+        val uid = requireSignedInUid()
+        return MarketQueryBuilders.myNotices(firestore, uid,
+            read = if (unreadOnly) false else null, pageSize = pageSize).get()
+            .continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception ?: IllegalStateException("Your Market notices could not be loaded.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("Your Market notices could not be loaded.")
+                snapshot.documents.mapNotNull { MarketConverters.notice(it, uid) }
+            }
+    }
+
+    /** Loads open, replied-to and resolved support tickets belonging to this account. */
+    fun loadMySupportTickets(pageSize: Int = MarketQueryBuilders.DEFAULT_PAGE_SIZE): Task<List<MarketSupportTicket>> {
+        val uid = requireVerifiedUid()
+        val reads = MarketSupportStatus.values().map { status ->
+            MarketQueryBuilders.mySupportTickets(firestore, uid, status, pageSize).get()
+        }
+        return Tasks.whenAllSuccess<QuerySnapshot>(reads).continueWith { completed ->
+            if (!completed.isSuccessful) {
+                throw completed.exception ?: IllegalStateException("Your support requests could not be loaded.")
+            }
+            completed.result.orEmpty().flatMap { snapshot ->
+                snapshot.documents.mapNotNull(MarketConverters::supportTicket)
+            }.distinctBy { it.id }.sortedByDescending { it.updatedAt }
+        }
+    }
+
+    /** Reads the signed-in participant's task rating, if one has already been submitted. */
+    fun loadMyTaskRating(taskId: String): Task<MarketRating?> {
+        val uid = requireSignedInUid()
+        require(taskId.isNotBlank()) { "A task is required." }
+        return firestore.collection(RATINGS).document(MarketRepositoryPolicy.ratingId(taskId, uid))
+            .get().continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception ?: IllegalStateException("Your task rating could not be checked.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("Your task rating could not be checked.")
+                if (!snapshot.exists()) null else MarketConverters.rating(snapshot)
+                    ?: throw IllegalStateException("Your task rating has invalid data.")
+            }
+    }
+
+    /** Loads tasks posted by the signed-in student through the owner-scoped query builder. */
+    fun loadMyTasks(pageSize: Int = MarketQueryBuilders.DEFAULT_PAGE_SIZE): Task<List<MarketTask>> {
+        val uid = requireVerifiedUid()
+        return MarketQueryBuilders.myTasks(firestore, uid, pageSize = pageSize)
+            .get()
+            .continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception
+                        ?: IllegalStateException("Your posted tasks could not be loaded.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("Your posted tasks could not be loaded.")
+                snapshot.documents.mapNotNull { document ->
+                    if (!document.exists()) null else MarketConverters.task(document)
+                }
+            }
+    }
+
+    /**
+     * Loads proposals created by the signed-in student with the required collection-group
+     * filter, then joins parent task documents when Firestore Rules permit those reads. Closed
+     * tasks may be unavailable to a proposer; their real proposal still remains visible.
+     */
+    fun loadMyAppliedTasks(): Task<List<MarketAppliedTask>> {
+        val uid = requireVerifiedUid()
+        return MarketQueryBuilders.appliedProposals(firestore, uid)
+            .get()
+            .continueWithTask { completed ->
+                if (!completed.isSuccessful) {
+                    return@continueWithTask Tasks.forException(
+                        completed.exception
+                            ?: IllegalStateException("Your proposals could not be loaded.")
+                    )
+                }
+                val snapshot = completed.result
+                    ?: return@continueWithTask Tasks.forException(
+                        IllegalStateException("Your proposals could not be loaded.")
+                    )
+                val entries = snapshot.documents.mapNotNull { document ->
+                    val parent = document.reference.parent.parent ?: return@mapNotNull null
+                    val proposal = MarketConverters.proposal(document, parent.id)
+                        ?: return@mapNotNull null
+                    proposal to parent
+                }
+                val taskReads = entries.map { (_, taskReference) ->
+                    taskReference.get().continueWith { taskRead ->
+                        if (!taskRead.isSuccessful) {
+                            null
+                        } else {
+                            taskRead.result?.let { taskSnapshot ->
+                                if (taskSnapshot.exists()) MarketConverters.task(taskSnapshot) else null
+                            }
+                        }
+                    }
+                }
+                Tasks.whenAllSuccess<MarketTask?>(taskReads).continueWith { joined ->
+                    if (!joined.isSuccessful) {
+                        throw joined.exception
+                            ?: IllegalStateException("Your proposal details could not be loaded.")
+                    }
+                    val tasks = joined.result.orEmpty()
+                    entries.mapIndexed { index, (proposal, _) ->
+                        MarketAppliedTask(proposal = proposal, task = tasks.getOrNull(index))
+                    }
+                }
+            }
+    }
+
+    /** Loads a single task only after checking the signed-in account owns it. */
+    fun loadOwnedTask(taskId: String): Task<MarketTask?> {
+        val uid = requireVerifiedUid()
+        require(taskId.isNotBlank()) { "A task is required." }
+        return firestore.collection(TASKS).document(taskId).get().continueWith { completed ->
+            if (!completed.isSuccessful) {
+                throw completed.exception
+                    ?: IllegalStateException("The task could not be loaded.")
+            }
+            val snapshot = completed.result
+                ?: throw IllegalStateException("The task could not be loaded.")
+            if (!snapshot.exists()) return@continueWith null
+            val task = MarketConverters.task(snapshot)
+                ?: throw IllegalStateException("This task has invalid data. Contact Market support.")
+            require(task.posterId == uid) { "Only the task poster can open this task." }
+            task
+        }
+    }
+
+    /** Loads proposals only under a task the current verified account owns. */
+    fun loadTaskProposals(
+        taskId: String,
+        pageSize: Int = MarketQueryBuilders.MAX_DELTA_PAGE_SIZE
+    ): Task<List<MarketProposal>> {
+        requireVerifiedUid()
+        require(taskId.isNotBlank()) { "A task is required." }
+        return MarketQueryBuilders.taskProposals(firestore, taskId, pageSize = pageSize)
+            .get()
+            .continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception
+                        ?: IllegalStateException("Proposals could not be loaded.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("Proposals could not be loaded.")
+                snapshot.documents.mapNotNull { document ->
+                    MarketConverters.proposal(document, taskId)
+                }
+            }
+    }
+
+    /** Loads the current user's Market conversations using the participant-scoped query. */
+    fun loadMyMarketConversations(): Task<List<MarketConversation>> {
+        val uid = requireVerifiedUid()
+        return MarketQueryBuilders.marketChats(firestore, uid).get().continueWith { completed ->
+            if (!completed.isSuccessful) {
+                throw completed.exception ?: IllegalStateException("Your Market conversations could not be loaded.")
+            }
+            val snapshot = completed.result
+                ?: throw IllegalStateException("Your Market conversations could not be loaded.")
+            snapshot.documents.map { document ->
+                val conversation = MarketConverters.conversation(document)
+                    ?: throw IllegalStateException("A Market conversation has invalid data.")
+                require(uid in conversation.participants) {
+                    "This Market conversation does not belong to your account."
+                }
+                conversation
+            }
+        }
+    }
+
+    /** Reads a conversation only for one of its verified participants. */
+    fun loadMarketConversation(conversationId: String): Task<MarketConversation?> {
+        val uid = requireVerifiedUid()
+        require(conversationId.isNotBlank()) { "A Market conversation is required." }
+        return firestore.collection(MARKET_CONVERSATIONS).document(conversationId).get()
+            .continueWith { completed ->
+                if (!completed.isSuccessful) {
+                    throw completed.exception ?: IllegalStateException("The Market conversation could not be loaded.")
+                }
+                val snapshot = completed.result
+                    ?: throw IllegalStateException("The Market conversation could not be loaded.")
+                if (!snapshot.exists()) return@continueWith null
+                val conversation = MarketConverters.conversation(snapshot)
+                    ?: throw IllegalStateException("This Market conversation has invalid data.")
+                require(uid in conversation.participants) {
+                    "You are not a participant in this Market conversation."
+                }
+                conversation
+            }
+    }
+
+    /** Real-time, participant-scoped text messages for one Market conversation. */
+    fun listenMarketMessages(
+        conversation: MarketConversation,
+        onUpdate: (List<MarketConversationMessage>, Exception?) -> Unit
+    ): ListenerRegistration {
+        val uid = requireVerifiedUid()
+        require(uid in conversation.participants) { "You are not a participant in this Market conversation." }
+        return firestore.collection(MARKET_CONVERSATIONS).document(conversation.id)
+            .collection(MESSAGES)
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .limitToLast(MAX_LIVE_CHAT_MESSAGES.toLong())
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    onUpdate(emptyList(), error)
+                    return@addSnapshotListener
+                }
+                if (snapshot == null) {
+                    onUpdate(emptyList(), IllegalStateException("Market messages could not be loaded."))
+                    return@addSnapshotListener
+                }
+                val rows = snapshot.documents.mapNotNull { document ->
+                    MarketConverters.message(document, conversation.id)
+                }
+                if (rows.size != snapshot.documents.size || rows.any {
+                    it.senderUid !in conversation.participants || it.recipientUid !in conversation.participants
+                }) {
+                    onUpdate(emptyList(), IllegalStateException("This conversation contains invalid message data."))
+                } else {
+                    onUpdate(rows, null)
+                }
+            }
     }
 
     /**
@@ -648,6 +916,11 @@ class MarketRepository(
             val task = tx.get(taskRef)
             val proposal = tx.get(proposalRef)
             val posterProfile = tx.get(posterProfileRef)
+            val activeProposals = tx.get(taskRef.collection(PROPOSALS)
+                .whereIn("status", listOf(
+                    MarketProposalStatus.SENT.wireValue,
+                    MarketProposalStatus.SHORTLISTED.wireValue
+                )))
             require(task.exists() && proposal.exists()) { "The task or proposal no longer exists." }
             require(task.getString("posterId") == uid) { "Only the task poster can accept a proposal." }
             require(task.getString("status") == MarketTaskStatus.OPEN.wireValue) {
@@ -672,6 +945,14 @@ class MarketRepository(
                 "status" to MarketProposalStatus.ACCEPTED.wireValue,
                 "updatedAt" to FieldValue.serverTimestamp()
             ))
+            activeProposals.documents
+                .filter { it.id != proposerUid }
+                .forEach { otherProposal ->
+                    tx.update(otherProposal.reference, mapOf(
+                        "status" to MarketProposalStatus.DECLINED.wireValue,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ))
+                }
             tx.update(posterProfileRef, mapOf(
                 "openTasks" to openTasks - 1,
                 "lastMutation" to mutationMap("task", "close", taskId),
@@ -2359,6 +2640,7 @@ class MarketRepository(
         const val USER_STATS = "userStats"
         const val MARKET_CONVERSATIONS = "marketConversations"
         const val MESSAGES = "messages"
+        const val MAX_LIVE_CHAT_MESSAGES = 100
         const val USERS = "users"
         const val NOTICES = "notices"
         const val SUPPORT = "support"

@@ -22,14 +22,11 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.gms.tasks.Task
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
 import com.superiorstudent.app.R
-import com.superiorstudent.app.feature.market.data.MarketConverters
 import com.superiorstudent.app.feature.market.data.MarketErrorMapper
 import com.superiorstudent.app.feature.market.data.MarketOffer
 import com.superiorstudent.app.feature.market.data.MarketOfferStatus
 import com.superiorstudent.app.feature.market.data.MarketPriceType
-import com.superiorstudent.app.feature.market.data.MarketQueryBuilders
 import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 import java.text.SimpleDateFormat
@@ -44,6 +41,7 @@ class MarketMyOffersActivity : AppCompatActivity() {
     private lateinit var expiredTab: TextView
     private var selectedStatus = MarketMyOfferStatus.ACTIVE
     private val offers = mutableListOf<MarketMyOfferPreview>()
+    private val repository by lazy { MarketRepository() }
     private var loadingOffers = false
     private var loadError: String? = null
     private var loadGeneration = 0
@@ -129,12 +127,12 @@ class MarketMyOffersActivity : AppCompatActivity() {
         loadingOffers = true
         loadError = null
         renderOffers()
-        MarketQueryBuilders.myOffers(FirebaseFirestore.getInstance(), user.uid, pageSize = 50).get()
-            .addOnSuccessListener { snapshot ->
+        try {
+            repository.loadMyOffers(pageSize = 50)
+            .addOnSuccessListener { loadedOffers ->
                 if (generation != loadGeneration) return@addOnSuccessListener
                 val now = System.currentTimeMillis()
-                val all = snapshot.documents.mapNotNull { MarketConverters.offer(it) }
-                    .filter { it.status != MarketOfferStatus.REMOVED }
+                val all = loadedOffers.filter { it.status != MarketOfferStatus.REMOVED }
                 val stale = if (reconcileExpired) all.filter {
                     it.status == MarketOfferStatus.ACTIVE && it.expiresAt.toDate().time < now &&
                         it.id !in reconcilingExpired
@@ -142,7 +140,7 @@ class MarketMyOffersActivity : AppCompatActivity() {
                 if (stale.isNotEmpty()) {
                     stale.forEach { reconcilingExpired.add(it.id) }
                     val expiryTasks = stale.map { offer ->
-                        runCatching { MarketRepository().expireOffer(offer.id) }
+                        runCatching { repository.expireOffer(offer.id) }
                             .getOrElse { failure ->
                                 val exception = failure as? Exception
                                     ?: IllegalStateException("Could not reconcile an expired offer.", failure)
@@ -172,6 +170,12 @@ class MarketMyOffersActivity : AppCompatActivity() {
                 loadError = MarketErrorMapper.map(failure).message
                 renderOffers()
             }
+        } catch (failure: Exception) {
+            if (generation != loadGeneration) return
+            loadingOffers = false
+            loadError = MarketErrorMapper.map(failure).message
+            renderOffers()
+        }
     }
 
     private fun toMyOffer(offer: MarketOffer, now: Long): MarketMyOfferPreview {

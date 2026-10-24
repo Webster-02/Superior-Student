@@ -26,20 +26,29 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketProposal
+import com.superiorstudent.app.feature.market.data.MarketProposalStatus
+import com.superiorstudent.app.feature.market.data.MarketRepository
+import com.superiorstudent.app.feature.market.data.MarketUserStats
 import com.superiorstudent.app.ui.AppThemePreferences
 
-/** Reference screen 12: poster-side proposal list. Proposal actions are deliberately preview-only. */
+/** Screen 12: the task poster's live proposal list and decisions. */
 class MarketProposalsActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var proposalList: LinearLayout
+    private var headerSummary: TextView? = null
     private val filterChips = mutableMapOf<MarketProposalsFilter, TextView>()
     private var activeFilter = MarketProposalsFilter.ALL
-    private var proposals = MarketProposalsUiPolicy.referenceProposals
+    private val repository by lazy { MarketRepository() }
+    private var proposals: List<MarketProposalPreview> = emptyList()
+    private var loading = true
+    private var loadError: String? = null
+    private var loadGeneration = 0
+    private val pendingProposalIds = mutableSetOf<String>()
+    private val taskId by lazy { intent.getStringExtra(EXTRA_TASK_ID).orEmpty() }
 
     private val taskLabel by lazy {
-        intent.getStringExtra(EXTRA_TASK_LABEL).orEmpty().ifBlank {
-            MarketProposalsUiPolicy.TASK_LABEL
-        }
+        intent.getStringExtra(EXTRA_TASK_LABEL).orEmpty().ifBlank { "Task proposals" }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +90,7 @@ class MarketProposalsActivity : AppCompatActivity() {
         scroll.addView(proposalList, FrameLayout.LayoutParams(-1, -2))
 
         renderProposals()
+        loadProposals()
         applyWindowInsets()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
@@ -108,13 +118,14 @@ class MarketProposalsActivity : AppCompatActivity() {
         headings.addView(makeText("Proposals", 20f, true, color(R.color.market_ink)).apply {
             letterSpacing = -0.02f
         })
-        headings.addView(makeText(
-            MarketProposalsUiPolicy.capacityLabel() + " · " + taskLabel,
+        headerSummary = makeText(
+            MarketProposalsUiPolicy.capacityLabel(proposals.size) + " · " + taskLabel,
             12f, false, color(R.color.market_ink2)
         ).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-        })
+        }
+        headings.addView(headerSummary)
         row.addView(headings, LinearLayout.LayoutParams(0, -2, 1f).apply {
             marginStart = dp(12)
         })
@@ -133,7 +144,7 @@ class MarketProposalsActivity : AppCompatActivity() {
             setPadding(dp(16), 0, dp(16), 0)
         }
         val filters = listOf(
-            MarketProposalsFilter.ALL to "All ${MarketProposalsUiPolicy.TOTAL_PROPOSALS}",
+            MarketProposalsFilter.ALL to "All ${proposals.size}",
             MarketProposalsFilter.SHORTLISTED to MarketProposalsUiPolicy.shortlistedLabel(proposals),
             MarketProposalsFilter.CHEAPEST to "Cheapest",
             MarketProposalsFilter.TOP_RATED to "Top rated"
@@ -161,6 +172,8 @@ class MarketProposalsActivity : AppCompatActivity() {
 
     private fun renderProposals() {
         if (!::proposalList.isInitialized) return
+        filterChips[MarketProposalsFilter.ALL]?.text = "All ${proposals.size}"
+        headerSummary?.text = MarketProposalsUiPolicy.capacityLabel(proposals.size) + " · " + taskLabel
         filterChips[MarketProposalsFilter.SHORTLISTED]?.text =
             MarketProposalsUiPolicy.shortlistedLabel(proposals)
         filterChips.forEach { (filter, chip) ->
@@ -174,6 +187,25 @@ class MarketProposalsActivity : AppCompatActivity() {
         }
 
         proposalList.removeAllViews()
+        if (loading) {
+            proposalList.addView(makeText("Loading proposals…", 13f, false,
+                color(R.color.market_ink2)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(24), dp(12), dp(24))
+            })
+            return
+        }
+        loadError?.let { message ->
+            proposalList.addView(makeText(message + "  Tap to retry.", 13f, false,
+                color(R.color.market_ink2)).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(24), dp(12), dp(24))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { loadProposals() }
+            })
+            return
+        }
         val shown = MarketProposalsUiPolicy.filterAndSort(proposals, activeFilter)
         if (shown.isEmpty()) {
             proposalList.addView(makeText("No proposals in this filter yet.", 13f, false,
@@ -239,8 +271,10 @@ class MarketProposalsActivity : AppCompatActivity() {
             14f, true, color(R.color.market_ink)).apply {
             gravity = Gravity.END
         })
-        if (proposal.shortlisted) {
-            offer.addView(makeText("Shortlisted", 11f, true,
+        if (proposal.status != MarketProposalStatus.SENT) {
+            val statusLabel = proposal.status.wireValue.replace('_', ' ')
+                .replaceFirstChar { it.uppercase() }
+            offer.addView(makeText(statusLabel, 11f, true,
                 color(if (AppThemePreferences.isNight(this@MarketProposalsActivity))
                     R.color.ok else R.color.ok)).apply {
                 gravity = Gravity.CENTER
@@ -257,24 +291,31 @@ class MarketProposalsActivity : AppCompatActivity() {
             setLineSpacing(dp(2).toFloat(), 1f)
         }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
 
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        if (proposal.status == MarketProposalStatus.SENT ||
+            proposal.status == MarketProposalStatus.SHORTLISTED) {
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val busy = proposal.id in pendingProposalIds
+            actions.addView(buildActionButton("Decline", ActionStyle.OUTLINE) {
+                updateProposalStatus(proposal, MarketProposalStatus.DECLINED)
+            }.apply { isEnabled = !busy; alpha = if (busy) 0.5f else 1f },
+                LinearLayout.LayoutParams(0, dp(38), 1f))
+            actions.addView(buildActionButton(if (proposal.shortlisted) "Shortlisted" else "Shortlist",
+                ActionStyle.SECONDARY) {
+                if (!proposal.shortlisted) updateProposalStatus(proposal, MarketProposalStatus.SHORTLISTED)
+            }.apply {
+                isEnabled = !busy && !proposal.shortlisted
+                alpha = if (isEnabled) 1f else 0.6f
+            },
+                LinearLayout.LayoutParams(0, dp(38), 1.2f).apply { marginStart = dp(8) })
+            actions.addView(buildActionButton("Accept", ActionStyle.ACCEPT) {
+                showAcceptConfirmation(proposal)
+            }.apply { isEnabled = !busy; alpha = if (busy) 0.5f else 1f },
+                LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginStart = dp(8) })
+            card.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         }
-        actions.addView(buildActionButton("Decline", ActionStyle.OUTLINE) {
-            showActionInfo(proposal, "Decline proposal",
-                "Declining is not connected in this preview. No notification will be sent and nothing will be saved.")
-        }, LinearLayout.LayoutParams(0, dp(38), 1f))
-        actions.addView(buildActionButton(if (proposal.shortlisted) "Shortlisted" else "Shortlist",
-            ActionStyle.SECONDARY) {
-            proposals = MarketProposalsUiPolicy.toggleShortlisted(proposals, proposal.id)
-            renderProposals()
-            toast("Shortlist updated in this preview only. Changes are not saved.")
-        }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginStart = dp(8) })
-        actions.addView(buildActionButton("Accept", ActionStyle.ACCEPT) {
-            showAcceptConfirmation(proposal)
-        }, LinearLayout.LayoutParams(0, dp(38), 1.3f).apply { marginStart = dp(8) })
-        card.addView(actions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         return card
     }
 
@@ -331,7 +372,7 @@ class MarketProposalsActivity : AppCompatActivity() {
             MarketProposalsUiPolicy.priceLabel(proposal.pricePkr)),
             LinearLayout.LayoutParams(0, -2, 1f))
         priceAndDelivery.addView(acceptanceMetric("Delivery",
-            MarketProposalsUiPolicy.deliveryLabel(proposal.id)),
+            "${proposal.deliveryDays} day${if (proposal.deliveryDays == 1) "" else "s"}"),
             LinearLayout.LayoutParams(0, -2, 1f))
         sheet.addView(priceAndDelivery, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(12)
@@ -372,25 +413,13 @@ class MarketProposalsActivity : AppCompatActivity() {
             addView(AcceptanceIconView(this@MarketProposalsActivity,
                 AcceptanceIconKind.CHAT, color(R.color.market_match_ink)),
                 LinearLayout.LayoutParams(dp(20), dp(20)))
-            addView(makeText("Accept and open chat", 15f, true,
+            addView(makeText("Accept proposal", 15f, true,
                 color(R.color.market_match_ink)), LinearLayout.LayoutParams(-2, -2).apply {
                 marginStart = dp(8)
             })
             setOnClickListener {
                 sheetDialog.dismiss()
-                AlertDialog.Builder(this@MarketProposalsActivity)
-                    .setTitle("Chat preview only")
-                    .setMessage("This opens a sample task chat for " + proposal.name +
-                        ". No proposal will be accepted, task changes will not be saved, and messages will not be sent.")
-                    .setPositiveButton("Open chat preview") { _, _ ->
-                        startActivity(Intent(this@MarketProposalsActivity, MarketTaskChatActivity::class.java).apply {
-                            putExtra(MarketTaskChatActivity.EXTRA_HELPER_NAME, proposal.name)
-                            putExtra(MarketTaskChatActivity.EXTRA_TASK_TITLE, taskLabel)
-                            putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR, proposal.pricePkr)
-                        })
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
+                acceptProposal(proposal)
             }
         }
         sheet.addView(acceptAndChat, LinearLayout.LayoutParams(-1, dp(52)))
@@ -496,6 +525,174 @@ class MarketProposalsActivity : AppCompatActivity() {
                 }
             }
             canvas.restoreToCount(saved)
+        }
+    }
+
+    private fun loadProposals() {
+        if (taskId.isBlank()) {
+            loading = false
+            loadError = "This proposal page is missing its task ID. Open it from your task details."
+            renderProposals()
+            return
+        }
+        loading = true
+        loadError = null
+        renderProposals()
+        val generation = ++loadGeneration
+        val load = try {
+            repository.loadTaskProposals(taskId)
+        } catch (error: Exception) {
+            loading = false
+            loadError = error.localizedMessage ?: "Proposals could not be loaded."
+            renderProposals()
+            return
+        }
+        load.addOnCompleteListener { result ->
+            if (isFinishing || isDestroyed || generation != loadGeneration) return@addOnCompleteListener
+            loading = false
+            if (!result.isSuccessful) {
+                loadError = result.exception?.localizedMessage ?: "Proposals could not be loaded."
+                proposals = emptyList()
+                renderProposals()
+                return@addOnCompleteListener
+            }
+            loadError = null
+            proposals = result.result.orEmpty().map(::toPreview)
+            renderProposals()
+            loadProposalRatings(generation)
+        }
+    }
+
+    private fun toPreview(proposal: MarketProposal) = MarketProposalPreview(
+        id = proposal.proposerId,
+        name = proposal.proposerName,
+        initials = proposal.proposerInitials,
+        ratingLabel = "Loading rating…",
+        ratingScore = 0.0,
+        ageLabel = ageLabel(proposal.createdAt.toDate().time),
+        pricePkr = proposal.price.toInt(),
+        message = proposal.message,
+        avatarTone = when (Math.floorMod(proposal.proposerId.hashCode(), 3)) {
+            0 -> "sky"
+            1 -> "peach"
+            else -> "lav"
+        },
+        shortlisted = proposal.status == MarketProposalStatus.SHORTLISTED,
+        status = proposal.status,
+        deliveryDays = proposal.deliveryDays
+    )
+
+    private fun loadProposalRatings(generation: Int) {
+        proposals.map { it.id }.distinct().forEach { uid ->
+            try {
+                repository.loadPublicUserStats(uid).addOnCompleteListener { result ->
+                    if (isFinishing || isDestroyed || generation != loadGeneration) return@addOnCompleteListener
+                    val labelAndScore = if (!result.isSuccessful) {
+                        "Rating unavailable" to 0.0
+                    } else {
+                        result.result?.let(::ratingLabelAndScore) ?: ("No ratings" to 0.0)
+                    }
+                    proposals = proposals.map { proposal ->
+                        if (proposal.id == uid) proposal.copy(
+                            ratingLabel = labelAndScore.first,
+                            ratingScore = labelAndScore.second
+                        ) else proposal
+                    }
+                    renderProposals()
+                }
+            } catch (_: Exception) {
+                proposals = proposals.map { proposal ->
+                    if (proposal.id == uid) proposal.copy(ratingLabel = "Rating unavailable") else proposal
+                }
+            }
+        }
+    }
+
+    private fun ratingLabelAndScore(stats: MarketUserStats): Pair<String, Double> {
+        if (stats.ratingCount <= 0) return "No ratings" to 0.0
+        val rating = stats.ratingSum / stats.ratingCount
+        return "%.1f · %d rating%s".format(
+            java.util.Locale.US,
+            rating,
+            stats.ratingCount,
+            if (stats.ratingCount == 1) "" else "s"
+        ) to rating
+    }
+
+    private fun updateProposalStatus(
+        proposal: MarketProposalPreview,
+        newStatus: MarketProposalStatus
+    ) {
+        if (newStatus == MarketProposalStatus.SENT) {
+            toast("A shortlist can’t be removed after saving it.")
+            return
+        }
+        if (!pendingProposalIds.add(proposal.id)) return
+        renderProposals()
+        val update = try {
+            repository.setProposalStatus(taskId, proposal.id, newStatus)
+        } catch (error: Exception) {
+            pendingProposalIds.remove(proposal.id)
+            toast(error.localizedMessage ?: "The proposal could not be updated.")
+            renderProposals()
+            return
+        }
+        update.addOnCompleteListener { result ->
+            if (isFinishing || isDestroyed) return@addOnCompleteListener
+            pendingProposalIds.remove(proposal.id)
+            if (result.isSuccessful) {
+                toast(if (newStatus == MarketProposalStatus.SHORTLISTED)
+                    "Proposal shortlisted." else "Proposal declined.")
+                loadProposals()
+            } else {
+                toast(result.exception?.localizedMessage ?: "The proposal could not be updated.")
+                renderProposals()
+            }
+        }
+    }
+
+    private fun acceptProposal(proposal: MarketProposalPreview) {
+        if (!pendingProposalIds.add(proposal.id)) return
+        renderProposals()
+        val accept = try {
+            repository.acceptProposal(taskId, proposal.id)
+        } catch (error: Exception) {
+            pendingProposalIds.remove(proposal.id)
+            toast(error.localizedMessage ?: "The proposal could not be accepted.")
+            renderProposals()
+            return
+        }
+        accept.addOnCompleteListener { result ->
+            if (isFinishing || isDestroyed) return@addOnCompleteListener
+            pendingProposalIds.remove(proposal.id)
+            if (result.isSuccessful) {
+                val conversationId = result.result.orEmpty()
+                if (conversationId.isBlank()) {
+                    toast("Proposal accepted, but the conversation ID was missing.")
+                    finish()
+                    return@addOnCompleteListener
+                }
+                startActivity(Intent(this, MarketTaskChatActivity::class.java).apply {
+                    putExtra(MarketTaskChatActivity.EXTRA_CONVERSATION_ID, conversationId)
+                    putExtra(MarketTaskChatActivity.EXTRA_HELPER_NAME, proposal.name)
+                    putExtra(MarketTaskChatActivity.EXTRA_TASK_TITLE, taskLabel)
+                    putExtra(MarketTaskChatActivity.EXTRA_PRICE_PKR, proposal.pricePkr)
+                })
+                finish()
+            } else {
+                toast(result.exception?.localizedMessage ?: "The proposal could not be accepted.")
+                renderProposals()
+            }
+        }
+    }
+
+    private fun ageLabel(createdAtMillis: Long): String {
+        val minutes = ((System.currentTimeMillis() - createdAtMillis).coerceAtLeast(0L)) / 60_000L
+        return when {
+            minutes < 1 -> "Just now"
+            minutes < 60 -> "$minutes min ago"
+            minutes < 1_440 -> "${minutes / 60}h ago"
+            else -> "${minutes / 1_440}d ago"
         }
     }
 

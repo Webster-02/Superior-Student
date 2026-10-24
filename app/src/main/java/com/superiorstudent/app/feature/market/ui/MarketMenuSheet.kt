@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.WindowCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
 import kotlin.math.min
 
@@ -77,6 +78,7 @@ internal object MarketMenuItems {
 internal object MarketMenuSheet {
     fun show(activity: AppCompatActivity, onSelected: (MarketMenuItem) -> Unit) {
         val dialog = Dialog(activity)
+        var noticeBadge: TextView? = null
         val sheet = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(activity, 16), dp(activity, 10), dp(activity, 16), dp(activity, 20))
@@ -116,7 +118,9 @@ internal object MarketMenuSheet {
             clipToOutline = true
         }
         MarketMenuItems.all.forEachIndexed { index, item ->
-            card.addView(buildRow(activity, item, dialog, onSelected), LinearLayout.LayoutParams(
+            card.addView(buildRow(activity, item, dialog, onSelected) { badge ->
+                if (item.icon == MarketMenuIcon.NOTICES) noticeBadge = badge
+            }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
             if (index < MarketMenuItems.all.lastIndex) {
@@ -149,13 +153,24 @@ internal object MarketMenuSheet {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT
         )
+        try {
+            MarketRepository().loadMyNotices(unreadOnly = true).addOnSuccessListener { unread ->
+                if (activity.isFinishing || activity.isDestroyed) return@addOnSuccessListener
+                val count = unread.size
+                noticeBadge?.apply {
+                    text = count.toString()
+                    visibility = if (count > 0) View.VISIBLE else View.GONE
+                }
+            }
+        } catch (_: Exception) { /* Keep the notice badge hidden when live data is unavailable. */ }
     }
 
     private fun buildRow(
         context: Context,
         item: MarketMenuItem,
         dialog: Dialog,
-        onSelected: (MarketMenuItem) -> Unit
+        onSelected: (MarketMenuItem) -> Unit,
+        onBadge: (TextView) -> Unit
     ): View {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -199,9 +214,9 @@ internal object MarketMenuSheet {
             marginEnd = dp(context, 8)
         })
 
-        if (item.badge > 0) {
+        if (item.icon == MarketMenuIcon.NOTICES) {
             val badge = TextView(context).apply {
-                text = item.badge.toString()
+                text = ""
                 textSize = 11f
                 typeface = font(context, true)
                 setTextColor(android.graphics.Color.WHITE)
@@ -211,7 +226,9 @@ internal object MarketMenuSheet {
                 background = rounded(context.getColor(R.color.market_menu_dot), 99f, null, context)
                 minWidth = dp(context, 20)
                 minHeight = dp(context, 20)
+                visibility = View.GONE
             }
+            onBadge(badge)
             row.addView(badge, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(context, 20)).apply {
                 marginEnd = dp(context, 8)
             })

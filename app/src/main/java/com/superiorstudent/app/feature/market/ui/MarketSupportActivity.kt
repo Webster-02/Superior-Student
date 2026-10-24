@@ -24,16 +24,28 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.superiorstudent.app.R
+import com.superiorstudent.app.feature.market.data.MarketSupportDraft
+import com.superiorstudent.app.feature.market.data.MarketSupportStatus
+import com.superiorstudent.app.feature.market.data.MarketSupportTicket
+import com.superiorstudent.app.feature.market.data.MarketSupportType
+import com.superiorstudent.app.feature.market.data.MarketRepository
 import com.superiorstudent.app.ui.AppThemePreferences
+import java.text.DateFormat
 
-/** Screen 29: reference-matched support form. It deliberately does not fake a live submission. */
+/** Screen 29: support form that creates a real account-owned Market support ticket. */
 class MarketSupportActivity : AppCompatActivity() {
     private lateinit var root: FrameLayout
     private lateinit var subjectInput: EditText
     private lateinit var detailsInput: EditText
     private lateinit var detailsCounter: TextView
+    private lateinit var ticketList: LinearLayout
+    private val repository by lazy { MarketRepository() }
+    private var submitButton: View? = null
     private val categoryChips = linkedMapOf<MarketSupportCategory, TextView>()
     private var selectedCategory = MarketSupportCategory.LISTING_PROBLEM
+    private var supportTickets = emptyList<MarketSupportTicket>()
+    private var ticketsLoading = true
+    private var ticketsError: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         AppThemePreferences.applyToApp(this)
@@ -89,7 +101,7 @@ class MarketSupportActivity : AppCompatActivity() {
             bottomMargin = dp(5)
         })
         subjectInput = EditText(this).apply {
-            setText(MarketSupportUiPolicy.INITIAL_SUBJECT)
+            hint = "Summarise the issue"
             textSize = 14f
             typeface = font(false)
             setTextColor(color(R.color.market_ink))
@@ -100,6 +112,7 @@ class MarketSupportActivity : AppCompatActivity() {
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_NEXT
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            filters = arrayOf(InputFilter.LengthFilter(80))
             includeFontPadding = false
             contentDescription = MarketSupportUiPolicy.SUBJECT_LABEL
         }
@@ -115,7 +128,7 @@ class MarketSupportActivity : AppCompatActivity() {
             MarketSupportUiPolicy.DETAILS_LABEL, 14f, true, color(R.color.market_ink)
         ), LinearLayout.LayoutParams(0, -2, 1f))
         detailsCounter = makeText(
-            MarketSupportUiPolicy.counterFor(MarketSupportUiPolicy.INITIAL_DETAILS.length),
+            MarketSupportUiPolicy.counterFor(0),
             12f, false, color(R.color.market_ink2)
         ).apply {
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
@@ -127,7 +140,7 @@ class MarketSupportActivity : AppCompatActivity() {
         })
 
         detailsInput = EditText(this).apply {
-            setText(MarketSupportUiPolicy.INITIAL_DETAILS)
+            hint = "Add the details support needs to help you"
             textSize = 13.5f
             typeface = font(false)
             setTextColor(color(R.color.market_ink))
@@ -159,10 +172,16 @@ class MarketSupportActivity : AppCompatActivity() {
             bottomMargin = dp(12)
         })
         page.addView(buildSafetyReminder(), LinearLayout.LayoutParams(-1, -2))
+        page.addView(makeText("Your support requests", 15f, true, color(R.color.market_ink)),
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(18); bottomMargin = dp(8) })
+        ticketList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        page.addView(ticketList, LinearLayout.LayoutParams(-1, -2))
 
         panel.addView(buildFooter(), FrameLayout.LayoutParams(-1, dp(84), Gravity.BOTTOM))
 
         refreshCategoryChips()
+        renderSupportTickets()
+        loadSupportTickets()
         applyWindowInsets()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
@@ -268,21 +287,16 @@ class MarketSupportActivity : AppCompatActivity() {
     }
 
     private fun buildAttachmentCard(): View {
+        val relatedType = intent.getStringExtra(EXTRA_RELATED_TYPE).orEmpty()
+        val relatedId = intent.getStringExtra(EXTRA_RELATED_ID).orEmpty()
+        val relatedLabel = listOf(relatedType, relatedId).filter { it.isNotBlank() }
+            .joinToString(" · ").ifBlank { "No listing attached" }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(color(R.color.market_card), 24f, color(R.color.market_line))
             setPadding(dp(14), dp(12), dp(12), dp(12))
-            isClickable = true
-            isFocusable = true
-            contentDescription = MarketSupportUiPolicy.ATTACH_TITLE
-            setOnClickListener {
-                AlertDialog.Builder(this@MarketSupportActivity)
-                    .setTitle(MarketSupportUiPolicy.ATTACHMENT_NOT_CONNECTED_TITLE)
-                    .setMessage(MarketSupportUiPolicy.ATTACHMENT_NOT_CONNECTED_MESSAGE)
-                    .setPositiveButton("OK", null)
-                    .show()
-            }
+            contentDescription = "Related listing: " + if (relatedId.isBlank()) "none" else relatedId
         }
         val iconTile = FrameLayout(this).apply {
             background = rounded(color(R.color.market_lav), 13f)
@@ -300,17 +314,14 @@ class MarketSupportActivity : AppCompatActivity() {
             MarketSupportUiPolicy.ATTACH_TITLE, 13f, true, color(R.color.market_ink)
         ))
         textColumn.addView(makeText(
-            MarketSupportUiPolicy.SAMPLE_LISTING_TITLE, 12f, false, color(R.color.market_ink2)
+            relatedLabel,
+            12f, false, color(R.color.market_ink2)
         ), LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(3)
         })
         card.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f).apply {
             marginEnd = dp(8)
         })
-        card.addView(
-            MarketSupportIconView(this, MarketSupportGlyph.CHEVRON_RIGHT, color(R.color.market_ink3)),
-            LinearLayout.LayoutParams(dp(18), dp(18))
-        )
         return card
     }
 
@@ -336,6 +347,145 @@ class MarketSupportActivity : AppCompatActivity() {
         return note
     }
 
+    private fun loadSupportTickets() {
+        ticketsLoading = true
+        ticketsError = null
+        renderSupportTickets()
+        try {
+            repository.loadMySupportTickets().addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                ticketsLoading = false
+                if (result.isSuccessful) {
+                    supportTickets = result.result.orEmpty()
+                    ticketsError = null
+                } else {
+                    supportTickets = emptyList()
+                    ticketsError = result.exception?.localizedMessage
+                        ?: "Your support requests could not be loaded."
+                }
+                renderSupportTickets()
+            }
+        } catch (error: Exception) {
+            ticketsLoading = false
+            ticketsError = error.localizedMessage ?: "Your support requests could not be loaded."
+            renderSupportTickets()
+        }
+    }
+
+    private fun renderSupportTickets() {
+        if (!::ticketList.isInitialized) return
+        ticketList.removeAllViews()
+        if (ticketsLoading || ticketsError != null || supportTickets.isEmpty()) {
+            val message = ticketsError ?: if (ticketsLoading) "Loading your support requests…"
+                else "No support requests yet."
+            ticketList.addView(makeText(message, 13f, false, color(R.color.market_ink2)).apply {
+                setPadding(dp(14), dp(16), dp(14), dp(16))
+                background = rounded(color(R.color.market_card), 18f, color(R.color.market_line))
+            }, LinearLayout.LayoutParams(-1, -2))
+            return
+        }
+        supportTickets.forEachIndexed { index, ticket ->
+            ticketList.addView(buildSupportTicketRow(ticket), LinearLayout.LayoutParams(-1, -2).apply {
+                if (index > 0) topMargin = dp(8)
+            })
+        }
+    }
+
+    private fun buildSupportTicketRow(ticket: MarketSupportTicket): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(color(R.color.market_card), 18f, color(R.color.market_line))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            isClickable = true
+            isFocusable = true
+            contentDescription = "${ticket.subject}, ${supportStatusLabel(ticket.status)}"
+            setOnClickListener { showSupportTicket(ticket) }
+        }
+        val top = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        top.addView(makeText(ticket.subject, 13.5f, true, color(R.color.market_ink)),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(makeText(supportStatusLabel(ticket.status), 11.5f, true,
+            color(if (ticket.status == MarketSupportStatus.RESOLVED) R.color.ok else R.color.market_ink2)))
+        card.addView(top)
+        val latestReply = ticket.replies.lastOrNull()
+        val latestText = latestReply?.text ?: ticket.body
+        val latestLabel = if (latestReply == null) "Your request" else
+            if (latestReply.from.equals("user", ignoreCase = true)) "You replied" else "U2U support replied"
+        card.addView(makeText("$latestLabel · $latestText", 12f, false, color(R.color.market_ink2)).apply {
+            maxLines = 2
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
+        val updated = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+            .format(ticket.updatedAt.toDate())
+        card.addView(makeText("Updated $updated · tap to view", 11f, false, color(R.color.market_ink3)),
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
+        return card
+    }
+
+    private fun showSupportTicket(ticket: MarketSupportTicket) {
+        val transcript = buildString {
+            append("You · ").append(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                .format(ticket.createdAt.toDate())).append("\n").append(ticket.body)
+            ticket.replies.forEach { reply ->
+                append("\n\n")
+                append(if (reply.from.equals("user", ignoreCase = true)) "You" else "U2U support")
+                append(" · ").append(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    .format(reply.at.toDate())).append("\n").append(reply.text)
+            }
+        }
+        val replyInput = EditText(this).apply {
+            hint = "Write a reply"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            gravity = Gravity.TOP or Gravity.START
+            minHeight = dp(84)
+            filters = arrayOf(InputFilter.LengthFilter(1000))
+        }
+        val canReply = ticket.status != MarketSupportStatus.RESOLVED
+        val builder = AlertDialog.Builder(this)
+            .setTitle(ticket.subject)
+            .setMessage(transcript)
+            .setNegativeButton("Close", null)
+        if (canReply) builder.setPositiveButton("Reply", null)
+        if (canReply) builder.setView(replyInput)
+        val dialog = builder.create()
+        dialog.show()
+        if (canReply) {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
+                val reply = replyInput.text?.toString().orEmpty().trim()
+                if (reply.isBlank()) {
+                    replyInput.error = "Write a reply first."
+                    return@setOnClickListener
+                }
+                try {
+                    repository.replyToOwnSupportTicket(ticket.id, reply).addOnCompleteListener { result ->
+                        if (isFinishing || isDestroyed) return@addOnCompleteListener
+                        if (result.isSuccessful) {
+                            dialog.dismiss()
+                            loadSupportTickets()
+                        } else {
+                            AlertDialog.Builder(this).setTitle("Reply not sent")
+                                .setMessage(result.exception?.localizedMessage
+                                    ?: "Your reply could not be saved.")
+                                .setPositiveButton("OK", null).show()
+                        }
+                    }
+                } catch (error: Exception) {
+                    replyInput.error = error.localizedMessage ?: "Your reply could not be sent."
+                }
+            }
+        }
+    }
+
+    private fun supportStatusLabel(status: MarketSupportStatus): String = when (status) {
+        MarketSupportStatus.OPEN -> "Open"
+        MarketSupportStatus.REPLIED -> "Support replied"
+        MarketSupportStatus.RESOLVED -> "Resolved"
+    }
+
     private fun buildFooter(): View {
         val footer = FrameLayout(this).apply {
             background = GradientDrawable(
@@ -353,6 +503,7 @@ class MarketSupportActivity : AppCompatActivity() {
             contentDescription = MarketSupportUiPolicy.SEND_BUTTON
             setOnClickListener { trySubmit() }
         }
+        submitButton = button
         button.addView(
             MarketSupportIconView(this, MarketSupportGlyph.SEND, color(R.color.market_match_ink)),
             LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) }
@@ -370,16 +521,53 @@ class MarketSupportActivity : AppCompatActivity() {
             subjectInput.requestFocus()
             return
         }
+        if (subjectInput.text.toString().trim().length < 5) {
+            subjectInput.error = "Use at least 5 characters."
+            subjectInput.requestFocus()
+            return
+        }
         if (detailsInput.text.toString().isBlank()) {
             detailsInput.error = MarketSupportUiPolicy.DETAILS_REQUIRED
             detailsInput.requestFocus()
             return
         }
-        AlertDialog.Builder(this)
-            .setTitle(MarketSupportUiPolicy.SUPPORT_NOT_CONNECTED_TITLE)
-            .setMessage(MarketSupportUiPolicy.SUPPORT_NOT_CONNECTED_MESSAGE)
-            .setPositiveButton("OK", null)
-            .show()
+        if (detailsInput.text.toString().trim().length < 10) {
+            detailsInput.error = "Add at least 10 characters so support can help."
+            detailsInput.requestFocus()
+            return
+        }
+        val relatedId = intent.getStringExtra(EXTRA_RELATED_ID).orEmpty().takeIf { it.isNotBlank() }
+        val relatedType = intent.getStringExtra(EXTRA_RELATED_TYPE).orEmpty().takeIf { it.isNotBlank() }
+        val type = when (selectedCategory) {
+            MarketSupportCategory.LISTING_PROBLEM -> MarketSupportType.LISTING
+            MarketSupportCategory.ACCOUNT -> MarketSupportType.ACCOUNT
+            MarketSupportCategory.APP_BUG -> MarketSupportType.BUG
+            MarketSupportCategory.REPORT_PERSON -> MarketSupportType.PERSON
+            MarketSupportCategory.OTHER -> MarketSupportType.OTHER
+        }
+        val draft = MarketSupportDraft(type, subjectInput.text.toString(), detailsInput.text.toString(),
+            relatedType, relatedId)
+        submitButton?.isEnabled = false
+        try {
+            repository.createSupportTicket(draft).addOnCompleteListener { result ->
+                if (isFinishing || isDestroyed) return@addOnCompleteListener
+                submitButton?.isEnabled = true
+                if (result.isSuccessful) {
+                    AlertDialog.Builder(this).setTitle("Message sent")
+                        .setMessage("Support received your request. Reference: ${result.result}")
+                        .setPositiveButton("OK") { _, _ -> finish() }.show()
+                } else {
+                    AlertDialog.Builder(this).setTitle("Message not sent")
+                        .setMessage(result.exception?.localizedMessage ?: "Support could not save your request.")
+                        .setPositiveButton("OK", null).show()
+                }
+            }
+        } catch (error: Exception) {
+            submitButton?.isEnabled = true
+            AlertDialog.Builder(this).setTitle("Message not sent")
+                .setMessage(error.localizedMessage ?: "Support could not save your request.")
+                .setPositiveButton("OK", null).show()
+        }
     }
 
     private fun makeText(value: String, size: Float, medium: Boolean, textColor: Int): TextView =
@@ -422,4 +610,9 @@ class MarketSupportActivity : AppCompatActivity() {
     private fun color(id: Int) = getColor(id)
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun dp(value: Float) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        const val EXTRA_RELATED_TYPE = "market.support.related_type"
+        const val EXTRA_RELATED_ID = "market.support.related_id"
+    }
 }
